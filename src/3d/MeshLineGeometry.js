@@ -77,7 +77,7 @@ export class MeshLineGeometry extends BufferGeometry {
 			let pts = points
 			if ( pts instanceof Float32Array ) pts = Array.from( pts )
 			pts.push( pts[0], pts[1], pts[2] )
-			points = pts
+			points = new Float32Array( pts )
 		}
 		this._points = points
 		this.widthCallback = wcb ?? null
