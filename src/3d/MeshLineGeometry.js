@@ -1,23 +1,5 @@
 import { BufferAttribute, BufferGeometry, Matrix4, Vector2, Vector3 } from 'three'
 
-// https://stackoverflow.com/a/56532878
-function memcpy( src, srcOffset, dst, dstOffset, length ) {
-	let i
-	src = src.subarray || src.slice ? src : src.buffer
-	dst = dst.subarray || dst.slice ? dst : dst.buffer
-	src = srcOffset
-		? src.subarray
-			? src.subarray( srcOffset, length && srcOffset + length )
-			: src.slice( srcOffset, length && srcOffset + length )
-		: src
-	if ( dst.set ) {
-		dst.set( src, dstOffset )
-	} else {
-		for ( i = 0; i < src.length; i++ ) dst[i + dstOffset] = src[i]
-	}
-	return dst
-}
-
 function convertPoints( points ) {
 	if ( points instanceof Float32Array ) return points
 	if ( points instanceof BufferGeometry ) return points.getAttribute( 'position' ).array
@@ -149,9 +131,7 @@ export class MeshLineGeometry extends BufferGeometry {
 		this.uvs = []
 
 		let w = 1
-		let v
-		if ( this.closeLoop )            v = this.copyV3( l - 2 )
-		else                             v = this.copyV3( 1 )      // ← use 2nd point as previous
+		let v = this.copyV3( this.closeLoop ? l - 2 : 0 )
 		this.previous.push( v[0], v[1], v[2] )
 		this.previous.push( v[0], v[1], v[2] )
 
@@ -226,40 +206,5 @@ export class MeshLineGeometry extends BufferGeometry {
 
 		this.computeBoundingSphere()
 		this.computeBoundingBox()
-	}
-
-	/**
-   * Fast method to advance the line by one position.  The oldest position is removed.
-   * @param position
-   */
-	advance( { x, y, z } ) {
-		const positions = this._attributes.position.array
-		const previous = this._attributes.previous.array
-		const next = this._attributes.next.array
-		const l = positions.length
-
-		memcpy( positions, 0, previous, 0, l )
-
-		memcpy( positions, 6, positions, 0, l - 6 )
-
-		positions[l - 6] = x
-		positions[l - 5] = y
-		positions[l - 4] = z
-		positions[l - 3] = x
-		positions[l - 2] = y
-		positions[l - 1] = z
-
-		memcpy( positions, 6, next, 0, l - 6 )
-
-		next[l - 6] = x
-		next[l - 5] = y
-		next[l - 4] = z
-		next[l - 3] = x
-		next[l - 2] = y
-		next[l - 1] = z
-
-		this._attributes.position.needsUpdate = true
-		this._attributes.previous.needsUpdate = true
-		this._attributes.next.needsUpdate = true
 	}
 }

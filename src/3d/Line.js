@@ -10,8 +10,10 @@ export default class Line extends Mesh {
 	constructor() {
 
 		const geometry = new MeshLineGeometry()
-		const positions = circlePositions(  )
-		geometry.setPoints( new Float32Array( positions ), undefined, false )
+		// const positions = circlePositions(  )
+
+		const positions = squarePositions( )
+		geometry.setPoints( new Float32Array( positions ), undefined, true )
 
 		let material = new MeshLineNodeMaterial( {
 			color: 0xffffff,
@@ -20,7 +22,7 @@ export default class Line extends Mesh {
 			useGradient: true,
 			useMap: false,
 			useAlphaMap: false,
-			wireframe: true,
+			wireframe: false,
 			// map,
 			// alphaMap: map,
 
@@ -98,3 +100,5 @@ export const circlePositions = ()=>{
 
 	return positions
 }
+
+export const squarePositions = () => [-1, -1, 0, 1, -1, 0, 1, 1, 0, -1, 1, 0]
