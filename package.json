@@ -34,7 +34,7 @@
 		"eslint-plugin-vue": "^10.1.0",
 		"fast-glob": "^3.3.3",
 		"rollup-plugin-visualizer": "^5.14.0",
-		"sharp": "^0.34.1",
+		"sharp": "^0.34.2",
 		"stylus": "^0.64.0",
 		"unplugin-auto-import": "^19.2.0",
 		"unplugin-vue-components": "^28.5.0",
