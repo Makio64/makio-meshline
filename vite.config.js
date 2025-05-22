@@ -60,7 +60,6 @@ export default defineConfig( {
 	resolve: {
 		alias: {
 			'@': path.resolve( __dirname, './src' ),
-			'animejs': path.resolve( __dirname, './src/lib/anime.esm.js' ),
 		},
 		extensions: ['.mjs', '.js', '.ts', '.jsx', '.tsx', '.json', '.vue', '.styl'],
 	},

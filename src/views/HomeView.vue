@@ -1,10 +1,7 @@
 <template>
 	<div class="HomeView view">
-		<div ref="title" class="title">THREEJS</div>
-		<div ref="subtitle" class="subtitle">Simple example</div>
-		<!-- <div class="bottom">
-			<div ref="btn" class="btn" @click="goToPixi">{{ $t('see_pixi') }}</div>
-		</div> -->
+		<div ref="title" class="title">MeshLine</div>
+		<div ref="subtitle" class="subtitle">WebGPU version</div>
 	</div>
 </template>
 

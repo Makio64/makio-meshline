@@ -1,5 +1,5 @@
 /**
- * Reactive translation plugin for Vue 3
+ * Minimalist reactive translation plugin for Vue 3
  * @author Makio64
  */
 
