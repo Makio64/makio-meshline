@@ -10,19 +10,19 @@ export default class Line extends Mesh {
 	constructor() {
 
 		const geometry = new MeshLineGeometry()
-		// const positions = circlePositions(  )
+		const positions = circlePositions(  )
 
-		const positions = squarePositions( )
-		geometry.setPoints( new Float32Array( positions ), undefined, true )
+		// const positions = squarePositions( 16 )
+		geometry.setPoints( new Float32Array( positions ), undefined, false )
 
 		let material = new MeshLineNodeMaterial( {
 			color: 0xffffff,
-			lineWidth: 50,
-			sizeAttenuation: 0,
+			lineWidth: 0.3,
+			sizeAttenuation: 1,
 			useGradient: true,
 			useMap: false,
 			useAlphaMap: false,
-			wireframe: false,
+			wireframe: true,
 			// map,
 			// alphaMap: map,
 
@@ -101,4 +101,18 @@ export const circlePositions = ()=>{
 	return positions
 }
 
-export const squarePositions = () => [-1, -1, 0, 1, -1, 0, 1, 1, 0, -1, 1, 0]
+export const squarePositions = ( segments = 1 ) => {
+	const corners = [[-1, -1], [1, -1], [1, 1], [-1, 1]]
+	const positions = []
+	for ( let i = 0; i < 4; i++ ) {
+		const [x0, y0] = corners[ i ]
+		const [x1, y1] = corners[ ( i + 1 ) % 4 ]
+		for ( let j = 0; j < segments; j++ ) {
+			const t = j / segments
+			const x = x0 + ( x1 - x0 ) * t
+			const y = y0 + ( y1 - y0 ) * t
+			positions.push( x, y, 0 )
+		}
+	}
+	return positions
+}

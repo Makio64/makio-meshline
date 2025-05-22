@@ -6,14 +6,10 @@ function convertPoints( points ) {
 	return points
 		.map( ( p ) => {
 			const isArray = Array.isArray( p )
-			return p instanceof Vector3
-				? [p.x, p.y, p.z]
-				: p instanceof Vector2
-					? [p.x, p.y, 0]
-					: isArray && p.length === 3
-						? [p[0], p[1], p[2]]
-						: isArray && p.length === 2
-							? [p[0], p[1], 0]
+			return p instanceof Vector3 ? [p.x, p.y, p.z]
+				: p instanceof Vector2 ? [p.x, p.y, 0]
+					: isArray && p.length === 3 ? [p[0], p[1], p[2]]
+						: isArray && p.length === 2 ? [p[0], p[1], 0]
 							: p
 		} )
 		.flat()
@@ -131,9 +127,18 @@ export class MeshLineGeometry extends BufferGeometry {
 		this.uvs = []
 
 		let w = 1
-		let v = this.copyV3( this.closeLoop ? l - 2 : 0 )
-		this.previous.push( v[0], v[1], v[2] )
-		this.previous.push( v[0], v[1], v[2] )
+		// Determine the first 'previous' point
+		if ( this.closeLoop ) {
+			let v = this.copyV3( l - 2 ) // Use the second to last point if closed
+			this.previous.push( v[0], v[1], v[2] )
+			this.previous.push( v[0], v[1], v[2] )
+		} else {
+			// Reflect the second point across the first point for open lines
+			const p0 = this.copyV3( 0 )
+			const p1 = this.copyV3( 1 )
+			this.previous.push( p0[0] * 2 - p1[0], p0[1] * 2 - p1[1], p0[2] * 2 - p1[2] )
+			this.previous.push( p0[0] * 2 - p1[0], p0[1] * 2 - p1[1], p0[2] * 2 - p1[2] )
+		}
 
 		for ( let j = 0; j < l; j++ ) {
 			this.side.push( 1, -1 )
@@ -145,7 +150,7 @@ export class MeshLineGeometry extends BufferGeometry {
 			this.uvs.push( j / ( l - 1 ), 1 )
 
 			if ( j < l - 1 ) {
-				v = this.copyV3( j )
+				let v = this.copyV3( j )
 				this.previous.push( v[0], v[1], v[2] )
 				this.previous.push( v[0], v[1], v[2] )
 
@@ -154,17 +159,24 @@ export class MeshLineGeometry extends BufferGeometry {
 				this.indices_array.push( n + 2, n + 1, n + 3 )
 			}
 			if ( j > 0 ) {
-				v = this.copyV3( j )
+				let v = this.copyV3( j )
 				this.next.push( v[0], v[1], v[2] )
 				this.next.push( v[0], v[1], v[2] )
 			}
 		}
 
-		if ( this.closeLoop ) v = this.copyV3( 1 )
-		else v = this.copyV3( l - 2 ) // ← use penultimate point as next
-
-		this.next.push( v[0], v[1], v[2] )
-		this.next.push( v[0], v[1], v[2] )
+		// Determine the last 'next' point
+		if ( this.closeLoop ) {
+			let v = this.copyV3( 1 ) // Use the second point if closed
+			this.next.push( v[0], v[1], v[2] )
+			this.next.push( v[0], v[1], v[2] )
+		} else {
+			// Reflect the second to last point across the last point for open lines
+			const pL = this.copyV3( l - 1 ) // Last point
+			const pL1 = this.copyV3( l - 2 ) // Second to last point
+			this.next.push( pL[0] * 2 - pL1[0], pL[1] * 2 - pL1[1], pL[2] * 2 - pL1[2] )
+			this.next.push( pL[0] * 2 - pL1[0], pL[1] * 2 - pL1[1], pL[2] * 2 - pL1[2] )
+		}
 
 		if ( !this._attributes || this._attributes.position.count !== this.counters.length ) {
 			this._attributes = {
