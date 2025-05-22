@@ -1,0 +1,25 @@
+# .github/workflows/dependabot-auto-merge.yml
+name: dependabot-security-automerge
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, labeled]
+    branches: [main]
+
+permissions:
+  contents: write          # needed to push the merge
+  pull-requests: write     # needed to approve / enable auto-merge
+
+jobs:
+  merge:
+    if: github.actor == 'dependabot[bot]' && contains(github.event.pull_request.labels.*.name, 'security')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: hmarr/auto-approve-action@v4      # 1. mark the PR as approved
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: peter-evans/enable-pull-request-automerge@v3  # 2. turn on auto-merge
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          merge-method: squash

@@ -1,0 +1,24 @@
+{
+	"compilerOptions": {
+		"module": "esnext",
+		"target": "esnext",
+		"baseUrl": "./",
+		"paths": {
+			"@/*": [
+				"./src/*"
+			],
+			"anime": [
+				"./src/lib/anime.esm.js"
+			],
+			"three/webgpu": [
+				"node_modules/three/build/three.webgpu.js"
+			],
+			"three/tsl": [
+				"node_modules/three/build/three.tsl.js"
+			],
+		}
+	},
+	"include": [
+		"src/**/*"
+	]
+}

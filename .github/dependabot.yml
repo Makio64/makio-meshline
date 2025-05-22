@@ -1,0 +1,9 @@
+# .github/dependabot.yml
+version: 2
+updates:
+  - package-ecosystem: npm          # or maven-gradle, cargo, etc.
+    directory: /
+    schedule:
+      interval: daily
+    # Dependabot adds the `security` label automatically on CVE PRs
+    open-pull-requests-limit: 10
