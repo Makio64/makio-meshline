@@ -34,10 +34,8 @@ class Manager3D {
 		this.line = new Line()
 		stage3d.add( this.line )
 		this.box = new Mesh( new BoxGeometry( 1, 1, 1 ), new MeshBasicNodeMaterial( { wireframe: false, transparent: true, opacity: 0, color: 0xff0000 } ) )
-
 		this.box.material.colorNode = gradient( [color( 0xff0000 ), color( 0x00ff00 ), color( 0x0000ff ), color( 0x000000 )], [0.5, 0.51, 0.6, 1], uv().y )
-
-		// stage3d.add( this.box )
+		stage3d.add( this.box )
 		stage.onUpdate.add( this.update )
 	}
 

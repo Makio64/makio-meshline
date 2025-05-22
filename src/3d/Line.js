@@ -22,7 +22,7 @@ export default class Line extends Mesh {
 			useGradient: true,
 			useMap: false,
 			useAlphaMap: false,
-			wireframe: true,
+			wireframe: false,
 			// map,
 			// alphaMap: map,
 

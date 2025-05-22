@@ -1,220 +1,116 @@
 import { BufferAttribute, BufferGeometry, Matrix4, Vector2, Vector3 } from 'three'
 
-function convertPoints( points ) {
-	if ( points instanceof Float32Array ) return points
-	if ( points instanceof BufferGeometry ) return points.getAttribute( 'position' ).array
-	return points
-		.map( ( p ) => {
-			const isArray = Array.isArray( p )
-			return p instanceof Vector3 ? [p.x, p.y, p.z]
-				: p instanceof Vector2 ? [p.x, p.y, 0]
-					: isArray && p.length === 3 ? [p[0], p[1], p[2]]
-						: isArray && p.length === 2 ? [p[0], p[1], 0]
-							: p
-		} )
-		.flat()
-}
+const extractPoints = pts =>
+	pts instanceof Float32Array ? pts
+		: pts instanceof BufferGeometry ? pts.getAttribute( 'position' ).array
+			: ( () => {
+				const out = []
+				for ( const p of pts ) {
+					if ( p instanceof Vector3 ) out.push( p.x, p.y, p.z )
+					else if ( p instanceof Vector2 ) out.push( p.x, p.y, 0 )
+					else if ( Array.isArray( p ) ) {
+						const [x, y, z = 0] = p
+						out.push( x, y, z )
+					}
+				}
+				return new Float32Array( out )
+			} )()
 
 export class MeshLineGeometry extends BufferGeometry {
 	type = 'MeshLine'
 	isMeshLine = true
-	positions = []
-	previous = []
-	next = []
-	side = []
-	width = []
-	indices_array = []
-	uvs = []
-	counters = []
-	widthCallback = null
-	closeLoop = false
-
-	_attributes = {
-		position: new BufferAttribute( new Float32Array( this.positions ), 3 ),
-		previous: new BufferAttribute( new Float32Array( this.previous ), 3 ),
-		next: new BufferAttribute( new Float32Array( this.next ), 3 ),
-		side: new BufferAttribute( new Float32Array( this.side ), 1 ),
-		width: new BufferAttribute( new Float32Array( this.width ), 1 ),
-		uv: new BufferAttribute( new Float32Array( this.uvs ), 2 ),
-		index: new BufferAttribute( new Uint16Array( this.indices_array ), 1 ),
-		counters: new BufferAttribute( new Float32Array( this.counters ), 1 ),
-	}
-
-	_points = []
-	points = null
-
-	// Used to raycast
 	matrixWorld = new Matrix4()
+	widthCallback = t => 1
+	closeLoop = false
+	_points = new Float32Array()
+	_attrs = {}
 
-	constructor() {
-		super()
+	get points() { return this._points }
+	set points( v ) { this.setPoints( v ) }
 
-		Object.defineProperties( this, {
-			points: {
-				enumerable: true,
-				get() {
-					return this._points
-				},
-				set( value ) {
-					this.setPoints( value, this.widthCallback, this.closeLoop )
-				},
-			},
-		} )
-	}
+	setMatrixWorld( m ) { this.matrixWorld.copy( m ) }
 
-	setMatrixWorld( matrixWorld ) {
-		this.matrixWorld = matrixWorld
-	}
-
-	setPoints( points, wcb, closeLoop = false ) {
-		points = convertPoints( points )
-		this.closeLoop = closeLoop
-		if ( this.closeLoop && points.length >= 3 ) {
-			let pts = points
-			if ( pts instanceof Float32Array ) pts = Array.from( pts )
-			pts.push( pts[0], pts[1], pts[2] )
-			points = new Float32Array( pts )
-		}
-		this._points = points
-		this.widthCallback = wcb ?? null
-		this.positions = []
-		this.counters = []
-
-		if ( points.length && ( points[0] ) instanceof Vector3 ) {
-			for ( let j = 0; j < points.length; j++ ) {
-				const p = points[j]
-				const c = j / ( points.length - 1 )
-				this.positions.push( p.x, p.y, p.z )
-				this.positions.push( p.x, p.y, p.z )
-				this.counters.push( c )
-				this.counters.push( c )
-			}
-		} else {
-			for ( let j = 0; j < points.length; j += 3 ) {
-				const c = j / ( points.length - 1 )
-				this.positions.push( points[j], points[j + 1], points[j + 2] )
-				this.positions.push( points[j], points[j + 1], points[j + 2] )
-				this.counters.push( c )
-				this.counters.push( c )
-			}
-		}
-		this.process()
-	}
-
-	compareV3( a, b ) {
-		const aa = a * 6
-		const ab = b * 6
-		return (
-			this.positions[aa] === this.positions[ab] &&
-      this.positions[aa + 1] === this.positions[ab + 1] &&
-      this.positions[aa + 2] === this.positions[ab + 2]
-		)
-	}
-
-	copyV3( a ) {
-		const aa = a * 6
-		return [this.positions[aa], this.positions[aa + 1], this.positions[aa + 2]]
-	}
-
-	process() {
-		const l = this.positions.length / 6
-
-		this.previous = []
-		this.next = []
-		this.side = []
-		this.width = []
-		this.indices_array = []
-		this.uvs = []
-
-		let w = 1
-		// Determine the first 'previous' point
+	setPoints( pts, widthCb, closeLoop = false ) {
+		this._points = extractPoints( pts )
+		this.widthCallback = widthCb || this.widthCallback
+		this.closeLoop = closeLoop && this._points.length >= 3
 		if ( this.closeLoop ) {
-			let v = this.copyV3( l - 2 ) // Use the second to last point if closed
-			this.previous.push( v[0], v[1], v[2] )
-			this.previous.push( v[0], v[1], v[2] )
-		} else {
-			// Reflect the second point across the first point for open lines
-			const p0 = this.copyV3( 0 )
-			const p1 = this.copyV3( 1 )
-			this.previous.push( p0[0] * 2 - p1[0], p0[1] * 2 - p1[1], p0[2] * 2 - p1[2] )
-			this.previous.push( p0[0] * 2 - p1[0], p0[1] * 2 - p1[1], p0[2] * 2 - p1[2] )
+			const [x, y, z] = this._points
+			this._points = new Float32Array( [...this._points, x, y, z] )
+		}
+		this._build()
+	}
+
+	_build() {
+		const pts = this._points
+		const n = pts.length / 3
+		const dt = n > 1 ? 1 / ( n - 1 ) : 0
+
+		const pos = [], prev = [], next = []
+		const side = [], width = [], uv = [], counter = [], idx = []
+
+		const get = i => pts.subarray( i * 3, i * 3 + 3 )
+		const pushPair = ( arr, v ) => arr.push( ...v, ...v )
+
+		// first prev
+		if ( this.closeLoop ) pushPair( prev, get( n - 2 ) )
+		else {
+			const a = get( 0 ), b = get( 1 )
+			pushPair( prev, [2 * a[0] - b[0], 2 * a[1] - b[1], 2 * a[2] - b[2]] )
 		}
 
-		for ( let j = 0; j < l; j++ ) {
-			this.side.push( 1, -1 )
+		for ( let i = 0; i < n; i++ ) {
+			const p = get( i ), t = dt * i
+			pushPair( pos, p )
+			pushPair( counter, [t, t] )
+			side.push( 1, -1 )
+			const w = this.widthCallback( t )
+			width.push( w, w )
+			uv.push( t, 0, t, 1 )
 
-			if ( this.widthCallback ) w = this.widthCallback( j / ( l - 1 ) )
-			this.width.push( w, w )
-
-			this.uvs.push( j / ( l - 1 ), 0 )
-			this.uvs.push( j / ( l - 1 ), 1 )
-
-			if ( j < l - 1 ) {
-				let v = this.copyV3( j )
-				this.previous.push( v[0], v[1], v[2] )
-				this.previous.push( v[0], v[1], v[2] )
-
-				const n = j * 2
-				this.indices_array.push( n, n + 1, n + 2 )
-				this.indices_array.push( n + 2, n + 1, n + 3 )
+			if ( i < n - 1 ) {
+				pushPair( prev, p )
+				const o = i * 2
+				idx.push( o, o + 1, o + 2, o + 2, o + 1, o + 3 )
 			}
-			if ( j > 0 ) {
-				let v = this.copyV3( j )
-				this.next.push( v[0], v[1], v[2] )
-				this.next.push( v[0], v[1], v[2] )
+			if ( i > 0 ) pushPair( next, p )
+		}
+
+		// last next
+		if ( this.closeLoop ) pushPair( next, get( 1 ) )
+		else {
+			const a = get( n - 1 ), b = get( n - 2 )
+			pushPair( next, [2 * a[0] - b[0], 2 * a[1] - b[1], 2 * a[2] - b[2]] )
+		}
+
+		// set all non-index attributes
+		const attrs = {
+			position: [pos, 3],
+			previous: [prev, 3],
+			next: [next, 3],
+			side: [side, 1],
+			width: [width, 1],
+			uv: [uv, 2],
+			counters: [counter, 1],
+		}
+
+		for ( const [name, [arr, itemSize, Type = Float32Array]] of Object.entries( attrs ) ) {
+			const array = new Type( arr )
+			const attr = new BufferAttribute( array, itemSize )
+			const old = this._attrs[name]
+			if ( old && old.count === attr.count ) {
+				old.copyArray( array )
+				old.needsUpdate = true
+			} else {
+				this._attrs[name] = attr
+				this.setAttribute( name, attr )
 			}
 		}
 
-		// Determine the last 'next' point
-		if ( this.closeLoop ) {
-			let v = this.copyV3( 1 ) // Use the second point if closed
-			this.next.push( v[0], v[1], v[2] )
-			this.next.push( v[0], v[1], v[2] )
-		} else {
-			// Reflect the second to last point across the last point for open lines
-			const pL = this.copyV3( l - 1 ) // Last point
-			const pL1 = this.copyV3( l - 2 ) // Second to last point
-			this.next.push( pL[0] * 2 - pL1[0], pL[1] * 2 - pL1[1], pL[2] * 2 - pL1[2] )
-			this.next.push( pL[0] * 2 - pL1[0], pL[1] * 2 - pL1[1], pL[2] * 2 - pL1[2] )
-		}
-
-		if ( !this._attributes || this._attributes.position.count !== this.counters.length ) {
-			this._attributes = {
-				position: new BufferAttribute( new Float32Array( this.positions ), 3 ),
-				previous: new BufferAttribute( new Float32Array( this.previous ), 3 ),
-				next: new BufferAttribute( new Float32Array( this.next ), 3 ),
-				side: new BufferAttribute( new Float32Array( this.side ), 1 ),
-				width: new BufferAttribute( new Float32Array( this.width ), 1 ),
-				uv: new BufferAttribute( new Float32Array( this.uvs ), 2 ),
-				index: new BufferAttribute( new Uint16Array( this.indices_array ), 1 ),
-				counters: new BufferAttribute( new Float32Array( this.counters ), 1 ),
-			}
-		} else {
-			this._attributes.position.copyArray( new Float32Array( this.positions ) )
-			this._attributes.position.needsUpdate = true
-			this._attributes.previous.copyArray( new Float32Array( this.previous ) )
-			this._attributes.previous.needsUpdate = true
-			this._attributes.next.copyArray( new Float32Array( this.next ) )
-			this._attributes.next.needsUpdate = true
-			this._attributes.side.copyArray( new Float32Array( this.side ) )
-			this._attributes.side.needsUpdate = true
-			this._attributes.width.copyArray( new Float32Array( this.width ) )
-			this._attributes.width.needsUpdate = true
-			this._attributes.uv.copyArray( new Float32Array( this.uvs ) )
-			this._attributes.uv.needsUpdate = true
-			this._attributes.index.copyArray( new Uint16Array( this.indices_array ) )
-			this._attributes.index.needsUpdate = true
-		}
-
-		this.setAttribute( 'position', this._attributes.position )
-		this.setAttribute( 'previous', this._attributes.previous )
-		this.setAttribute( 'next', this._attributes.next )
-		this.setAttribute( 'side', this._attributes.side )
-		this.setAttribute( 'width', this._attributes.width )
-		this.setAttribute( 'uv', this._attributes.uv )
-		this.setAttribute( 'counters', this._attributes.counters )
-
-		this.setIndex( this._attributes.index )
+		// index only via setIndex
+		const indexAttr = new BufferAttribute( new Uint16Array( idx ), 1 )
+		this._attrs.index = indexAttr
+		this.setIndex( indexAttr )
 
 		this.computeBoundingSphere()
 		this.computeBoundingBox()
