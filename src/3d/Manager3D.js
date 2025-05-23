@@ -219,7 +219,7 @@ class Manager3D {
 	show() {
 		this.lines.forEach( ( line, i ) => {
 			// Animate lines in, perhaps with a stagger
-			animate( line.percent, { duration: 1, value: 1, delay: i * 0.05, ease: 'easeOut' } )
+			animate( line.percent, { duration: 1, value: 1.01, delay: i * 0.05, ease: 'easeOut' } )
 		} )
 	}
 

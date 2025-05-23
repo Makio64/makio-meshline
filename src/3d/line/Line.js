@@ -64,7 +64,8 @@ export default class Line extends Mesh {
 		// 	return step( uv().x, this.percent  ).mul( step( uv().x.oneMinus(), this.percent2  ) ).mul( this.opacity ).toVar( 'opacity' )
 		// } )()
 		material.discardConditionNode = Fn( ()=>{
-			return step( uv().x, this.percent  ).mul( step( uv().x.oneMinus(), this.percent2  ) ).mul( this.opacity ).lessThan( 0.001 )
+			//.mul( step( uv().x.oneMinus(), this.percent2  ) )
+			return step( uv().x, this.percent  ).mul( this.opacity ).lessThanEqual( 0.00001 )
 		} )()
 
 		this.frustumCulled = false
@@ -83,13 +84,13 @@ export default class Line extends Mesh {
 
 	show = ()=>{
 		return new Promise( ( resolve )=>{
-			animate( this.percent, { duration: 1, value: 1, onComplete: resolve, ease: 'easeOut' } )
+			animate( this.percent, { duration: 1, value: 0.9, onComplete: resolve, ease: 'easeOut' } )
 		} )
 	}
 
 	hide = ()=>{
 		return new Promise( ( resolve )=>{
-			animate( this.percent2, { duration: 1, value: 0, onComplete: resolve, ease: 'easeOut' } )
+			animate( this.percent2, { duration: 1, value: -0.1, onComplete: resolve, ease: 'easeOut' } )
 		} )
 	}
 
