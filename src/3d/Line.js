@@ -10,9 +10,9 @@ export default class Line extends Mesh {
 	constructor() {
 
 		const geometry = new MeshLineGeometry()
-		const positions = circlePositions(  )
+		// const positions = circlePositions(  )
 
-		// const positions = squarePositions( 16 )
+		const positions = squarePositions( 16 )
 		geometry.setPoints( new Float32Array( positions ), undefined, false )
 
 		let material = new MeshLineNodeMaterial( {

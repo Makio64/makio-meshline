@@ -1,100 +1,157 @@
-import { BufferAttribute, BufferGeometry, Matrix4, Vector2, Vector3 } from 'three'
+import {
+	BufferAttribute,
+	BufferGeometry,
+	Matrix4,
+	Vector2,
+	Vector3
+} from 'three'
 
-const extractPoints = pts =>
-	pts instanceof Float32Array ? pts
-		: pts instanceof BufferGeometry ? pts.getAttribute( 'position' ).array
-			: ( () => {
-				const out = []
-				for ( const p of pts ) {
-					if ( p instanceof Vector3 ) out.push( p.x, p.y, p.z )
-					else if ( p instanceof Vector2 ) out.push( p.x, p.y, 0 )
-					else if ( Array.isArray( p ) ) {
-						const [x, y, z = 0] = p
-						out.push( x, y, z )
-					}
-				}
-				return new Float32Array( out )
-			} )()
+// normalize various point inputs into a Float32Array
+const toFloat32 = pts =>
+	pts instanceof Float32Array
+		? pts
+		: pts instanceof BufferGeometry
+			? pts.getAttribute( 'position' ).array
+			: new Float32Array(
+				pts.flatMap( p =>
+					p instanceof Vector3
+						? [p.x, p.y, p.z]
+						: p instanceof Vector2
+							? [p.x, p.y, 0]
+							: Array.isArray( p )
+								? [p[0], p[1], p[2] ?? 0]
+								: []
+				)
+			)
 
 export class MeshLineGeometry extends BufferGeometry {
-	type = 'MeshLine'
-	isMeshLine = true
-	matrixWorld = new Matrix4()
-	widthCallback = t => 1
-	closeLoop = false
-	_points = new Float32Array()
-	_attrs = {}
+	constructor( pts, widthCb, loop ) {
+		super()
+		this.type = 'MeshLine'
+		this.isMeshLine = true
 
-	get points() { return this._points }
-	set points( v ) { this.setPoints( v ) }
-
-	setMatrixWorld( m ) { this.matrixWorld.copy( m ) }
-
-	setPoints( pts, widthCb, closeLoop = false ) {
-		this._points = extractPoints( pts )
-		this.widthCallback = widthCb || this.widthCallback
-		this.closeLoop = closeLoop && this._points.length >= 3
-		if ( this.closeLoop ) {
-			const [x, y, z] = this._points
-			this._points = new Float32Array( [...this._points, x, y, z] )
+		this.matrixWorld = new Matrix4()
+		this.widthCallback = t => 1
+		this.closeLoop = false
+		this._points = new Float32Array()
+		this._attrs = {}
+		if ( pts ) {
+			this.setPoints( pts, widthCb, loop )
 		}
-		this._build()
 	}
 
-	_build() {
+	// set the world matrix
+	setMatrixWorld( m ) {
+		this.matrixWorld.copy( m )
+	}
+
+	// set new points, optional width callback and loop flag
+	setPoints( pts, widthCb = this.widthCallback, loop = false ) {
+		let arr = toFloat32( pts )
+		this.closeLoop = loop && arr.length >= 3
+		if ( this.closeLoop ) {
+			const [x, y, z] = arr
+			arr = new Float32Array( [...arr, x, y, z] )
+		}
+		this._points = arr
+		this.widthCallback = widthCb
+		this.build()
+	}
+
+	// get xyz triplet from flat array at index i
+	getPoint( pts, i ) {
+		const o = i * 3
+		return [pts[o], pts[o + 1], pts[o + 2]]
+	}
+
+	// compute reflection of point a over b: 2a - b
+	reflect( a, b ) {
+		return [
+			2 * a[0] - b[0],
+			2 * a[1] - b[1],
+			2 * a[2] - b[2]
+		]
+	}
+
+	// initial previous-pair positions
+	initPrev( pts, n ) {
+		if ( this.closeLoop ) {
+			const p = this.getPoint( pts, n - 2 )
+			return [...p, ...p]
+		} else {
+			const a = this.getPoint( pts, 0 )
+			const b = this.getPoint( pts, 1 )
+			const r = this.reflect( a, b )
+			return [...r, ...r]
+		}
+	}
+
+	// final next-pair positions
+	appendNext( pts, n ) {
+		if ( this.closeLoop ) {
+			const p = this.getPoint( pts, 1 )
+			return [...p, ...p]
+		} else {
+			const a = this.getPoint( pts, n - 1 )
+			const b = this.getPoint( pts, n - 2 )
+			const r = this.reflect( a, b )
+			return [...r, ...r]
+		}
+	}
+
+	// build/update all geometry attributes and index
+	build() {
 		const pts = this._points
-		const n = pts.length / 3
-		const dt = n > 1 ? 1 / ( n - 1 ) : 0
+		const count = pts.length / 3
+		const tStep = count > 1 ? 1 / ( count - 1 ) : 0
 
-		const pos = [], prev = [], next = []
-		const side = [], width = [], uv = [], counter = [], idx = []
+		const previousPositions = this.initPrev( pts, count )
+		const nextPositions = []
 
-		const get = i => pts.subarray( i * 3, i * 3 + 3 )
-		const pushPair = ( arr, v ) => arr.push( ...v, ...v )
+		const positions = []
+		const sides = []
+		const widths = []
+		const uvs = []
+		const counters = []
+		const indices = []
 
-		// first prev
-		if ( this.closeLoop ) pushPair( prev, get( n - 2 ) )
-		else {
-			const a = get( 0 ), b = get( 1 )
-			pushPair( prev, [2 * a[0] - b[0], 2 * a[1] - b[1], 2 * a[2] - b[2]] )
-		}
+		for ( let i = 0; i < count; i++ ) {
+			const [x, y, z] = this.getPoint( pts, i )
+			const t = tStep * i
 
-		for ( let i = 0; i < n; i++ ) {
-			const p = get( i ), t = dt * i
-			pushPair( pos, p )
-			pushPair( counter, [t, t] )
-			side.push( 1, -1 )
+			positions.push( x, y, z, x, y, z )
+			counters.push( t, t )
+			sides.push( 1, -1 )
+
 			const w = this.widthCallback( t )
-			width.push( w, w )
-			uv.push( t, 0, t, 1 )
+			widths.push( w, w )
 
-			if ( i < n - 1 ) {
-				pushPair( prev, p )
+			uvs.push( t, 0, t, 1 )
+
+			if ( i < count - 1 ) {
+				previousPositions.push( x, y, z, x, y, z )
 				const o = i * 2
-				idx.push( o, o + 1, o + 2, o + 2, o + 1, o + 3 )
+				indices.push( o, o + 1, o + 2, o + 2, o + 1, o + 3 )
 			}
-			if ( i > 0 ) pushPair( next, p )
+
+			if ( i > 0 ) {
+				nextPositions.push( x, y, z, x, y, z )
+			}
 		}
 
-		// last next
-		if ( this.closeLoop ) pushPair( next, get( 1 ) )
-		else {
-			const a = get( n - 1 ), b = get( n - 2 )
-			pushPair( next, [2 * a[0] - b[0], 2 * a[1] - b[1], 2 * a[2] - b[2]] )
-		}
+		nextPositions.push( ...this.appendNext( pts, count ) )
 
-		// set all non-index attributes
 		const attrs = {
-			position: [pos, 3],
-			previous: [prev, 3],
-			next: [next, 3],
-			side: [side, 1],
-			width: [width, 1],
-			uv: [uv, 2],
-			counters: [counter, 1],
+			position: [positions, 3],
+			previous: [previousPositions, 3],
+			next: [nextPositions, 3],
+			side: [sides, 1],
+			width: [widths, 1],
+			uv: [uvs, 2],
+			counters: [counters, 1]
 		}
 
-		for ( const [name, [arr, itemSize, Type = Float32Array]] of Object.entries( attrs ) ) {
+		Object.entries( attrs ).forEach( ( [name, [arr, itemSize, Type = Float32Array]] ) => {
 			const array = new Type( arr )
 			const attr = new BufferAttribute( array, itemSize )
 			const old = this._attrs[name]
@@ -105,14 +162,20 @@ export class MeshLineGeometry extends BufferGeometry {
 				this._attrs[name] = attr
 				this.setAttribute( name, attr )
 			}
-		}
+		} )
 
-		// index only via setIndex
-		const indexAttr = new BufferAttribute( new Uint16Array( idx ), 1 )
-		this._attrs.index = indexAttr
-		this.setIndex( indexAttr )
-
+		this.setIndex( new BufferAttribute( new Uint16Array( indices ), 1 ) )
 		this.computeBoundingSphere()
 		this.computeBoundingBox()
 	}
+
+	// release GPU resources and attributes
+	dispose() {
+		this._attrs = {}
+		super.dispose()
+	}
+
+	// getters / setters at bottom
+	get points() { return this._points }
+	set points( v ) { this.setPoints( v ) }
 }
