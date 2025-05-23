@@ -102,69 +102,141 @@ export class MeshLineGeometry extends BufferGeometry {
 	// build/update all geometry attributes and index
 	build() {
 		const pts = this._points
-		const count = pts.length / 3
-		const tStep = count > 1 ? 1 / ( count - 1 ) : 0
+		const numPoints = pts.length / 3
+		const tStep = numPoints > 1 ? 1 / ( numPoints - 1 ) : 0
 
-		const previousPositions = this.initPrev( pts, count )
-		const nextPositions = []
+		// Calculate sizes for attribute arrays
+		const positionSize = numPoints * 3 * 2
+		const previousSize = ( numPoints + 1 ) * 3 * 2 // +1 for initPrev/appendNext
+		const nextSize = ( numPoints + 1 ) * 3 * 2     // +1 for initPrev/appendNext
+		const sideSize = numPoints * 2
+		const widthSize = numPoints * 2
+		const uvSize = numPoints * 2 * 2
+		const counterSize = numPoints * 2
+		const indexSize = ( numPoints - 1 ) * 6
 
-		const positions = []
-		const sides = []
-		const widths = []
-		const uvs = []
-		const counters = []
-		const indices = []
+		// Initialize Float32Arrays
+		const positions = new Float32Array( positionSize )
+		const previous = new Float32Array( previousSize )
+		const next = new Float32Array( nextSize )
+		const sides = new Float32Array( sideSize )
+		const widths = new Float32Array( widthSize )
+		const uvs = new Float32Array( uvSize )
+		const counters = new Float32Array( counterSize )
+		const indices = new Uint16Array( indexSize )
 
-		for ( let i = 0; i < count; i++ ) {
+		let posIdx = 0
+		let prevIdx = 0
+		let nextIdx = 0
+		let sideIdx = 0
+		let widthIdx = 0
+		let uvIdx = 0
+		let counterIdx = 0
+		let indicesIdx = 0
+
+		// Set initial previous positions
+		const initPrevArr = this.initPrev( pts, numPoints )
+		previous.set( initPrevArr, prevIdx )
+		prevIdx += initPrevArr.length
+
+		for ( let i = 0; i < numPoints; i++ ) {
 			const [x, y, z] = this.getPoint( pts, i )
 			const t = tStep * i
 
-			positions.push( x, y, z, x, y, z )
-			counters.push( t, t )
-			sides.push( 1, -1 )
+			// positions
+			positions[posIdx++] = x
+			positions[posIdx++] = y
+			positions[posIdx++] = z
+			positions[posIdx++] = x
+			positions[posIdx++] = y
+			positions[posIdx++] = z
 
+			// counters
+			counters[counterIdx++] = t
+			counters[counterIdx++] = t
+
+			// sides
+			sides[sideIdx++] = 1
+			sides[sideIdx++] = -1
+
+			// widths
 			const w = this.widthCallback( t )
-			widths.push( w, w )
+			widths[widthIdx++] = w
+			widths[widthIdx++] = w
 
-			uvs.push( t, 0, t, 1 )
+			// uvs
+			uvs[uvIdx++] = t
+			uvs[uvIdx++] = 0
+			uvs[uvIdx++] = t
+			uvs[uvIdx++] = 1
 
-			if ( i < count - 1 ) {
-				previousPositions.push( x, y, z, x, y, z )
+			if ( i < numPoints - 1 ) {
+				// previous (for all but the first point)
+				previous[prevIdx++] = x
+				previous[prevIdx++] = y
+				previous[prevIdx++] = z
+				previous[prevIdx++] = x
+				previous[prevIdx++] = y
+				previous[prevIdx++] = z
+
+				// indices
 				const o = i * 2
-				indices.push( o, o + 1, o + 2, o + 2, o + 1, o + 3 )
+				indices[indicesIdx++] = o
+				indices[indicesIdx++] = o + 1
+				indices[indicesIdx++] = o + 2
+				indices[indicesIdx++] = o + 2
+				indices[indicesIdx++] = o + 1
+				indices[indicesIdx++] = o + 3
 			}
 
 			if ( i > 0 ) {
-				nextPositions.push( x, y, z, x, y, z )
+				// next (for all but the last point)
+				next[nextIdx++] = x
+				next[nextIdx++] = y
+				next[nextIdx++] = z
+				next[nextIdx++] = x
+				next[nextIdx++] = y
+				next[nextIdx++] = z
 			}
 		}
 
-		nextPositions.push( ...this.appendNext( pts, count ) )
+		// Set final next positions
+		const appendNextArr = this.appendNext( pts, numPoints )
+		next.set( appendNextArr, nextIdx )
+		// nextIdx should already be at the correct position after the loop
 
-		const attrs = {
+		const attrsSetup = {
 			position: [positions, 3],
-			previous: [previousPositions, 3],
-			next: [nextPositions, 3],
+			previous: [previous, 3],
+			next: [next, 3],
 			side: [sides, 1],
 			width: [widths, 1],
 			uv: [uvs, 2],
 			counters: [counters, 1]
 		}
 
-		Object.entries( attrs ).forEach( ( [name, [arr, itemSize, Type = Float32Array]] ) => {
-			const array = new Type( arr )
+		Object.entries( attrsSetup ).forEach( ( [name, [array, itemSize]] ) => {
 			const attr = new BufferAttribute( array, itemSize )
 			const old = this._attrs[name]
-			if ( old && old.count === attr.count ) {
+			if ( old && old.count * old.itemSize === array.length ) { // Check total buffer size
 				old.copyArray( array )
 				old.needsUpdate = true
 			} else {
+				this.deleteAttribute( name ) // Remove old attribute if size changed
 				this._attrs[name] = attr
 				this.setAttribute( name, attr )
 			}
 		} )
 
-		this.setIndex( new BufferAttribute( new Uint16Array( indices ), 1 ) )
+		const indexAttr = new BufferAttribute( indices, 1 )
+		const oldIndex = this.getIndex()
+		if ( oldIndex && oldIndex.count === indexAttr.count ) {
+			oldIndex.copyArray( indices )
+			oldIndex.needsUpdate = true
+		} else {
+			this.setIndex( indexAttr )
+		}
+
 		this.computeBoundingSphere()
 		this.computeBoundingBox()
 	}
