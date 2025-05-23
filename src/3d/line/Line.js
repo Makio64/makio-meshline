@@ -15,9 +15,7 @@ export default class Line extends Mesh {
 			lineWidth: 0.3,
 			sizeAttenuation: false,
 			gradientColor: null,
-			useMap: false,
 			map: null,
-			useAlphaMap: false,
 			alphaMap: null,
 			dashCount: null,
 			dashRatio: null,
@@ -25,7 +23,8 @@ export default class Line extends Mesh {
 			opacity: 1,
 			alphaTest: 1,
 			transparent: false,
-			wireframe: false
+			wireframe: false,
+			mapOffset: null,
 		}
 
 		// Merge options with defaults
@@ -43,10 +42,9 @@ export default class Line extends Mesh {
 			lineWidth: config.lineWidth * ( config.sizeAttenuation ? 200 : 1 ),
 			sizeAttenuation: config.sizeAttenuation,
 			gradient: config.gradientColor ? new Color( config.gradientColor ) : null,
-			useMap: config.useMap,
 			map: config.map,
-			useAlphaMap: config.useAlphaMap,
 			alphaMap: config.alphaMap,
+			mapOffset: config.mapOffset,
 
 			// dash
 			dashCount: config.dashCount,

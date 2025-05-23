@@ -20,9 +20,8 @@ class MeshLineNodeMaterial extends NodeMaterial {
 		super()
 
 		// Auto-detect features based on provided parameters
-		const hasMap = parameters.map !== undefined && parameters.map !== null
-		const hasAlphaMap = parameters.alphaMap !== undefined && parameters.alphaMap !== null
 		const hasCustomOpacity = parameters.opacity !== undefined && parameters.opacity < 1
+		const hasAlphaMap = parameters.alphaMap !== undefined && parameters.alphaMap !== null
 
 		// Auto-set transparency when needed
 		const needsTransparency = hasAlphaMap || hasCustomOpacity || ( parameters.transparent === true )
@@ -33,9 +32,6 @@ class MeshLineNodeMaterial extends NodeMaterial {
 		this.depthTest = parameters.depthTest ?? true
 		this.wireframe = parameters.wireframe ?? false
 
-		// Auto-detected feature flags (simplified API)
-		this.useMap = parameters.useMap ?? hasMap
-		this.useAlphaMap = parameters.useAlphaMap ?? hasAlphaMap
 		this.alphaTest = parameters.alphaTest ?? 1
 		this.sizeAttenuation = parameters.sizeAttenuation ?? true
 
@@ -54,16 +50,8 @@ class MeshLineNodeMaterial extends NodeMaterial {
 		this.dashOffset = uniform( parameters.dashOffset ?? 0 )
 
 		this.repeat = uniform( parameters.repeat ?? new Vector2( 1, 1 ) )
+		this.mapOffset = uniform( parameters.mapOffset ?? new Vector2( 0, 0 ) )
 
-	}
-
-	// Helper methods to check if features are enabled
-	get hasGradient() {
-		return this.gradient.value !== null && this.gradient.value !== undefined
-	}
-
-	get hasDash() {
-		return this.dashCount.value !== null && this.dashCount.value !== undefined
 	}
 
 	dispose() {
@@ -84,7 +72,7 @@ class MeshLineNodeMaterial extends NodeMaterial {
 
 		// Only declare counters if needed
 		let counters
-		if ( this.hasGradient || this.hasDash ) {
+		if ( this.gradient.value || this.dashCount.value ) {
 			counters = attribute( 'counters', 'float' ).toVar( 'aCounters' )
 		}
 
@@ -93,7 +81,7 @@ class MeshLineNodeMaterial extends NodeMaterial {
 			varyingProperty( 'vec4', 'vColor' ).assign( vec4( this.color, 1 ) )
 
 			// Only assign vCounters if needed to reduce varying bandwidth
-			if ( this.hasGradient || this.hasDash ) {
+			if ( this.gradient.value || this.dashCount.value ) {
 				varyingProperty( 'float', 'vCounters' ).assign( counters )
 			}
 
@@ -138,7 +126,7 @@ class MeshLineNodeMaterial extends NodeMaterial {
 			}
 
 			let vCounters
-			if( this.hasGradient || this.hasDash ) {
+			if( this.gradient.value || this.dashCount.value ) {
 				vCounters = varyingProperty( 'float', 'vCounters' ).toVar()
 			}
 
@@ -147,18 +135,18 @@ class MeshLineNodeMaterial extends NodeMaterial {
 			if( this.colorNode ) {
 				diffuseColor.mulAssign( this.colorNode )
 			}
-			if( this.hasGradient ) {
+			if( this.gradient.value ) {
 				diffuseColor.rgb.assign( mix( diffuseColor.rgb, this.gradient, vCounters ) )
 			}
 
 			let uvCoords
-			if( this.useMap || this.useAlphaMap ) {
-				uvCoords = uv().mul( this.repeat ).toVar( 'uvCoords' )
+			if( this.map.value || this.alphaMap.value ) {
+				uvCoords = uv().mul( this.repeat ).add( this.mapOffset ).toVar( 'uvCoords' )
 			}
-			if ( this.useMap ) {
+			if ( this.map.value ) {
 				diffuseColor.mulAssign( this.map.sample( uvCoords ) )
 			}
-			if ( this.useAlphaMap ) {
+			if ( this.alphaMap.value ) {
 				diffuseColor.a.mulAssign( this.alphaMap.sample( uvCoords ).b )
 			}
 
@@ -166,7 +154,7 @@ class MeshLineNodeMaterial extends NodeMaterial {
 				Discard( diffuseColor.a.lessThan( this.alphaTest ) )
 			}
 
-			if( this.hasDash ) {
+			if( this.dashCount.value ) {
 				const cyclePosition = mod( vCounters.mul( this.dashCount ).add( this.dashOffset ), float( 1 ) )
 				// dashLength represents a dash portion: 0.1 = 10% dash, 90% gap
 				const dashMask = step( cyclePosition, this.dashRatio )
@@ -194,8 +182,6 @@ class MeshLineNodeMaterial extends NodeMaterial {
 		this.wireframe = source.wireframe
 
 		// Copy feature flags
-		this.useMap = source.useMap
-		this.useAlphaMap = source.useAlphaMap
 		this.alphaTest = source.alphaTest
 		this.sizeAttenuation = source.sizeAttenuation
 
@@ -213,6 +199,7 @@ class MeshLineNodeMaterial extends NodeMaterial {
 		source.color.value && this.color.value.copy( source.color.value )
 		source.resolution.value && this.resolution.value.copy( source.resolution.value )
 		source.repeat.value && this.repeat.value.copy( source.repeat.value )
+		source.mapOffset.value && this.mapOffset.value.copy( source.mapOffset.value )
 
 		return this
 	}
