@@ -41,9 +41,11 @@ class MeshLineNodeMaterial extends NodeMaterial {
 		this.gradient = uniform( parameters.gradient ?? new Color( 0xff0000 ) )
 		this.opacity = uniform( parameters.opacity ?? 1 )
 		this.resolution = uniform( parameters.resolution ?? new Vector2( 1 ) )
-		this.dashArray = uniform( parameters.dashArray ?? 0 )
+
+		this.dashCount = uniform( parameters.dashCount ?? 4 )
+		this.dashRatio = uniform( parameters.dashRatio ?? parameters.dashLength ?? 0.5 )
 		this.dashOffset = uniform( parameters.dashOffset ?? 0 )
-		this.dashRatio = uniform( parameters.dashRatio ?? 0.5 )
+
 		this.repeat = uniform( parameters.repeat ?? new Vector2( 1, 1 ) )
 
 	}
@@ -148,7 +150,10 @@ class MeshLineNodeMaterial extends NodeMaterial {
 			}
 
 			if( this.useDash ) {
-				diffuseColor.a.mulAssign( ceil( mod( vCounters.add( this.dashOffset ), this.dashArray ).sub( this.dashArray.mul( this.dashRatio ) ) ) )
+				const cyclePosition = mod( vCounters.mul( this.dashCount ).add( this.dashOffset ), float( 1 ) )
+				// dashLength now directly represents dash portion: 0.1 = 10% dash, 90% gap
+				const dashMask = step( cyclePosition, this.dashRatio )
+				diffuseColor.a.mulAssign( dashMask )
 			}
 
 			// Apply opacity
@@ -174,9 +179,9 @@ class MeshLineNodeMaterial extends NodeMaterial {
 		this.opacity.value = source.opacity.value
 		this.resolution.value.copy( source.resolution.value )
 		this.sizeAttenuation = source.sizeAttenuation
-		this.dashArray.value = source.dashArray.value
-		this.dashOffset.value = source.dashOffset.value
+		this.dashCount.value = source.dashCount.value
 		this.dashRatio.value = source.dashRatio.value
+		this.dashOffset.value = source.dashOffset.value
 		this.useDash = source.useDash
 		this.useGradient = source.useGradient
 		this.alphaTest = source.alphaTest

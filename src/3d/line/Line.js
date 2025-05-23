@@ -14,26 +14,32 @@ export default class Line extends Mesh {
 
 		let sizeAttenuation = false
 		let material = new MeshLineNodeMaterial( {
-			color: color,
+
+			// line width
 			lineWidth: 0.3 * ( sizeAttenuation ? 200 : 1 ),
 			sizeAttenuation: sizeAttenuation,
+
+			// color
+			color: color,
 			useGradient: true,
 			useMap: false,
-			useAlphaMap: false,
-			wireframe: false,
-			// map,
-			// alphaMap: map,
+			map: null,
 
-			useDash: false,
-			dashOffset: 0.1,
-			dashArray: 0.1,
-			dashRatio: 0.1,
-
+			// alpha
 			opacity: 1,
-			alphaTest: 0.1,
+			alphaTest: 1,
+			useAlphaMap: false,
+			alphaMap: null,
+
+			// dash
+			useDash: true,
+			dashCount: 16,
+			dashRatio: 0.9,
+			dashOffset: 0,
+
+			// classic three.js properties
 			transparent: true,
-			depthWrite: true,
-			depthTest: true,
+			wireframe: false,
 		} )
 
 
