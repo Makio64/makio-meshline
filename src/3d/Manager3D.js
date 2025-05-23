@@ -40,10 +40,10 @@ class Manager3D {
 		this.lines = []
 
 		const lineConfigs = [
-			{ shape: 'circle', segments: 100, isClose: false, zPosition: 0, color: 0xff0000 },
-			{ shape: 'circle', segments: 100, isClose: true,  zPosition: 1, color: 0x00ff00 },
-			{ shape: 'square', segments: 4, isClose: false, zPosition: 2, color: 0x0000ff },
-			{ shape: 'square', segments: 4, isClose: true,  zPosition: 3, color: 0xffff00 },
+			{ shape: 'circle', segments: 100, isClose: true,  zPosition: 0, color: 0x00ff00 },
+			// { shape: 'circle', segments: 100, isClose: false, zPosition: 1, color: 0xff0000 },
+			// { shape: 'square', segments: 4, isClose: false, zPosition: 2, color: 0x0000ff },
+			// { shape: 'square', segments: 4, isClose: true,  zPosition: 3, color: 0xffff00 },
 		]
 
 		lineConfigs.forEach( config => {

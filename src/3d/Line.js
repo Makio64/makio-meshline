@@ -18,11 +18,11 @@ export default class Line extends Mesh {
 		}
 		geometry.setPoints( new Float32Array( positions ), undefined, isLooped )
 
+		let sizeAttenuation = false
 		let material = new MeshLineNodeMaterial( {
 			color: color,
-			lineWidth: 0.3,
-			sizeAttenuation: 1,
-			useGradient: true,
+			lineWidth: 0.3 * ( sizeAttenuation ? 200 : 1 ),
+			sizeAttenuation: sizeAttenuation,
 			useMap: false,
 			useAlphaMap: false,
 			wireframe: false,
@@ -129,25 +129,5 @@ export const squarePositions = ( segments = 1, zPosition = 0 ) => {
 			positions.push( x, y, zPosition )
 		}
 	}
-	// For a non-looped square, the last point (which would close it) should not be automatically added by squarePositions
-	// if it's meant to be open. The MeshLineGeometry's loop parameter will handle closing if needed.
-	// However, to ensure the visual square is complete for an *open* square with segments on each side,
-	// we need to add the very first point at the end if it's not looped,
-	// but MeshLineGeometry handles the final segment for looped lines implicitly.
-
-	// If the shape is intended to be "open" but still form a full square visually before MeshLine processes it,
-	// we might need an extra point. But let's rely on MeshLineGeometry's looping.
-	// The current squarePositions generates points for the 4 sides.
-	// If !isLooped, it will draw 3 segments. If isLooped, it will draw 4.
-	// For an open square, we want all 4 sides drawn but not connected.
-	// The `MeshLineGeometry` with `loop=false` will draw `numPoints - 1` segments.
-	// So, if `squarePositions` returns N points for an open square, it will draw N-1 line segments.
-	// For a square with `s` segments per side, it generates `4*s` points.
-	// If we want an open square showing all 4 sides, we need `4*s` points that trace the square
-	// and `MeshLineGeometry` with `loop=false`.
-	// If we want a closed square, `MeshLineGeometry` with `loop=true` will connect the last point to the first.
-
-	// The `segments` parameter for `squarePositions` will now mean segments *per side*.
-	// So, total points will be 4 * segments.
 	return positions
 }
