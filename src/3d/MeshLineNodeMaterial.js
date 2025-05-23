@@ -11,7 +11,7 @@ class MeshLineNodeMaterial extends NodeMaterial {
 	constructor( parameters = {} ) {
 		super()
 
-		// class properties
+		// classic properties
 		this.transparent = parameters.transparent ?? this.opacity.value < 1
 		this.depthWrite = parameters.depthWrite ?? !this.transparent
 		this.depthTest = parameters.depthTest ?? !this.transparent
@@ -121,14 +121,11 @@ class MeshLineNodeMaterial extends NodeMaterial {
 		this.fragmentNode = Fn( () => {
 			const vCounters = varyingProperty( 'float', 'vCounters' ).toVar()
 
-			let diffuseColor
-			if( this.colorNode == null ) {
-				const vColor = varyingProperty( 'vec4', 'vColor'  ).toVar()
-				diffuseColor = vColor.toVar()
-			} else {
-				diffuseColor = this.colorNode.toVar()
-			}
+			let diffuseColor = varyingProperty( 'vec4', 'vColor'  ).toVar( 'diffuseColor' )
 
+			if( this.colorNode ) {
+				diffuseColor.mulAssign( this.colorNode )
+			}
 			if( this.useGradient ) {
 				diffuseColor.rgb.assign( mix( diffuseColor.rgb, gradient, vCounters ) )
 			}

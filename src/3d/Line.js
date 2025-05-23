@@ -23,6 +23,7 @@ export default class Line extends Mesh {
 			color: color,
 			lineWidth: 0.3 * ( sizeAttenuation ? 200 : 1 ),
 			sizeAttenuation: sizeAttenuation,
+			useGradient: true,
 			useMap: false,
 			useAlphaMap: false,
 			wireframe: false,
