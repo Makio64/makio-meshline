@@ -1,4 +1,4 @@
-import { step, uniform, uv } from "three/tsl"
+import { Fn, step, uniform, uv } from "three/tsl"
 import { MeshLineGeometry } from "./MeshLineGeometry"
 import { MeshLineNodeMaterial } from "./MeshLineNodeMaterial"
 import { Mesh, Vector3, Color } from "three"
@@ -14,15 +14,13 @@ export default class Line extends Mesh {
 			color: 0xffffff,
 			lineWidth: 0.3,
 			sizeAttenuation: false,
-			useGradient: false,
-			gradientColor: 0xff0000,
+			gradientColor: null,
 			useMap: false,
 			map: null,
 			useAlphaMap: false,
 			alphaMap: null,
-			useDash: false,
-			dashCount: 4,
-			dashRatio: 0.5,
+			dashCount: null,
+			dashRatio: null,
 			dashOffset: 0,
 			opacity: 1,
 			alphaTest: 1,
@@ -44,15 +42,13 @@ export default class Line extends Mesh {
 
 			lineWidth: config.lineWidth * ( config.sizeAttenuation ? 200 : 1 ),
 			sizeAttenuation: config.sizeAttenuation,
-			useGradient: config.useGradient,
-			gradient: new Color( config.gradientColor ),
+			gradient: config.gradientColor ? new Color( config.gradientColor ) : null,
 			useMap: config.useMap,
 			map: config.map,
 			useAlphaMap: config.useAlphaMap,
 			alphaMap: config.alphaMap,
 
 			// dash
-			useDash: config.useDash,
 			dashCount: config.dashCount,
 			dashRatio: config.dashRatio,
 			dashOffset: config.dashOffset,
@@ -65,7 +61,13 @@ export default class Line extends Mesh {
 		this.percent = uniform( 0 )
 		this.percent2 = uniform( 1 )
 		this.opacity = uniform( 1 )
-		material.opacityNode = step( uv().x, this.percent  ).mul( step( uv().x.oneMinus(), this.percent2  ) ).mul( this.opacity )
+
+		// material.opacityNode = Fn( ()=>{
+		// 	return step( uv().x, this.percent  ).mul( step( uv().x.oneMinus(), this.percent2  ) ).mul( this.opacity ).toVar( 'opacity' )
+		// } )()
+		material.discardConditionNode = Fn( ()=>{
+			return step( uv().x, this.percent  ).mul( step( uv().x.oneMinus(), this.percent2  ) ).mul( this.opacity ).lessThan( 0.001 )
+		} )()
 
 		this.frustumCulled = false
 

@@ -22,25 +22,20 @@ class MeshLineNodeMaterial extends NodeMaterial {
 		// Auto-detect features based on provided parameters
 		const hasMap = parameters.map !== undefined && parameters.map !== null
 		const hasAlphaMap = parameters.alphaMap !== undefined && parameters.alphaMap !== null
-		const hasGradient = parameters.gradient !== undefined && parameters.gradient !== null
 		const hasCustomOpacity = parameters.opacity !== undefined && parameters.opacity < 1
-		const hasDash = ( parameters.dashCount !== undefined && parameters.dashCount !== null ) || parameters.useDash === true
 
 		// Auto-set transparency when needed
 		const needsTransparency = hasAlphaMap || hasCustomOpacity || ( parameters.transparent === true )
 
-
 		// classic properties
 		this.transparent = parameters.transparent ?? needsTransparency
-		this.depthWrite = parameters.depthWrite ?? !this.transparent
-		this.depthTest = parameters.depthTest ?? !this.transparent
+		this.depthWrite = parameters.depthWrite ?? true
+		this.depthTest = parameters.depthTest ?? true
 		this.wireframe = parameters.wireframe ?? false
 
 		// Auto-detected feature flags (simplified API)
 		this.useMap = parameters.useMap ?? hasMap
 		this.useAlphaMap = parameters.useAlphaMap ?? hasAlphaMap
-		this.useDash = parameters.useDash ?? hasDash
-		this.useGradient = parameters.useGradient ?? hasGradient
 		this.alphaTest = parameters.alphaTest ?? 1
 		this.sizeAttenuation = parameters.sizeAttenuation ?? true
 
@@ -49,17 +44,26 @@ class MeshLineNodeMaterial extends NodeMaterial {
 		this.map = texture( parameters.map ?? null )
 		this.alphaMap = texture( parameters.alphaMap ?? null )
 		this.color = uniform( new Color( parameters.color ?? 0xffffff ) )
-		this.gradient = uniform( parameters.gradient ?? new Color( 0xff0000 ) )
+		this.gradient = uniform( parameters.gradient ?? null )
 		this.opacity = uniform( parameters.opacity ?? 1 )
 		this.resolution = uniform( parameters.resolution ?? new Vector2( 1 ) )
 
 		// Dash API
-		this.dashCount = uniform( parameters.dashCount ?? 4 )
-		this.dashRatio = uniform( parameters.dashRatio ?? parameters.dashLength ?? 0.5 )
+		this.dashCount = uniform( parameters.dashCount ?? null )
+		this.dashRatio = uniform( parameters.dashRatio ?? parameters.dashLength ?? null )
 		this.dashOffset = uniform( parameters.dashOffset ?? 0 )
 
 		this.repeat = uniform( parameters.repeat ?? new Vector2( 1, 1 ) )
 
+	}
+
+	// Helper methods to check if features are enabled
+	get hasGradient() {
+		return this.gradient.value !== null && this.gradient.value !== undefined
+	}
+
+	get hasDash() {
+		return this.dashCount.value !== null && this.dashCount.value !== undefined
 	}
 
 	dispose() {
@@ -80,7 +84,7 @@ class MeshLineNodeMaterial extends NodeMaterial {
 
 		// Only declare counters if needed
 		let counters
-		if ( this.useGradient || this.useDash ) {
+		if ( this.hasGradient || this.hasDash ) {
 			counters = attribute( 'counters', 'float' ).toVar( 'aCounters' )
 		}
 
@@ -89,7 +93,7 @@ class MeshLineNodeMaterial extends NodeMaterial {
 			varyingProperty( 'vec4', 'vColor' ).assign( vec4( this.color, 1 ) )
 
 			// Only assign vCounters if needed to reduce varying bandwidth
-			if ( this.useGradient || this.useDash ) {
+			if ( this.hasGradient || this.hasDash ) {
 				varyingProperty( 'float', 'vCounters' ).assign( counters )
 			}
 
@@ -129,8 +133,12 @@ class MeshLineNodeMaterial extends NodeMaterial {
 
 		this.fragmentNode = Fn( () => {
 
+			if( this.discardConditionNode ) {
+				Discard( this.discardConditionNode )
+			}
+
 			let vCounters
-			if( this.useGradient || this.useDash ) {
+			if( this.hasGradient || this.hasDash ) {
 				vCounters = varyingProperty( 'float', 'vCounters' ).toVar()
 			}
 
@@ -139,7 +147,7 @@ class MeshLineNodeMaterial extends NodeMaterial {
 			if( this.colorNode ) {
 				diffuseColor.mulAssign( this.colorNode )
 			}
-			if( this.useGradient ) {
+			if( this.hasGradient ) {
 				diffuseColor.rgb.assign( mix( diffuseColor.rgb, this.gradient, vCounters ) )
 			}
 
@@ -158,7 +166,7 @@ class MeshLineNodeMaterial extends NodeMaterial {
 				Discard( diffuseColor.a.lessThan( this.alphaTest ) )
 			}
 
-			if( this.useDash ) {
+			if( this.hasDash ) {
 				const cyclePosition = mod( vCounters.mul( this.dashCount ).add( this.dashOffset ), float( 1 ) )
 				// dashLength represents a dash portion: 0.1 = 10% dash, 90% gap
 				const dashMask = step( cyclePosition, this.dashRatio )
@@ -178,23 +186,34 @@ class MeshLineNodeMaterial extends NodeMaterial {
 
 	copy( source ) {
 		super.copy( source )
-		this.lineWidth.value = source.lineWidth.value
-		this.map.value = source.map.value
+
+		// Copy classic material properties
+		this.transparent = source.transparent
+		this.depthWrite = source.depthWrite
+		this.depthTest = source.depthTest
+		this.wireframe = source.wireframe
+
+		// Copy feature flags
 		this.useMap = source.useMap
-		this.alphaMap.value = source.alphaMap.value
 		this.useAlphaMap = source.useAlphaMap
-		this.color.value.copy( source.color.value )
-		this.gradient.value = source.gradient.value
-		this.opacity.value = source.opacity.value
-		this.resolution.value.copy( source.resolution.value )
+		this.alphaTest = source.alphaTest
 		this.sizeAttenuation = source.sizeAttenuation
+
+		// Copy uniform values
+		this.lineWidth.value = source.lineWidth.value
+		this.opacity.value = source.opacity.value
+		this.map.value = source.map.value
+		this.alphaMap.value = source.alphaMap.value
+		this.gradient.value = source.gradient.value
 		this.dashCount.value = source.dashCount.value
 		this.dashRatio.value = source.dashRatio.value
 		this.dashOffset.value = source.dashOffset.value
-		this.useDash = source.useDash
-		this.useGradient = source.useGradient
-		this.alphaTest = source.alphaTest
-		this.repeat.value.copy( source.repeat.value )
+
+		// Copy object uniforms with optional chaining
+		source.color.value && this.color.value.copy( source.color.value )
+		source.resolution.value && this.resolution.value.copy( source.resolution.value )
+		source.repeat.value && this.repeat.value.copy( source.repeat.value )
+
 		return this
 	}
 
