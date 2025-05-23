@@ -5,13 +5,11 @@ import { float, vec4, vec2, Fn, uniform, uv, modelViewMatrix, normalize, If, pos
 class MeshLineNodeMaterial extends NodeMaterial {
 
 	static get type() {
-
 		return 'MeshLineNodeMaterial'
-
 	}
 
-	constructor( parameters ) {
-		super( )
+	constructor( parameters = {} ) {
+		super()
 
 		this.lineWidth = uniform( parameters.lineWidth ?? 1 )
 		this.map = uniform( parameters.map ?? null )
@@ -21,7 +19,7 @@ class MeshLineNodeMaterial extends NodeMaterial {
 		this.color = uniform( new Color( parameters.color ?? 0xffffff ) )
 		this.gradient = uniform( parameters.gradient ?? new Color( 0xff0000 ) )
 		this.opacity = uniform( parameters.opacity ?? 1 )
-		this.resolution = uniform( parameters.resolution ?? new Vector2( window.innerWidth / window.innerHeight, 1 ) )
+		this.resolution = uniform( parameters.resolution ?? new Vector2( window.innerWidth, window.innerHeight ) )
 		this.sizeAttenuation = uniform( parameters.sizeAttenuation ?? 1 )
 		this.dashArray = uniform( parameters.dashArray ?? 0 )
 		this.dashOffset = uniform( parameters.dashOffset ?? 0 )
@@ -36,6 +34,10 @@ class MeshLineNodeMaterial extends NodeMaterial {
 		this.depthWrite = parameters.depthWrite ?? !this.transparent
 		this.depthTest = parameters.depthTest ?? !this.transparent
 		this.wireframe = parameters.wireframe ?? false
+	}
+
+	dispose() {
+		super.dispose()
 	}
 
 	setup( builder ) {

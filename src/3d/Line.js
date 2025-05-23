@@ -1,7 +1,7 @@
 import { step, uniform, uv } from "three/tsl"
 import { MeshLineGeometry } from "./MeshLineGeometry"
 import { MeshLineNodeMaterial } from "./MeshLineNodeMaterial"
-import { Vector2, Mesh, Vector3 } from "three"
+import { Mesh, Vector3 } from "three"
 import stage3d from "@/makio/three/stage3d"
 import { animate } from "animejs"
 
@@ -49,6 +49,17 @@ export default class Line extends Mesh {
 		material.opacityNode = step( uv().x, this.percent  ).mul( step( uv().x.oneMinus(), this.percent2  ) ).mul( this.opacity )
 
 		this.frustumCulled = false
+
+		// Bind and add resize listener
+		this._handleResize = this._handleResize.bind( this )
+		window.addEventListener( 'resize', this._handleResize, false )
+		this._handleResize()
+	}
+
+	_handleResize() {
+		if ( this.material && this.material.resolution ) {
+			this.material.resolution.value.set( window.innerWidth, window.innerHeight )
+		}
 	}
 
 	show = ()=>{
@@ -85,9 +96,11 @@ export default class Line extends Mesh {
 	}
 
 	dispose = ()=>{
-		stage3d.remove( this )
-		this.geometry.dispose()
-		this.material.dispose()
+
+		window.removeEventListener( 'resize', this._handleResize, false )
+		this.parent?.remove( this )
+		this.geometry?.dispose()
+		this.material?.dispose()
 	}
 }
 
