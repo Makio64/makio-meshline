@@ -118,13 +118,8 @@ html
 			transform scale(1.2)
 			opacity 0
 
-	.three, .pixi
+	.three
 		position absolute
 		inset 0
 		z-index -1
-	//Three canvas under pixi canvas for animation purpose only
-	.three
-		z-index -2
-	.pixi
-		opacity 0 // for first transition
 </style>
