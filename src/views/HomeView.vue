@@ -25,9 +25,6 @@ export default {
 		},
 	},
 	methods: {
-		goToPixi() {
-			this.$router.push( '/pixi' )
-		},
 		async transitionIn() {
 			animate( this.elts, { opacity: [0, 1], translateY: [50, 0], duration: 1.1, delay: stagger( 0.15, { start: 0.5 } ), ease: 'outQuad' } )
 			Manager3D.show()
