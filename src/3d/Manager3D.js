@@ -1,29 +1,35 @@
 import { animate } from 'animejs'
 
-import { Mesh, BoxGeometry, MeshBasicNodeMaterial, AmbientLight, DirectionalLight, EquirectangularReflectionMapping, PMREMGenerator } from 'three/webgpu'
+import { AmbientLight, DirectionalLight, EquirectangularReflectionMapping, PMREMGenerator, CanvasTexture, PlaneGeometry, MeshBasicMaterial, Mesh } from 'three/webgpu'
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js'
 
 import OrbitControl from '@/makio/three/controls/OrbitControl'
 import stage3d from '@/makio/three/stage3d'
 import Assets from '@/makio/three/Assets'
 import { stage } from '@/makio/core/stage'
 import { UltraHDRLoader } from 'three/addons/loaders/UltraHDRLoader'
-import { color, uv } from 'three/tsl'
-import { gradient } from '@/makio/tsl/gradient'
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment'
 import Line from './line/Line'
 import { circlePositions } from './line/positions/circlePositions'
+
 class Manager3D {
 	constructor() {
 		this.isInit = false
 		this.lines = []
+		this.labels = []
+		this.cssRenderer = null
+		this.checkerTexture = null
+		this.backgroundPlane = null
+		this.backgroundPlanes = []
 	}
 
 	async init() {
 		if( !this.isInit ) {
 			this.isInit = true
 			await stage3d.initRender()
-			stage3d.control = new OrbitControl( stage3d.camera, 5 )
+			stage3d.control = new OrbitControl( stage3d.camera, 13 )
 			this.addLight()
+			this.initCSSRenderer()
 			// await this.loadHDR()
 			await this.initHDR()
 			await this.loadAssets()
@@ -32,32 +38,138 @@ class Manager3D {
 		this.initScene()
 	}
 
+	initCSSRenderer() {
+		this.cssRenderer = new CSS2DRenderer()
+		this.cssRenderer.setSize( window.innerWidth, window.innerHeight )
+		this.cssRenderer.domElement.style.position = 'absolute'
+		this.cssRenderer.domElement.style.top = '0px'
+		this.cssRenderer.domElement.style.pointerEvents = 'none'
+		document.body.appendChild( this.cssRenderer.domElement )
+
+		// Handle resize
+		window.addEventListener( 'resize', () => {
+			this.cssRenderer.setSize( window.innerWidth, window.innerHeight )
+		}, false )
+	}
+
 	initScene() {
-		// Clear existing lines if any (e.g., during a hot-reload or re-initialization)
+		// Clear existing lines and labels
 		this.lines.forEach( line => {
 			stage3d.remove( line )
-			line.dispose() // Assuming Line has a dispose method
+			line.dispose()
 		} )
+		this.labels.forEach( label => {
+			stage3d.remove( label )
+		} )
+		if ( this.backgroundPlane ) {
+			stage3d.remove( this.backgroundPlane )
+		}
+		// Clear additional background planes
+		if ( this.backgroundPlanes ) {
+			this.backgroundPlanes.forEach( plane => {
+				stage3d.remove( plane )
+			} )
+			this.backgroundPlanes = []
+		}
 		this.lines = []
+		this.labels = []
 
+		// Create textures
+		this.checkerTexture = this.createCheckerTexture() // For background planes
+		this.mapTexture = this.createStripeTexture() // Better for line mapping
+		this.alphaTexture = this.createAlphaTexture() // Better for alpha mapping
+
+		// 16 different configurations to test all features
 		const configs = [
-			{ isClose: true, color: 0x00ff00 },
-			{ isClose: false, color: 0x00ff00 },
+			{ title: "Basic", color: 0xff0000, lineWidth: 0.2, isClose: true },
+			{ title: "Thick Line", color: 0x00ff00, lineWidth: 0.8, isClose: true },
+			{ title: "Open", color: 0x0000ff, isClose: false },
+			{ title: "Gradient", color: 0xff00ff, useGradient: true, gradientColor: 0x00ffff, isClose: true },
+
+			{ title: "Dashed 4", color: 0xffff00, useDash: true, dashCount: 4, dashRatio: 0.5, isClose: true },
+			{ title: "Dashed 8", color: 0xff8000, useDash: true, dashCount: 8, dashRatio: 0.6, isClose: true },
+			{ title: "Dashed 16", color: 0x8000ff, useDash: true, dashCount: 16, dashRatio: 0.3, isClose: true },
+			{ title: "Long Dashes", color: 0x00ff80, useDash: true, dashCount: 6, dashRatio: 0.8, isClose: true },
+
+			{ title: "Map Texture", color: 0xff4080, useMap: true, map: this.mapTexture, lineWidth: 0.4, isClose: true },
+			{ title: "Alpha Map", color: 0xff40ff, useAlphaMap: true, alphaMap: this.alphaTexture, lineWidth: 0.4, isClose: true },
+			{ title: "Dash + Gradient", color: 0x80ff40, isClose: true, useDash: true, dashCount: 10, dashRatio: 0.7, useGradient: true, gradientColor: 0xff0040 },
+			{ title: "Gradient Only", color: 0xff0080, isClose: true, useGradient: true, gradientColor: 0x0080ff },
+
+			{ title: "Opacity", color: 0x8080ff, opacity: 0.6, lineWidth: 0.4, isClose: true },
+			{ title: "Wireframe", color: 0xff8080, wireframe: true, lineWidth: 0.3, isClose: true },
+			{ title: "Size Atten.", color: 0x80ff80, sizeAttenuation: true, lineWidth: 0.5, isClose: true },
+			{ title: "All Features", color: 0xffffff, useGradient: true, gradientColor: 0xff0000, useDash: true, dashCount: 8, dashRatio: 0.5, isClose: true, lineWidth: 0.5 }
 		]
 
-		let positions = circlePositions( 64 )
+		const positions = circlePositions( 64 )
+		const gridSize = 4 // 4x4 grid
+		const spacing = 3
 
 		for( let i = 0; i < configs.length; i++ ) {
-			let config = configs[ i ]
-			const line = new Line( positions, config.isClose )
-			line.position.x = i * 2.5 - configs.length * 1.25 * .5
+			const config = configs[i]
+			const row = Math.floor( i / gridSize )
+			const col = i % gridSize
+
+			// Create line with inverted Y (so Basic is top-left)
+			const line = new Line( positions, config )
+			line.position.x = ( col - gridSize / 2 + 0.5 ) * spacing
+			line.position.y = -( row - gridSize / 2 + 0.5 ) * spacing  // Inverted Y
+			line.position.z = 0
+
 			this.lines.push( line )
 			stage3d.add( line )
+
+			// Create background plane for Alpha Map example (index 9)
+			if ( i === 9 && config.title === "Alpha Map" ) {
+				const planeGeometry = new PlaneGeometry( 2.2, 2.2 )
+				const planeMaterial = new MeshBasicMaterial( {
+					map: this.checkerTexture,
+					transparent: false
+				} )
+				const alphaBackgroundPlane = new Mesh( planeGeometry, planeMaterial )
+				alphaBackgroundPlane.position.copy( line.position )
+				alphaBackgroundPlane.position.z = -0.3 // Behind the line
+
+				// Store reference for cleanup
+				if ( !this.backgroundPlanes ) this.backgroundPlanes = []
+				this.backgroundPlanes.push( alphaBackgroundPlane )
+				stage3d.add( alphaBackgroundPlane )
+			}
+
+			// Create background plane for opacity example (index 12)
+			if ( i === 12 && config.title === "Opacity" ) {
+				const planeGeometry = new PlaneGeometry( 2.2, 2.2 )
+				const planeMaterial = new MeshBasicMaterial( {
+					map: this.checkerTexture,
+					transparent: false
+				} )
+				this.backgroundPlane = new Mesh( planeGeometry, planeMaterial )
+				this.backgroundPlane.position.copy( line.position )
+				this.backgroundPlane.position.z = -0.3 // Further behind the line
+				stage3d.add( this.backgroundPlane )
+			}
+
+			// Create label
+			const labelDiv = document.createElement( 'div' )
+			labelDiv.className = 'line-label'
+			labelDiv.textContent = config.title
+			labelDiv.style.color = 'white'
+			labelDiv.style.fontFamily = 'Arial, sans-serif'
+			labelDiv.style.fontSize = '12px'
+			labelDiv.style.backgroundColor = 'rgba(0,0,0,0.7)'
+			labelDiv.style.padding = '2px 6px'
+			labelDiv.style.borderRadius = '3px'
+			labelDiv.style.textAlign = 'center'
+			labelDiv.style.minWidth = '60px'
+
+			const label = new CSS2DObject( labelDiv )
+			label.position.set( line.position.x, line.position.y - 1.2, line.position.z )
+
+			this.labels.push( label )
+			stage3d.add( label )
 		}
 
-		this.box = new Mesh( new BoxGeometry( 1, 1, 1 ), new MeshBasicNodeMaterial( { wireframe: false, transparent: true, opacity: 0, color: 0xff0000 } ) )
-		this.box.material.colorNode = gradient( [color( 0xff0000 ), color( 0x00ff00 ), color( 0x0000ff ), color( 0x000000 )], [0.5, 0.51, 0.6, 1], uv().y )
-		stage3d.add( this.box )
 		stage.onUpdate.add( this.update )
 	}
 
@@ -95,9 +207,11 @@ class Manager3D {
 		} )
 	}
 
-
 	update = ( dt ) => {
-		this.box.rotateX( 0.01 )
+		// Render CSS labels
+		if ( this.cssRenderer ) {
+			this.cssRenderer.render( stage3d.scene, stage3d.camera )
+		}
 		// If lines need animation, update them here
 		// this.lines.forEach(line => { /* update line */ });
 	}
@@ -105,37 +219,145 @@ class Manager3D {
 	show() {
 		this.lines.forEach( ( line, i ) => {
 			// Animate lines in, perhaps with a stagger
-			animate( line.percent, { duration: 1, value: 1, delay: i * 0.2, ease: 'easeOut' } )
+			animate( line.percent, { duration: 1, value: 1, delay: i * 0.05, ease: 'easeOut' } )
 		} )
-		animate( this.box.material, { duration: 1, opacity: 1 } )
-		animate( this.box.position, { duration: 1, y: [-3, 0], ease: 'outQuad' } )
 	}
 
 	hide( cb ) {
 		this.lines.forEach( ( line, i ) => {
 			// Animate lines out
-			animate( line.percent2, { duration: 1, value: 0, delay: i * 0.1, ease: 'easeOut' } )
+			animate( line.percent2, { duration: 1, value: 0, delay: i * 0.02, ease: 'easeOut' } )
 		} )
-		animate( this.box.material, { duration: 1, opacity: 0 } )
-		animate( this.box.position, { duration: 1, y: 3, ease: 'inQuad', onComplete: () => {
-			this.disposeLines() // Dispose lines before general dispose or as part of it
+		setTimeout( () => {
+			this.disposeLines()
 			this.dispose()
 			if( cb ) cb()
-		} } )
+		}, 1000 + this.lines.length * 20 )
 	}
 
 	disposeLines() {
 		this.lines.forEach( line => {
 			stage3d.remove( line )
-			line.dispose() // Ensure Line has a dispose method that cleans up geometry and material
+			line.dispose()
 		} )
+		this.labels.forEach( label => {
+			stage3d.remove( label )
+		} )
+		if ( this.backgroundPlane ) {
+			stage3d.remove( this.backgroundPlane )
+			this.backgroundPlane.geometry.dispose()
+			this.backgroundPlane.material.dispose()
+			this.backgroundPlane = null
+		}
+		// Dispose additional background planes
+		if ( this.backgroundPlanes ) {
+			this.backgroundPlanes.forEach( plane => {
+				stage3d.remove( plane )
+				plane.geometry.dispose()
+				plane.material.dispose()
+			} )
+			this.backgroundPlanes = []
+		}
 		this.lines = []
+		this.labels = []
 	}
 
 	dispose() {
-		stage3d.remove( this.box )
-		// this.disposeLines() // Call this if not called elsewhere before dispose
+		// Remove CSS renderer
+		if ( this.cssRenderer && this.cssRenderer.domElement.parentNode ) {
+			this.cssRenderer.domElement.parentNode.removeChild( this.cssRenderer.domElement )
+		}
 		stage.onUpdate.remove( this.update )
+	}
+
+	// Create a checker pattern texture
+	createCheckerTexture( size = 64, divisions = 8 ) {
+		const canvas = document.createElement( 'canvas' )
+		canvas.width = size
+		canvas.height = size
+		const ctx = canvas.getContext( '2d' )
+
+		const squareSize = size / divisions
+
+		for ( let i = 0; i < divisions; i++ ) {
+			for ( let j = 0; j < divisions; j++ ) {
+				const isWhite = ( i + j ) % 2 === 0
+				ctx.fillStyle = isWhite ? '#ffffff' : '#000000'
+				ctx.fillRect( i * squareSize, j * squareSize, squareSize, squareSize )
+			}
+		}
+
+		const texture = new CanvasTexture( canvas )
+		texture.wrapS = texture.wrapT = 1000 // RepeatWrapping
+		texture.repeat.set( 2, 2 )
+		return texture
+	}
+
+	// Create a simple checker pattern texture for lines
+	createSimpleCheckerTexture( size = 32, divisions = 2 ) {
+		const canvas = document.createElement( 'canvas' )
+		canvas.width = size
+		canvas.height = size
+		const ctx = canvas.getContext( '2d' )
+
+		const squareSize = size / divisions
+
+		for ( let i = 0; i < divisions; i++ ) {
+			for ( let j = 0; j < divisions; j++ ) {
+				const isWhite = ( i + j ) % 2 === 0
+				ctx.fillStyle = isWhite ? '#ffffff' : '#888888'
+				ctx.fillRect( i * squareSize, j * squareSize, squareSize, squareSize )
+			}
+		}
+
+		const texture = new CanvasTexture( canvas )
+		texture.wrapS = texture.wrapT = 1000 // RepeatWrapping
+		texture.repeat.set( 8, 1 ) // Repeat along the line, not across
+		return texture
+	}
+
+	// Create a stripe pattern that works well with lines
+	createStripeTexture( size = 64 ) {
+		const canvas = document.createElement( 'canvas' )
+		canvas.width = size
+		canvas.height = size
+		const ctx = canvas.getContext( '2d' )
+
+		// Create horizontal stripes
+		const stripeHeight = size / 8
+		for ( let i = 0; i < 8; i++ ) {
+			const isLight = i % 2 === 0
+			ctx.fillStyle = isLight ? '#ffffff' : '#666666'
+			ctx.fillRect( 0, i * stripeHeight, size, stripeHeight )
+		}
+
+		const texture = new CanvasTexture( canvas )
+		texture.wrapS = texture.wrapT = 1000 // RepeatWrapping
+		texture.repeat.set( 12, 1 ) // Many repeats along the line
+		return texture
+	}
+
+	// Create an alpha pattern for better alpha mapping
+	createAlphaTexture( size = 32 ) {
+		const canvas = document.createElement( 'canvas' )
+		canvas.width = size
+		canvas.height = size
+		const ctx = canvas.getContext( '2d' )
+
+		// Fill with gradient from transparent to opaque
+		const gradient = ctx.createLinearGradient( 0, 0, size, 0 )
+		gradient.addColorStop( 0, '#000000' )    // Transparent areas
+		gradient.addColorStop( 0.3, '#000000' )  // Transparent areas
+		gradient.addColorStop( 0.7, '#ffffff' )  // Opaque areas
+		gradient.addColorStop( 1, '#ffffff' )    // Opaque areas
+
+		ctx.fillStyle = gradient
+		ctx.fillRect( 0, 0, size, size )
+
+		const texture = new CanvasTexture( canvas )
+		texture.wrapS = texture.wrapT = 1000 // RepeatWrapping
+		texture.repeat.set( 6, 1 ) // Repeat pattern along the line
+		return texture
 	}
 }
 

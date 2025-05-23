@@ -19,29 +19,41 @@ class MeshLineNodeMaterial extends NodeMaterial {
 	constructor( parameters = {} ) {
 		super()
 
+		// Auto-detect features based on provided parameters
+		const hasMap = parameters.map !== undefined && parameters.map !== null
+		const hasAlphaMap = parameters.alphaMap !== undefined && parameters.alphaMap !== null
+		const hasGradient = parameters.gradient !== undefined && parameters.gradient !== null
+		const hasCustomOpacity = parameters.opacity !== undefined && parameters.opacity < 1
+		const hasDash = ( parameters.dashCount !== undefined && parameters.dashCount !== null ) || parameters.useDash === true
+
+		// Auto-set transparency when needed
+		const needsTransparency = hasAlphaMap || hasCustomOpacity || ( parameters.transparent === true )
+
+
 		// classic properties
-		this.transparent = parameters.transparent ?? ( parameters.opacity !== undefined && parameters.opacity < 1 )
+		this.transparent = parameters.transparent ?? needsTransparency
 		this.depthWrite = parameters.depthWrite ?? !this.transparent
 		this.depthTest = parameters.depthTest ?? !this.transparent
 		this.wireframe = parameters.wireframe ?? false
 
-		// need recompute the shader if these are changed, needsUpdate = true
-		this.useMap = parameters.useMap ?? false
-		this.useAlphaMap = parameters.useAlphaMap ?? false
-		this.useDash = parameters.useDash ?? false
-		this.useGradient = parameters.useGradient ?? false
+		// Auto-detected feature flags (simplified API)
+		this.useMap = parameters.useMap ?? hasMap
+		this.useAlphaMap = parameters.useAlphaMap ?? hasAlphaMap
+		this.useDash = parameters.useDash ?? hasDash
+		this.useGradient = parameters.useGradient ?? hasGradient
 		this.alphaTest = parameters.alphaTest ?? 1
 		this.sizeAttenuation = parameters.sizeAttenuation ?? true
 
 		// Can be changed dynamically
 		this.lineWidth = uniform( parameters.lineWidth ?? 1 )
-		this.map = uniform( parameters.map ?? null )
-		this.alphaMap = uniform( parameters.alphaMap ?? null )
+		this.map = texture( parameters.map ?? null )
+		this.alphaMap = texture( parameters.alphaMap ?? null )
 		this.color = uniform( new Color( parameters.color ?? 0xffffff ) )
 		this.gradient = uniform( parameters.gradient ?? new Color( 0xff0000 ) )
 		this.opacity = uniform( parameters.opacity ?? 1 )
 		this.resolution = uniform( parameters.resolution ?? new Vector2( 1 ) )
 
+		// Dash API
 		this.dashCount = uniform( parameters.dashCount ?? 4 )
 		this.dashRatio = uniform( parameters.dashRatio ?? parameters.dashLength ?? 0.5 )
 		this.dashOffset = uniform( parameters.dashOffset ?? 0 )
@@ -104,10 +116,8 @@ class MeshLineNodeMaterial extends NodeMaterial {
 			normal.xy.mulAssign( w.mul( .5 ) )
 
 			if( this.sizeAttenuation ) {
-
 				normal.xy.mulAssign( finalPosition.w )
 				normal.xy.divAssign( vec4( this.resolution, 0., 1. ).mul( cameraProjectionMatrix ).xy.mul( aspect ) )
-
 			}
 
 			// un-stretch X
@@ -135,25 +145,24 @@ class MeshLineNodeMaterial extends NodeMaterial {
 
 			let uvCoords
 			if( this.useMap || this.useAlphaMap ) {
-				uvCoords = uv().yx.mul( this.repeat ).toVar( 'uvCoords' )
+				uvCoords = uv().mul( this.repeat ).toVar( 'uvCoords' )
 			}
 			if ( this.useMap ) {
-				diffuseColor.mulAssign( texture( this.map.value, uvCoords ) )
+				diffuseColor.mulAssign( this.map.sample( uvCoords ) )
 			}
 			if ( this.useAlphaMap ) {
-				diffuseColor.a.mulAssign( texture( this.alphaMap.value, uvCoords ).b )
+				diffuseColor.a.mulAssign( this.alphaMap.sample( uvCoords ).b )
 			}
 
-			// Performance: Use step function instead of conditional for alpha test
 			if ( this.alphaTest < 1 ) {
 				Discard( diffuseColor.a.lessThan( this.alphaTest ) )
 			}
 
 			if( this.useDash ) {
 				const cyclePosition = mod( vCounters.mul( this.dashCount ).add( this.dashOffset ), float( 1 ) )
-				// dashLength now directly represents dash portion: 0.1 = 10% dash, 90% gap
+				// dashLength represents a dash portion: 0.1 = 10% dash, 90% gap
 				const dashMask = step( cyclePosition, this.dashRatio )
-				diffuseColor.a.mulAssign( dashMask )
+				Discard( dashMask.lessThan( 0.001 ) )
 			}
 
 			// Apply opacity

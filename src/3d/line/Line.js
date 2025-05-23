@@ -1,47 +1,65 @@
 import { step, uniform, uv } from "three/tsl"
 import { MeshLineGeometry } from "./MeshLineGeometry"
 import { MeshLineNodeMaterial } from "./MeshLineNodeMaterial"
-import { Mesh, Vector3 } from "three"
+import { Mesh, Vector3, Color } from "three"
 import stage3d from "@/makio/three/stage3d"
 import { animate } from "animejs"
 
 export default class Line extends Mesh {
 
-	constructor( positions, isLooped = false, color = 0xffffff ) {
-
-		const geometry = new MeshLineGeometry()
-		geometry.setPoints( new Float32Array( positions ), undefined, isLooped )
-
-		let sizeAttenuation = false
-		let material = new MeshLineNodeMaterial( {
-
-			// line width
-			lineWidth: 0.3 * ( sizeAttenuation ? 200 : 1 ),
-			sizeAttenuation: sizeAttenuation,
-
-			// color
-			color: color,
-			useGradient: true,
+	constructor( positions, options = {} ) {
+		// Default options
+		const defaultOptions = {
+			isClose: false,
+			color: 0xffffff,
+			lineWidth: 0.3,
+			sizeAttenuation: false,
+			useGradient: false,
+			gradientColor: 0xff0000,
 			useMap: false,
 			map: null,
-
-			// alpha
-			opacity: 1,
-			alphaTest: 1,
 			useAlphaMap: false,
 			alphaMap: null,
+			useDash: false,
+			dashCount: 4,
+			dashRatio: 0.5,
+			dashOffset: 0,
+			opacity: 1,
+			alphaTest: 1,
+			transparent: false,
+			wireframe: false
+		}
+
+		// Merge options with defaults
+		const config = { ...defaultOptions, ...options }
+
+		const geometry = new MeshLineGeometry()
+		geometry.setPoints( new Float32Array( positions ), undefined, config.isClose )
+
+		let material = new MeshLineNodeMaterial( {
+			// color
+			color: config.color,
+			opacity: config.opacity,
+			alphaTest: config.alphaTest,
+
+			lineWidth: config.lineWidth * ( config.sizeAttenuation ? 200 : 1 ),
+			sizeAttenuation: config.sizeAttenuation,
+			useGradient: config.useGradient,
+			gradient: new Color( config.gradientColor ),
+			useMap: config.useMap,
+			map: config.map,
+			useAlphaMap: config.useAlphaMap,
+			alphaMap: config.alphaMap,
 
 			// dash
-			useDash: true,
-			dashCount: 16,
-			dashRatio: 0.9,
-			dashOffset: 0,
+			useDash: config.useDash,
+			dashCount: config.dashCount,
+			dashRatio: config.dashRatio,
+			dashOffset: config.dashOffset,
 
 			// classic three.js properties
-			transparent: true,
-			wireframe: false,
+			wireframe: config.wireframe,
 		} )
-
 
 		super( geometry, material )
 		this.percent = uniform( 0 )
