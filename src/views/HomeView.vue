@@ -1,8 +1,5 @@
 <template>
-	<div class="HomeView view">
-		<div ref="title" class="title">MeshLine</div>
-		<div ref="subtitle" class="subtitle">WebGPU version</div>
-	</div>
+	<div class="HomeView view" />
 </template>
 
 <script>
