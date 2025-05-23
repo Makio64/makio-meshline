@@ -7,15 +7,9 @@ import { animate } from "animejs"
 
 export default class Line extends Mesh {
 
-	constructor( shape = 'square', segments = 16, isLooped = false, zPosition = 0, color = 0xffffff ) {
+	constructor( positions, isLooped = false, color = 0xffffff ) {
 
 		const geometry = new MeshLineGeometry()
-		let positions
-		if ( shape === 'circle' ) {
-			positions = circlePositions( segments, zPosition )
-		} else { // default to square
-			positions = squarePositions( segments, zPosition )
-		}
 		geometry.setPoints( new Float32Array( positions ), undefined, isLooped )
 
 		let sizeAttenuation = false
@@ -105,30 +99,3 @@ export default class Line extends Mesh {
 	}
 }
 
-export const circlePositions = ( segments = 100, zPosition = 0 )=>{
-	const positions = []
-	// const segments = 100 // segments is now a parameter
-
-	for ( let i = 0; i < segments; i++ ) {
-		const angle = ( i / segments ) * Math.PI * 2
-		positions.push( Math.sin( angle ), Math.cos( angle ), zPosition )
-	}
-
-	return positions
-}
-
-export const squarePositions = ( segments = 1, zPosition = 0 ) => {
-	const corners = [[-1, -1], [1, -1], [1, 1], [-1, 1]]
-	const positions = []
-	for ( let i = 0; i < 4; i++ ) {
-		const [x0, y0] = corners[ i ]
-		const [x1, y1] = corners[ ( i + 1 ) % 4 ]
-		for ( let j = 0; j < segments; j++ ) { // segments per side
-			const t = j / segments
-			const x = x0 + ( x1 - x0 ) * t
-			const y = y0 + ( y1 - y0 ) * t
-			positions.push( x, y, zPosition )
-		}
-	}
-	return positions
-}

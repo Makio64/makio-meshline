@@ -10,7 +10,8 @@ import { UltraHDRLoader } from 'three/addons/loaders/UltraHDRLoader'
 import { color, uv } from 'three/tsl'
 import { gradient } from '@/makio/tsl/gradient'
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment'
-import Line from './Line'
+import Line from './line/Line'
+import { circlePositions } from './line/positions/circlePositions'
 class Manager3D {
 	constructor() {
 		this.isInit = false
@@ -39,24 +40,20 @@ class Manager3D {
 		} )
 		this.lines = []
 
-		const lineConfigs = [
-			{ shape: 'circle', segments: 100, isClose: true,  zPosition: 0, color: 0x00ff00 },
-			// { shape: 'circle', segments: 100, isClose: false, zPosition: 1, color: 0xff0000 },
-			// { shape: 'square', segments: 4, isClose: false, zPosition: 2, color: 0x0000ff },
-			// { shape: 'square', segments: 4, isClose: true,  zPosition: 3, color: 0xffff00 },
+		const configs = [
+			{ isClose: true, color: 0x00ff00 },
+			{ isClose: false, color: 0x00ff00 },
 		]
 
-		lineConfigs.forEach( config => {
-			const line = new Line( config.shape, config.segments, config.isClose, config.zPosition )
-			if ( line.material && line.material.uniforms && line.material.uniforms.color ) {
-				line.material.uniforms.color.value.setHex( config.color )
-			} else if ( line.material ) {
-				// Fallback if the material structure is different, this might need adjustment
-				// line.material.color.setHex(config.color); // If material.color is a THREE.Color
-			}
+		let positions = circlePositions( 64 )
+
+		for( let i = 0; i < configs.length; i++ ) {
+			let config = configs[ i ]
+			const line = new Line( positions, config.isClose )
+			line.position.x = i * 2.5 - configs.length * 1.25 * .5
 			this.lines.push( line )
 			stage3d.add( line )
-		} )
+		}
 
 		this.box = new Mesh( new BoxGeometry( 1, 1, 1 ), new MeshBasicNodeMaterial( { wireframe: false, transparent: true, opacity: 0, color: 0xff0000 } ) )
 		this.box.material.colorNode = gradient( [color( 0xff0000 ), color( 0x00ff00 ), color( 0x0000ff ), color( 0x000000 )], [0.5, 0.51, 0.6, 1], uv().y )

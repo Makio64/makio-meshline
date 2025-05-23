@@ -6,24 +6,6 @@ import {
 	Vector3
 } from 'three'
 
-// normalize various point inputs into a Float32Array
-const toFloat32 = pts =>
-	pts instanceof Float32Array
-		? pts
-		: pts instanceof BufferGeometry
-			? pts.getAttribute( 'position' ).array
-			: new Float32Array(
-				pts.flatMap( p =>
-					p instanceof Vector3
-						? [p.x, p.y, p.z]
-						: p instanceof Vector2
-							? [p.x, p.y, 0]
-							: Array.isArray( p )
-								? [p[0], p[1], p[2] ?? 0]
-								: []
-				)
-			)
-
 export class MeshLineGeometry extends BufferGeometry {
 	constructor( pts, widthCb, loop ) {
 		super()
@@ -40,18 +22,17 @@ export class MeshLineGeometry extends BufferGeometry {
 		}
 	}
 
-	// set the world matrix
-	setMatrixWorld( m ) {
-		this.matrixWorld.copy( m )
-	}
-
 	// set new points, optional width callback and loop flag
 	setPoints( pts, widthCb = this.widthCallback, loop = false ) {
 		let arr = toFloat32( pts )
 		this.closeLoop = loop && arr.length >= 3
 		if ( this.closeLoop ) {
-			const [x, y, z] = arr
-			arr = new Float32Array( [...arr, x, y, z] )
+			const newArr = new Float32Array( arr.length + 3 )
+			newArr.set( arr )
+			newArr[arr.length] = arr[0]     // x
+			newArr[arr.length + 1] = arr[1] // y
+			newArr[arr.length + 2] = arr[2] // z
+			arr = newArr
 		}
 		this._points = arr
 		this.widthCallback = widthCb
@@ -73,29 +54,39 @@ export class MeshLineGeometry extends BufferGeometry {
 		]
 	}
 
-	// initial previous-pair positions
-	initPrev( pts, n ) {
+	// Generate starting "previous" points for the first vertex pair
+	// For closed loops: use the second-to-last point
+	// For open lines: extrapolate by reflecting first point over second
+	// Returns 6 values: [x,y,z,x,y,z] for the two vertices of the first segment
+	getStartingPreviousPoints( pts, numPoints ) {
 		if ( this.closeLoop ) {
-			const p = this.getPoint( pts, n - 2 )
-			return [...p, ...p]
+			// Use second-to-last point (before the duplicate closing point)
+			const [x, y, z] = this.getPoint( pts, numPoints - 2 )
+			return new Float32Array( [x, y, z, x, y, z] )
 		} else {
-			const a = this.getPoint( pts, 0 )
-			const b = this.getPoint( pts, 1 )
-			const r = this.reflect( a, b )
-			return [...r, ...r]
+			// Extrapolate backwards from first two points
+			const firstPoint = this.getPoint( pts, 0 )
+			const secondPoint = this.getPoint( pts, 1 )
+			const [x, y, z] = this.reflect( firstPoint, secondPoint )
+			return new Float32Array( [x, y, z, x, y, z] )
 		}
 	}
 
-	// final next-pair positions
-	appendNext( pts, n ) {
+	// Generate ending "next" points for the last vertex pair
+	// For closed loops: use the second point (after the first/closing point)
+	// For open lines: extrapolate by reflecting last point over second-to-last
+	// Returns 6 values: [x,y,z,x,y,z] for the two vertices of the last segment
+	getEndingNextPoints( pts, numPoints ) {
 		if ( this.closeLoop ) {
-			const p = this.getPoint( pts, 1 )
-			return [...p, ...p]
+			// Use second point (the first real point after the closing duplicate)
+			const [x, y, z] = this.getPoint( pts, 1 )
+			return new Float32Array( [x, y, z, x, y, z] )
 		} else {
-			const a = this.getPoint( pts, n - 1 )
-			const b = this.getPoint( pts, n - 2 )
-			const r = this.reflect( a, b )
-			return [...r, ...r]
+			// Extrapolate forwards from last two points
+			const lastPoint = this.getPoint( pts, numPoints - 1 )
+			const secondLastPoint = this.getPoint( pts, numPoints - 2 )
+			const [x, y, z] = this.reflect( lastPoint, secondLastPoint )
+			return new Float32Array( [x, y, z, x, y, z] )
 		}
 	}
 
@@ -135,7 +126,7 @@ export class MeshLineGeometry extends BufferGeometry {
 		let indicesIdx = 0
 
 		// Set initial previous positions
-		const initPrevArr = this.initPrev( pts, numPoints )
+		const initPrevArr = this.getStartingPreviousPoints( pts, numPoints )
 		previous.set( initPrevArr, prevIdx )
 		prevIdx += initPrevArr.length
 
@@ -201,32 +192,36 @@ export class MeshLineGeometry extends BufferGeometry {
 		}
 
 		// Set final next positions
-		const appendNextArr = this.appendNext( pts, numPoints )
+		const appendNextArr = this.getEndingNextPoints( pts, numPoints )
 		next.set( appendNextArr, nextIdx )
 		// nextIdx should already be at the correct position after the loop
 
-		const attrsSetup = {
-			position: [positions, 3],
-			previous: [previous, 3],
-			next: [next, 3],
-			side: [sides, 1],
-			width: [widths, 1],
-			uv: [uvs, 2],
-			counters: [counters, 1]
-		}
+		// Helper function to set or update attribute
+		const setOrUpdateAttribute = ( name, array, itemSize ) => {
+			const existing = this._attrs[name]
 
-		Object.entries( attrsSetup ).forEach( ( [name, [array, itemSize]] ) => {
-			const attr = new BufferAttribute( array, itemSize )
-			const old = this._attrs[name]
-			if ( old && old.count * old.itemSize === array.length ) { // Check total buffer size
-				old.copyArray( array )
-				old.needsUpdate = true
+			// Check if we can reuse existing attribute (same total size)
+			if ( existing && existing.array.length === array.length ) {
+				existing.copyArray( array )
+				existing.needsUpdate = true
 			} else {
-				this.deleteAttribute( name ) // Remove old attribute if size changed
+				// Create new attribute
+				if ( existing ) {
+					this.deleteAttribute( name )
+				}
+				const attr = new BufferAttribute( array, itemSize )
 				this._attrs[name] = attr
 				this.setAttribute( name, attr )
 			}
-		} )
+		}
+
+		setOrUpdateAttribute( 'position', positions, 3 )
+		setOrUpdateAttribute( 'previous', previous, 3 )
+		setOrUpdateAttribute( 'next', next, 3 )
+		setOrUpdateAttribute( 'side', sides, 1 )
+		setOrUpdateAttribute( 'width', widths, 1 )
+		setOrUpdateAttribute( 'uv', uvs, 2 )
+		setOrUpdateAttribute( 'counters', counters, 1 )
 
 		const indexAttr = new BufferAttribute( indices, 1 )
 		const oldIndex = this.getIndex()
@@ -250,4 +245,41 @@ export class MeshLineGeometry extends BufferGeometry {
 	// getters / setters at bottom
 	get points() { return this._points }
 	set points( v ) { this.setPoints( v ) }
+}
+
+//------------------------------------------------------ HELPERS
+// normalize various point inputs into a Float32Array
+const toFloat32 = pts => {
+	if ( pts instanceof Float32Array ) {
+		return pts
+	}
+
+	if ( pts instanceof BufferGeometry ) {
+		return pts.getAttribute( 'position' ).array
+	}
+
+	// Pre-allocate assuming all points are valid
+	const result = new Float32Array( pts.length * 3 )
+	let offset = 0
+
+	for ( let i = 0; i < pts.length; i++ ) {
+		const p = pts[i]
+		if ( p instanceof Vector3 ) {
+			result[offset++] = p.x
+			result[offset++] = p.y
+			result[offset++] = p.z
+		} else if ( p instanceof Vector2 ) {
+			result[offset++] = p.x
+			result[offset++] = p.y
+			result[offset++] = 0
+		} else if ( Array.isArray( p ) ) {
+			result[offset++] = p[0] ?? 0
+			result[offset++] = p[1] ?? 0
+			result[offset++] = p[2] ?? 0
+		}
+		// Invalid points are skipped
+	}
+
+	// If we skipped some points, return a correctly sized array
+	return offset === result.length ? result : result.slice( 0, offset )
 }
