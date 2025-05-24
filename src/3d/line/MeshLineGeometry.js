@@ -1,10 +1,4 @@
-import {
-	BufferAttribute,
-	BufferGeometry,
-	Matrix4,
-	Vector2,
-	Vector3
-} from 'three'
+import { BufferAttribute, BufferGeometry, Matrix4, Vector2, Vector3 } from 'three'
 
 export class MeshLineGeometry extends BufferGeometry {
 	constructor( pts, widthCb, loop ) {
@@ -12,7 +6,6 @@ export class MeshLineGeometry extends BufferGeometry {
 		this.type = 'MeshLine'
 		this.isMeshLine = true
 
-		this.matrixWorld = new Matrix4()
 		this.widthCallback = t => 1
 		this.closeLoop = false
 		this._points = new Float32Array()
@@ -54,11 +47,8 @@ export class MeshLineGeometry extends BufferGeometry {
 		]
 	}
 
-	// Generate starting "previous" points for the first vertex pair
-	// For closed loops: use the second-to-last point
-	// For open lines: extrapolate by reflecting first point over second
-	// Returns 6 values: [x,y,z,x,y,z] for the two vertices of the first segment
-	getStartingPreviousPoints( pts, numPoints ) {
+	// Build initial "previous" points for first segment
+	buildInitialPrevious( pts, numPoints ) {
 		if ( this.closeLoop ) {
 			// Use second-to-last point (before the duplicate closing point)
 			const [x, y, z] = this.getPoint( pts, numPoints - 2 )
@@ -72,11 +62,8 @@ export class MeshLineGeometry extends BufferGeometry {
 		}
 	}
 
-	// Generate ending "next" points for the last vertex pair
-	// For closed loops: use the second point (after the first/closing point)
-	// For open lines: extrapolate by reflecting last point over second-to-last
-	// Returns 6 values: [x,y,z,x,y,z] for the two vertices of the last segment
-	getEndingNextPoints( pts, numPoints ) {
+	// Build final "next" points for last segment
+	buildFinalNext( pts, numPoints ) {
 		if ( this.closeLoop ) {
 			// Use second point (the first real point after the closing duplicate)
 			const [x, y, z] = this.getPoint( pts, 1 )
@@ -90,31 +77,40 @@ export class MeshLineGeometry extends BufferGeometry {
 		}
 	}
 
+	// Helper to set or update buffer attribute efficiently
+	setOrUpdateAttribute( name, array, itemSize ) {
+		const existing = this._attrs[name]
+
+		// Check if we can reuse existing attribute (same total size)
+		if ( existing && existing.array.length === array.length ) {
+			existing.copyArray( array )
+			existing.needsUpdate = true
+		} else {
+			// Create new attribute
+			if ( existing ) {
+				this.deleteAttribute( name )
+			}
+			const attr = new BufferAttribute( array, itemSize )
+			this._attrs[name] = attr
+			this.setAttribute( name, attr )
+		}
+	}
+
 	// build/update all geometry attributes and index
 	build() {
 		const pts = this._points
 		const numPoints = pts.length / 3
 		const tStep = numPoints > 1 ? 1 / ( numPoints - 1 ) : 0
 
-		// Calculate sizes for attribute arrays
-		const positionSize = numPoints * 3 * 2
-		const previousSize = ( numPoints + 1 ) * 3 * 2 // +1 for initPrev/appendNext
-		const nextSize = ( numPoints + 1 ) * 3 * 2     // +1 for initPrev/appendNext
-		const sideSize = numPoints * 2
-		const widthSize = numPoints * 2
-		const uvSize = numPoints * 2 * 2
-		const counterSize = numPoints * 2
-		const indexSize = ( numPoints - 1 ) * 6
-
 		// Initialize Float32Arrays
-		const positions = new Float32Array( positionSize )
-		const previous = new Float32Array( previousSize )
-		const next = new Float32Array( nextSize )
-		const sides = new Float32Array( sideSize )
-		const widths = new Float32Array( widthSize )
-		const uvs = new Float32Array( uvSize )
-		const counters = new Float32Array( counterSize )
-		const indices = new Uint16Array( indexSize )
+		const positions = new Float32Array( numPoints * 3 * 2 )
+		const previous = new Float32Array( ( numPoints + 1 ) * 3 * 2 ) // +1 for initPrev/appendNext
+		const next = new Float32Array(  ( numPoints + 1 ) * 3 * 2 ) // +1 for initPrev/appendNext
+		const sides = new Float32Array( numPoints * 2 )
+		const widths = new Float32Array( numPoints * 2 )
+		const uvs = new Float32Array( numPoints * 2 * 2 )
+		const counters = new Float32Array( numPoints * 2 )
+		const indices = new Uint16Array( ( numPoints - 1 ) * 6 )
 
 		let posIdx = 0
 		let prevIdx = 0
@@ -126,7 +122,7 @@ export class MeshLineGeometry extends BufferGeometry {
 		let indicesIdx = 0
 
 		// Set initial previous positions
-		const initPrevArr = this.getStartingPreviousPoints( pts, numPoints )
+		const initPrevArr = this.buildInitialPrevious( pts, numPoints )
 		previous.set( initPrevArr, prevIdx )
 		prevIdx += initPrevArr.length
 
@@ -192,36 +188,16 @@ export class MeshLineGeometry extends BufferGeometry {
 		}
 
 		// Set final next positions
-		const appendNextArr = this.getEndingNextPoints( pts, numPoints )
+		const appendNextArr = this.buildFinalNext( pts, numPoints )
 		next.set( appendNextArr, nextIdx )
-		// nextIdx should already be at the correct position after the loop
 
-		// Helper function to set or update attribute
-		const setOrUpdateAttribute = ( name, array, itemSize ) => {
-			const existing = this._attrs[name]
-
-			// Check if we can reuse existing attribute (same total size)
-			if ( existing && existing.array.length === array.length ) {
-				existing.copyArray( array )
-				existing.needsUpdate = true
-			} else {
-				// Create new attribute
-				if ( existing ) {
-					this.deleteAttribute( name )
-				}
-				const attr = new BufferAttribute( array, itemSize )
-				this._attrs[name] = attr
-				this.setAttribute( name, attr )
-			}
-		}
-
-		setOrUpdateAttribute( 'position', positions, 3 )
-		setOrUpdateAttribute( 'previous', previous, 3 )
-		setOrUpdateAttribute( 'next', next, 3 )
-		setOrUpdateAttribute( 'side', sides, 1 )
-		setOrUpdateAttribute( 'width', widths, 1 )
-		setOrUpdateAttribute( 'uv', uvs, 2 )
-		setOrUpdateAttribute( 'counters', counters, 1 )
+		this.setOrUpdateAttribute( 'position', positions, 3 )
+		this.setOrUpdateAttribute( 'previous', previous, 3 )
+		this.setOrUpdateAttribute( 'next', next, 3 )
+		this.setOrUpdateAttribute( 'side', sides, 1 )
+		this.setOrUpdateAttribute( 'width', widths, 1 )
+		this.setOrUpdateAttribute( 'uv', uvs, 2 )
+		this.setOrUpdateAttribute( 'counters', counters, 1 )
 
 		const indexAttr = new BufferAttribute( indices, 1 )
 		const oldIndex = this.getIndex()

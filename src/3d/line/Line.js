@@ -1,4 +1,4 @@
-import { Fn, step, uniform, uv } from "three/tsl"
+import { Fn, step, uniform, uv, abs, sin, time } from "three/tsl"
 import { MeshLineGeometry } from "./MeshLineGeometry"
 import { MeshLineNodeMaterial } from "./MeshLineNodeMaterial"
 import { Mesh, Vector3, Color } from "three"
@@ -61,11 +61,12 @@ export default class Line extends Mesh {
 		this.opacity = uniform( 1 )
 
 		// material.opacityNode = Fn( ()=>{
-		// 	return step( uv().x, this.percent  ).mul( step( uv().x.oneMinus(), this.percent2  ) ).mul( this.opacity ).toVar( 'opacity' )
+		// 	return abs( sin( uv().x.mul( 20 ).add( time ) ) )
 		// } )()
+
 		material.discardConditionNode = Fn( ()=>{
 			//.mul( step( uv().x.oneMinus(), this.percent2  ) )
-			return step( uv().x, this.percent  ).mul( this.opacity ).lessThanEqual( 0.00001 )
+			return step( uv().x, this.percent  ).mul( this.opacity ).lessThan( 0.00001 )
 		} )()
 
 		this.frustumCulled = false
@@ -92,27 +93,6 @@ export default class Line extends Mesh {
 		return new Promise( ( resolve )=>{
 			animate( this.percent2, { duration: 1, value: -0.1, onComplete: resolve, ease: 'easeOut' } )
 		} )
-	}
-
-	move = ( point, options )=>{
-		let topLeft = new Vector3( 0, 0, 0 )
-		topLeft.x = ( topLeft.x / window.innerWidth ) * 2 - 1
-		topLeft.y = -( topLeft.y / window.innerHeight ) * 2 + 1
-		topLeft.unproject( stage3d.camera )
-
-		point.x = ( point.x / window.innerWidth ) * 2 - 1
-		point.y = -( point.y / window.innerHeight ) * 2 + 1
-
-		point.unproject( stage3d.camera )
-
-		let x = point.x - topLeft.x
-		let y = point.y - topLeft.y
-
-		animate( this.position, { duration: 1, x, y, ...options } )
-	}
-
-	fade = ( opacity, options )=>{
-		animate( this.opacity, { duration: 1, value: opacity, ...options } )
 	}
 
 	dispose = ()=>{

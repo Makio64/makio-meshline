@@ -36,21 +36,18 @@ class MeshLineNodeMaterial extends NodeMaterial {
 		this.sizeAttenuation = parameters.sizeAttenuation ?? true
 
 		// Can be changed dynamically
+		this.resolution = uniform( parameters.resolution ?? new Vector2( 1 ) )
 		this.lineWidth = uniform( parameters.lineWidth ?? 1 )
-		this.map = texture( parameters.map ?? null )
-		this.alphaMap = texture( parameters.alphaMap ?? null )
 		this.color = uniform( new Color( parameters.color ?? 0xffffff ) )
 		this.gradient = uniform( parameters.gradient ?? null )
 		this.opacity = uniform( parameters.opacity ?? 1 )
-		this.resolution = uniform( parameters.resolution ?? new Vector2( 1 ) )
-
-		// Dash API
+		this.map = texture( parameters.map ?? null )
+		this.alphaMap = texture( parameters.alphaMap ?? null )
+		this.mapOffset = uniform( parameters.mapOffset ?? new Vector2( 0, 0 ) )
+		this.repeat = uniform( parameters.repeat ?? new Vector2( 1, 1 ) )
 		this.dashCount = uniform( parameters.dashCount ?? null )
 		this.dashRatio = uniform( parameters.dashRatio ?? parameters.dashLength ?? null )
 		this.dashOffset = uniform( parameters.dashOffset ?? 0 )
-
-		this.repeat = uniform( parameters.repeat ?? new Vector2( 1, 1 ) )
-		this.mapOffset = uniform( parameters.mapOffset ?? new Vector2( 0, 0 ) )
 
 	}
 
