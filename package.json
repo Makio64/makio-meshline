@@ -20,7 +20,7 @@
 		"animejs": "^4.0.2",
 		"stats-gl": "^3.6.0",
 		"three": "^0.176.0",
-		"vue": "^3.5.14",
+		"vue": "^3.5.16",
 		"vue-tiny-router": "^1.1.0"
 	},
 	"devDependencies": {
