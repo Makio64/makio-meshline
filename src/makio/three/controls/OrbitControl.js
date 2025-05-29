@@ -1,9 +1,9 @@
 import { Vector3 } from 'three'
 import stage from '../../core/stage'
-import wheel from '../../utils/input/wheel'
-import pinch from '../../utils/input/pinch'
-import { lerp } from '../../utils/math'
+import wheel from '@/makio/utils/input/wheel'
+import pinch from '@/makio/utils/input/pinch'
 import mouse from '@/makio/utils/input/mouse'
+import keyboard from '@/makio/utils/input/keyboard'
 import { clamp } from '@/makio/utils/math'
 
 export default class OrbitControl {
@@ -12,6 +12,11 @@ export default class OrbitControl {
 
 		this.target = target || new Vector3()
 		this.targetOffset = new Vector3()
+
+		// Pan system
+		this.panOffset = new Vector3()
+		this.panSpeed = 0.002
+		this.enablePan = true
 
 		this.targetLookAt = new Vector3()
 		this.cameraOffset = new Vector3()
@@ -24,6 +29,7 @@ export default class OrbitControl {
 		this.maxRadius = Number.MAX_VALUE
 
 		this._isDown = false
+		this._isShiftDown = false
 		this._vx = 0
 		this._vy = 0
 		this.speedMax = 1
@@ -37,6 +43,7 @@ export default class OrbitControl {
 		this.blockThetaMouse = false
 		this.blockPhiMouse = false
 		this.blockZoom = false
+		this.blockPan = false
 
 		this.isPhiRestricted = true
 		this.isThetaRestricted = false
@@ -70,6 +77,7 @@ export default class OrbitControl {
 		this.blockThetaMouse = true
 		this.blockPhiMouse = true
 		this.blockZoom = true
+		this.blockPan = true
 		this.extraThetaMouse = false
 		this.extraPhiMouse = false
 		this.isPhiRestricted = true
@@ -83,11 +91,19 @@ export default class OrbitControl {
 		this._vx = clamp( this._vx, -this.speedMax, this.speedMax )
 		this._vy = clamp( this._vy, -this.speedMax, this.speedMax )
 		this._radius += ( this.radius - this._radius ) * 0.1  * ( dt / 16 )
-		this._vx *= this.friction
-		this._vy *= this.friction
 
-		this._phi += this._vy
-		this._theta += this._vx
+		// Only apply orbit velocities when not in pan mode
+		if ( !this._isShiftDown ) {
+			this._vx *= this.friction
+			this._vy *= this.friction
+
+			this._phi += this._vy
+			this._theta += this._vx
+		} else {
+			// In pan mode, gradually reduce velocities to stop orbiting
+			this._vx *= 0.9
+			this._vy *= 0.9
+		}
 
 		if ( this.isThetaRestricted )
 			this._theta = clamp( this._theta, this.minTheta, this.maxTheta )
@@ -111,9 +127,9 @@ export default class OrbitControl {
 		)
 
 		this.targetLookAt.set(
-			this.target.x + this.targetOffset.x,
-			this.target.y + this.targetOffset.y,
-			this.target.z + this.targetOffset.z
+			this.target.x + this.targetOffset.x + this.panOffset.x,
+			this.target.y + this.targetOffset.y + this.panOffset.y,
+			this.target.z + this.targetOffset.z + this.panOffset.z
 		)
 		this.camera.lookAt( this.targetLookAt )
 		this.camera.position.add( this.offset )
@@ -135,11 +151,38 @@ export default class OrbitControl {
 		this.extraThetaTarget = this.extraThetaMouse ? mouse.normalizedX : 0
 		if ( this.extraPhiMouse )
 			this.extraPhiTarget = mouse.normalizedY
+
 		if ( this._isDown ) {
-			if ( !this.blockThetaMouse )
-				this._vx += mouse.moveX * this.frictionVx
-			if ( !this.blockPhiMouse )
-				this._vy -= mouse.moveY * this.frictionVy
+			// Check if shift key is pressed for panning
+			if ( this._isShiftDown && this.enablePan && !this.blockPan ) {
+				// Pan mode - move the target instead of rotating
+				const panDeltaX = mouse.moveX * this.panSpeed * this._radius
+				const panDeltaY = mouse.moveY * this.panSpeed * this._radius
+
+				// Calculate pan direction based on camera orientation
+				const phi = this._phi - this.extraPhi * this.extraPhiMax
+				const theta = this._theta + this.extraTheta * this.extraThetaMax
+
+				// Right vector (cross product of up and forward)
+				const rightX = Math.cos( theta + Math.PI * 0.5 )
+				const rightZ = Math.sin( theta + Math.PI * 0.5 )
+
+				// Up vector (relative to camera orientation)
+				const upX = -Math.sin( phi ) * Math.cos( theta )
+				const upY = Math.cos( phi )
+				const upZ = -Math.sin( phi ) * Math.sin( theta )
+
+				// Apply pan offset
+				this.panOffset.x += rightX * panDeltaX + upX * panDeltaY
+				this.panOffset.y += upY * panDeltaY
+				this.panOffset.z += rightZ * panDeltaX + upZ * panDeltaY
+			} else {
+				// Normal orbit mode
+				if ( !this.blockThetaMouse )
+					this._vx += mouse.moveX * this.frictionVx
+				if ( !this.blockPhiMouse )
+					this._vy -= mouse.moveY * this.frictionVy
+			}
 		}
 	}
 
@@ -173,11 +216,25 @@ export default class OrbitControl {
 		this.zoomIn( 0.98 )
 	}
 
+	_onKeyDown = ( key, event ) => {
+		if ( key === 'Shift' ) {
+			this._isShiftDown = true
+		}
+	}
+
+	_onKeyUp = ( key, event ) => {
+		if ( key === 'Shift' ) {
+			this._isShiftDown = false
+		}
+	}
+
 	enable() {
 		this._pinch.enable()
 		this.interactionTarget.addEventListener( 'pointerdown', this._onDown )
 		this.interactionTarget.addEventListener( 'pointerup', this._onUp )
 		this.interactionTarget.addEventListener( 'pointermove', this._onMove )
+		keyboard.onDown.add( this._onKeyDown )
+		keyboard.onUp.add( this._onKeyUp )
 		wheel.add( this.onWheel )
 		this._pinch.onPinchIn.add( this.onPinchIn )
 		this._pinch.onPinchOut.add( this.onPinchOut )
@@ -190,6 +247,8 @@ export default class OrbitControl {
 		this.interactionTarget.removeEventListener( 'pointerdown', this._onDown )
 		this.interactionTarget.removeEventListener( 'pointerup', this._onUp )
 		this.interactionTarget.removeEventListener( 'pointermove', this._onMove )
+		keyboard.onDown.remove( this._onKeyDown )
+		keyboard.onUp.remove( this._onKeyUp )
 		wheel.remove( this.onWheel )
 		this._pinch.onPinchIn.remove( this.onPinchIn )
 		this._pinch.onPinchOut.remove( this.onPinchOut )
@@ -205,6 +264,7 @@ export default class OrbitControl {
 		this.offset = null
 		this.targetOffset = null
 		this.targetLookAt = null
+		this.panOffset = null
 	}
 }
 

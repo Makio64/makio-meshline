@@ -65,8 +65,8 @@ export default class Line extends Mesh {
 		// } )()
 
 		material.discardConditionNode = Fn( ()=>{
-			//.mul( step( uv().x.oneMinus(), this.percent2  ) )
-			return step( uv().x, this.percent  ).mul( this.opacity ).lessThan( 0.00001 )
+			//
+			return step( uv().x, this.percent  ).mul( step( uv().x.oneMinus(), this.percent2  ) ).mul( this.opacity ).lessThan( 0.00001 )
 		} )()
 
 		this.frustumCulled = false

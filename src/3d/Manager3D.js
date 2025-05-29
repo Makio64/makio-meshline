@@ -84,27 +84,27 @@ class Manager3D {
 			{ title: "Basic", color: 0xff0000, lineWidth: 0.2, isClose: true },
 			{ title: "Thick Line", color: 0x00ff00, lineWidth: 0.8, isClose: true },
 			{ title: "Open", color: 0x0000ff, isClose: false },
-			{ title: "Gradient", color: 0xff00ff, useGradient: true, gradientColor: 0x00ffff, isClose: true },
+			{ title: "Wireframe", color: 0xff8080, wireframe: true, lineWidth: 0.3, isClose: true },
 
 			{ title: "Dashed 4", color: 0xffff00, useDash: true, dashCount: 4, dashRatio: 0.5, isClose: true },
 			{ title: "Dashed 8", color: 0xff8000, useDash: true, dashCount: 8, dashRatio: 0.6, isClose: true },
 			{ title: "Dashed 16", color: 0x8000ff, useDash: true, dashCount: 16, dashRatio: 0.3, isClose: true },
-			{ title: "Long Dashes", color: 0x00ff80, useDash: true, dashCount: 6, dashRatio: 0.8, isClose: true },
+			{ title: "Long Dashes", color: 0x00ff80, useDash: true, dashCount: 6, lineWidth: 0.8, dashRatio: 0.8, isClose: true },
 
 			{ title: "Map Texture", color: 0xff4080, useMap: true, map: this.mapTexture, lineWidth: 0.4, isClose: true },
-			{ title: "Alpha Map", color: 0xff40ff, useAlphaMap: true, alphaMap: this.alphaTexture, lineWidth: 0.4, isClose: true },
-			{ title: "Dash + Gradient", color: 0x80ff40, isClose: true, useDash: true, dashCount: 10, dashRatio: 0.7, useGradient: true, gradientColor: 0xff0040 },
-			{ title: "Gradient Only", color: 0xff0080, isClose: true, useGradient: true, gradientColor: 0x0080ff },
+			{ title: "Dash + Gradient", color: 0x80ff40, isClose: true, useDash: true, lineWidth: 0.9, dashCount: 10, dashRatio: 0.7, useGradient: true, gradientColor: 0xff0040 },
+			{ title: "Gradient Only", color: 0xff0080, isClose: true, useGradient: true, lineWidth: 0.1, gradientColor: 0x0080ff },
+			{ title: "Gradient", color: 0xff00ff, useGradient: true, gradientColor: 0x00ffff, isClose: true },
 
-			{ title: "Opacity", color: 0x8080ff, opacity: 0.6, lineWidth: 0.4, isClose: true },
-			{ title: "Wireframe", color: 0xff8080, wireframe: true, lineWidth: 0.3, isClose: true },
+			{ title: "Opacity", color: 0x8080ff, opacity: 0.6, lineWidth: 0.5, isClose: true },
+			{ title: "Alpha Map", color: 0xff40ff, useAlphaMap: true, alphaMap: this.alphaTexture, lineWidth: 0.4, isClose: true },
 			{ title: "Size Atten.", color: 0x80ff80, sizeAttenuation: true, lineWidth: 0.5, isClose: true },
 			{ title: "All Features", color: 0xffffff, useGradient: true, gradientColor: 0xff0000, useDash: true, dashCount: 8, dashRatio: 0.5, isClose: true, lineWidth: 0.5 }
 		]
 
 		const positions = circlePositions( 64 )
 		const gridSize = 4 // 4x4 grid
-		const spacing = 3
+		const spacing = 3.3
 
 		for( let i = 0; i < configs.length; i++ ) {
 			const config = configs[i]
@@ -121,7 +121,7 @@ class Manager3D {
 			stage3d.add( line )
 
 			// Create background plane for Alpha Map example (index 9)
-			if ( i === 9 && config.title === "Alpha Map" ) {
+			if ( config.title === "Alpha Map" ) {
 				const planeGeometry = new PlaneGeometry( 2.2, 2.2 )
 				const planeMaterial = new MeshBasicMaterial( {
 					map: this.checkerTexture,
@@ -138,7 +138,7 @@ class Manager3D {
 			}
 
 			// Create background plane for opacity example (index 12)
-			if ( i === 12 && config.title === "Opacity" ) {
+			if ( config.title === "Opacity" ) {
 				const planeGeometry = new PlaneGeometry( 2.2, 2.2 )
 				const planeMaterial = new MeshBasicMaterial( {
 					map: this.checkerTexture,
@@ -219,8 +219,18 @@ class Manager3D {
 	show() {
 		this.lines.forEach( ( line, i ) => {
 			// Animate lines in, perhaps with a stagger
+			line.percent.value = -0.01
+			line.percent2.value = 1.01
 			animate( line.percent, { duration: 1, value: 1.01, delay: i * 0.05, ease: 'easeOut' } )
+			animate( line.percent2, { duration: 1, value: -0.01, delay: 3 + i * 0.05, ease: 'easeOut', onComplete: ()=>{ if( i === this.lines.length - 1 ) this.show() } } )
 		} )
+
+		// this.labels.forEach( ( label, i ) => {
+		// 	animate( label.element, { duration: .4, opacity: 1, delay: i * 0.2, ease: 'easeOut', onComplete: ()=>{
+		// 		animate( label.element, { duration: .4, opacity: 0, delay: 3 + .6, ease: 'easeOut' } )
+		// 	} } )
+
+		// } )
 	}
 
 	hide( cb ) {

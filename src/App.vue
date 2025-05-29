@@ -2,9 +2,6 @@
 	<div class="view">
 		<TinyRouter v-if="basicLoaded" :routes="routes" :redirects="redirects" />
 	</div>
-	<div class="loader" :class="{ hide: contentLoaded }">
-		<Spinner />
-	</div>
 </template>
 
 <script>
