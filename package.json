@@ -21,7 +21,7 @@
 		"stats-gl": "^3.6.0",
 		"three": "^0.176.0",
 		"vue": "^3.5.14",
-		"vue-tiny-router": "^1.1.0"
+		"vue-tiny-router": "^1.2.0"
 	},
 	"devDependencies": {
 		"@eslint/eslintrc": "^3.3.1",
