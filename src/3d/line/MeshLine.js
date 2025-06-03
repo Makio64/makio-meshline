@@ -1,11 +1,10 @@
 import { Fn, step, uniform, uv, abs, sin, time } from "three/tsl"
 import { MeshLineGeometry } from "./MeshLineGeometry"
 import { MeshLineNodeMaterial } from "./MeshLineNodeMaterial"
-import { Mesh, Vector3, Color } from "three"
-import stage3d from "@/makio/three/stage3d"
+import { Mesh, Color } from "three"
 import { animate } from "animejs"
 
-export default class Line extends Mesh {
+export default class MeshLine extends Mesh {
 
 	constructor( positions, options = {} ) {
 		// Default options
@@ -31,7 +30,15 @@ export default class Line extends Mesh {
 		const config = { ...defaultOptions, ...options }
 
 		const geometry = new MeshLineGeometry()
-		geometry.setPoints( new Float32Array( positions ), undefined, config.isClose )
+
+		// Check if positions is an array of arrays (multiple lines) or a flat array (single line)
+		if ( Array.isArray( positions ) && positions.length > 0 && Array.isArray( positions[0] ) ) {
+			// Multiple lines - use setLines
+			geometry.setLines( positions, undefined, config.isClose )
+		} else {
+			// Single line - use setPoints
+			geometry.setPoints( new Float32Array( positions ), undefined, config.isClose )
+		}
 
 		let material = new MeshLineNodeMaterial( {
 			// color
@@ -56,16 +63,15 @@ export default class Line extends Mesh {
 		} )
 
 		super( geometry, material )
-		this.percent = uniform( 0 )
-		this.percent2 = uniform( 1 )
-		this.opacity = uniform( 1 )
 
-		// material.opacityNode = Fn( ()=>{
-		// 	return abs( sin( uv().x.mul( 20 ).add( time ) ) )
-		// } )()
+		if( config.percent !== undefined && config.percent2 !== undefined ) {
+			this.percent = uniform( config.percent ?? 1 )
+			this.percent2 = uniform( config.percent2 ?? 1 )
+		}
+
+		this.opacity = uniform( config.opacity ?? 1 )
 
 		material.discardConditionNode = Fn( ()=>{
-			//
 			return step( uv().x, this.percent  ).mul( step( uv().x.oneMinus(), this.percent2  ) ).mul( this.opacity ).lessThan( 0.00001 )
 		} )()
 

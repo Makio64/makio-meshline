@@ -3,16 +3,15 @@
 </template>
 
 <script>
-import Manager3D from '@/3d/Manager3D'
+import example from '@/examples/waves'
 import stage3d from '@/makio/three/stage3d'
-import { animate, stagger, utils } from 'animejs'
 import { contentLoaded } from '@/store'
 
 export default {
 	name: 'HomeView',
 	async mounted() {
 		// utils.set( this.elts, { opacity: 0 } )
-		await Manager3D.init()
+		await example.init()
 		contentLoaded.value = true
 		this.transitionIn()
 	},
@@ -24,11 +23,11 @@ export default {
 	methods: {
 		async transitionIn() {
 			// animate( this.elts, { opacity: [0, 1], translateY: [50, 0], duration: 1.1, delay: stagger( 0.15, { start: 0.5 } ), ease: 'outQuad' } )
-			Manager3D.show()
+			if( example.show ) example.show()
 		},
 		transitionOut( cb ) {
 			// animate( this.elts, { opacity: 0, y: -50, duration: 0.5, delay: stagger( 0.05 ), ease: 'inQuad' } )
-			Manager3D.hide( cb )
+			example.hide( cb )
 		},
 		beforeRouteLeave( next ) {
 			this.transitionOut( next )

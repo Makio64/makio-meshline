@@ -127,9 +127,9 @@ export default class OrbitControl {
 		)
 
 		this.targetLookAt.set(
-			this.target.x + this.targetOffset.x + this.panOffset.x,
-			this.target.y + this.targetOffset.y + this.panOffset.y,
-			this.target.z + this.targetOffset.z + this.panOffset.z
+			this.target.x + this.targetOffset.x,
+			this.target.y + this.targetOffset.y,
+			this.target.z + this.targetOffset.z
 		)
 		this.camera.lookAt( this.targetLookAt )
 		this.camera.position.add( this.offset )
@@ -173,9 +173,9 @@ export default class OrbitControl {
 				const upZ = -Math.sin( phi ) * Math.sin( theta )
 
 				// Apply pan offset
-				this.panOffset.x += rightX * panDeltaX + upX * panDeltaY
-				this.panOffset.y += upY * panDeltaY
-				this.panOffset.z += rightZ * panDeltaX + upZ * panDeltaY
+				this.target.x += rightX * panDeltaX + upX * panDeltaY
+				this.target.y += upY * panDeltaY
+				this.target.z += rightZ * panDeltaX + upZ * panDeltaY
 			} else {
 				// Normal orbit mode
 				if ( !this.blockThetaMouse )

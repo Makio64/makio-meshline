@@ -1,40 +1,33 @@
 import { animate } from 'animejs'
-
-import { AmbientLight, DirectionalLight, EquirectangularReflectionMapping, PMREMGenerator, CanvasTexture, PlaneGeometry, MeshBasicMaterial, Mesh } from 'three/webgpu'
+import { AmbientLight, DirectionalLight, CanvasTexture, PlaneGeometry, MeshBasicMaterial, Mesh } from 'three/webgpu'
 import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js'
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment'
+import { PMREMGenerator } from 'three/webgpu'
 
 import OrbitControl from '@/makio/three/controls/OrbitControl'
 import stage3d from '@/makio/three/stage3d'
-import Assets from '@/makio/three/Assets'
 import { stage } from '@/makio/core/stage'
-import { UltraHDRLoader } from 'three/addons/loaders/UltraHDRLoader'
-import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment'
-import MeshLine from './line/MeshLine'
-import { circlePositions } from './line/positions/circlePositions'
+import MeshLine from '../3d/line/MeshLine'
+import { circlePositions } from '../3d/line/positions/circlePositions'
 
-class Manager3D {
+class BasicExample {
 	constructor() {
-		this.isInit = false
 		this.lines = []
 		this.labels = []
 		this.cssRenderer = null
 		this.checkerTexture = null
+		this.mapTexture = null
+		this.alphaTexture = null
 		this.backgroundPlane = null
 		this.backgroundPlanes = []
 	}
 
 	async init() {
-		if( !this.isInit ) {
-			this.isInit = true
-			await stage3d.initRender()
-			stage3d.control = new OrbitControl( stage3d.camera, 13 )
-			this.addLight()
-			this.initCSSRenderer()
-			// await this.loadHDR()
-			await this.initHDR()
-			await this.loadAssets()
-		}
-
+		await stage3d.initRender()
+		stage3d.control = new OrbitControl( stage3d.camera, 13 )
+		this.addLight()
+		this.initCSSRenderer()
+		await this.initHDR()
 		this.initScene()
 	}
 
@@ -120,7 +113,7 @@ class Manager3D {
 			this.lines.push( line )
 			stage3d.add( line )
 
-			// Create background plane for Alpha Map example (index 9)
+			// Create background plane for Alpha Map example
 			if ( config.title === "Alpha Map" ) {
 				const planeGeometry = new PlaneGeometry( 2.2, 2.2 )
 				const planeMaterial = new MeshBasicMaterial( {
@@ -137,7 +130,7 @@ class Manager3D {
 				stage3d.add( alphaBackgroundPlane )
 			}
 
-			// Create background plane for opacity example (index 12)
+			// Create background plane for opacity example
 			if ( config.title === "Opacity" ) {
 				const planeGeometry = new PlaneGeometry( 2.2, 2.2 )
 				const planeMaterial = new MeshBasicMaterial( {
@@ -189,31 +182,11 @@ class Manager3D {
 		stage3d.scene.environment = envMap
 	}
 
-	async loadHDR() {
-		let loader = this.loaderHDR = this.loaderHDR || new UltraHDRLoader()
-		// loader.setDataType( THREE[ type ] );
-		let texture = await loader.loadAsync( '/hdr/royal_esplanade_256x128.jpg' )
-		texture.mapping = EquirectangularReflectionMapping
-		texture.needsUpdate = true
-		// stage3d.scene.background = texture
-		stage3d.scene.environment = texture
-		stage3d.render()
-	}
-
-	async loadAssets() {
-		return new Promise( ( resolve ) => {
-			resolve()
-			Assets.onLoadComplete.addOnce( resolve )
-		} )
-	}
-
 	update = ( dt ) => {
 		// Render CSS labels
 		if ( this.cssRenderer ) {
 			this.cssRenderer.render( stage3d.scene, stage3d.camera )
 		}
-		// If lines need animation, update them here
-		// this.lines.forEach(line => { /* update line */ });
 	}
 
 	show() {
@@ -224,7 +197,6 @@ class Manager3D {
 			animate( line.percent, { duration: 1, value: 1.01, delay: i * 0.05, ease: 'easeOut' } )
 			animate( line.percent2, { duration: 1, value: -0.01, delay: 3 + i * 0.05, ease: 'easeOut', onComplete: ()=>{ if( i === this.lines.length - 1 ) this.show() } } )
 		} )
-
 	}
 
 	hide( cb ) {
@@ -233,13 +205,13 @@ class Manager3D {
 			animate( line.percent2, { duration: 1, value: 0, delay: i * 0.02, ease: 'easeOut' } )
 		} )
 		setTimeout( () => {
-			this.disposeLines()
 			this.dispose()
 			if( cb ) cb()
 		}, 1000 + this.lines.length * 20 )
 	}
 
-	disposeLines() {
+	dispose() {
+		// Clean up lines and labels
 		this.lines.forEach( line => {
 			stage3d.remove( line )
 			line.dispose()
@@ -264,9 +236,7 @@ class Manager3D {
 		}
 		this.lines = []
 		this.labels = []
-	}
 
-	dispose() {
 		// Remove CSS renderer
 		if ( this.cssRenderer && this.cssRenderer.domElement.parentNode ) {
 			this.cssRenderer.domElement.parentNode.removeChild( this.cssRenderer.domElement )
@@ -294,29 +264,6 @@ class Manager3D {
 		const texture = new CanvasTexture( canvas )
 		texture.wrapS = texture.wrapT = 1000 // RepeatWrapping
 		texture.repeat.set( 2, 2 )
-		return texture
-	}
-
-	// Create a simple checker pattern texture for lines
-	createSimpleCheckerTexture( size = 32, divisions = 2 ) {
-		const canvas = document.createElement( 'canvas' )
-		canvas.width = size
-		canvas.height = size
-		const ctx = canvas.getContext( '2d' )
-
-		const squareSize = size / divisions
-
-		for ( let i = 0; i < divisions; i++ ) {
-			for ( let j = 0; j < divisions; j++ ) {
-				const isWhite = ( i + j ) % 2 === 0
-				ctx.fillStyle = isWhite ? '#ffffff' : '#888888'
-				ctx.fillRect( i * squareSize, j * squareSize, squareSize, squareSize )
-			}
-		}
-
-		const texture = new CanvasTexture( canvas )
-		texture.wrapS = texture.wrapT = 1000 // RepeatWrapping
-		texture.repeat.set( 8, 1 ) // Repeat along the line, not across
 		return texture
 	}
 
@@ -365,4 +312,4 @@ class Manager3D {
 	}
 }
 
-export default new Manager3D()
+export default new BasicExample()
