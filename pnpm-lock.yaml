@@ -62,8 +62,8 @@ importers:
         specifier: ^3.3.3
         version: 3.3.3
       rollup-plugin-visualizer:
-        specifier: ^6.0.1
-        version: 6.0.1(rollup@4.40.0)
+        specifier: ^6.0.3
+        version: 6.0.3(rollup@4.40.0)
       sharp:
         specifier: ^0.34.2
         version: 0.34.2
@@ -1387,12 +1387,12 @@ packages:
     resolution: {integrity: sha512-g6QUff04oZpHs0eG5p83rFLhHeV00ug/Yf9nZM6fLeUrPguBTkTQOdpAWWspMh55TZfVQDPaN3NQJfbVRAxdIw==}
     engines: {iojs: '>=1.0.0', node: '>=0.10.0'}
 
-  rollup-plugin-visualizer@6.0.1:
-    resolution: {integrity: sha512-NjlGElvLXCSZSAi3gNRZbfX3qlQbQcJ9TW97c5JpqfVwMhttj9YwEdPwcvbKj91RnMX2PWAjonvSEv6UEYtnRQ==}
+  rollup-plugin-visualizer@6.0.3:
+    resolution: {integrity: sha512-ZU41GwrkDcCpVoffviuM9Clwjy5fcUxlz0oMoTXTYsK+tcIFzbdacnrr2n8TXcHxbGKKXtOdjxM2HUS4HjkwIw==}
     engines: {node: '>=18'}
     hasBin: true
     peerDependencies:
-      rolldown: 1.x
+      rolldown: 1.x || ^1.0.0-beta
       rollup: '>=4.22.4'
     peerDependenciesMeta:
       rolldown:
@@ -2884,7 +2884,7 @@ snapshots:
 
   reusify@1.1.0: {}
 
-  rollup-plugin-visualizer@6.0.1(rollup@4.40.0):
+  rollup-plugin-visualizer@6.0.3(rollup@4.40.0):
     dependencies:
       open: 8.4.2
       picomatch: 4.0.2
