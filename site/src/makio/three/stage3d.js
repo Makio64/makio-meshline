@@ -1,7 +1,6 @@
 import { Scene, PerspectiveCamera, WebGPURenderer, TimestampQuery } from 'three/webgpu'
 import WebGPU from 'three/addons/capabilities/WebGPU'
 import stage from '../core/stage'
-import { PlaneGeometry } from 'three'
 import Stats from 'stats-gl'
 
 const showStats = window.location.search.includes( 'debug' )

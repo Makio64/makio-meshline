@@ -9,12 +9,7 @@ export {}
 declare module 'vue' {
   export interface GlobalComponents {
     BurgerButton: typeof import('./src/components/ui/BurgerButton.vue')['default']
-    ButtonFX: typeof import('./src/components/ui/ButtonFX.vue')['default']
-    copy: typeof import('./src/components/ui/BurgerButton copy.vue')['default']
-    GradientButton: typeof import('./src/components/ui/GradientButton.vue')['default']
-    ImgNext: typeof import('./src/components/ui/ImgNext.vue')['default']
     MenuFullscreen: typeof import('./src/components/ui/MenuFullscreen.vue')['default']
-    ProgressBar: typeof import('./src/components/ui/ProgressBar.vue')['default']
     Spinner: typeof import('./src/components/ui/Spinner.vue')['default']
     SVGCircle: typeof import('./src/components/ui/SVGCircle.vue')['default']
   }

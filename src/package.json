@@ -4,5 +4,9 @@
   "type": "module",
   "main": "index.js",
   "module": "index.js",
-  "sideEffects": false
+  "sideEffects": false,
+  "peerDependencies": {
+    "three": "^0.177.0",
+    "animejs": "^4.0.2"
+  }
 } 
