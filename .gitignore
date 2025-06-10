@@ -1,6 +1,7 @@
 .DS_Store
 node_modules
 /dist
+site/dist
 docs/.vitepress
 
 # local env files
