@@ -1,4 +1,4 @@
-import { BufferAttribute, BufferGeometry, Matrix4, Vector2, Vector3 } from 'three'
+import { BufferAttribute, BufferGeometry, Vector2, Vector3 } from 'three/webgpu'
 
 export class MeshLineGeometry extends BufferGeometry {
 	constructor( lines, widthCb, loop ) {
