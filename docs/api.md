@@ -5,7 +5,7 @@ This page provides an overview of the **Makio MeshLine** API. For detailed docum
 ## Installation & Import
 
 ```js
-import { MeshLine, MeshLineGeometry, MeshLineNodeMaterial, circlePositions, squarePositions } from 'meshline';
+import { MeshLine, MeshLineGeometry, MeshLineNodeMaterial, circlePositions, squarePositions, sineWavePositions } from 'meshline';
 ```
 
 ## Quick Start
@@ -88,11 +88,13 @@ Utility functions for generating common line shapes:
 
 - `circlePositions(segments?, radius?)` - Generate circle vertices
 - `squarePositions(segments?)` - Generate square vertices
+- `sineWavePositions(wavelengths?, segments?, amplitude?, length?)` - Generate sine wave vertices
 
 **Example:**
 ```javascript
 const circle = circlePositions(64, 2); // 64 segments, radius 2
 const square = squarePositions(4);     // 4 segments per side
+const wave = sineWavePositions(2, 100, 1, 4); // 2 cycles, 100 points, amplitude 1, length 4
 ```
 
 [→ View Helper Functions Documentation](/helpers)
