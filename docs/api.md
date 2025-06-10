@@ -49,10 +49,10 @@ You can use the `show()` and `hide()` methods on a `MeshLine` instance to animat
 ### circlePositions
 
 ```ts
-circlePositions(segments?: number): Array<[number, number, number]>
+circlePositions(segments?: number, radius?: number): Float32Array
 ```
 
-Generates an array of `[x, y, z]` points evenly spaced around a circle.
+Generates a `Float32Array` of `[x, y, z]` coordinates evenly spaced around a circle of the given radius (default `1`).
 
 ### squarePositions
 
