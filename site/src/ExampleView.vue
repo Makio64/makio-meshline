@@ -21,6 +21,10 @@ export default {
 			return [this.$refs.title, this.$refs.subtitle, this.$refs.btn]
 		},
 	},
+	beforeUnmount() {
+		console.log( 'beforeUnmount' )
+		this.example?.dispose()
+	},
 	methods: {
 		async transitionIn() {
 			// animate( this.elts, { opacity: [0, 1], translateY: [50, 0], duration: 1.1, delay: stagger( 0.15, { start: 0.5 } ), ease: 'outQuad' } )
@@ -30,13 +34,11 @@ export default {
 			// animate( this.elts, { opacity: 0, y: -50, duration: 0.5, delay: stagger( 0.05 ), ease: 'inQuad' } )
 			this.example?.hide( cb )
 		},
-		beforeRouteLeave( next ) {
-			this.transitionOut( next )
-		},
+		// beforeRouteLeave( next ) {
+		// 	this.transitionOut( next )
+		// },
 	},
-	beforeUnmount() {
-		this.example?.dispose()
-	},
+
 }
 </script>
 

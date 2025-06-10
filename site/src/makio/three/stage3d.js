@@ -21,7 +21,7 @@ class Stage3D {
 
 			this.renderer = new WebGPURenderer( {
 				antialias: true,
-				logarithmicDepthBuffer: false,
+				reverseDepth: true,
 				alpha: false,
 			} )
 			this.renderer.setPixelRatio( stage.devicePixelRatio )
@@ -145,51 +145,6 @@ class Stage3D {
 		stage.onUpdate.remove( this.render )
 		this.renderer?.clear()
 		this.renderer?.dispose()
-	}
-
-	//---------------------------------------------------------- COMPILE
-	async gpuUpload( objects ) {
-		const compileScene = this.compileScene ||= new Scene()
-		const compileCamera = this.compileCamera ||= new PerspectiveCamera( 60, stage.width / stage.height, 0.0001, 10000 )
-		compileCamera.position.set( 0, 0, 10000 )
-		compileCamera.lookAt( 0, 0, 0 )
-		const compileGeometry = this.compileGeometry ||= new PlaneGeometry( 1, 1 )
-		compileScene.environment = this.scene.environment
-
-		const states = new Map()
-
-		for ( const obj of objects ) {
-			if ( !obj || obj.isLight || obj.isCamera ) continue
-			if ( obj.isTexture ) {
-				// console.log('[compile] add texture', obj)
-				obj.needsUpdate = true
-				this.renderer.initTexture( obj )
-			}
-			else if ( obj.isMaterial ) {
-				// console.log('[compile] add material', obj)
-				const mesh = new Mesh( compileGeometry, obj )
-				compileScene.add( mesh )
-				for ( const map of ['map', 'alphaMap', 'aoMap', 'bumpMap', 'displacementMap', 'emissiveMap', 'envMap', 'lightMap', 'metalnessMap', 'normalMap', 'roughnessMap'] ) {
-					if ( obj[map] ) this.renderer.initTexture( obj[map] )
-				}
-			}
-			else if ( obj.isObject3D ) {
-				// console.log('[compile] add object', obj)
-
-				states.set( obj, { parent: obj.parent, frustumCulled: obj.frustumCulled } )
-				obj.frustumCulled = false
-				compileScene.add( obj )
-			}
-		}
-
-		await this.renderer.compileAsync( compileScene, compileCamera, this.scene )
-
-		for ( const [obj, { parent, frustumCulled }] of states ) {
-			if ( parent ) parent.add( obj )
-			obj.frustumCulled = frustumCulled
-		}
-
-		compileGeometry.dispose()
 	}
 
 }

@@ -1,7 +1,7 @@
 <!-- Simple MenuFullscreen by @makio64 || David Ronai -->
 <template>
 	<div ref="root" class="MenuFullscreen" :class="{ open: isOpen }">
-		<a v-for="link in links" :key="link.text" ref="link" :href="link.href">{{ link.text }}</a>
+		<a v-for="link in links" :key="link.text" ref="link" :href="link.href" @click="close">{{ link.text }}</a>
 	</div>
 </template>
 
@@ -25,12 +25,12 @@ export default {
 		},
 	},
 	methods: {
-		animateIn() {
+		close() {
+			menuOpen.value = false
+		},
+		show() {
 			const { root, link } = this.$refs
-			animate( root, {
-				opacity: [0, 1],
-				duration: 0.4,
-				ease: 'outExpo',
+			animate( root, { opacity: [0, 1], duration: 0.4, ease: 'outExpo',
 				onBegin: () => {
 					root.style.pointerEvents = 'all'
 					root.style.visibility = 'visible'
@@ -46,14 +46,9 @@ export default {
 				ease: 'outExpo',
 			} )
 		},
-		animateOut() {
+		hide() {
 			const { root, link } = this.$refs
-			animate( root, {
-				opacity: 0,
-				duration: 0.3,
-				delay: .1,
-				ease: 'inQuad',
-			} )
+			animate( root, { opacity: 0, duration: 0.3, delay: .1, ease: 'inQuad', } )
 			animate( link, {
 				width: 0,
 				delay: stagger( 0.1 ),
@@ -69,9 +64,9 @@ export default {
 	watch: {
 		isOpen( newVal ) {
 			if ( newVal ) {
-				this.animateIn()
+				this.show()
 			} else {
-				this.animateOut()
+				this.hide()
 			}
 		},
 	},

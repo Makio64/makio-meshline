@@ -1,8 +1,6 @@
-import { animate } from 'animejs'
-import { AmbientLight, DirectionalLight, CanvasTexture, PlaneGeometry, MeshBasicMaterial, Mesh } from 'three/webgpu'
+import { animate, utils } from 'animejs'
+import { CanvasTexture, PlaneGeometry, MeshBasicMaterial, Mesh } from 'three/webgpu'
 import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js'
-import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment'
-import { PMREMGenerator } from 'three/webgpu'
 
 import OrbitControl from '@/makio/three/controls/OrbitControl'
 import stage3d from '@/makio/three/stage3d'
@@ -22,7 +20,6 @@ class BasicExample {
 	}
 
 	async init() {
-		console.log( 'init' )
 		await stage3d.initRender()
 		stage3d.control = new OrbitControl( stage3d.camera, 13 )
 		this.initCSSRenderer()
@@ -186,15 +183,18 @@ class BasicExample {
 	}
 
 	hide( cb ) {
-		this.lines.forEach( ( line, i ) => {
-			// Animate lines out
-			animate( line.percent2, { duration: 1, value: 0, delay: i * 0.02, ease: 'easeOut' } )
+		this.lines.forEach( ( line, i, arr ) => {
+			utils.remove( line )
+			animate( line.percent2, {
+				duration: 0.2,
+				value: 0,
+				delay: i * 0.02,
+				ease: 'easeOut',
+				onComplete: i === arr.length - 1 ? cb : undefined
+			} )
 		} )
-		setTimeout( () => {
-			this.dispose()
-			if( cb ) cb()
-		}, 1000 + this.lines.length * 20 )
 	}
+
 
 	dispose() {
 		console.log( 'lines dispose' )

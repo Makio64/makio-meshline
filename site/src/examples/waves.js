@@ -16,7 +16,7 @@ class WavesExample {
 	async init() {
 		console.log( 'waves init' )
 		await stage3d.initRender()
-		stage3d.control = new OrbitControl( stage3d.camera, 25 )
+		stage3d.control = new OrbitControl( stage3d.camera, 35 )
 		stage3d.camera.far = 1000
 		stage3d.camera.updateProjectionMatrix()
 		this.initScene()
@@ -73,6 +73,7 @@ class WavesExample {
 		}
 		stage.onUpdate.remove( this.update )
 		this.waveLines = null
+		console.log( 'wave dispose' )
 	}
 
 	show() {}
