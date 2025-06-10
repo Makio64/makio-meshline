@@ -4,6 +4,7 @@
   "scripts": {
     "dev": "pnpm --filter site dev",
     "build": "pnpm --filter site build",
+    "preview": "pnpm --filter site preview",
     "docs:dev": "pnpm --filter docs dev",
     "docs:build": "pnpm --filter docs build",
     "docs:preview": "pnpm --filter docs preview"
