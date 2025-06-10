@@ -38,9 +38,9 @@ export default defineConfig( {
 		target: 'esnext',
 		emptyOutDir: true,
 		sourcemap: true,
-		rollupOptions: {
-			external: ['three', 'three/tsl', 'three/webgpu', 'animejs']
-		}
+		// rollupOptions: {
+		// 	external: ['three', 'three/tsl', 'three/webgpu', 'animejs']
+		// }
 	},
 	esbuild: {
 		keepNames: false,

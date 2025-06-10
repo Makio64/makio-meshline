@@ -1,8 +1,7 @@
 import { Fn, step, uniform, uv } from "three/tsl"
 import { MeshLineGeometry } from "./MeshLineGeometry"
 import { MeshLineNodeMaterial } from "./MeshLineNodeMaterial"
-import { Mesh, Color } from "three"
-import { animate } from "animejs"
+import { Mesh, Color } from "three/webgpu"
 
 export default class MeshLine extends Mesh {
 

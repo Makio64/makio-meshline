@@ -13,6 +13,8 @@ import injectFonts from '@/makio/utils/injectFonts'
 import { contentLoaded } from '@/store'
 import { TinyRouter } from 'vue-tiny-router'
 import BurgerButton from './components/ui/BurgerButton.vue'
+import { engine } from 'animejs'
+engine.timeUnit = 's'
 
 export default {
 	name: 'App',
@@ -50,8 +52,6 @@ export default {
 			true,
 		)
 		await loadTranslations( '/translations/' + detectLang( ['en', 'fr'] ) + '.json' )
-		const { engine } = await import( 'animejs' )
-		engine.timeUnit = 's'
 		this.basicLoaded = true
 	},
 	components: {
