@@ -35,7 +35,7 @@ export default class MeshLine extends Mesh {
 		if ( Array.isArray( positions ) && positions.length > 0 && Array.isArray( positions[0] ) ) {
 			geometry.setLines( positions, undefined, config.isClose )
 		} else {
-			geometry.setPoints( positions , undefined, [config.isClose] )
+			geometry.setLines( [positions] , undefined, [config.isClose] )
 		}
 
 		let material = new MeshLineNodeMaterial( {

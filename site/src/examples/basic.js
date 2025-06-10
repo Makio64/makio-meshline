@@ -197,6 +197,7 @@ class BasicExample {
 	}
 
 	dispose() {
+		console.log( 'lines dispose' )
 		// Clean up lines and labels
 		this.lines.forEach( line => {
 			stage3d.remove( line )
