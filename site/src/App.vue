@@ -35,7 +35,7 @@ export default {
 		},
 		redirects() {
 			return {
-				'/': '/examples/'
+				'/': '/examples/basic'
 			}
 		},
 		contentLoaded() {
