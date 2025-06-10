@@ -1,1 +1,0 @@
-import{_ as i,c as a,o as e,ae as n}from"./chunks/framework.BtEkjhVd.js";const c=JSON.parse('{"title":"Getting Started","description":"","frontmatter":{},"headers":[],"relativePath":"guide.md","filePath":"guide.md"}'),t={name:"guide.md"};function h(l,s,p,k,r,d){return e(),a("div",null,s[0]||(s[0]=[n("",14)]))}const g=i(t,[["render",h]]);export{c as __pageData,g as default};
