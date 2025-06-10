@@ -26,3 +26,6 @@ pnpm-debug.log*
 stats.html
 .env
 .npmrc
+docs/.vitepress/dist/404.html
+docs/.vitepress/dist/api.html
+docs/.vitepress/dist/guide.html
