@@ -1,140 +1,177 @@
 # API Reference
 
-This page provides the API reference for **Makio MeshLine**.
+This page provides an overview of the **Makio MeshLine** API. For detailed documentation, visit the individual class pages.
 
-## Import
+## Installation & Import
 
 ```js
-import { MeshLine, circlePositions, squarePositions } from 'meshline';
+import { MeshLine, MeshLineGeometry, MeshLineNodeMaterial, circlePositions, squarePositions } from 'meshline';
+```
+
+## Quick Start
+
+```javascript
+import { MeshLine, circlePositions } from 'meshline';
+import * as THREE from 'three';
+
+// Create a scene
+const scene = new THREE.Scene();
+
+// Generate circle positions
+const positions = circlePositions(64); 
+
+// Create a MeshLine
+const line = new MeshLine(positions, {
+  color: 0xff0000,
+  lineWidth: 0.5,
+  isClose: true,
+});
+
+scene.add(line);
 ```
 
 ## Classes
 
-### MeshLine
+### [MeshLine](/meshline)
+
+The main class for creating performant, customizable lines in Three.js.
 
 ```ts
-new MeshLine(
-  positions: Array<[number, number, number]>,
-  options?: MeshLineOptions
-)
+new MeshLine(positions: Array<[number, number, number]>, options?: MeshLineOptions)
 ```
 
-A high-performance line mesh built on Three.js's NodeMaterial system.
+**Key Features:**
+- Easy-to-use high-level API
+- Built-in animation support (`show()`, `hide()`)
+- Automatic resolution handling
+- Extensive customization options
 
-#### MeshLineOptions
+[→ View MeshLine Documentation](/meshline)
 
-- `isClose` (boolean) — whether the line loop should be closed. Default: `false`.
-- `color` (number) — hexadecimal line color. Default: `0xffffff`.
-- `opacity` (number) — overall opacity of the line (0 to 1). Default: `1`.
-- `alphaTest` (number) — alpha threshold for discarding fragments. Default: `1`.
-- `lineWidth` (number) — width of the line in world units. Default: `0.3`.
-- `sizeAttenuation` (boolean) — whether line width attenuates with perspective. Default: `false`.
-- `gradientColor` (number | null) — hexadecimal color for a gradient effect along the line. Default: `null`.
-- `map` (`THREE.Texture` | null) — texture to apply along the line. Default: `null`.
-- `alphaMap` (`THREE.Texture` | null) — alpha mask texture for the line. Default: `null`.
-- `mapOffset` (`THREE.Vector2` | null) — offset for the line texture coordinates. Default: `null`.
-- `dashCount` (number | null) — number of dashes in the line. Default: `null`.
-- `dashRatio` (number | null) — ratio of dash length to gap length. Default: `null`.
-- `dashOffset` (number) — offset for the dash pattern. Default: `0`.
-- `transparent` (boolean) — whether the material is transparent. Default: `false`.
-- `wireframe` (boolean) — whether to render the line as wireframe. Default: `false`.
-- `usePercent` (boolean) — whether to enable percent-based visibility uniforms. Default: `false`.
-- `percent` (number) — initial start visibility percentage (0 to 1). Requires `percent2` or `usePercent`. Default: `undefined`.
-- `percent2` (number) — initial end visibility percentage (0 to 1). Requires `percent` or `usePercent`. Default: `undefined`.
+### [MeshLineGeometry](/meshline-geometry)
 
-You can use the `show()` and `hide()` methods on a `MeshLine` instance to animate these percent uniforms for dynamic reveal/hide effects.
-
-### MeshLineGeometry
+Low-level geometry class that builds the line mesh from point data.
 
 ```ts
-new MeshLineGeometry(
-  lines: Array<[number, number, number]> | Float32Array | THREE.BufferGeometry,
-  widthCallback?: (t: number) => number,
-  loop?: boolean | boolean[]
-)
+new MeshLineGeometry(lines, widthCallback?, loop?)
 ```
 
-Builds the line mesh geometry from raw point data. If you provide a regular array of points, the geometry will internally convert it to a `Float32Array`. For best performance (and to avoid this conversion step), pass your points as a `Float32Array`.
+**Key Features:**
+- Handles complex vertex calculations
+- Support for multiple line segments
+- Variable width along line
+- Optimized for performance
 
-#### setLines
+[→ View MeshLineGeometry Documentation](/meshline-geometry)
+
+### [MeshLineNodeMaterial](/meshline-material)
+
+Specialized Three.js NodeMaterial for line rendering.
 
 ```ts
-geometry.setLines(
-  linesArray: Array<[number, number, number]>[] | Float32Array[] | THREE.BufferGeometry[],
-  widthCallback?: (t: number) => number,
-  loops?: boolean | boolean[]
-): void
+new MeshLineNodeMaterial(parameters?)
 ```
 
-Replace or initialize the geometry with one or multiple line segments. The `loops` parameter can be a single boolean (applied to all lines) or an array of booleans matching each line.
+**Key Features:**
+- WebGPU and WebGL2 compatible
+- Advanced shader features (gradients, dashing, textures)
+- Screen-space line thickness
+- Size attenuation support
 
-### MeshLineNodeMaterial
-
-```ts
-new MeshLineNodeMaterial(
-  parameters?: {
-    transparent?: boolean,
-    depthWrite?: boolean,
-    depthTest?: boolean,
-    wireframe?: boolean,
-    alphaTest?: number,
-    sizeAttenuation?: boolean,
-    resolution?: THREE.Vector2,
-    lineWidth?: number,
-    color?: number | THREE.Color,
-    gradient?: THREE.Color | null,
-    opacity?: number,
-    map?: THREE.Texture | null,
-    alphaMap?: THREE.Texture | null,
-    mapOffset?: THREE.Vector2,
-    repeat?: THREE.Vector2,
-    dashCount?: number | null,
-    dashRatio?: number | null,
-    dashOffset?: number
-  }
-)
-```
-
-Parameters:
-
-- `transparent` (boolean) — whether the material is rendered with transparency. Default: auto-detected (true if `alphaMap` is set, `opacity < 1`, or `transparent` flag is true).
-- `depthWrite` (boolean) — whether to write depth. Default: `true`.
-- `depthTest` (boolean) — whether to perform depth testing. Default: `true`.
-- `wireframe` (boolean) — render line as wireframe. Default: `false`.
-- `alphaTest` (number) — alpha threshold for discarding fragments. Default: `1`.
-- `sizeAttenuation` (boolean) — whether line width attenuates with perspective. Default: `true`.
-- `resolution` (`THREE.Vector2`) — viewport resolution for correct aspect scaling. Default: `new Vector2(1, 1)`.
-- `lineWidth` (number) — base width multiplier for the line in screen space. Default: `1`.
-- `color` (number | `THREE.Color`) — line color. Default: `0xffffff`.
-- `gradient` (`THREE.Color` | null) — optional gradient end color. Default: `null`.
-- `opacity` (number) — global opacity. Default: `1`.
-- `map` (`THREE.Texture` | null) — diffuse texture. Default: `null`.
-- `alphaMap` (`THREE.Texture` | null) — alpha mask texture. Default: `null`.
-- `mapOffset` (`THREE.Vector2`) — UV offset for `map` and `alphaMap`. Default: `new Vector2(0, 0)`.
-- `repeat` (`THREE.Vector2`) — UV repeat for `map` and `alphaMap`. Default: `new Vector2(1, 1)`.
-- `dashCount` (number | null) — number of dash cycles along the line. Default: `null`.
-- `dashRatio` (number | null) — ratio of dash length to gap length (0 to 1). Default: `null` (falls back to `dashLength` parameter if provided).
-- `dashOffset` (number) — offset into the dash cycle. Default: `0`.
-
-The `MeshLineNodeMaterial` is a subclass of Three.js `NodeMaterial` that implements the vertex and fragment logic for rendering thick, dashed, and textured lines using GPU-friendly techniques.
+[→ View MeshLineNodeMaterial Documentation](/meshline-material)
 
 ## Helper Functions
 
-### circlePositions
+### [Position Generators](/helpers)
 
-```ts
-circlePositions(segments?: number, radius?: number): Float32Array
+Utility functions for generating common line shapes:
+
+- `circlePositions(segments?, radius?)` - Generate circle vertices
+- `squarePositions(segments?)` - Generate square vertices
+
+**Example:**
+```javascript
+const circle = circlePositions(64, 2); // 64 segments, radius 2
+const square = squarePositions(4);     // 4 segments per side
 ```
 
-Generates a `Float32Array` of `[x, y, z]` coordinates evenly spaced around a circle of the given radius (default `1`).
+[→ View Helper Functions Documentation](/helpers)
 
-### squarePositions
+## Common Patterns
 
-```ts
-squarePositions(segments?: number): Array<[number, number, number]>
+### Basic Line
+
+```javascript
+const positions = [[0, 0, 0], [1, 1, 0], [2, 0, 0]];
+const line = new MeshLine(positions, {
+  color: 0xff0000,
+  lineWidth: 0.3
+});
 ```
 
-Generates an array of `[x, y, z]` points outlining a square.
+### Dashed Line
 
+```javascript
+const line = new MeshLine(positions, {
+  dashCount: 8,
+  dashRatio: 0.5,
+  color: 0x00ff00
+});
+```
 
-> *You can find more details and full API on the GitHub repository.* 
+### Gradient Line
+
+```javascript
+const line = new MeshLine(positions, {
+  color: 0xff0000,
+  gradientColor: 0x0000ff,
+  lineWidth: 0.8
+});
+```
+
+### Animated Line
+
+```javascript
+const line = new MeshLine(positions, {
+  usePercent: true,
+  percent: 0,
+  percent2: 1
+});
+
+// Animate line reveal
+await line.show();
+```
+
+## Architecture
+
+The library consists of three main components working together:
+
+```
+MeshLine (High-level API)
+    ├── MeshLineGeometry (Vertex generation)
+    └── MeshLineNodeMaterial (Rendering)
+```
+
+- **MeshLine**: User-friendly interface, extends Three.js `Mesh`
+- **MeshLineGeometry**: Generates specialized vertex data for thick lines  
+- **MeshLineNodeMaterial**: Handles GPU rendering with modern shader techniques
+
+This modular design allows you to use components independently for advanced use cases while providing a simple API for common scenarios.
+
+## Browser Support
+
+- **WebGPU**: Preferred backend for modern browsers
+- **WebGL2**: Fallback support for older browsers
+- **Three.js**: Compatible with Three.js r177+
+
+## Performance Tips
+
+1. **Use Float32Array** for large datasets
+2. **Reuse geometries** when possible
+3. **Call dispose()** to prevent memory leaks
+4. **Update uniforms** instead of recreating materials
+5. **Consider LOD** for very long lines
+
+---
+
+*For detailed documentation of each component, use the navigation menu or the links above.* 

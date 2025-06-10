@@ -17,9 +17,23 @@ export default defineConfig({
         ]
       },
       {
-        text: 'API',
+        text: 'API Reference',
         items: [
-          { text: 'MeshLine Class', link: '/api' },
+          { text: 'Overview', link: '/api' },
+        ]
+      },
+      {
+        text: 'Classes',
+        items: [
+          { text: 'MeshLine', link: '/meshline' },
+          { text: 'MeshLineGeometry', link: '/meshline-geometry' },
+          { text: 'MeshLineNodeMaterial', link: '/meshline-material' },
+        ]
+      },
+      {
+        text: 'Utilities',
+        items: [
+          { text: 'Helper Functions', link: '/helpers' },
         ]
       }
     ],
