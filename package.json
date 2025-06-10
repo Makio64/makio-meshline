@@ -2,7 +2,10 @@
   "name": "makio-meshline",
   "private": true,
   "scripts": {
-    "dev": "pnpm --filter site dev"
+    "dev": "pnpm --filter site dev",
+    "docs:dev": "pnpm --filter docs dev",
+    "docs:build": "pnpm --filter docs build",
+    "docs:preview": "pnpm --filter docs preview"
   },
   "devDependencies": {
     "typescript": "^5.8.3"

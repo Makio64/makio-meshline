@@ -1,3 +1,7 @@
 packages:
-  - 'src'
-  - 'site' 
+  - src
+  - site
+  - docs
+
+onlyBuiltDependencies:
+  - esbuild
