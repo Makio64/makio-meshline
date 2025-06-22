@@ -5,23 +5,29 @@ The `MeshLineGeometry` class builds the line mesh geometry from raw point data, 
 ## Constructor
 
 ```ts
-new MeshLineGeometry(
-  lines: Array<[number, number, number]> | Float32Array | THREE.BufferGeometry,
-  widthCallback?: (t: number) => number,
-  loop?: boolean | boolean[]
-)
+new MeshLineGeometry(options?: MeshLineGeometryOptions)
 ```
 
-Creates a new MeshLineGeometry instance.
+### MeshLineGeometryOptions (partial)
 
-### Parameters
+```ts
+interface MeshLineGeometryOptions {
+  lines?: Float32Array | number[][]          // Line points (required)
+  isClose?: boolean | boolean[]              // Close the loop(s)
+  widthCb?: (t: number) => number | null     // Width callback
 
-- `lines` - Line points data. Can be:
-  - Array of `[x, y, z]` coordinate points
-  - `Float32Array` containing vertex data
-  - Three.js `BufferGeometry` object
-- `widthCallback` (optional) - Function that returns width multiplier based on position along line (0-1)
-- `loop` (optional) - Whether to close the line loop(s)
+  // Flags to include / exclude generated attributes (advanced)
+  needsPositions?: boolean
+  needsPrevious?: boolean
+  needsNext?: boolean
+  needsUVs?: boolean
+  needsSide?: boolean
+  needsCounters?: boolean
+  needsWidths?: boolean
+}
+```
+
+`MeshLineGeometry` mirrors most of `MeshLine`'s geometry-related options and can be used directly when you need fine-grained control.
 
 ## Methods
 

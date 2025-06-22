@@ -1,34 +1,51 @@
 import { BufferAttribute, BufferGeometry, Vector2, Vector3 } from 'three/webgpu'
 
 export class MeshLineGeometry extends BufferGeometry {
-	constructor( lines, widthCb, loop ) {
+	constructor( options={} ) {
 		super()
 		this.type = 'MeshLine'
 		this.isMeshLine = true
 
-		this.widthCallback = t => 1
+		this.options = {
+			needsPositions: true,
+			needsPrevious: true,
+			needsNext: true,
+			needsUVs: false,
+			needsSide: true,
+			needsCounters: true,
+			needsWidths: false,
+			...options
+		}
+
+		this.widthCallback = null
 		this.closeLoop = false
 		this._points = null
 		this._attrs = {}
-		this._isMultiLine = false
 		this._lineCount = 0
 		this._lines = [] // Store individual line arrays for multi-line mode
 		this._lineLoops = [] // Store loop flag for each line
-		if ( lines ) {
-			this.setLines( lines, widthCb, loop )
+		if ( options.lines ) {
+			this.setLines( options.lines, options.widthCb, options.loop )
 		}
 	}
 
-	// set multiple lines from an array of point arrays
-	setLines( linesArray, widthCb = this.widthCallback, loops = false ) {
+	// set multiple lines from an array of points arrays
+	setLines( lines ) {
+
+		// If lines is not an array, convert it to an array of arrays
+		if((Array.isArray(lines) || lines instanceof Float32Array) && !Array.isArray(lines[0])){
+			lines = [lines]
+		}
+
+		// convert isClose to an array if needed
+		const lineLoops = Array.isArray( this.options.isClose ) ? this.options.isClose : new Array( lines.length ).fill( this.options.isClose )
+		const actualLoops = [] 
 
 		// Convert each line to Float32Array and store separately
 		const convertedLines = []
-		const lineLoops = Array.isArray( loops ) ? loops : new Array( linesArray.length ).fill( loops )
-		const actualLoops = [] 
 
-		for ( let i = 0; i < linesArray.length; i++ ) {
-			const pts = linesArray[i]
+		for ( let i = 0; i < lines.length; i++ ) {
+			const pts = lines[i]
 			if ( !pts || pts.length === 0 ) continue
 
 			let arr = toFloat32( pts )
@@ -50,11 +67,10 @@ export class MeshLineGeometry extends BufferGeometry {
 		// Store the lines separately
 		this._lines = convertedLines
 		this._lineLoops = actualLoops
-		this._isMultiLine = true
 		this._lineCount = convertedLines.length
 		this._points = new Float32Array() // Clear single line data
-		this.widthCallback = widthCb
 		this.closeLoop = false // Multi-lines handle their own loops individually
+
 		this.build()
 	}
 
@@ -143,13 +159,29 @@ export class MeshLineGeometry extends BufferGeometry {
 		if ( totalVertices === 0 ) return
 
 		// Initialize arrays
-		const positions = new Float32Array( totalVertices * 3 )
-		const previous = new Float32Array( totalVertices * 3 )
-		const next = new Float32Array( totalVertices * 3 )
-		const sides = new Float32Array( totalVertices )
-		const widths = new Float32Array( totalVertices )
-		const uvs = new Float32Array( totalVertices * 2 )
-		const counters = new Float32Array( totalVertices )
+		let positions, previous, next, sides, widths, uvs, counters
+		if(this.options.needsPositions){
+			positions = new Float32Array( totalVertices * 3 )
+		}
+		if(this.options.needsPrevious){
+			previous = new Float32Array( totalVertices * 3 )
+		}
+		if(this.options.needsNext){
+			next = new Float32Array( totalVertices * 3 )
+		}
+		if(this.options.needsSide){
+			sides = new Float32Array( totalVertices )
+		}
+		if(this.options.needsWidths){
+			widths = new Float32Array( totalVertices )
+		}
+		if(this.options.needsUVs){
+			uvs = new Float32Array( totalVertices * 2 )
+		}
+		if(this.options.needsCounters){
+			counters = new Float32Array( totalVertices )
+		}
+
 		const indices = new Uint16Array( totalIndices )
 
 		let vertexOffset = 0
@@ -171,31 +203,41 @@ export class MeshLineGeometry extends BufferGeometry {
 				const t = tStep * i
 
 				// positions (2 vertices per point)
-				positions[vertexOffset * 3] = x
-				positions[vertexOffset * 3 + 1] = y
-				positions[vertexOffset * 3 + 2] = z
-				positions[vertexOffset * 3 + 3] = x
-				positions[vertexOffset * 3 + 4] = y
-				positions[vertexOffset * 3 + 5] = z
+				if(positions){
+					positions[vertexOffset * 3] = x
+					positions[vertexOffset * 3 + 1] = y
+					positions[vertexOffset * 3 + 2] = z
+					positions[vertexOffset * 3 + 3] = x
+					positions[vertexOffset * 3 + 4] = y
+					positions[vertexOffset * 3 + 5] = z
+				}
 
-				// sides
-				sides[vertexOffset] = 1
-				sides[vertexOffset + 1] = -1
+				// sides - which side of the line is the vertex on
+				if(sides){
+					sides[vertexOffset] = 1
+					sides[vertexOffset + 1] = -1
+				}
 
 				// widths
-				const w = this.widthCallback( t )
-				widths[vertexOffset] = w
-				widths[vertexOffset + 1] = w
+				if(widths){
+					const w = this.widthCallback ? this.widthCallback( t ) : 1
+					widths[vertexOffset] = w
+					widths[vertexOffset + 1] = w
+				}
 
 				// uvs
-				uvs[vertexOffset * 2] = t
-				uvs[vertexOffset * 2 + 1] = 0
-				uvs[vertexOffset * 2 + 2] = t
-				uvs[vertexOffset * 2 + 3] = 1
+				if(uvs){
+					uvs[vertexOffset * 2] = t
+					uvs[vertexOffset * 2 + 1] = 0
+					uvs[vertexOffset * 2 + 2] = t
+					uvs[vertexOffset * 2 + 3] = 1
+				}
 
-				// counters
-				counters[vertexOffset] = t
-				counters[vertexOffset + 1] = t
+				// counters 
+				if(counters){
+					counters[vertexOffset] = t
+					counters[vertexOffset + 1] = t
+				}
 
 				// previous
 				let prevX, prevY, prevZ
@@ -228,51 +270,54 @@ export class MeshLineGeometry extends BufferGeometry {
 					prevZ = pz
 				}
 
-				previous[vertexOffset * 3] = prevX
-				previous[vertexOffset * 3 + 1] = prevY
-				previous[vertexOffset * 3 + 2] = prevZ
-				previous[vertexOffset * 3 + 3] = prevX
-				previous[vertexOffset * 3 + 4] = prevY
-				previous[vertexOffset * 3 + 5] = prevZ
+				if(previous){
+					previous[vertexOffset * 3] = prevX
+					previous[vertexOffset * 3 + 1] = prevY
+					previous[vertexOffset * 3 + 2] = prevZ
+					previous[vertexOffset * 3 + 3] = prevX
+					previous[vertexOffset * 3 + 4] = prevY
+					previous[vertexOffset * 3 + 5] = prevZ
+				}
 
 				// next
-				let nextX, nextY, nextZ
-				if ( i === numPoints - 1 ) {
-					// Last point
-					if ( isLooped ) {
-						// Use second point (the first real point after the closing duplicate)
-						const [nx, ny, nz] = this.getPoint( line, 1 )
+				if(next){
+					let nextX, nextY, nextZ
+					if ( i === numPoints - 1 ) {
+						// Last point
+						if ( isLooped ) {
+							// Use second point (the first real point after the closing duplicate)
+							const [nx, ny, nz] = this.getPoint( line, 1 )
+							nextX = nx
+							nextY = ny
+							nextZ = nz
+						} else {
+							// Extrapolate forwards
+							if ( numPoints > 1 ) {
+								const [x1, y1, z1] = this.getPoint( line, numPoints - 2 )
+								const reflected = this.reflect( [x, y, z], [x1, y1, z1] )
+								nextX = reflected[0]
+								nextY = reflected[1]
+								nextZ = reflected[2]
+							} else {
+								nextX = x
+								nextY = y
+								nextZ = z
+							}
+						}
+					} else {
+						const [nx, ny, nz] = this.getPoint( line, i + 1 )
 						nextX = nx
 						nextY = ny
 						nextZ = nz
-					} else {
-						// Extrapolate forwards
-						if ( numPoints > 1 ) {
-							const [x1, y1, z1] = this.getPoint( line, numPoints - 2 )
-							const reflected = this.reflect( [x, y, z], [x1, y1, z1] )
-							nextX = reflected[0]
-							nextY = reflected[1]
-							nextZ = reflected[2]
-						} else {
-							nextX = x
-							nextY = y
-							nextZ = z
-						}
 					}
-				} else {
-					const [nx, ny, nz] = this.getPoint( line, i + 1 )
-					nextX = nx
-					nextY = ny
-					nextZ = nz
+
+					next[vertexOffset * 3] = nextX
+					next[vertexOffset * 3 + 1] = nextY
+					next[vertexOffset * 3 + 2] = nextZ
+					next[vertexOffset * 3 + 3] = nextX
+					next[vertexOffset * 3 + 4] = nextY
+					next[vertexOffset * 3 + 5] = nextZ
 				}
-
-				next[vertexOffset * 3] = nextX
-				next[vertexOffset * 3 + 1] = nextY
-				next[vertexOffset * 3 + 2] = nextZ
-				next[vertexOffset * 3 + 3] = nextX
-				next[vertexOffset * 3 + 4] = nextY
-				next[vertexOffset * 3 + 5] = nextZ
-
 				vertexOffset += 2
 			}
 
@@ -291,13 +336,27 @@ export class MeshLineGeometry extends BufferGeometry {
 		}
 
 		// Set attributes
-		this.setOrUpdateAttribute( 'position', positions, 3 )
-		this.setOrUpdateAttribute( 'previous', previous, 3 )
-		this.setOrUpdateAttribute( 'next', next, 3 )
-		this.setOrUpdateAttribute( 'side', sides, 1 )
-		this.setOrUpdateAttribute( 'width', widths, 1 )
-		this.setOrUpdateAttribute( 'uv', uvs, 2 )
-		this.setOrUpdateAttribute( 'counters', counters, 1 )
+		if(positions){
+			this.setOrUpdateAttribute( 'position', positions, 3 )
+		}
+		if(previous){
+			this.setOrUpdateAttribute( 'previous', previous, 3 )
+		}
+		if(next){
+			this.setOrUpdateAttribute( 'next', next, 3 )
+		}
+		if(sides){
+			this.setOrUpdateAttribute( 'side', sides, 1 )
+		}
+		if(widths){
+			this.setOrUpdateAttribute( 'width', widths, 1 )
+		}
+		if(uvs){
+			this.setOrUpdateAttribute( 'uv', uvs, 2 )
+		}
+		if(counters){
+			this.setOrUpdateAttribute( 'counters', counters, 1 )
+		}
 
 		// Set indices
 		const indexAttr = new BufferAttribute( indices, 1 )

@@ -1,6 +1,6 @@
 packages:
   - src
-  - site
+  - demo
   - docs
 
 onlyBuiltDependencies:

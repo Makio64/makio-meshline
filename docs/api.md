@@ -17,11 +17,9 @@ import * as THREE from 'three';
 // Create a scene
 const scene = new THREE.Scene();
 
-// Generate circle positions
-const positions = circlePositions(64); 
-
-// Create a MeshLine
-const line = new MeshLine(positions, {
+// Create a MeshLine (circle)
+const line = new MeshLine({
+  lines: circlePositions(64),
   color: 0xff0000,
   lineWidth: 0.5,
   isClose: true,
@@ -37,12 +35,12 @@ scene.add(line);
 The main class for creating performant, customizable lines in Three.js.
 
 ```ts
-new MeshLine(positions: Array<[number, number, number]>, options?: MeshLineOptions)
+new MeshLine(options?: MeshLineOptions)
 ```
 
 **Key Features:**
 - Easy-to-use high-level API
-- Built-in animation support (`show()`, `hide()`)
+- Percent-based reveal / hide via `percent` uniforms
 - Automatic resolution handling
 - Extensive customization options
 
@@ -104,8 +102,8 @@ const wave = sineWavePositions(2, 100, 1, 4); // 2 cycles, 100 points, amplitude
 ### Basic Line
 
 ```javascript
-const positions = [[0, 0, 0], [1, 1, 0], [2, 0, 0]];
-const line = new MeshLine(positions, {
+const line = new MeshLine({
+  lines: [[0, 0, 0], [1, 1, 0], [2, 0, 0]],
   color: 0xff0000,
   lineWidth: 0.3
 });
@@ -114,7 +112,8 @@ const line = new MeshLine(positions, {
 ### Dashed Line
 
 ```javascript
-const line = new MeshLine(positions, {
+const line = new MeshLine({
+  lines: [[0, 0, 0], [1, 1, 0], [2, 0, 0]],
   dashCount: 8,
   dashRatio: 0.5,
   color: 0x00ff00
@@ -124,7 +123,8 @@ const line = new MeshLine(positions, {
 ### Gradient Line
 
 ```javascript
-const line = new MeshLine(positions, {
+const line = new MeshLine({
+  lines: [[0, 0, 0], [1, 1, 0], [2, 0, 0]],
   color: 0xff0000,
   gradientColor: 0x0000ff,
   lineWidth: 0.8
@@ -134,14 +134,16 @@ const line = new MeshLine(positions, {
 ### Animated Line
 
 ```javascript
-const line = new MeshLine(positions, {
+const line = new MeshLine({
+  lines: [[0, 0, 0], [1, 1, 0], [2, 0, 0]],
   usePercent: true,
   percent: 0,
   percent2: 1
 });
 
-// Animate line reveal
-await line.show();
+// Animate line reveal (using gsap or any tween lib)
+gsap.to(line.percent,  { value: 1, duration: 1 });
+gsap.to(line.percent2, { value: 0, duration: 1 });
 ```
 
 ## Architecture

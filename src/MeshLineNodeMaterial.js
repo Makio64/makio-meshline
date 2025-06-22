@@ -1,7 +1,6 @@
 import { NodeMaterial, Color, Vector2 } from 'three/webgpu'
-import { float, vec4, vec2, Fn, uniform, uv, modelViewMatrix, normalize, positionGeometry, cameraProjectionMatrix, attribute, varyingProperty, Discard, step, mix, texture, mod } from 'three/tsl'
+import { float, vec4, vec2, Fn, uniform, uv, modelViewMatrix, normalize, positionGeometry, cameraProjectionMatrix, attribute, varyingProperty, Discard, step, mix, texture, mod, diffuseColor, output } from 'three/tsl'
 
-// Fix function to avoid recreation
 const fix = Fn( ( [i_immutable, aspect_immutable] ) => {
 	const aspect = float( aspect_immutable ).toVar()
 	const i = vec4( i_immutable ).toVar()
@@ -15,39 +14,35 @@ const fix = Fn( ( [i_immutable, aspect_immutable] ) => {
 
 class MeshLineNodeMaterial extends NodeMaterial {
 
-	constructor( parameters = {} ) {
+	constructor( options = {} ) {
 		super()
 
-		// Auto-detect features based on provided parameters
-		const hasCustomOpacity = parameters.opacity !== undefined && parameters.opacity < 1
-		const hasAlphaMap = parameters.alphaMap !== undefined && parameters.alphaMap !== null
-
-		// Auto-set transparency when needed
-		const needsTransparency = hasAlphaMap || hasCustomOpacity || ( parameters.transparent === true )
+		this.options = options
 
 		// classic properties
-		this.transparent = parameters.transparent ?? needsTransparency
-		this.depthWrite = parameters.depthWrite ?? true
-		this.depthTest = parameters.depthTest ?? true
-		this.wireframe = parameters.wireframe ?? false
+		this.depthWrite = options.depthWrite ?? true
+		this.depthTest = options.depthTest ?? true
+		this.wireframe = options.wireframe ?? false
 
-		this.alphaTest = parameters.alphaTest ?? 1
-		this.sizeAttenuation = parameters.sizeAttenuation ?? true
+		this.transparent = options.transparent ?? ( options.alphaMap != null || (( options.opacity ?? 1 ) < 1) )
 
+		this.alphaTest = options.alphaTest ?? 1
+		this.sizeAttenuation = options.sizeAttenuation ?? true
+
+		// TODO : create only uniforms needed
 		// Can be changed dynamically
-		this.resolution = uniform( parameters.resolution ?? new Vector2( 1 ) )
-		this.lineWidth = uniform( parameters.lineWidth ?? 1 )
-		this.color = uniform( new Color( parameters.color ?? 0xffffff ) )
-		this.gradient = uniform( parameters.gradient ?? null )
-		this.opacity = uniform( parameters.opacity ?? 1 )
-		this.map = texture( parameters.map ?? null )
-		this.alphaMap = texture( parameters.alphaMap ?? null )
-		this.mapOffset = uniform( parameters.mapOffset ?? new Vector2( 0, 0 ) )
-		this.repeat = uniform( parameters.repeat ?? new Vector2( 1, 1 ) )
-		this.dashCount = uniform( parameters.dashCount ?? null )
-		this.dashRatio = uniform( parameters.dashRatio ?? parameters.dashLength ?? null )
-		this.dashOffset = uniform( parameters.dashOffset ?? 0 )
-
+		this.resolution = uniform( options.resolution ?? new Vector2( 1 ) )
+		this.lineWidth = uniform( options.lineWidth ?? 1 )
+		this.color = uniform( new Color( options.color ?? 0xffffff ) )
+		this.gradient = uniform( options.gradient ?? null )
+		this.opacity = uniform( options.opacity ?? 1 )
+		this.map = texture( options.map ?? null )
+		this.alphaMap = texture( options.alphaMap ?? null )
+		this.mapOffset = uniform( options.mapOffset ?? new Vector2( 0, 0 ) )
+		this.repeat = uniform( options.repeat ?? new Vector2( 1, 1 ) )
+		this.dashCount = options.dashCount ? uniform( options.dashCount) : null
+		this.dashRatio = uniform( options.dashRatio ?? options.dashLength ?? null )
+		this.dashOffset = uniform( options.dashOffset ?? 0 )
 	}
 
 	dispose() {
@@ -64,11 +59,13 @@ class MeshLineNodeMaterial extends NodeMaterial {
 		const previous = attribute( 'previous', 'vec3' ).toVar( 'aPrevious' )
 		const next = attribute( 'next', 'vec3' ).toVar( 'aNext' )
 		const side = attribute( 'side', 'float' ).toVar( 'aSide' )
-		const width = attribute( 'width', 'float' ).toVar( 'aWidth' )
-
+		let width
+		if(this.options.needsWidth){
+			width = attribute( 'width', 'float' ).toVar( 'aWidth' )
+		}
 		// Only declare counters if needed
 		let counters
-		if ( this.gradient.value || this.dashCount.value ) {
+		if ( this.gradient.value || this.dashCount ) {
 			counters = attribute( 'counters', 'float' ).toVar( 'aCounters' )
 		}
 
@@ -77,7 +74,7 @@ class MeshLineNodeMaterial extends NodeMaterial {
 			varyingProperty( 'vec4', 'vColor' ).assign( vec4( this.color, 1 ) )
 
 			// Only assign vCounters if needed to reduce varying bandwidth
-			if ( this.gradient.value || this.dashCount.value ) {
+			if ( this.gradient.value || this.dashCount ) {
 				varyingProperty( 'float', 'vCounters' ).assign( counters )
 			}
 
@@ -93,8 +90,10 @@ class MeshLineNodeMaterial extends NodeMaterial {
 			const prevP = fix( prevPos, aspect ).toVar( 'prevP' )
 			const nextP = fix( nextPos, aspect ).toVar( 'nextP' )
 
-			const w = this.lineWidth.mul( width ).toVar( 'w' )
-
+			const w = this.lineWidth.toVar( 'w' )
+			if(width){
+				w.mulAssign( width )
+			}
 			const dir1 = normalize( currentP.sub( prevP ) ).toVar( 'dir1' )
 			const dir2 = normalize( nextP.sub( currentP ) ).toVar( 'dir2' )
 			const dir = normalize( dir1.add( dir2 ) ).toVar( 'dir' )
@@ -115,57 +114,56 @@ class MeshLineNodeMaterial extends NodeMaterial {
 			return finalPosition
 		} )()
 
-		this.fragmentNode = Fn( () => {
+		let vCounters
+		if( this.gradient.value || this.dashCount ) {
+			vCounters = varyingProperty( 'float', 'vCounters' ).toVar()
+		}
+		let uvCoords
+		if( this.map.value || this.alphaMap.value ) {
+			uvCoords = uv().mul( this.repeat ).add( this.mapOffset ).toVar( 'uvCoords' )
+		}
 
-			if( this.discardConditionNode ) {
-				Discard( this.discardConditionNode )
-			}
+		// Color node
+		this.colorNode = Fn( () => {
 
-			let vCounters
-			if( this.gradient.value || this.dashCount.value ) {
-				vCounters = varyingProperty( 'float', 'vCounters' ).toVar()
-			}
+			let color = varyingProperty( 'vec4', 'vColor'  ).toVar( 'color' )
 
-			let diffuseColor = varyingProperty( 'vec4', 'vColor'  ).toVar( 'diffuseColor' )
-
-			if( this.colorNode ) {
-				diffuseColor.mulAssign( this.colorNode )
-			}
 			if( this.gradient.value ) {
-				diffuseColor.rgb.assign( mix( diffuseColor.rgb, this.gradient, vCounters ) )
+				color.rgb.assign( mix( color.rgb, this.gradient, vCounters ) )
 			}
 
-			let uvCoords
-			if( this.map.value || this.alphaMap.value ) {
-				uvCoords = uv().mul( this.repeat ).add( this.mapOffset ).toVar( 'uvCoords' )
-			}
 			if ( this.map.value ) {
-				diffuseColor.mulAssign( this.map.sample( uvCoords ) )
+				color.mulAssign( this.map.sample( uvCoords ) )
 			}
+
+			return color
+		})()
+
+		// Opacity node
+		this.opacityNode = Fn( () => {
+			let alpha = float(1).toVar( 'alpha' )
 			if ( this.alphaMap.value ) {
-				diffuseColor.a.mulAssign( this.alphaMap.sample( uvCoords ).b )
+				alpha.mulAssign( this.alphaMap.sample( uvCoords ).b )
 			}
 
-			if ( this.alphaTest < 1 ) {
-				Discard( diffuseColor.a.lessThan( this.alphaTest ) )
-			}
+			alpha.mulAssign( this.opacity )
 
-			if( this.dashCount.value ) {
+			Discard( alpha.lessThan( this.alphaTest ) )
+
+			if( this.dashCount ) {
 				const cyclePosition = mod( vCounters.mul( this.dashCount ).add( this.dashOffset ), float( 1 ) )
 				// dashLength represents a dash portion: 0.1 = 10% dash, 90% gap
 				const dashMask = step( cyclePosition, this.dashRatio )
 				Discard( dashMask.lessThan( 0.001 ) )
 			}
 
-			// Apply opacity
-			diffuseColor.a.mulAssign( this.opacity )
-			if( this.opacityNode ) {
-				diffuseColor.a.mulAssign( this.opacityNode )
+			if( this.discardConditionNode ) {
+				Discard( this.discardConditionNode )
 			}
 
-			return diffuseColor
-
+			return alpha
 		} )()
+
 	}
 
 	copy( source ) {

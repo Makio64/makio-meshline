@@ -26,9 +26,8 @@ Generates a `Float32Array` of `[x, y, z]` coordinates evenly spaced around a cir
 ```javascript
 import { circlePositions, MeshLine } from 'meshline';
 
-// Create a circle with 64 segments and radius 2
-const positions = circlePositions(64, 2);
-const circle = new MeshLine(positions, { isClose: true });
+// Create a circle with 64 segments and a radius of 2unit
+const circle = new MeshLine({ lines: circlePositions(64, 2), isClose: true });
 ```
 
 ### squarePositions()
@@ -53,12 +52,10 @@ Generates a `Float32Array` of `[x, y, z]` points outlining a square.
 import { squarePositions, MeshLine } from 'meshline';
 
 // Create a simple square
-const positions = squarePositions();
-const square = new MeshLine(positions, { isClose: true });
+const square = new MeshLine({ lines: squarePositions(), isClose: true });
 
 // Create a square with more segments per side for smoother corners
-const smoothSquare = squarePositions(4);
-const line = new MeshLine(smoothSquare, { isClose: true });
+const line = new MeshLine({ lines: squarePositions(4), isClose: true });
 ```
 
 ### sineWavePositions()
@@ -86,12 +83,16 @@ Generates a `Float32Array` of `[x, y, z]` points forming a sine wave.
 import { sineWavePositions, MeshLine } from 'meshline';
 
 // Create a basic sine wave
-const positions = sineWavePositions();
-const wave = new MeshLine(positions, { isClose: false });
+const wave = new MeshLine({
+  lines: sineWavePositions(),
+  isClose: false
+});
 
 // Create a wave with 3 cycles, higher amplitude
-const bigWave = sineWavePositions(3, 100, 2, 6);
-const line = new MeshLine(bigWave, { color: 0x00ff00 });
+const line = new MeshLine({
+  lines: sineWavePositions(3, 100, 2, 6),
+  color: 0x00ff00
+});
 ```
 
 ## Performance Tips

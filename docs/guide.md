@@ -39,15 +39,14 @@ Here's a minimal example of how to create a simple circular line and add it to y
     ```
 
 3.  **Create the line:**
-    Generate an array of points for your line's shape. The `circlePositions` helper is great for this. Then, instantiate `MeshLine` with these positions and your desired options.
+    Generate an array of points for your line's shape. The `circlePositions` helper is great for this. Then, instantiate `MeshLine` with these positions via the `lines` option along with your desired settings.
 
     ```javascript
-    const positions = circlePositions(64); // An array of [x, y, z] points
-
-    const line = new MeshLine(positions, {
-      isClose: true,         // Close the loop
-      color: 0xff8800,       // Orange color
-      lineWidth: 0.5,        // In world units
+    const line = new MeshLine({
+      lines: circlePositions(64), // Points array
+      isClose: true,              // Close the loop
+      color: 0xff8800,            // Orange color
+      lineWidth: 0.5,             // In pixels (when sizeAttenuation = false)
     });
 
     scene.add(line);

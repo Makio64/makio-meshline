@@ -2,9 +2,9 @@
   "name": "makio-meshline",
   "private": true,
   "scripts": {
-    "dev": "pnpm --filter site dev",
-    "build": "pnpm --filter site build",
-    "preview": "pnpm --filter site preview",
+    "dev": "pnpm --filter demo dev",
+    "build": "pnpm --filter demo build",
+    "preview": "pnpm --filter demo preview",
     "docs:dev": "pnpm --filter docs dev",
     "docs:build": "pnpm --filter docs build",
     "docs:preview": "pnpm --filter docs preview"

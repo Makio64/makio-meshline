@@ -16,7 +16,7 @@ This library allows you to easily create lines with advanced properties like gra
 
 ## Getting Started
 
-Check out the [documentation site](https://main--makio-meshline.netlify.app/) for detailed instructions, API reference, and examples.
+Check out the [documentation site](https://meshlines.netlify.app/) for detailed instructions, API reference, and examples.
 
 ## Installation
 
