@@ -23,3 +23,14 @@ features:
   - title: "Simple, Declarative API"
     details: "Get up and running in minutes. The API is designed to be intuitive and easy to integrate into any Three.js project."
 --- 
+
+## Live Demo
+
+<div style="position: relative; padding-bottom: 75%; height: 0; overflow: hidden; max-width: 100%; margin-top: 2em; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1);">
+  <iframe 
+    src="https://meshlines.netlify.app/" 
+    frameborder="0" 
+    allowfullscreen
+    style="position: absolute; top: 0; left: 0; width: 100%; height: 100%;"
+  ></iframe>
+</div> 
