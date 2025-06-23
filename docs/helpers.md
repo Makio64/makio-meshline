@@ -94,7 +94,3 @@ const line = new MeshLine({
   color: 0x00ff00
 });
 ```
-
-## Performance Tips
-
-For better performance with many points, these helpers return `Float32Array` directly, which is optimal for Three.js BufferGeometry. 

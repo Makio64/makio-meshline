@@ -2,12 +2,6 @@
 
 This page provides an overview of the **Makio MeshLine** API. For detailed documentation, visit the individual class pages.
 
-## Installation & Import
-
-```js
-import { MeshLine, MeshLineGeometry, MeshLineNodeMaterial, circlePositions, squarePositions, sineWavePositions } from 'meshline';
-```
-
 ## Quick Start
 
 ```javascript
@@ -167,14 +161,6 @@ This modular design allows you to use components independently for advanced use 
 - **WebGPU**: Preferred backend for modern browsers
 - **WebGL2**: Fallback support for older browsers
 - **Three.js**: Compatible with Three.js r177+
-
-## Performance Tips
-
-1. **Use Float32Array** for large datasets
-2. **Reuse geometries** when possible
-3. **Call dispose()** to prevent memory leaks
-4. **Update uniforms** instead of recreating materials
-5. **Consider LOD** for very long lines
 
 ---
 

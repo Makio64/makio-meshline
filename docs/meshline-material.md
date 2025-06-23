@@ -207,24 +207,13 @@ const material = new MeshLineNodeMaterial({
 });
 ```
 
-## Performance Notes
-
-- The material is optimized for WebGPU and modern WebGL2 contexts
-- Shader compilation is handled automatically by Three.js NodeMaterial system
-- Use uniform updates rather than recreating materials for better performance
-- Resolution uniform should be updated on window resize for correct rendering
-
 ## NodeMaterial Integration
 
-This material extends Three.js `NodeMaterial`, providing:
+This material extends Three.js `NodeMaterial` using `tsl`
 
-- Automatic shader generation
-- Node-based material graph system
-- WebGPU compatibility
-- Modern GPU feature support
+Internally it handles all the heavy lifting for:
 
-The material handles all the complex shader math needed for:
+- Create only uniforms you need
 - Screen-space line thickness calculations
-- Proper line joins and caps
-- UV coordinate generation for texturing
-- Dash pattern calculations 
+- UV generation for textures & dashes
+- Dash pattern evaluation

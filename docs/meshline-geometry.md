@@ -14,8 +14,7 @@ new MeshLineGeometry(options?: MeshLineGeometryOptions)
 interface MeshLineGeometryOptions {
   lines?: Float32Array | number[][]          // Line points (required)
   isClose?: boolean | boolean[]              // Close the loop(s)
-  widthCb?: (t: number) => number | null     // Width callback
-
+   
   // Flags to include / exclude generated attributes (advanced)
   needsPositions?: boolean
   needsPrevious?: boolean
@@ -35,9 +34,7 @@ interface MeshLineGeometryOptions {
 
 ```ts
 setLines(
-  linesArray: Array<[number, number, number]>[] | Float32Array[] | THREE.BufferGeometry[],
-  widthCallback?: (t: number) => number,
-  loops?: boolean | boolean[]
+  linesArray: Float32Array[] | Array<[number, number, number]>[] | THREE.BufferGeometry[]
 ): void
 ```
 
@@ -45,9 +42,7 @@ Replace or initialize the geometry with one or multiple line segments.
 
 #### Parameters
 
-- `linesArray` - Array of line data, where each element represents a separate line
-- `widthCallback` (optional) - Function to calculate width at each point along the line
-- `loops` (optional) - Boolean or array of booleans indicating which lines should be closed loops
+- `linesArray` – Array of line data, where each element represents a separate line. Each element can be a nested number array or a `Float32Array`.
 
 ### dispose()
 
@@ -56,29 +51,6 @@ dispose(): void
 ```
 
 Releases geometry resources. Call when the geometry is no longer needed.
-
-## Width Callback Function
-
-The `widthCallback` parameter allows you to vary the line width along its length:
-
-```javascript
-// Taper from full width to zero
-const taperCallback = (t) => 1 - t;
-
-// Bulge in the middle
-const bulgeCallback = (t) => 1 + Math.sin(t * Math.PI) * 0.5;
-
-// Constant width
-const constantCallback = (t) => 1;
-```
-
-The parameter `t` ranges from 0 (start of line) to 1 (end of line).
-
-## Performance Notes
-
-- **Float32Array Input**: For best performance, provide your points as a `Float32Array` to avoid internal conversion
-- **Multiple Lines**: Use `setLines()` with an array to create multiple line segments efficiently
-- **Memory Management**: Always call `dispose()` when done with the geometry
 
 ## Usage Examples
 
@@ -96,16 +68,6 @@ const points = [
 const geometry = new MeshLineGeometry(points);
 ```
 
-### Tapered Line
-
-```javascript
-const geometry = new MeshLineGeometry(
-  points,
-  (t) => 1 - t * 0.8, // Taper to 20% width
-  false // Open line
-);
-```
-
 ### Multiple Line Segments
 
 ```javascript
@@ -114,12 +76,10 @@ const lines = [
   [[2, 0, 0], [3, 1, 0], [3, 2, 0]]  // Second line
 ];
 
+const geometry = new MeshLineGeometry({lines});
+// OR
 const geometry = new MeshLineGeometry();
-geometry.setLines(
-  lines,
-  (t) => 1, // Constant width
-  [true, false] // First line closed, second open
-);
+geometry.setLines(lines);
 ```
 
 ### From Float32Array (Optimal Performance)
@@ -136,7 +96,7 @@ for (let i = 0; i < pointCount; i++) {
   points[i * 3 + 2] = 0;
 }
 
-const geometry = new MeshLineGeometry(points, null, true);
+const geometry = new MeshLineGeometry({lines:[points]});
 ```
 
 ## Internal Structure

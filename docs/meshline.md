@@ -17,7 +17,6 @@ interface MeshLineOptions {
   // ***Geometry***
   lines?: Float32Array | number[][]          // Line points (required)
   isClose?: boolean | boolean[]              // Close the loop(s)
-  widthCb?: (t: number) => number | null     // Width callback (0-1 → multiplier)
 
   // ***Appearance***
   color?: number | THREE.Color
@@ -67,8 +66,6 @@ interface MeshLineOptions {
 
 - **`isClose`** (`boolean | boolean[]`) — Whether to close the line loop(s). If `true`, connects the last point back to the first. For multiple lines, can be an array of booleans. Default: `false`.
 
-- **`widthCb`** (`(t: number) => number | null`) — Width callback function that varies line thickness along its length. Receives parameter `t` from 0 (start) to 1 (end) and should return a width multiplier. Default: `null` (constant width).
-
 ### Appearance
 
 - **`color`** (`number | THREE.Color`) — Base color of the line. Can be a hex number (`0xff0000`) or `THREE.Color` instance. Default: `0xffffff` (white).
@@ -117,7 +114,7 @@ interface MeshLineOptions {
 
 ### Advanced / Internal
 
-- **`needsWidths`** (`boolean`) — Whether to generate per-vertex width attributes. Set to `true` when using `widthCb`. Default: `false`.
+- **`needsWidths`** (`boolean`) — Whether to generate per-vertex width attributes (not used by current high-level API but exposed for custom geometries). Default: `false`.
 
 - **`needsUVs`** (`boolean`) — Whether to generate UV coordinates for texture mapping. Default: `true`.
 
