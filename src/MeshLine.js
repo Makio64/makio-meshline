@@ -72,7 +72,7 @@ export default class MeshLine extends Mesh {
 			} )()
 		}
 
-		this.frustumCulled = this.options.frustumCulled
+		this.frustumCulled = options.frustumCulled
 
 		this.resize(options.rendererWidth, options.rendererHeight)
 	}
