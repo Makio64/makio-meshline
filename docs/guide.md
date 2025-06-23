@@ -4,16 +4,11 @@ This guide will walk you through the basics of installing and using Makio MeshLi
 
 ## Installation
 
-First, you need to add the library to your project. You can use either npm or pnpm.
+First, use your favoratie packages manager (`pnpm`, `npm`, `yarn`..) to install `makio-meshline` 
 
 ```bash
-npm install meshline
+pnpm i makio-meshline
 ```
-or
-```bash
-pnpm add meshline
-```
-> Note: The package name on npm is `meshline`, which is the compiled version of the `src` workspace in this repository.
 
 ## Basic Setup
 
