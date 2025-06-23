@@ -47,16 +47,29 @@ class WavesExample {
 	}
 
 	createWaveLines() {
-		const lines = []
+		// Total number of points per line and corresponding float count
+		const pointsPerLine = lineLength * 4
+		const floatsPerLine = pointsPerLine * 3 // 3 floats (x,y,z) per point
+
+		const lines = new Array( numLines )
+
+		// Pre-compute the X coordinates once since they are identical for every Z slice
+		const xCoords = new Float32Array( pointsPerLine )
+		for ( let i = 0; i < pointsPerLine; i++ ) {
+			xCoords[i] = i / 4 - lineLength / 2
+		}
+
 		for ( let z = 0; z < numLines; z++ ) {
-			const points = []
+			const lineArray = new Float32Array( floatsPerLine )
+			const baseZ = z - numLines / 2
 
-			for ( let i = 0; i < lineLength * 4; i++ ) {
-
-				points.push( [i / 4 - lineLength / 2, z - numLines / 2, 0] )
+			for ( let i = 0; i < pointsPerLine; i++ ) {
+				const floatIndex = i * 3
+				lineArray[floatIndex] = xCoords[i]          // x
+				lineArray[floatIndex + 1] = baseZ           // y
+				lineArray[floatIndex + 2] = 0               // z
 			}
-
-			lines.push( points )
+			lines[z] = lineArray
 		}
 		return lines
 	}
