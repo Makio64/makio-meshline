@@ -1,4 +1,4 @@
-import { BufferAttribute, BufferGeometry, Vector2, Vector3 } from 'three/webgpu'
+import { BufferAttribute, BufferGeometry, Vector2, Vector3, Box3, Sphere } from 'three/webgpu'
 
 export class MeshLineGeometry extends BufferGeometry {
 	constructor( options={} ) {
@@ -24,16 +24,17 @@ export class MeshLineGeometry extends BufferGeometry {
 		this._lineCount = 0
 		this._lines = [] // Store individual line arrays for multi-line mode
 		this._lineLoops = [] // Store loop flag for each line
+		this.boundingBoxes = [] // Bounding box for each line
 		if ( options.lines ) {
-			this.setLines( options.lines, options.widthCb, options.loop )
+			this.setLines( options.lines )
 		}
 	}
 
 	// set multiple lines from an array of points arrays
 	setLines( lines ) {
 
-		// If lines is not an array, convert it to an array of arrays
-		if((Array.isArray(lines) || lines instanceof Float32Array) && !Array.isArray(lines[0])){
+		// If lines is not an array, convert it to an array
+		if(!Array.isArray(lines)){
 			lines = [lines]
 		}
 
@@ -368,9 +369,34 @@ export class MeshLineGeometry extends BufferGeometry {
 			this.setIndex( indexAttr )
 		}
 
+		this.computeBoundingBoxes()
 		this.computeBoundingSphere()
 		this.computeBoundingBox()
 	}
+
+	computeBoundingBoxes() {
+		this.boundingBoxes = this._lines.map((line, idx) =>
+			(this.boundingBoxes[idx] || new Box3()).setFromArray(line)
+		)
+	}
+	
+	computeBoundingBox() {
+		if (!this.boundingBox) this.boundingBox = new Box3()
+			if (!this.boundingBoxes.length) {
+			this.boundingBox?.makeEmpty()
+			return
+		}
+		this.boundingBox.copy(this.boundingBoxes[0])
+		for (const box of this.boundingBoxes.slice(1)) {
+			this.boundingBox.union(box)
+		}
+	}
+
+  computeBoundingSphere() {
+    if (!this.boundingBox) this.computeBoundingBox()
+    if (!this.boundingSphere) this.boundingSphere = new Sphere()
+    this.boundingBox.getBoundingSphere(this.boundingSphere)
+  }
 
 	// release GPU resources and attributes
 	dispose() {
@@ -385,6 +411,8 @@ const toFloat32 = pts => {
 	if ( pts instanceof Float32Array ) {
 		return pts
 	}
+
+	console.warn( `[MeshLine] Use Float32Array for positions to avoid array conversion & get optimal performance` )
 
 	if ( pts instanceof BufferGeometry ) {
 		return pts.getAttribute( 'position' ).array
