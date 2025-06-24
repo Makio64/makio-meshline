@@ -10,7 +10,11 @@
     "docs:preview": "pnpm --filter docs preview"
   },
   "devDependencies": {
+    "@stylistic/eslint-plugin": "^5.0.0",
+    "@stylistic/eslint-plugin-js": "^4.4.1",
+    "eslint": "^9.29.0",
+    "eslint-plugin-vue": "^10.2.0",
     "typescript": "^5.8.3"
   },
-  "packageManager": "pnpm@10.12.1"
+  "packageManager": "pnpm@10.12.2"
 }
