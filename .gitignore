@@ -1,5 +1,7 @@
 .DS_Store
 node_modules
+src/node_modules
+demo/node_modules
 /dist
 demo/dist
 docs/.vitepress
