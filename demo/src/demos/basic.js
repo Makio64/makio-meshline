@@ -37,7 +37,7 @@ class BasicExample {
 		// Handle resize
 		window.addEventListener( 'resize', () => {
 			this.cssRenderer.setSize( window.innerWidth, window.innerHeight )
-			for( let line of this.lines ) {
+			for ( let line of this.lines ) {
 				line.resize()
 			}
 		}, false )
@@ -100,7 +100,7 @@ class BasicExample {
 			usePercent: true,
 		}
 
-		for( let i = 0; i < configs.length; i++ ) {
+		for ( let i = 0; i < configs.length; i++ ) {
 			const config = configs[i]
 			const row = Math.floor( i / gridSize )
 			const col = i % gridSize
@@ -167,7 +167,6 @@ class BasicExample {
 		stage.onUpdate.add( this.update )
 	}
 
-
 	update = ( dt ) => {
 		// Render CSS labels
 		if ( this.cssRenderer ) {
@@ -181,7 +180,7 @@ class BasicExample {
 			line.percent.value = -0.01
 			line.percent2.value = 1.01
 			animate( line.percent, { duration: 1, value: 1.01, delay: i * 0.05, ease: 'easeOut' } )
-			animate( line.percent2, { duration: 1, value: -0.01, delay: 3 + i * 0.05, ease: 'easeOut', onComplete: ()=>{ if( i === this.lines.length - 1 ) this.show() } } )
+			animate( line.percent2, { duration: 1, value: -0.01, delay: 3 + i * 0.05, ease: 'easeOut', onComplete: () => { if ( i === this.lines.length - 1 ) this.show() } } )
 		} )
 	}
 
@@ -197,7 +196,6 @@ class BasicExample {
 			} )
 		} )
 	}
-
 
 	dispose() {
 		console.log( 'lines dispose' )

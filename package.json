@@ -7,11 +7,12 @@
     "preview": "pnpm --filter demo preview",
     "docs:dev": "pnpm --filter docs dev",
     "docs:build": "pnpm --filter docs build",
-    "docs:preview": "pnpm --filter docs preview"
+    "docs:preview": "pnpm --filter docs preview",
+    "lint": "eslint src/ demo/src/",
+    "lint:fix": "eslint src/ demo/src/ --fix"
   },
   "devDependencies": {
     "@stylistic/eslint-plugin": "^5.0.0",
-    "@stylistic/eslint-plugin-js": "^4.4.1",
     "eslint": "^9.29.0",
     "eslint-plugin-vue": "^10.2.0",
     "typescript": "^5.8.3"

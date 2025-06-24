@@ -1,7 +1,7 @@
 import { BufferAttribute, BufferGeometry, Vector2, Vector3, Box3, Sphere } from 'three/webgpu'
 
 export class MeshLineGeometry extends BufferGeometry {
-	constructor( options={} ) {
+	constructor( options = {} ) {
 		super()
 		this.type = 'MeshLine'
 		this.isMeshLine = true
@@ -34,7 +34,7 @@ export class MeshLineGeometry extends BufferGeometry {
 	setLines( lines ) {
 
 		// If lines is not an array, convert it to an array
-		if(!Array.isArray(lines)){
+		if ( !Array.isArray( lines ) ) {
 			lines = [lines]
 		}
 
@@ -161,29 +161,33 @@ export class MeshLineGeometry extends BufferGeometry {
 
 		// Initialize arrays
 		let positions, previous, next, sides, widths, uvs, counters
-		if(this.options.needsPositions){
+		if ( this.options.needsPositions ) {
 			positions = new Float32Array( totalVertices * 3 )
 		}
-		if(this.options.needsPrevious){
+		if ( this.options.needsPrevious ) {
 			previous = new Float32Array( totalVertices * 3 )
 		}
-		if(this.options.needsNext){
+		if ( this.options.needsNext ) {
 			next = new Float32Array( totalVertices * 3 )
 		}
-		if(this.options.needsSide){
+		if ( this.options.needsSide ) {
 			sides = new Float32Array( totalVertices )
 		}
-		if(this.options.needsWidths){
+		if ( this.options.needsWidths ) {
 			widths = new Float32Array( totalVertices )
 		}
-		if(this.options.needsUVs){
+		if ( this.options.needsUVs ) {
 			uvs = new Float32Array( totalVertices * 2 )
 		}
-		if(this.options.needsCounters){
+		if ( this.options.needsCounters ) {
 			counters = new Float32Array( totalVertices )
 		}
 
-		const indices = new Uint16Array( totalIndices )
+		// Use 32-bit indices if we exceed the 16-bit limit (65 535)
+		// This prevents index overflow that can lead to wrongly connected segments
+		// when drawing very large or detailed geometries.
+		const IndicesArray = ( totalVertices > 65535 ) ? Uint32Array : Uint16Array
+		const indices = new IndicesArray( totalIndices )
 
 		let vertexOffset = 0
 		let indexOffset = 0
@@ -204,7 +208,7 @@ export class MeshLineGeometry extends BufferGeometry {
 				const t = tStep * i
 
 				// positions (2 vertices per point)
-				if(positions){
+				if ( positions ) {
 					positions[vertexOffset * 3] = x
 					positions[vertexOffset * 3 + 1] = y
 					positions[vertexOffset * 3 + 2] = z
@@ -214,20 +218,20 @@ export class MeshLineGeometry extends BufferGeometry {
 				}
 
 				// sides - which side of the line is the vertex on
-				if(sides){
+				if ( sides ) {
 					sides[vertexOffset] = 1
 					sides[vertexOffset + 1] = -1
 				}
 
 				// widths
-				if(widths){
+				if ( widths ) {
 					const w = this.widthCallback ? this.widthCallback( t ) : 1
 					widths[vertexOffset] = w
 					widths[vertexOffset + 1] = w
 				}
 
 				// uvs
-				if(uvs){
+				if ( uvs ) {
 					uvs[vertexOffset * 2] = t
 					uvs[vertexOffset * 2 + 1] = 0
 					uvs[vertexOffset * 2 + 2] = t
@@ -235,7 +239,7 @@ export class MeshLineGeometry extends BufferGeometry {
 				}
 
 				// counters 
-				if(counters){
+				if ( counters ) {
 					counters[vertexOffset] = t
 					counters[vertexOffset + 1] = t
 				}
@@ -271,7 +275,7 @@ export class MeshLineGeometry extends BufferGeometry {
 					prevZ = pz
 				}
 
-				if(previous){
+				if ( previous ) {
 					previous[vertexOffset * 3] = prevX
 					previous[vertexOffset * 3 + 1] = prevY
 					previous[vertexOffset * 3 + 2] = prevZ
@@ -281,7 +285,7 @@ export class MeshLineGeometry extends BufferGeometry {
 				}
 
 				// next
-				if(next){
+				if ( next ) {
 					let nextX, nextY, nextZ
 					if ( i === numPoints - 1 ) {
 						// Last point
@@ -337,25 +341,25 @@ export class MeshLineGeometry extends BufferGeometry {
 		}
 
 		// Set attributes
-		if(positions){
+		if ( positions ) {
 			this.setOrUpdateAttribute( 'position', positions, 3 )
 		}
-		if(previous){
+		if ( previous ) {
 			this.setOrUpdateAttribute( 'previous', previous, 3 )
 		}
-		if(next){
+		if ( next ) {
 			this.setOrUpdateAttribute( 'next', next, 3 )
 		}
-		if(sides){
+		if ( sides ) {
 			this.setOrUpdateAttribute( 'side', sides, 1 )
 		}
-		if(widths){
+		if ( widths ) {
 			this.setOrUpdateAttribute( 'width', widths, 1 )
 		}
-		if(uvs){
+		if ( uvs ) {
 			this.setOrUpdateAttribute( 'uv', uvs, 2 )
 		}
-		if(counters){
+		if ( counters ) {
 			this.setOrUpdateAttribute( 'counters', counters, 1 )
 		}
 
@@ -375,28 +379,28 @@ export class MeshLineGeometry extends BufferGeometry {
 	}
 
 	computeBoundingBoxes() {
-		this.boundingBoxes = this._lines.map((line, idx) =>
-			(this.boundingBoxes[idx] || new Box3()).setFromArray(line)
+		this.boundingBoxes = this._lines.map( ( line, idx ) =>
+			( this.boundingBoxes[idx] || new Box3() ).setFromArray( line )
 		)
 	}
 	
 	computeBoundingBox() {
-		if (!this.boundingBox) this.boundingBox = new Box3()
-			if (!this.boundingBoxes.length) {
+		if ( !this.boundingBox ) this.boundingBox = new Box3()
+		if ( !this.boundingBoxes.length ) {
 			this.boundingBox?.makeEmpty()
 			return
 		}
-		this.boundingBox.copy(this.boundingBoxes[0])
-		for (const box of this.boundingBoxes.slice(1)) {
-			this.boundingBox.union(box)
+		this.boundingBox.copy( this.boundingBoxes[0] )
+		for ( const box of this.boundingBoxes.slice( 1 ) ) {
+			this.boundingBox.union( box )
 		}
 	}
 
-  computeBoundingSphere() {
-    if (!this.boundingBox) this.computeBoundingBox()
-    if (!this.boundingSphere) this.boundingSphere = new Sphere()
-    this.boundingBox.getBoundingSphere(this.boundingSphere)
-  }
+	computeBoundingSphere() {
+		if ( !this.boundingBox ) this.computeBoundingBox()
+		if ( !this.boundingSphere ) this.boundingSphere = new Sphere()
+		this.boundingBox.getBoundingSphere( this.boundingSphere )
+	}
 
 	// release GPU resources and attributes
 	dispose() {

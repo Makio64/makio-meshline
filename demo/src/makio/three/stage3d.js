@@ -57,7 +57,7 @@ class Stage3D {
 		if ( this.isPaused || !this.renderer ) {
 			return
 		}
-		if( this.control && this.control.enabled ) {
+		if ( this.control && this.control.enabled ) {
 			this.control?.update( dt )
 		}
 		this.render()

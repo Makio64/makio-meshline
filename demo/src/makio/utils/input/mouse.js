@@ -59,7 +59,7 @@ if ( typeof window !== 'undefined' ) {
 
 	// Prevent zoom on double tap
 	document.addEventListener( 'touchstart', ( e ) => {
-		if( isIOS ) { // else it block on android all interactions
+		if ( isIOS ) { // else it block on android all interactions
 			if ( e.touches.length > 1 || e.scale !== 1 ) { e.preventDefault() }
 		}
 	}, { passive: false } )
@@ -68,12 +68,12 @@ if ( typeof window !== 'undefined' ) {
 	document.addEventListener( 'gesturestart', ( e ) => { e.preventDefault() }, { passive: false } )
 
 	// Prevent context menu on long touch on iOs
-	if( isIOS ) {
+	if ( isIOS ) {
 		window.addEventListener( 'contextmenu', ( e ) => { e.preventDefault() } )
 	}
 
 	// Fix double click zoom on iOS
-	document.ondblclick = ( e )=> { e.preventDefault() }
+	document.ondblclick = ( e ) => { e.preventDefault() }
 
 	const leaveOrBlur = () => {
 		clearMouseState()

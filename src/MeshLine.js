@@ -3,7 +3,7 @@ import { MeshLineGeometry } from "./MeshLineGeometry"
 import { MeshLineNodeMaterial } from "./MeshLineNodeMaterial"
 import { Mesh, Color } from "three/webgpu"
 
-const defaultPositions = new Float32Array([0,0,0,1,0,0])
+const defaultPositions = new Float32Array( [0, 0, 0, 1, 0, 0] )
 export default class MeshLine extends Mesh {
 
 	constructor( options = {} ) {
@@ -41,15 +41,15 @@ export default class MeshLine extends Mesh {
 			needsNext: true,
 			needsSide: true,
 
-			frustumCulled: false,
+			frustumCulled: true,
 
-			rendererWidth: window.innerWidth,
-			rendererHeight: window.innerHeight,
+			renderWidth: window.innerWidth,
+			renderHeight: window.innerHeight,
 
 			...options
 		}
 
-		const geometry = new MeshLineGeometry(options)
+		const geometry = new MeshLineGeometry( options )
 
 		let material = new MeshLineNodeMaterial( {
 			...options,
@@ -59,34 +59,48 @@ export default class MeshLine extends Mesh {
 
 		super( geometry, material )
 
-		if( (options.percent !== undefined && options.percent2 !== undefined ) || options.usePercent ) {
+		this.frustumCulled = options.frustumCulled
+
+		if ( ( options.percent !== undefined && options.percent2 !== undefined ) || options.usePercent ) {
 			this.percent = uniform( options.percent ?? 1 )
 			this.percent2 = uniform( options.percent2 ?? 1 )
 		}
 
-		this.opacity = uniform( options.opacity ?? 1 )
+		if ( options.opacity ) {
+			if ( options.opacity.isNode ) {
+				this.opacity = options.opacity
+			}
+			else if ( typeof options.opacity === 'number' ) {
+				this.opacity = uniform( options.opacity )
+			}
+		} else {
+			this.opacity = uniform( 1 )
+		}
 
-		if(this.percent !== undefined && this.percent2 !== undefined) {
-			material.discardConditionNode = Fn( ()=>{
-				return step( uv().x, this.percent  ).mul( step( uv().x.oneMinus(), this.percent2  ) ).mul( this.opacity ).lessThan( 0.00001 )
+		if ( this.percent !== undefined && this.percent2 !== undefined ) {
+			material.discardConditionNode = Fn( () => {
+				return step( uv().x, this.percent ).mul( step( uv().x.oneMinus(), this.percent2 ) ).mul( this.opacity ).lessThan( 0.00001 )
 			} )()
 		}
 
-		this.frustumCulled = options.frustumCulled
-
-		this.resize(options.rendererWidth, options.rendererHeight)
+		this.resize( options.renderWidth, options.renderHeight )
 	}
 
-	resize(width = window.innerWidth, height = window.innerHeight) {
+	setGeometry( geometry, culling = true ) {
+		this.geometry = geometry
+		this.frustumCulled = culling
+		this.geometry.computeBoundingSphere()
+	}
+
+	resize( width = window.innerWidth, height = window.innerHeight ) {
 		if ( this.material && this.material.resolution ) {
 			this.material.resolution.value.set( width, height )
 		}
 	}
 
-	dispose = ()=>{
+	dispose = () => {
 		this.parent?.remove( this )
 		this.geometry?.dispose()
 		this.material?.dispose()
 	}
 }
-

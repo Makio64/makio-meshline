@@ -90,7 +90,7 @@ class WavesExample {
 	}
 
 	show() {}
-	hide( cb ) { if( cb )cb() }
+	hide( cb ) { if ( cb )cb() }
 }
 
 export default new WavesExample()

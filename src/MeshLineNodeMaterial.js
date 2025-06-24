@@ -24,7 +24,7 @@ class MeshLineNodeMaterial extends NodeMaterial {
 		this.depthTest = options.depthTest ?? true
 		this.wireframe = options.wireframe ?? false
 
-		this.transparent = options.transparent ?? ( options.alphaMap != null || (( options.opacity ?? 1 ) < 1) )
+		this.transparent = options.transparent ?? ( options.alphaMap != null || ( ( options.opacity ?? 1 ) < 1 ) )
 
 		this.alphaTest = options.alphaTest ?? 1
 		this.sizeAttenuation = options.sizeAttenuation ?? true
@@ -40,7 +40,7 @@ class MeshLineNodeMaterial extends NodeMaterial {
 		this.alphaMap = texture( options.alphaMap ?? null )
 		this.mapOffset = uniform( options.mapOffset ?? new Vector2( 0, 0 ) )
 		this.repeat = uniform( options.repeat ?? new Vector2( 1, 1 ) )
-		this.dashCount = options.dashCount ? uniform( options.dashCount) : null
+		this.dashCount = options.dashCount ? uniform( options.dashCount ) : null
 		this.dashRatio = uniform( options.dashRatio ?? options.dashLength ?? null )
 		this.dashOffset = uniform( options.dashOffset ?? 0 )
 	}
@@ -60,7 +60,7 @@ class MeshLineNodeMaterial extends NodeMaterial {
 		const next = attribute( 'next', 'vec3' ).toVar( 'aNext' )
 		const side = attribute( 'side', 'float' ).toVar( 'aSide' )
 		let width
-		if(this.options.needsWidth){
+		if ( this.options.needsWidth ) {
 			width = attribute( 'width', 'float' ).toVar( 'aWidth' )
 		}
 		// Only declare counters if needed
@@ -91,7 +91,7 @@ class MeshLineNodeMaterial extends NodeMaterial {
 			const nextP = fix( nextPos, aspect ).toVar( 'nextP' )
 
 			const w = this.lineWidth.toVar( 'w' )
-			if(width){
+			if ( width ) {
 				w.mulAssign( width )
 			}
 			const dir1 = normalize( currentP.sub( prevP ) ).toVar( 'dir1' )
@@ -102,7 +102,7 @@ class MeshLineNodeMaterial extends NodeMaterial {
 			const normal = vec4( dir.y.negate(), dir.x, 0., 1. ).toVar( 'normal' )
 			normal.xy.mulAssign( w.mul( .5 ) )
 
-			if( this.sizeAttenuation ) {
+			if ( this.sizeAttenuation ) {
 				normal.xy.mulAssign( finalPosition.w )
 				normal.xy.divAssign( vec4( this.resolution, 0., 1. ).mul( cameraProjectionMatrix ).xy.mul( aspect ) )
 			}
@@ -115,20 +115,20 @@ class MeshLineNodeMaterial extends NodeMaterial {
 		} )()
 
 		let vCounters
-		if( this.gradient.value || this.dashCount ) {
+		if ( this.gradient.value || this.dashCount ) {
 			vCounters = varyingProperty( 'float', 'vCounters' ).toVar()
 		}
 		let uvCoords
-		if( this.map.value || this.alphaMap.value ) {
+		if ( this.map.value || this.alphaMap.value ) {
 			uvCoords = uv().mul( this.repeat ).add( this.mapOffset ).toVar( 'uvCoords' )
 		}
 
 		// Color node
 		this.colorNode = Fn( () => {
 
-			let color = varyingProperty( 'vec4', 'vColor'  ).toVar( 'color' )
+			let color = varyingProperty( 'vec4', 'vColor' ).toVar( 'color' )
 
-			if( this.gradient.value ) {
+			if ( this.gradient.value ) {
 				color.rgb.assign( mix( color.rgb, this.gradient, vCounters ) )
 			}
 
@@ -137,11 +137,11 @@ class MeshLineNodeMaterial extends NodeMaterial {
 			}
 
 			return color
-		})()
+		} )()
 
 		// Opacity node
 		this.opacityNode = Fn( () => {
-			let alpha = float(1).toVar( 'alpha' )
+			let alpha = float( 1 ).toVar( 'alpha' )
 			if ( this.alphaMap.value ) {
 				alpha.mulAssign( this.alphaMap.sample( uvCoords ).b )
 			}
@@ -150,14 +150,14 @@ class MeshLineNodeMaterial extends NodeMaterial {
 
 			Discard( alpha.lessThan( this.alphaTest ) )
 
-			if( this.dashCount ) {
+			if ( this.dashCount ) {
 				const cyclePosition = mod( vCounters.mul( this.dashCount ).add( this.dashOffset ), float( 1 ) )
 				// dashLength represents a dash portion: 0.1 = 10% dash, 90% gap
 				const dashMask = step( cyclePosition, this.dashRatio )
 				Discard( dashMask.lessThan( 0.001 ) )
 			}
 
-			if( this.discardConditionNode ) {
+			if ( this.discardConditionNode ) {
 				Discard( this.discardConditionNode )
 			}
 
