@@ -17,7 +17,7 @@ export class MeshLineGeometry extends BufferGeometry {
 			...options
 		}
 
-		this.widthCallback = null
+		this.widthCallback = options.widthCallback || null
 		this.closeLoop = false
 		this._points = null
 		this._attrs = {}

@@ -15,11 +15,11 @@ export default class MeshLine extends Mesh {
 			
 			color: 0xffffff,
 			lineWidth: 0.3,
-			widthCb: null,
+			widthCallback: null,
 			sizeAttenuation: false,
 
 			opacity: 1,
-			alphaTest: 0.001,
+			alphaTest: 0,
 			transparent: false,
 			wireframe: false,
 			

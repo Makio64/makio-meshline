@@ -26,7 +26,7 @@ class MeshLineNodeMaterial extends NodeMaterial {
 
 		this.transparent = options.transparent ?? ( options.alphaMap != null || ( ( options.opacity ?? 1 ) < 1 ) )
 
-		this.alphaTest = options.alphaTest ?? 1
+		this.alphaTest = options.alphaTest ?? 0
 		this.sizeAttenuation = options.sizeAttenuation ?? true
 
 		// TODO : create only uniforms needed

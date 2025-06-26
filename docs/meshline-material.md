@@ -39,7 +39,7 @@ Creates a new MeshLineNodeMaterial with the specified parameters.
 - `depthWrite` (boolean) — whether to write depth. Default: `true`.
 - `depthTest` (boolean) — whether to perform depth testing. Default: `true`.
 - `wireframe` (boolean) — render line as wireframe. Default: `false`.
-- `alphaTest` (number) — alpha threshold for discarding fragments. Default: `1`.
+- `alphaTest` (number) — alpha threshold for discarding fragments. Default: `0`.
 
 ### Line Appearance
 
@@ -60,7 +60,7 @@ Creates a new MeshLineNodeMaterial with the specified parameters.
 ### Dashing
 
 - `dashCount` (number | null) — number of dash cycles along the line. Default: `null`.
-- `dashRatio` (number | null) — ratio of dash length to gap length (0 to 1). Default: `null`.
+- `dashRatio` (number | null) — ratio of dash length to gap length (0 to 1). `dashLength` can be used as an alias. Default: `null`.
 - `dashOffset` (number) — offset into the dash cycle. Default: `0`.
 
 ## Methods

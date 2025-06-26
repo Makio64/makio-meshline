@@ -14,6 +14,7 @@ new MeshLineGeometry(options?: MeshLineGeometryOptions)
 interface MeshLineGeometryOptions {
   lines?: Float32Array | number[][]          // Line points (required)
   isClose?: boolean | boolean[]              // Close the loop(s)
+  widthCallback?: (t: number) => number      // variable width
    
   // Flags to include / exclude generated attributes (advanced)
   needsPositions?: boolean
@@ -34,15 +35,15 @@ interface MeshLineGeometryOptions {
 
 ```ts
 setLines(
-  linesArray: Float32Array[] | Array<[number, number, number]>[] | THREE.BufferGeometry[]
+  lines: Array<Float32Array | Array<[number, number, number]> | THREE.BufferGeometry>
 ): void
 ```
 
-Replace or initialize the geometry with one or multiple line segments.
+Replace or initialize the geometry with one or multiple line segments. This method always expects an array of lines, so if you have a single line, wrap it in an array.
 
 #### Parameters
 
-- `linesArray` – Array of line data, where each element represents a separate line. Each element can be a nested number array or a `Float32Array`.
+- `lines` – Array of line data, where each element represents a separate line. Each element can be a `Float32Array` of points, a nested number array `[x,y,z]`, or a `THREE.BufferGeometry`.
 
 ### dispose()
 
@@ -65,7 +66,7 @@ const points = [
   [2, 0, 0]
 ];
 
-const geometry = new MeshLineGeometry(points);
+const geometry = new MeshLineGeometry({ lines: [points] });
 ```
 
 ### Multiple Line Segments
@@ -76,7 +77,7 @@ const lines = [
   [[2, 0, 0], [3, 1, 0], [3, 2, 0]]  // Second line
 ];
 
-const geometry = new MeshLineGeometry({lines});
+const geometry = new MeshLineGeometry({ lines });
 // OR
 const geometry = new MeshLineGeometry();
 geometry.setLines(lines);
@@ -96,7 +97,7 @@ for (let i = 0; i < pointCount; i++) {
   points[i * 3 + 2] = 0;
 }
 
-const geometry = new MeshLineGeometry({lines:[points]});
+const geometry = new MeshLineGeometry({ lines: [points] });
 ```
 
 ## Internal Structure
