@@ -14,7 +14,7 @@
 		"animejs": "^4.0.2",
 		"meshline": "workspace:*",
 		"stats-gl": "^3.6.0",
-		"three": "^0.177.0",
+		"three": "^0.178.0",
 		"vue": "^3.5.17",
 		"vue-tiny-router": "^1.3.2",
 		"vue-tiny-translation": "^1.0.0"
