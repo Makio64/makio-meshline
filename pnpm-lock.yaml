@@ -82,8 +82,8 @@ importers:
         specifier: ^1.17.8
         version: 1.17.8(vite@6.3.5(stylus@0.64.0))
       vite-plugin-qrcode:
-        specifier: ^0.2.4
-        version: 0.2.4(vite@6.3.5(stylus@0.64.0))
+        specifier: ^0.3.0
+        version: 0.3.0(vite@6.3.5(stylus@0.64.0))
       vite-plugin-tsl-operator:
         specifier: ^1.4.1
         version: 1.4.1
@@ -1796,11 +1796,11 @@ packages:
     peerDependencies:
       vite: '>=3'
 
-  vite-plugin-qrcode@0.2.4:
-    resolution: {integrity: sha512-XFNNSCTXdxCZFJrVVJlwFD6yk3jhf14xDFImI9y34FpIcRPjGcdmXXZ6V8YO6LUisB+n5AMbYITe2J7rOxwhmA==}
+  vite-plugin-qrcode@0.3.0:
+    resolution: {integrity: sha512-tCsN3ckHmFs9vRyFwdNdmlMzzt8iX7hZQrMMOhIIpu8SchfHgA78TIGBfeRnXARBo71qBPC7+O2rgMqPsOdCzg==}
     engines: {node: ^14.13.1 || ^16.0.0 || >=18}
     peerDependencies:
-      vite: ^3.0.0 || ^4.0.0 || ^5.0.0 || ^6.0.0
+      vite: ^3.0.0 || ^4.0.0 || ^5.0.0 || ^6.0.0 || ^7.0.0
 
   vite-plugin-tsl-operator@1.4.1:
     resolution: {integrity: sha512-3JVAKWWaFj0VmvtQylGrWIgoO10IhL1wWpZmzZsERtegK67UAL3YcI5uwpy0NNsto8W33VFIEs3lMDWnc79PQw==}
@@ -3620,7 +3620,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  vite-plugin-qrcode@0.2.4(vite@6.3.5(stylus@0.64.0)):
+  vite-plugin-qrcode@0.3.0(vite@6.3.5(stylus@0.64.0)):
     dependencies:
       qrcode-terminal: 0.12.0
       vite: 6.3.5(stylus@0.64.0)
