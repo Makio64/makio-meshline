@@ -5,12 +5,13 @@
 <script>
 import waves from '@/demos/waves'
 import basic from '@/demos/basic'
+import follow from '@/demos/follow'
 import { contentLoaded } from '@/store'
 
 export default {
 	name: 'ExampleView',
 	async mounted() {
-		this.example = this.$router.params.id === 'waves' ? waves : basic
+		this.example = this.$router.params.id === 'waves' ? waves : this.$router.params.id === 'follow' ? follow : basic
 		await this.example.init()
 		contentLoaded.value = true
 		this.transitionIn()

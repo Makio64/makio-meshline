@@ -20,10 +20,10 @@ interface MeshLineGeometryOptions {
   needsPositions?: boolean
   needsPrevious?: boolean
   needsNext?: boolean
-  needsUVs?: boolean
+  needsUV?: boolean
   needsSide?: boolean
-  needsCounters?: boolean
-  needsWidths?: boolean
+  needsCounter?: boolean
+  needsWidth?: boolean
 }
 ```
 

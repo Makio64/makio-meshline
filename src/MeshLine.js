@@ -34,9 +34,9 @@ export default class MeshLine extends Mesh {
 			
 			usePercent: false,
 
-			needsWidths: false,
-			needsUVs: true,
-			needsCounters: true,
+			needsWidth: false,
+			needsUV: true,
+			needsCounter: true,
 			needsPrevious: true,
 			needsNext: true,
 			needsSide: true,

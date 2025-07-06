@@ -48,9 +48,9 @@ interface MeshLineOptions {
   frustumCulled?: boolean
 
   // ***Advanced / internal***
-  needsWidths?: boolean
-  needsUVs?: boolean
-  needsCounters?: boolean
+  needsWidth?: boolean
+  needsUV?: boolean
+  needsCounter?: boolean
   needsPrevious?: boolean
   needsNext?: boolean
   needsSide?: boolean
@@ -117,11 +117,11 @@ interface MeshLineOptions {
 
 ### Advanced / Internal
 
-- **`needsWidths`** (`boolean`) — Whether to generate per-vertex width attributes (not used by current high-level API but exposed for custom geometries). Default: `false`.
+- **`needsWidth`** (`boolean`) — Whether to generate per-vertex width attributes (not used by current high-level API but exposed for custom geometries). Default: `false`.
 
-- **`needsUVs`** (`boolean`) — Whether to generate UV coordinates for texture mapping. Default: `true`.
+- **`needsUV`** (`boolean`) — Whether to generate UV coordinates for texture mapping. Default: `true`.
 
-- **`needsCounters`** (`boolean`) — Whether to generate counter attributes for gradients and dashes. Default: `true`.
+- **`needsCounter`** (`boolean`) — Whether to generate counter attributes for gradients and dashes. Default: `true`.
 
 - **`needsPrevious`** (`boolean`) — Whether to generate previous vertex attributes for line direction calculation. Default: `true`.
 

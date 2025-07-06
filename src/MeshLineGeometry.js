@@ -10,10 +10,10 @@ export class MeshLineGeometry extends BufferGeometry {
 			needsPositions: true,
 			needsPrevious: true,
 			needsNext: true,
-			needsUVs: false,
+			needsUV: false,
 			needsSide: true,
-			needsCounters: true,
-			needsWidths: false,
+			needsCounter: true,
+			needsWidth: false,
 			...options
 		}
 
@@ -173,13 +173,13 @@ export class MeshLineGeometry extends BufferGeometry {
 		if ( this.options.needsSide ) {
 			sides = new Float32Array( totalVertices )
 		}
-		if ( this.options.needsWidths ) {
+		if ( this.options.needsWidth ) {
 			widths = new Float32Array( totalVertices )
 		}
-		if ( this.options.needsUVs ) {
+		if ( this.options.needsUV ) {
 			uvs = new Float32Array( totalVertices * 2 )
 		}
-		if ( this.options.needsCounters ) {
+		if ( this.options.needsCounter ) {
 			counters = new Float32Array( totalVertices )
 		}
 

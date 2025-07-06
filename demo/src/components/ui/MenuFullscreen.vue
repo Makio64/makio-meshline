@@ -16,6 +16,7 @@ export default {
 			links: [
 				{ text: 'Basic', href: '/examples/basic' },
 				{ text: 'Waves', href: '/examples/waves' },
+				{ text: 'Follow', href: '/examples/follow' },
 			],
 		}
 	},
