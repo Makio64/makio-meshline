@@ -24,7 +24,7 @@
 		"@stylistic/eslint-plugin": "^5.0.0",
 		"@vitejs/plugin-vue": "^5.2.4",
 		"eslint": "^9.29.0",
-		"eslint-plugin-vue": "^10.2.0",
+		"eslint-plugin-vue": "^10.3.0",
 		"rollup-plugin-visualizer": "^6.0.3",
 		"stylus": "^0.64.0",
 		"unplugin-auto-import": "^19.3.0",
