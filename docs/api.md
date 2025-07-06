@@ -33,12 +33,6 @@ new MeshLine(options?: MeshLineOptions)
 ```
 
 **Key Features:**
-- Easy-to-use high-level API
-- Percent-based reveal / hide via `percent` uniforms
-- Automatic resolution handling
-- Extensive customization options
-
-[→ View MeshLine Documentation](/meshline)
 
 ### [MeshLineGeometry](/meshline-geometry)
 
@@ -48,14 +42,6 @@ Low-level geometry class that builds the line mesh from point data.
 new MeshLineGeometry(lines, widthCallback?, loop?)
 ```
 
-**Key Features:**
-- Handles complex vertex calculations
-- Support for multiple line segments
-- Variable width along line
-- Optimized for performance
-
-[→ View MeshLineGeometry Documentation](/meshline-geometry)
-
 ### [MeshLineNodeMaterial](/meshline-material)
 
 Specialized Three.js NodeMaterial for line rendering.
@@ -63,14 +49,6 @@ Specialized Three.js NodeMaterial for line rendering.
 ```ts
 new MeshLineNodeMaterial(parameters?)
 ```
-
-**Key Features:**
-- WebGPU and WebGL2 compatible
-- Advanced shader features (gradients, dashing, textures)
-- Screen-space line thickness
-- Size attenuation support
-
-[→ View MeshLineNodeMaterial Documentation](/meshline-material)
 
 ## Helper Functions
 

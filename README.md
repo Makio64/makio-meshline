@@ -1,10 +1,11 @@
 # Makio MeshLine
 
-A lightweight library for creating beautiful, performant, and highly customizable lines in Three.js using the modern Node Material system.
+A lightweight library for rendering performant, thick customizable lines in Three.js using NodeMaterial (TSL).
+
+Supports gradients, dashes, textures, variable width and percent-based visibility.
 
 <img width="1661" alt="Screenshot 2025-06-26 at 15 58 30" src="https://github.com/user-attachments/assets/deb1ccd7-46a9-4be0-8f07-280c21aafe81" />
 
-This library allows you to easily create lines with advanced properties like gradients, dashing, texture mapping, and more, with a simple and intuitive API.
 
 ## Getting Started
 
