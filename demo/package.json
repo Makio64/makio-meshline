@@ -34,7 +34,7 @@
 		"vite-plugin-mkcert": "^1.17.8",
 		"vite-plugin-qrcode": "^0.2.4",
 		"vite-plugin-tsl-operator": "^1.4.1",
-		"vue-eslint-parser": "^10.1.4"
+		"vue-eslint-parser": "^10.2.0"
 	},
 	"packageManager": "pnpm@10.12.2"
 }
