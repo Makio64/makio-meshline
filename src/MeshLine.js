@@ -34,6 +34,9 @@ export default class MeshLine extends Mesh {
 			
 			usePercent: false,
 
+			// device pixel ratio scaling for screen-space width
+			dpr: ( window.devicePixelRatio || 1 ),
+
 			needsWidth: false,
 			needsUV: true,
 			needsCounter: true,
@@ -53,7 +56,8 @@ export default class MeshLine extends Mesh {
 
 		let material = new MeshLineNodeMaterial( {
 			...options,
-			lineWidth: options.lineWidth * ( options.sizeAttenuation ? 200 : 1 ),
+			lineWidth: options.lineWidth,
+			dpr: options.dpr,
 			gradient: options.gradientColor ? new Color( options.gradientColor ) : null,
 		} )
 

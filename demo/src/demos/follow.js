@@ -14,6 +14,7 @@ class FollowExample {
 		this.target = new Vector3()
 		this.prevTarget = new Vector3()
 		this.time = 0
+		this.dpr = window.devicePixelRatio || 1
 
 		this.isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0
 		this.autoMode = this.isMobile // use virtual mouse until real interaction happens
@@ -30,7 +31,7 @@ class FollowExample {
 	initLine() {
 		const lineOptions = {
 			lines: this._pointsToFloat32(),
-			lineWidth: 0.4,
+			lineWidth: 0.2,
 			isClose: false,
 			gradientColor: 0x00ff00,
 			needsWidth: true,
@@ -89,7 +90,7 @@ class FollowExample {
 
 		// ------------------------------------------------ width based on mouse speed
 		const speed = this.target.distanceTo( this.prevTarget ) / ( dt || 1 ) // world units per ms
-		const targetWidth = MathUtils.clamp( 0.15 + speed * 10, 0.15, 2 )
+		const targetWidth = MathUtils.clamp( 0.001 + speed * 5, 0.15, 2 ) * this.dpr
 		// Smooth interpolation to avoid jitter
 		this.line.material.lineWidth.value = MathUtils.lerp( this.line.material.lineWidth.value, targetWidth, 0.15 )
 		this.prevTarget.copy( this.target )

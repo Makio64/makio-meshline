@@ -43,6 +43,8 @@ class MeshLineNodeMaterial extends NodeMaterial {
 		this.dashCount = options.dashCount ? uniform( options.dashCount ) : null
 		this.dashRatio = uniform( options.dashRatio ?? options.dashLength ?? null )
 		this.dashOffset = uniform( options.dashOffset ?? 0 )
+		// Device pixel ratio for screen-space width
+		this.dpr = uniform( options.dpr ?? ( ( typeof window !== 'undefined' ) ? window.devicePixelRatio || 1 : 1 ) )
 	}
 
 	dispose() {
@@ -90,7 +92,7 @@ class MeshLineNodeMaterial extends NodeMaterial {
 			const prevP = fix( prevPos, aspect ).toVar( 'prevP' )
 			const nextP = fix( nextPos, aspect ).toVar( 'nextP' )
 
-			const w = this.lineWidth.toVar( 'w' )
+			const w = this.lineWidth.mul( this.dpr ).toVar( 'w' )
 			if ( width ) {
 				w.mulAssign( width )
 			}

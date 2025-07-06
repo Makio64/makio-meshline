@@ -47,6 +47,9 @@ interface MeshLineOptions {
   wireframe?: boolean
   frustumCulled?: boolean
 
+  // Device pixel ratio
+  dpr?: number
+
   // ***Advanced / internal***
   needsWidth?: boolean
   needsUV?: boolean
@@ -115,94 +118,10 @@ interface MeshLineOptions {
 
 - **`frustumCulled`** (`boolean`) — Whether the line should be frustum culled by Three.js. Set to `false` for lines that might extend outside the view. Default: `true`.
 
+### Device Pixel Ratio
+
+- **`dpr`** (`number`) — Device pixel ratio multiplier used for screen-space `lineWidth`. Defaults to `window.devicePixelRatio`.
+
 ### Advanced / Internal
 
-- **`needsWidth`** (`boolean`) — Whether to generate per-vertex width attributes (not used by current high-level API but exposed for custom geometries). Default: `false`.
-
-- **`needsUV`** (`boolean`) — Whether to generate UV coordinates for texture mapping. Default: `true`.
-
-- **`needsCounter`** (`boolean`) — Whether to generate counter attributes for gradients and dashes. Default: `true`.
-
-- **`needsPrevious`** (`boolean`) — Whether to generate previous vertex attributes for line direction calculation. Default: `true`.
-
-- **`needsNext`** (`boolean`) — Whether to generate next vertex attributes for line direction calculation. Default: `true`.
-
-- **`needsSide`** (`boolean`) — Whether to generate side attributes for line thickness. Default: `true`.
-
-- **`renderWidth`** (`number`) — Initial renderer width for resolution uniform. Default: `window.innerWidth`.
-
-- **`renderHeight`** (`number`) — Initial renderer height for resolution uniform. Default: `window.innerHeight`.
-
-## Methods
-
-### resize()
-
-```ts
-resize(width?: number, height?: number): void
-```
-
-Updates the internal resolution uniform. Call this in your resize handler if you manage the renderer size manually.
-
-### setGeometry()
-
-```ts
-setGeometry(geometry: MeshLineGeometry, culling?: boolean): void
-```
-
-Replaces the line's geometry with a new one and optionally updates the `frustumCulled` property.
-
-- **`geometry`**: The new `MeshLineGeometry` to use.
-- **`culling`**: (Optional) New value for `frustumCulled`. Defaults to `true`.
-
-### dispose()
-
-```ts
-dispose(): void
-```
-
-Disposes the geometry and material and removes the mesh from its parent.
-
-### Percent-based visibility
-
-`MeshLine` exposes two `THREE.Uniform` objects, `percent` and `percent2`, when `usePercent` is true **or** both values were supplied in the options.  Animate these uniforms to reveal or hide the line:
-
-```js
-// Reveal from 0 → 100 %
-line.percent.value = 0;
-line.percent2.value = 1;
-
-gsap.to(line.percent,  { value: 1, duration: 1 });   // Start grows
-gsap.to(line.percent2, { value: 0, duration: 1 });   // End shrinks
-```
-
-## Usage Example
-
-```javascript
-import { MeshLine, circlePositions } from 'meshline';
-
-const line = new MeshLine({
-  lines: circlePositions(64),
-  isClose: true,
-  color: 0xff0000,
-  lineWidth: 0.5,
-  gradientColor: 0x00ff00
-});
-
-scene.add(line);
-
-// Custom reveal
-line.percent.value = -0.01;
-line.percent2.value = 1.01;
-gsap.to(line.percent,  { value: 1.01, duration: 1, ease: 'expo.out' });
-gsap.to(line.percent2, { value: -0.01, duration: 1, ease: 'expo.out' });
-
-// Clean up when done
-line.dispose();
-```
-
-## Notes
-
-• `MeshLine` extends `THREE.Mesh`, so it behaves like any other object in the scene graph.
-• All numeric colour fields accept either a hex number (`0xff00ff`) or a `THREE.Color` instance.
-• When `sizeAttenuation` is `false` (default), `lineWidth` is in pixels; when `true` it scales with distance.
-• Always call `dispose()` to prevent memory leaks. 
+- **`needsWidth`
