@@ -23,7 +23,7 @@
 		"@eslint/eslintrc": "^3.3.1",
 		"@stylistic/eslint-plugin": "^5.0.0",
 		"@vitejs/plugin-vue": "^5.2.4",
-		"eslint": "^9.29.0",
+		"eslint": "^9.30.1",
 		"eslint-plugin-vue": "^10.2.0",
 		"rollup-plugin-visualizer": "^6.0.3",
 		"stylus": "^0.64.0",
