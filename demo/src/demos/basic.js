@@ -98,6 +98,7 @@ class BasicExample {
 		const spacing = 3.3
 		const defaultConfig = {
 			usePercent: true,
+			verbose: true
 		}
 
 		for ( let i = 0; i < configs.length; i++ ) {

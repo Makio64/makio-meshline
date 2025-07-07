@@ -40,6 +40,7 @@ class FollowExample {
 				if ( t > 1 - edge ) return MathUtils.lerp( 0.1, 1, ( 1 - t ) / edge )
 				return 1 // full width in the middle
 			},
+			verbose: true
 		}
 		this.line = new MeshLine( lineOptions )
 		stage3d.add( this.line )

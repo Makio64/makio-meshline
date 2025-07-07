@@ -35,7 +35,8 @@ class WavesExample {
 			lines: this.createWaveLines(),
 			lineWidth: 0.5,
 			isClose: false,
-			gradientColor: 0xff0000
+			gradientColor: 0xff0000,
+			verbose: true
 		}
 
 		this.lines = new MeshLine( options )
