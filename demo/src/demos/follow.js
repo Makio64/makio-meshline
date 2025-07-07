@@ -97,7 +97,6 @@ class FollowExample {
 
 	onMove = ( e ) => {
 		this.target.copy( this._screenToWorld( e.clientX, e.clientY ) )
-		console.log( this.target )
 	}
 
 	// -------------------------------------------------- CLEANUP
