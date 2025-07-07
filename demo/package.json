@@ -12,6 +12,7 @@
 	},
 	"dependencies": {
 		"animejs": "^4.0.2",
+		"lil-gui": "^0.19.2",
 		"meshline": "workspace:*",
 		"stats-gl": "^3.6.0",
 		"three": "^0.178.0",

@@ -2,6 +2,7 @@ import OrbitControl from '@/makio/three/controls/OrbitControl'
 import stage3d from '@/makio/three/stage3d'
 import { MeshLine } from 'meshline'
 import { Fn, vec3, cos, sin, float, uniform, time, mix } from 'three/tsl'
+import GUI from 'lil-gui'
 
 const segments = 128
 
@@ -21,6 +22,7 @@ const wavePosition = Fn( ( [counter] ) => {
 class GpuCircleExample {
 	constructor() {
 		this.line = null
+		this.gui = null
 	}
 
 	async init() {
@@ -54,6 +56,12 @@ class GpuCircleExample {
 			verbose: true,
 		} )
 		stage3d.add( this.line )
+
+		// GUI slider
+		this.gui = new GUI()
+		this.gui.add( { blend: 0 }, 'blend', 0, 1, 0.01 ).name( 'Wave ⇆ Circle' ).onChange( v => {
+			useWave.value = v
+		} )
 	}
 
 	onResize = () => {
@@ -61,6 +69,8 @@ class GpuCircleExample {
 	}
 
 	dispose() {
+		this.gui?.destroy()
+		this.gui = null
 		window.removeEventListener( 'resize', this.onResize )
 		if ( this.line ) {
 			stage3d.remove( this.line )
