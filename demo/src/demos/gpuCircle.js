@@ -15,8 +15,8 @@ const circlePosition = Fn( ( [counter] ) => {
 // TSL function generating a wavy line in the XZ plane from the per-vertex counter (0-1)
 const wavePosition = Fn( ( [counter] ) => {
 	// make a wavy line
-	const y = sin( counter.mul( Math.PI * 4  ).add( time ) )
-	return vec3( counter.mul( 4 ).sub( 2 ), y, 0 )
+	const y = sin( counter.mul( Math.PI * 4  ).add( time.negate().mul( 4 ) ) )
+	return vec3( counter.oneMinus().mul( 4 ).sub( 2 ), y, 0 )
 } )
 
 class GpuCircleExample {

@@ -71,6 +71,7 @@ export default class OrbitControl {
 		this.enable()
 		this.update()
 		this.camera.updateMatrixWorld()
+
 	}
 
 	lock = () => {
@@ -134,16 +135,23 @@ export default class OrbitControl {
 		this.camera.lookAt( this.targetLookAt )
 		this.camera.position.add( this.offset )
 	}
-
-	_onDown = () => {
+	_isGuiEvent = e => {
+		const el = e?.target
+		return el && el.closest && el.closest( '.lil-gui' )
+	}
+	
+	_onDown = ( e ) => {
+		if ( this._isGuiEvent( e ) ) return
 		this._isDown = true
 	}
 
-	_onUp = () => {
+	_onUp = ( e ) => {
+		if ( this._isGuiEvent( e ) ) return
 		this._isDown = false
 	}
 
 	_onMove = e => {
+		if ( this._isGuiEvent( e ) ) return
 		if ( e.touches && e.touches.length != 1 ) {
 			return
 		}
@@ -187,6 +195,7 @@ export default class OrbitControl {
 	}
 
 	onWheel = e => {
+		if ( this._isGuiEvent( e ) ) return
 		if ( this.blockZoom ) return
 		this.isPinching = true
 		e.delta < 0 ? this.zoomOut() : this.zoomIn()
