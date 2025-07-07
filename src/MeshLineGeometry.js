@@ -414,6 +414,99 @@ export class MeshLineGeometry extends BufferGeometry {
 		this._attrs = {}
 		super.dispose()
 	}
+
+	// Update the positions of an existing line without rebuilding attributes (single-line only)
+	setPositions( pts, updateBounding = false ) {
+		if ( !pts ) return
+
+		pts = toFloat32( pts )
+
+		// Only support single line fast-path for now
+		if ( this._lines.length !== 1 ) {
+			// fallback to full rebuild
+			this.setLines( pts )
+			return
+		}
+
+		const numPoints = pts.length / 3
+		if ( numPoints < 2 ) return
+
+		// Validate attribute sizes
+		const positionAttr = this.getAttribute( 'position' )
+		if ( !positionAttr || positionAttr.count !== numPoints * 2 ) {
+			this.setLines( pts )
+			return
+		}
+
+		const previousAttr = this.getAttribute( 'previous' )
+		const nextAttr = this.getAttribute( 'next' )
+
+		const positionsArray = positionAttr.array
+		const prevArray = previousAttr ? previousAttr.array : null
+		const nextArray = nextAttr ? nextAttr.array : null
+
+		// Helper to copy xyz twice (for the two side vertices)
+		const writePair = ( arr, vertIdx, x, y, z ) => {
+			arr[vertIdx * 3] = x
+			arr[vertIdx * 3 + 1] = y
+			arr[vertIdx * 3 + 2] = z
+			arr[vertIdx * 3 + 3] = x
+			arr[vertIdx * 3 + 4] = y
+			arr[vertIdx * 3 + 5] = z
+		}
+
+		for ( let i = 0; i < numPoints; i++ ) {
+			const o = i * 3
+			const x = pts[o]
+			const y = pts[o + 1]
+			const z = pts[o + 2]
+
+			const vertIdx = i * 2
+			writePair( positionsArray, vertIdx, x, y, z )
+
+			// previous
+			if ( prevArray ) {
+				let px, py, pz
+				if ( i === 0 ) {
+					if ( numPoints > 1 ) {
+						const x1 = pts[3], y1 = pts[4], z1 = pts[5]
+						const refl = this.reflect( [x, y, z], [x1, y1, z1] )
+						px = refl[0]; py = refl[1]; pz = refl[2]
+					} else { px = x; py = y; pz = z }
+				} else {
+					px = pts[o - 3]; py = pts[o - 2]; pz = pts[o - 1]
+				}
+				writePair( prevArray, vertIdx, px, py, pz )
+			}
+
+			// next
+			if ( nextArray ) {
+				let nx, ny, nz
+				if ( i === numPoints - 1 ) {
+					if ( numPoints > 1 ) {
+						const x1 = pts[o - 3], y1 = pts[o - 2], z1 = pts[o - 1]
+						const refl = this.reflect( [x, y, z], [x1, y1, z1] )
+						nx = refl[0]; ny = refl[1]; nz = refl[2]
+					} else { nx = x; ny = y; nz = z }
+				} else {
+					nx = pts[o + 3]; ny = pts[o + 4]; nz = pts[o + 5]
+				}
+				writePair( nextArray, vertIdx, nx, ny, nz )
+			}
+		}
+
+		positionAttr.needsUpdate = true
+		if ( previousAttr ) previousAttr.needsUpdate = true
+		if ( nextAttr ) nextAttr.needsUpdate = true
+
+		// Update cached line & bounding volumes
+		this._lines[0] = pts 
+		if ( updateBounding ) {
+			this.computeBoundingBoxes()
+			this.computeBoundingBox()
+			this.computeBoundingSphere()
+		}
+	}
 }
 
 //------------------------------------------------------ HELPERS

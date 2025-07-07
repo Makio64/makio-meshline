@@ -149,3 +149,21 @@ interface MeshLineOptions {
 - **`renderHeight`** (`number`) — Height of the rendered line. Default: `1024`.
 
 - **`verbose`** (`boolean`) — When `true` logs to the console which buffer attributes are generated for the geometry. Useful for debugging option combinations. Default: `false`.
+
+### Updating geometry efficiently
+
+For lines whose vertices change every frame (e.g. interactive trails) you can avoid rebuilding the full geometry by calling **`geometry.setPositions( positionsF32 )`**.  
+`positionsF32` must be the same length as the original `lines` array (and ideally the same Float32Array reused each frame).  Only the `position`, `previous` and `next` buffers are updated in-place, so no new GPU buffers are created.
+
+```js
+// Allocate once
+const positions = new Float32Array( NUM_POINTS * 3 );
+const line = new MeshLine({ lines: positions, lineWidth: 0.02 });
+scene.add( line );
+
+// Frame loop
+updatePositions( positions );           // write XYZs into the same array
+line.geometry.setPositions( positions ); // fast update
+```
+
+When verbose mode is enabled you'll see `[MeshLine] positions updated via setPositions` in the console.

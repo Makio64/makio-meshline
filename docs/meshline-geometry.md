@@ -53,6 +53,32 @@ dispose(): void
 
 Releases geometry resources. Call when the geometry is no longer needed.
 
+### setPositions()  _(v0.9.0+)_
+
+```ts
+setPositions( positions: Float32Array, updateBounding = false ): void
+```
+
+Efficiently updates the vertex positions of an **existing single-line** geometry without rebuilding or reallocating GPU buffers.  Use this when the number of points stays constant but their coordinates change every frame, e.g. for trails or rope physics.
+
+• `positions` – A `Float32Array` containing **the same number of xyz values** as the original line.  Writing into the very same typed array each frame avoids garbage.  
+• `updateBounding` – Recomputes the bounding box / sphere when `true` (default `false`).  Skip it if the line remains roughly inside view for a small perf gain.
+
+Example (paired with a reusable array):
+
+```js
+const pts = new Float32Array( NUM * 3 );
+const geometry = new MeshLineGeometry({ lines: pts });
+
+function animate() {
+  writePointsInto( pts );      // mutate in place
+  geometry.setPositions( pts );// only uploads changed buffers
+  requestAnimationFrame( animate );
+}
+```
+
+If `verbose` is enabled, a console message `[MeshLine] positions updated via setPositions` confirms the lightweight path was used.
+
 ## Usage Examples
 
 ### Basic Line

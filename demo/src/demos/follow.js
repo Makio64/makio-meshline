@@ -10,6 +10,7 @@ const LERP_FACTOR = 0.35 // smoothness of the follow behaviour
 class FollowExample {
 	constructor() {
 		this.points = new Array( NUM_POINTS ).fill( null ).map( () => new Vector3() )
+		this.positionsF32 = new Float32Array( NUM_POINTS * 3 )
 		this.line = null
 		this.target = new Vector3()
 		this.prevTarget = new Vector3()
@@ -29,7 +30,7 @@ class FollowExample {
 
 	initLine() {
 		const lineOptions = {
-			lines: this._pointsToFloat32(),
+			lines: this._pointsToFloat32( this.positionsF32 ),
 			lineWidth: 0.01,
 			isClose: false,
 			gradientColor: 0x00ff00,
@@ -56,8 +57,9 @@ class FollowExample {
 			this.points[i].lerp( this.points[i - 1], LERP_FACTOR )
 		}
 
-		// Update MeshLine geometry
-		this.line.geometry.setLines( this._pointsToFloat32() )
+		
+		// Efficiently update positions without rebuilding attributes
+		this.line.geometry.setPositions( this._pointsToFloat32( this.positionsF32 ) )
 
 		// ------------------------------------------------ width based on mouse speed
 		const speed = this.target.distanceTo( this.prevTarget ) / ( dt / 16 || 1 )
@@ -69,8 +71,7 @@ class FollowExample {
 	}
 
 	// -------------------------------------------------- HELPERS
-	_pointsToFloat32() {
-		const arr = new Float32Array( NUM_POINTS * 3 )
+	_pointsToFloat32( arr ) {
 		for ( let i = 0; i < NUM_POINTS; i++ ) {
 			const p = this.points[i]
 			arr[i * 3] = p.x
