@@ -37,17 +37,24 @@ export default class MeshLine extends Mesh {
 			// device pixel ratio scaling for screen-space width
 			dpr: ( window.devicePixelRatio || 1 ),
 
-			needsWidth: false,
-			needsUV: true,
+			// What attributes are needed for the shader
+			needsWidth: options.widthCallback ? true : false,
+			needsUV: options.map || options.alphaMap || options.usePercent ? true : false,
 			needsCounter: true,
-			needsPrevious: true,
-			needsNext: true,
+			needsPrevious: options.gpuPositionNode ? false : true,
+			needsNext: options.gpuPositionNode ? false : true,
 			needsSide: true,
 
 			frustumCulled: true,
 
+			// Debugging
+			verbose: false,
+
 			renderWidth: window.innerWidth,
 			renderHeight: window.innerHeight,
+
+			// GPU procedural positions (TSL node). If provided, positions will be calculated in shader.
+			gpuPositionNode: null,
 
 			...options
 		}
@@ -56,9 +63,6 @@ export default class MeshLine extends Mesh {
 
 		let material = new MeshLineNodeMaterial( {
 			...options,
-			lineWidth: options.lineWidth,
-			dpr: options.dpr,
-			gradient: options.gradientColor ? new Color( options.gradientColor ) : null,
 		} )
 
 		super( geometry, material )

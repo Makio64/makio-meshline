@@ -6,20 +6,22 @@
 import waves from '@/demos/waves'
 import basic from '@/demos/basic'
 import follow from '@/demos/follow'
+import gpuCircle from '@/demos/gpuCircle'
 import { contentLoaded } from '@/store'
 
 export default {
 	name: 'ExampleView',
 	async mounted() {
-		this.example = this.$router.params.id === 'waves' ? waves : this.$router.params.id === 'follow' ? follow : basic
+		const id = this.$router.params.id
+		const mapping = {
+			waves,
+			follow,
+			gpuCircle
+		}
+		this.example = mapping[id] || basic
 		await this.example.init()
 		contentLoaded.value = true
 		this.transitionIn()
-	},
-	computed: {
-		elts() {
-			return [this.$refs.title, this.$refs.subtitle, this.$refs.btn]
-		},
 	},
 	beforeUnmount() {
 		this.example?.dispose()

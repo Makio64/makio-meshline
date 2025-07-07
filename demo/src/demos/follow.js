@@ -34,7 +34,6 @@ class FollowExample {
 			lineWidth: 0.2,
 			isClose: false,
 			gradientColor: 0x00ff00,
-			needsWidth: true,
 			widthCallback: ( t ) => {
 				const edge = 0.1
 				if ( t < edge ) return MathUtils.lerp( 0.1, 1, t / edge )

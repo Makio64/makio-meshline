@@ -217,3 +217,48 @@ Internally it handles all the heavy lifting for:
 - Screen-space line thickness calculations
 - UV generation for textures & dashes
 - Dash pattern evaluation
+
+## Dynamic GPU-Driven Positions (gpuPositionNode)
+
+When you don't want to upload an explicit polyline to the GPU you can let the shader compute each vertex position.  
+Provide a **gpuPositionNode** function that receives the per-vertex `counter` (ranging from 0→1 along the line) and returns a `vec3` position.
+
+```javascript
+import { MeshLine, MeshLineNodeMaterial } from 'meshline';
+import { Fn, vec3, cos, sin } from 'three/tsl';
+import * as THREE from 'three';
+
+// 1. GPU function returning a point on a unit circle
+const circlePosition = Fn( ( [index] ) => {
+  // index is in [0,1]. Turn it into an angle and build XZ coordinates
+  const angle = index.mul( Math.PI * 2.0 );
+  return vec3( cos( angle ), 0.0, sin( angle ) );
+} ).setLayout( {
+  name: 'circlePosition',
+  type: 'vec3',
+  inputs: [ { name: 'index', type: 'float' } ]
+} );
+
+// 2. Placeholder geometry (single vertex – content is ignored)
+const geom = new THREE.BufferGeometry().setAttribute(
+  'position',
+  new THREE.Float32BufferAttribute( new Float32Array( [ 0, 0, 0 ] ), 3 )
+);
+
+// 3. Material using the gpuPositionNode
+const material = new MeshLineNodeMaterial({
+  lineWidth: 4,
+  resolution: new THREE.Vector2( window.innerWidth, window.innerHeight ),
+  gpuPositionNode: circlePosition, // <- inject node here
+  needsCounter: true               // ensure the `counter` attribute is generated
+});
+
+// 4. Create the line and add to the scene
+const line = new MeshLine();
+line.setGeometry( geom ); // geometry size does not matter
+line.material = material;
+scene.add( line );
+```
+
+`counter` is automatically incremented for every segment so **index** travels smoothly from 0 to 1.  
+Combine this technique with uniforms (time, mouse, etc.) to build fully procedural, animated lines on the GPU.

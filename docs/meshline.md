@@ -59,6 +59,12 @@ interface MeshLineOptions {
   needsSide?: boolean
   renderWidth?: number
   renderHeight?: number
+
+  // Procedural GPU positions
+  gpuPositionNode?: Fn< number, THREE.Vector3 > | null
+
+  // Debugging
+  verbose?: boolean
 }
 ```
 
@@ -67,6 +73,8 @@ interface MeshLineOptions {
 ### Geometry
 
 - **`lines`** (`Float32Array | number[][]`) — **Required.** The line points data. Can be an array of `[x, y, z]` coordinate arrays, or a `Float32Array` with XYZ values. Default: `new Float32Array([0,0,0,1,0,0])`.
+
+> **Procedural alternative:** instead of supplying a `lines` array you can provide a **`gpuPositionNode`** function (TSL `Fn`).  The node receives the per-vertex `counter` (0→1) and must return a `vec3` position.  When set, the geometry sent to the GPU can be minimal – only its length matters so that the `counter` attribute is generated.
 
 - **`isClose`** (`boolean | boolean[]`) — Whether to close the line loop(s). If `true`, connects the last point back to the first. For multiple lines, can be an array of booleans. Default: `false`.
 
@@ -124,4 +132,20 @@ interface MeshLineOptions {
 
 ### Advanced / Internal
 
-- **`needsWidth`
+- **`needsWidth`** (`boolean`) — Whether the line needs width information. Default: `true`.
+
+- **`needsUV`** (`boolean`) — Whether the line needs UV coordinates. Default: `true`.
+
+- **`needsCounter`** (`boolean`) — Whether the line needs a counter attribute. Default: `true`.
+
+- **`needsPrevious`** (`boolean`) — Whether the line needs previous point information. Default: `true`.
+
+- **`needsNext`** (`boolean`) — Whether the line needs next point information. Default: `true`.
+
+- **`needsSide`** (`boolean`) — Whether the line needs side information. Default: `true`.
+
+- **`renderWidth`** (`number`) — Width of the rendered line. Default: `1024`.
+
+- **`renderHeight`** (`number`) — Height of the rendered line. Default: `1024`.
+
+- **`verbose`** (`boolean`) — When `true` logs to the console which buffer attributes are generated for the geometry. Useful for debugging option combinations. Default: `false`.

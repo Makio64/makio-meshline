@@ -14,6 +14,7 @@ export class MeshLineGeometry extends BufferGeometry {
 			needsSide: true,
 			needsCounter: true,
 			needsWidth: false,
+			verbose: false,
 			...options
 		}
 
@@ -376,6 +377,12 @@ export class MeshLineGeometry extends BufferGeometry {
 		this.computeBoundingBoxes()
 		this.computeBoundingSphere()
 		this.computeBoundingBox()
+
+		// Verbose logging
+		if ( this.options.verbose ) {
+			const attrs = Object.keys( this._attrs )
+			console.log( `[MeshLine] geometry built with attributes: ${attrs.join( ', ' )}` )
+		}
 	}
 
 	computeBoundingBoxes() {

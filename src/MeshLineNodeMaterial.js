@@ -34,7 +34,7 @@ class MeshLineNodeMaterial extends NodeMaterial {
 		this.resolution = uniform( options.resolution ?? new Vector2( 1 ) )
 		this.lineWidth = uniform( options.lineWidth ?? 1 )
 		this.color = uniform( new Color( options.color ?? 0xffffff ) )
-		this.gradient = uniform( options.gradient ?? null )
+		this.gradient = options.gradientColor ? uniform( new Color( options.gradientColor ) ) : null
 		this.opacity = uniform( options.opacity ?? 1 )
 		this.map = texture( options.map ?? null )
 		this.alphaMap = texture( options.alphaMap ?? null )
@@ -43,8 +43,12 @@ class MeshLineNodeMaterial extends NodeMaterial {
 		this.dashCount = options.dashCount ? uniform( options.dashCount ) : null
 		this.dashRatio = uniform( options.dashRatio ?? options.dashLength ?? null )
 		this.dashOffset = uniform( options.dashOffset ?? 0 )
+
 		// Device pixel ratio for screen-space width
 		this.dpr = uniform( options.dpr ?? ( ( typeof window !== 'undefined' ) ? window.devicePixelRatio || 1 : 1 ) )
+
+		// GPU position node (optional)
+		this.gpuPositionNode = options.gpuPositionNode ?? null
 	}
 
 	dispose() {
@@ -58,17 +62,21 @@ class MeshLineNodeMaterial extends NodeMaterial {
 
 	setupShaders( {  } ) {
 
-		const previous = attribute( 'previous', 'vec3' ).toVar( 'aPrevious' )
-		const next = attribute( 'next', 'vec3' ).toVar( 'aNext' )
+		// Only declare counters if needed
+		let counters
+		if ( this.options.needsCounter || this.gradient || this.dashCount || this.gpuPositionNode ) {
+			counters = attribute( 'counters', 'float' ).toVar( 'aCounters' )
+		}
+		
+		let segments = this.options.lines.length / 3 
+		let pos = this.gpuPositionNode ? this.gpuPositionNode( counters, 0 ) : positionGeometry
+		let previous = this.gpuPositionNode ? this.gpuPositionNode( counters.sub( 1 / segments ) ) : attribute( 'previous', 'vec3' ).toVar( 'aPrevious' ) 
+		let next = this.gpuPositionNode ? this.gpuPositionNode( counters.add( 1 / segments ) ) : attribute( 'next', 'vec3' ).toVar( 'aNext' )
+
 		const side = attribute( 'side', 'float' ).toVar( 'aSide' )
 		let width
 		if ( this.options.needsWidth ) {
 			width = attribute( 'width', 'float' ).toVar( 'aWidth' )
-		}
-		// Only declare counters if needed
-		let counters
-		if ( this.gradient.value || this.dashCount ) {
-			counters = attribute( 'counters', 'float' ).toVar( 'aCounters' )
 		}
 
 		this.vertexNode = Fn( () => {
@@ -76,14 +84,15 @@ class MeshLineNodeMaterial extends NodeMaterial {
 			varyingProperty( 'vec4', 'vColor' ).assign( vec4( this.color, 1 ) )
 
 			// Only assign vCounters if needed to reduce varying bandwidth
-			if ( this.gradient.value || this.dashCount ) {
+			if ( this.gradient || this.dashCount ) {
 				varyingProperty( 'float', 'vCounters' ).assign( counters )
 			}
 
 			const aspect = this.resolution.x.div( this.resolution.y ).toVar( 'aspect' )
 
 			const mvpMatrix = cameraProjectionMatrix.mul( modelViewMatrix ).toVar( 'mvpMatrix' )
-			const finalPosition = mvpMatrix.mul( vec4( positionGeometry, 1.0 ) ).toVar( 'finalPosition' )
+
+			const finalPosition = mvpMatrix.mul( vec4( pos, 1.0 ) ).toVar( 'finalPosition' )
 			const prevPos = mvpMatrix.mul( vec4( previous, 1.0 ) ).toVar( 'prevPos' )
 			const nextPos = mvpMatrix.mul( vec4( next, 1.0 ) ).toVar( 'nextPos' )
 
@@ -117,7 +126,7 @@ class MeshLineNodeMaterial extends NodeMaterial {
 		} )()
 
 		let vCounters
-		if ( this.gradient.value || this.dashCount ) {
+		if ( this.gradient || this.dashCount ) {
 			vCounters = varyingProperty( 'float', 'vCounters' ).toVar()
 		}
 		let uvCoords
@@ -130,7 +139,7 @@ class MeshLineNodeMaterial extends NodeMaterial {
 
 			let color = varyingProperty( 'vec4', 'vColor' ).toVar( 'color' )
 
-			if ( this.gradient.value ) {
+			if ( this.gradient ) {
 				color.rgb.assign( mix( color.rgb, this.gradient, vCounters ) )
 			}
 
