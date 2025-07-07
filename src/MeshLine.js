@@ -39,7 +39,7 @@ export default class MeshLine extends Mesh {
 
 			// What attributes are needed for the shader
 			needsWidth: options.widthCallback ? true : false,
-			needsUV: options.map || options.alphaMap || options.usePercent ? true : false,
+			needsUV: options.map || options.alphaMap || options.usePercent || options.percent !== undefined || options.percent2 !== undefined ? true : false,
 			needsCounter: true,
 			needsPrevious: options.gpuPositionNode ? false : true,
 			needsNext: options.gpuPositionNode ? false : true,

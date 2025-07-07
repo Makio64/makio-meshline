@@ -35,8 +35,6 @@ class WavesExample {
 			lines: this.createWaveLines(),
 			lineWidth: 0.5,
 			isClose: false,
-			percent: 1,
-			percent2: 1,
 			gradientColor: 0xff0000
 		}
 
