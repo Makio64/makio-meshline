@@ -1,7 +1,7 @@
 import { Fn, step, uniform, uv } from "three/tsl"
 import { MeshLineGeometry } from "./MeshLineGeometry"
 import { MeshLineNodeMaterial } from "./MeshLineNodeMaterial"
-import { Mesh, Color } from "three/webgpu"
+import { Mesh } from "three/webgpu"
 
 const defaultPositions = new Float32Array( [0, 0, 0, 1, 0, 0] )
 export default class MeshLine extends Mesh {
@@ -55,6 +55,7 @@ export default class MeshLine extends Mesh {
 
 			// GPU procedural positions (TSL node). If provided, positions will be calculated in shader.
 			gpuPositionNode: null,
+			usage: null,
 
 			...options
 		}

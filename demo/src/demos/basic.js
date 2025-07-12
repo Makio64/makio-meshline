@@ -231,6 +231,7 @@ class BasicExample {
 			this.cssRenderer.domElement.parentNode.removeChild( this.cssRenderer.domElement )
 		}
 		stage.onUpdate.remove( this.update )
+		stage3d.control.dispose()
 	}
 
 	// Create a checker pattern texture

@@ -1,5 +1,6 @@
 /**
- * Modern Font Injection & loading by @makio64 | David Ronai
+ * Modern Font Injection & loading
+ * @author David Ronai / @Makio64
  * @param {Array<{name: string, url: string, weight?: number}>} fonts
  * @param {boolean} [loadThem=true]
  * @returns {Promise} Resolves when fonts are loaded

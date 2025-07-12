@@ -65,7 +65,7 @@ class GpuCircleExample {
 	}
 
 	onResize = () => {
-		this.line?.resize( window.innerWidth, window.innerHeight )
+		this.line?.resize()
 	}
 
 	dispose() {
@@ -77,6 +77,7 @@ class GpuCircleExample {
 			this.line.dispose()
 			this.line = null
 		}
+		stage3d.control.dispose()
 	}
 
 	show() {}

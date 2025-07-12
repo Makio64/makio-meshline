@@ -1,3 +1,8 @@
+/**
+ * Math utilities
+ * @author David Ronai / @Makio64
+ */
+
 // Constants for commonly used math values
 export const PI = Math.PI
 export const TWO_PI = PI * 2

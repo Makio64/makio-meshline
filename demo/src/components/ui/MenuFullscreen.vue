@@ -18,6 +18,8 @@ export default {
 				{ text: 'Waves', href: '/examples/waves' },
 				{ text: 'Follow', href: '/examples/follow' },
 				{ text: 'GPU Circle', href: '/examples/gpuCircle' },
+				{ text: 'Stress', href: '/examples/stress' },
+				{ text: 'Ricefield', href: '/examples/ricefield' },
 			],
 		}
 	},

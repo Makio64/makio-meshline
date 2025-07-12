@@ -82,6 +82,3 @@ export class Wheel extends Signal {
 
 export const wheel = new Wheel( window, true )
 export default wheel
-
-// If you dont need singleton replace by :
-// export default Wheel

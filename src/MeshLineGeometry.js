@@ -1,4 +1,4 @@
-import { BufferAttribute, BufferGeometry, Vector2, Vector3, Box3, Sphere } from 'three/webgpu'
+import { BufferAttribute, BufferGeometry, Vector2, Vector3, Box3, Sphere, StreamDrawUsage, StaticDrawUsage } from 'three/webgpu'
 
 export class MeshLineGeometry extends BufferGeometry {
 	constructor( options = {} ) {
@@ -122,7 +122,7 @@ export class MeshLineGeometry extends BufferGeometry {
 	}
 
 	// Helper to set or update buffer attribute efficiently
-	setOrUpdateAttribute( name, array, itemSize ) {
+	setOrUpdateAttribute( name, array, itemSize, usage = StaticDrawUsage ) {
 		const existing = this._attrs[name]
 
 		// Check if we can reuse existing attribute (same total size)
@@ -135,8 +135,17 @@ export class MeshLineGeometry extends BufferGeometry {
 				this.deleteAttribute( name )
 			}
 			const attr = new BufferAttribute( array, itemSize )
+			attr.setUsage( usage )
 			this._attrs[name] = attr
 			this.setAttribute( name, attr )
+		}
+	}
+
+	setUsage( usage, name = null ) {
+		for ( const attr of Object.values( this._attrs ) ) {
+			if ( name == null || attr.name === name ) {
+				attr.setUsage( usage )
+			}
 		}
 	}
 
@@ -343,13 +352,13 @@ export class MeshLineGeometry extends BufferGeometry {
 
 		// Set attributes
 		if ( positions ) {
-			this.setOrUpdateAttribute( 'position', positions, 3 )
+			this.setOrUpdateAttribute( 'position', positions, 3, this.options.usage || this.options.gpuPositionNode ? StaticDrawUsage : StreamDrawUsage )
 		}
 		if ( previous ) {
-			this.setOrUpdateAttribute( 'previous', previous, 3 )
+			this.setOrUpdateAttribute( 'previous', previous, 3, this.options.usage || this.options.gpuPositionNode ? StaticDrawUsage : StreamDrawUsage )
 		}
 		if ( next ) {
-			this.setOrUpdateAttribute( 'next', next, 3 )
+			this.setOrUpdateAttribute( 'next', next, 3, this.options.usage || this.options.gpuPositionNode ? StaticDrawUsage : StreamDrawUsage )
 		}
 		if ( sides ) {
 			this.setOrUpdateAttribute( 'side', sides, 1 )

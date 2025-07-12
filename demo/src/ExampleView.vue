@@ -7,6 +7,8 @@ import waves from '@/demos/waves'
 import basic from '@/demos/basic'
 import follow from '@/demos/follow'
 import gpuCircle from '@/demos/gpuCircle'
+import stress from '@/demos/stress'
+import ricefield from '@/demos/ricefield'
 import { contentLoaded } from '@/store'
 
 export default {
@@ -16,7 +18,9 @@ export default {
 		const mapping = {
 			waves,
 			follow,
-			gpuCircle
+			gpuCircle,
+			stress,
+			ricefield
 		}
 		this.example = mapping[id] || basic
 		await this.example.init()

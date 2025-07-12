@@ -1,4 +1,4 @@
-import { Vector3, MathUtils } from 'three/webgpu'
+import { Vector3, MathUtils, Raycaster } from 'three/webgpu'
 import stage3d from '@/makio/three/stage3d'
 import { stage } from '@/makio/core/stage'
 import OrbitControl from '@/makio/three/controls/OrbitControl'
@@ -14,12 +14,14 @@ class FollowExample {
 		this.line = null
 		this.target = new Vector3()
 		this.prevTarget = new Vector3()
+		this.raycaster = new Raycaster()
 	}
 
 	// -------------------------------------------------- INIT
 	async init() {
 		await stage3d.initRender()
 		stage3d.control = new OrbitControl( stage3d.camera, 12 )
+		stage3d.control.disable()
 		
 		this.initLine()
 
@@ -64,7 +66,7 @@ class FollowExample {
 
 		// ------------------------------------------------ width based on mouse speed
 		const speed = this.target.distanceTo( this.prevTarget ) / ( dt / 16 || 1 )
-		const targetWidth = MathUtils.clamp( 0.001 + speed, 0.01, 2 )
+		const targetWidth = MathUtils.clamp( 0.001 + speed * 0.3, 0.01, 0.5 )
 
 		// Smooth interpolation to avoid jitter
 		this.line.material.lineWidth.value = MathUtils.lerp( this.line.material.lineWidth.value, targetWidth, 0.15 )
@@ -83,13 +85,44 @@ class FollowExample {
 	}
 
 	_screenToWorld( x, y ) {
-		const ndcX = ( x / stage.width ) * 2 - 1
-		const ndcY = - ( y / stage.height ) * 2 + 1
-		const vec = new Vector3( ndcX, ndcY, 0.5 )
-		vec.unproject( stage3d.camera )
-		const dir = vec.sub( stage3d.camera.position ).normalize()
-		const distance = -stage3d.camera.position.z / dir.z
-		return stage3d.camera.position.clone().add( dir.multiplyScalar( distance ) )
+		// Convert mouse position to normalized device coordinates (-1 to +1)
+		const mouse = new Vector3(
+			( x / stage.width ) * 2 - 1,
+			- ( y / stage.height ) * 2 + 1,
+			0
+		)
+		
+		// Update the raycaster with the camera and mouse position
+		this.raycaster.setFromCamera( mouse, stage3d.camera )
+		
+		// Get ray origin and direction
+		const origin = this.raycaster.ray.origin
+		const direction = this.raycaster.ray.direction
+		
+		// Calculate intersection with z=0 plane
+		// Ray equation: point = origin + t * direction
+		// For z=0 plane: origin.z + t * direction.z = 0
+		// Therefore: t = -origin.z / direction.z
+		
+		if ( Math.abs( direction.z ) < 0.0001 ) {
+			// Ray is nearly parallel to the plane, use a default distance
+			return origin.clone().add( direction.clone().multiplyScalar( 10 ) )
+		}
+		
+		const t = -origin.z / direction.z
+		
+		// If t is negative, the intersection is behind the camera
+		if ( t < 0 ) {
+			// Project forward anyway with a reasonable distance
+			return origin.clone().add( direction.clone().multiplyScalar( 10 ) )
+		}
+		
+		// Calculate intersection point
+		return new Vector3(
+			origin.x + t * direction.x,
+			origin.y + t * direction.y,
+			0 // z = 0 by definition
+		)
 	}
 
 	onResize = () => {
@@ -106,6 +139,7 @@ class FollowExample {
 		window.removeEventListener( 'resize', this.onResize )
 		window.removeEventListener( 'pointermove', this.onMove )
 		stage3d.remove( this.line )
+		stage3d.control.dispose()
 		this.line?.dispose()
 		this.line = null
 	}
@@ -114,4 +148,4 @@ class FollowExample {
 	hide( cb ) { if ( cb ) cb() }
 }
 
-export default new FollowExample() 
+export default new FollowExample()

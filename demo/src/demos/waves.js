@@ -84,7 +84,7 @@ class WavesExample {
 
 	onResize = () => {
 		if ( this.lines ) {
-			this.lines.resize( window.innerWidth, window.innerHeight )
+			this.lines.resize()
 		}
 	}
 
@@ -98,6 +98,7 @@ class WavesExample {
 		window.removeEventListener( 'resize', this.onResize )
 		this.waveLines = null
 		this.basePositions = null
+		stage3d.control.dispose()
 		console.log( 'wave dispose' )
 	}
 

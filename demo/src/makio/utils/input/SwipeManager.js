@@ -3,8 +3,9 @@ import mouse, { onDown, onLeave, onMove, onUp } from './mouse'
 import keyboard from './keyboard'
 
 /**
- * Handle swipe gestures
- * also fallback to keyboard for testing
+ * Swipe gestures manager
+ * Offers fallback to keyboard for easy testing
+ * @author David Ronai / @Makio64
  */
 class SwipeManager {
 	constructor() {

@@ -1,9 +1,9 @@
-export const squarePositions = ( segments = 1 ) => {
+export const squarePositions = ( width = 1, segments = 1 ) => {
 	const corners = [
-		[-1, -1],
-		[1, -1],
-		[1, 1],
-		[-1, 1],
+		[-width / 2, -width / 2],
+		[width / 2, -width / 2],
+		[width / 2, width / 2],
+		[-width / 2, width / 2],
 	]
 	const numVertices = 4 * segments
 	const positions = new Float32Array( numVertices * 3 )

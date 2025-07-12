@@ -1,3 +1,8 @@
+/**
+ * lil-gui singleton wrapper & helpers
+ * @author David Ronai / @Makio64
+ */
+
 import GUI from 'lil-gui'
 const gui = new GUI()
 
