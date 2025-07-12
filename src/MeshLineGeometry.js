@@ -415,29 +415,42 @@ export class MeshLineGeometry extends BufferGeometry {
 		super.dispose()
 	}
 
-	// Update the positions of an existing line without rebuilding attributes (single-line only)
+	// Update the positions of an existing line without rebuilding attributes
+	// Update the positions of existing lines without rebuilding attributes
 	setPositions( pts, updateBounding = false ) {
 		if ( !pts ) return
 
-		pts = toFloat32( pts )
+		// Handle single line input for backward compatibility
+		if ( !Array.isArray( pts ) || ( pts.length > 0 && typeof pts[0] === 'number' ) || pts instanceof Float32Array ) {
+			pts = [pts]
+		}
 
-		// Only support single line fast-path for now
-		if ( this._lines.length !== 1 ) {
-			// fallback to full rebuild
-			this.setLines( pts )
+		// Convert all inputs to Float32Array
+		const newLines = pts.map( line => toFloat32( line ) )
+
+		// Validate we have the same number of lines
+		if ( newLines.length !== this._lines.length ) {
+			// Fallback to full rebuild if line count changes
+			this.setLines( newLines )
 			return
 		}
 
-		const numPoints = pts.length / 3
-		if ( numPoints < 2 ) return
+		// Validate each line has the same number of points
+		for ( let i = 0; i < newLines.length; i++ ) {
+			if ( newLines[i].length !== this._lines[i].length ) {
+			// Fallback to full rebuild if any line changes size
+				this.setLines( newLines )
+				return
+			}
+		}
 
-		// Validate attribute sizes
+		// Get attributes
 		const positionAttr = this.getAttribute( 'position' )
-		if ( !positionAttr || positionAttr.count !== numPoints * 2 ) {
-			this.setLines( pts )
+
+		if ( !positionAttr ) {
+			this.setLines( newLines )
 			return
 		}
-
 		const previousAttr = this.getAttribute( 'previous' )
 		const nextAttr = this.getAttribute( 'next' )
 
@@ -445,68 +458,108 @@ export class MeshLineGeometry extends BufferGeometry {
 		const prevArray = previousAttr ? previousAttr.array : null
 		const nextArray = nextAttr ? nextAttr.array : null
 
-		// Helper to copy xyz twice (for the two side vertices)
-		const writePair = ( arr, vertIdx, x, y, z ) => {
-			arr[vertIdx * 3] = x
-			arr[vertIdx * 3 + 1] = y
-			arr[vertIdx * 3 + 2] = z
-			arr[vertIdx * 3 + 3] = x
-			arr[vertIdx * 3 + 4] = y
-			arr[vertIdx * 3 + 5] = z
+		// Process each line
+		let globalVertexIndex = 0
+
+		for ( let lineIdx = 0; lineIdx < newLines.length; lineIdx++ ) {
+			const line = newLines[lineIdx]
+			const isLooped = this._lineLoops[lineIdx]
+			const numPoints = line.length / 3
+
+			for ( let i = 0; i < numPoints; i++ ) {
+				const o = i * 3
+				const x = line[o]
+				const y = line[o + 1]
+				const z = line[o + 2]
+
+				this.writePair( positionsArray, globalVertexIndex, x, y, z )
+
+				// previous
+				if ( prevArray ) {
+					let px, py, pz
+					if ( i === 0 ) {
+						if ( isLooped ) {
+						// Use second-to-last point (before the duplicate closing point)
+							const po = ( numPoints - 2 ) * 3
+							px = line[po]
+							py = line[po + 1]
+							pz = line[po + 2]
+						} else {
+						// Extrapolate backwards
+							if ( numPoints > 1 ) {
+								const x1 = line[3], y1 = line[4], z1 = line[5]
+								const refl = this.reflect( [x, y, z], [x1, y1, z1] )
+								px = refl[0]; py = refl[1]; pz = refl[2]
+							} else {
+								px = x; py = y; pz = z
+							}
+						}
+					} else {
+						px = line[o - 3]
+						py = line[o - 2]
+						pz = line[o - 1]
+					}
+					this.writePair( prevArray, globalVertexIndex, px, py, pz )
+				}
+
+				// next
+				if ( nextArray ) {
+					let nx, ny, nz
+					if ( i === numPoints - 1 ) {
+						if ( isLooped ) {
+						// Use second point (the first real point after the closing duplicate)
+							nx = line[3]
+							ny = line[4]
+							nz = line[5]
+						} else {
+						// Extrapolate forwards
+							if ( numPoints > 1 ) {
+								const x1 = line[o - 3], y1 = line[o - 2], z1 = line[o - 1]
+								const refl = this.reflect( [x, y, z], [x1, y1, z1] )
+								nx = refl[0]; ny = refl[1]; nz = refl[2]
+							} else {
+								nx = x; ny = y; nz = z
+							}
+						}
+					} else {
+						nx = line[o + 3]
+						ny = line[o + 4]
+						nz = line[o + 5]
+					}
+					this.writePair( nextArray, globalVertexIndex, nx, ny, nz )
+				}
+
+				// IMPORTANT: Increment by 2 because each point creates 2 vertices
+				globalVertexIndex += 2
+			}
 		}
 
-		for ( let i = 0; i < numPoints; i++ ) {
-			const o = i * 3
-			const x = pts[o]
-			const y = pts[o + 1]
-			const z = pts[o + 2]
-
-			const vertIdx = i * 2
-			writePair( positionsArray, vertIdx, x, y, z )
-
-			// previous
-			if ( prevArray ) {
-				let px, py, pz
-				if ( i === 0 ) {
-					if ( numPoints > 1 ) {
-						const x1 = pts[3], y1 = pts[4], z1 = pts[5]
-						const refl = this.reflect( [x, y, z], [x1, y1, z1] )
-						px = refl[0]; py = refl[1]; pz = refl[2]
-					} else { px = x; py = y; pz = z }
-				} else {
-					px = pts[o - 3]; py = pts[o - 2]; pz = pts[o - 1]
-				}
-				writePair( prevArray, vertIdx, px, py, pz )
-			}
-
-			// next
-			if ( nextArray ) {
-				let nx, ny, nz
-				if ( i === numPoints - 1 ) {
-					if ( numPoints > 1 ) {
-						const x1 = pts[o - 3], y1 = pts[o - 2], z1 = pts[o - 1]
-						const refl = this.reflect( [x, y, z], [x1, y1, z1] )
-						nx = refl[0]; ny = refl[1]; nz = refl[2]
-					} else { nx = x; ny = y; nz = z }
-				} else {
-					nx = pts[o + 3]; ny = pts[o + 4]; nz = pts[o + 5]
-				}
-				writePair( nextArray, vertIdx, nx, ny, nz )
-			}
-		}
-
+		// Mark attributes as needing update
 		positionAttr.needsUpdate = true
 		if ( previousAttr ) previousAttr.needsUpdate = true
 		if ( nextAttr ) nextAttr.needsUpdate = true
 
-		// Update cached line & bounding volumes
-		this._lines[0] = pts 
+		// Update cached lines
+		this._lines = newLines
+
+		// Update bounding volumes if requested
 		if ( updateBounding ) {
 			this.computeBoundingBoxes()
 			this.computeBoundingBox()
 			this.computeBoundingSphere()
 		}
 	}
+
+	writePair = ( arr, vertIdx, x, y, z ) => {
+		const offset = vertIdx * 3
+		arr[offset] = x
+		arr[offset + 1] = y
+		arr[offset + 2] = z
+		arr[offset + 3] = x
+		arr[offset + 4] = y
+		arr[offset + 5] = z
+	}
+
 }
 
 //------------------------------------------------------ HELPERS
@@ -540,8 +593,10 @@ const toFloat32 = pts => {
 			result[offset++] = p[0] ?? 0
 			result[offset++] = p[1] ?? 0
 			result[offset++] = p[2] ?? 0
+		} else {
+		// Invalid points are skipped but warning for the user
+			console.warn( `[MeshLine] Invalid point: ${p}` )
 		}
-		// Invalid points are skipped
 	}
 
 	// If we skipped some points, return a correctly sized array

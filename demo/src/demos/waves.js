@@ -20,7 +20,7 @@ class WavesExample {
 		stage3d.camera.far = 1000
 		stage3d.camera.updateProjectionMatrix()
 		this.initScene()
-		window.addEventListener( 'resize', this.lines.resize )
+		window.addEventListener( 'resize', this.onResize )
 	}
 
 	initScene() {
@@ -45,36 +45,47 @@ class WavesExample {
 		stage.onUpdate.add( this.update )
 	}
 
-	createWaveLines() {
+	createWaveLines( times = 0 ) {
 		// Total number of points per line and corresponding float count
 		const pointsPerLine = lineLength * 4
 		const floatsPerLine = pointsPerLine * 3 // 3 floats (x,y,z) per point
 
-		const lines = new Array( numLines )
-
-		// Pre-compute the X coordinates once since they are identical for every Z slice
-		const xCoords = new Float32Array( pointsPerLine )
-		for ( let i = 0; i < pointsPerLine; i++ ) {
-			xCoords[i] = i / 4 - lineLength / 2
-		}
+		this.linesPositions = new Array( numLines )
 
 		for ( let z = 0; z < numLines; z++ ) {
-			const lineArray = new Float32Array( floatsPerLine )
+			// we avoid creating new array each time the function is called
+			let lineArray = this.linesPositions[z]
+			if ( !lineArray ) {
+				lineArray = new Float32Array( floatsPerLine )
+				this.linesPositions[z] = lineArray
+			}
+
 			const baseZ = z - numLines / 2
 
 			for ( let i = 0; i < pointsPerLine; i++ ) {
 				const floatIndex = i * 3
-				lineArray[floatIndex] = xCoords[i]          // x
-				lineArray[floatIndex + 1] = baseZ           // y
+				lineArray[floatIndex] = i / 4 - lineLength / 2         // x
+				lineArray[floatIndex + 1] = baseZ + Math.sin( i / 8 + times ) * 0.25           // y
 				lineArray[floatIndex + 2] = 0               // z
 			}
-			lines[z] = lineArray
 		}
-		return lines
+		return this.linesPositions
 	}
 
 	update = ( dt ) => {
 		this.time += dt * 0.001 // Control animation speed
+		
+		// Update all line positions with new wave animation
+		const animatedLines = this.createWaveLines( this.time )
+		
+		// Use setPositions to update all lines efficiently
+		this.lines.geometry.setPositions( animatedLines, false )
+	}
+
+	onResize = () => {
+		if ( this.lines ) {
+			this.lines.resize( window.innerWidth, window.innerHeight )
+		}
 	}
 
 	dispose() {
@@ -84,12 +95,14 @@ class WavesExample {
 			this.lines = null
 		}
 		stage.onUpdate.remove( this.update )
+		window.removeEventListener( 'resize', this.onResize )
 		this.waveLines = null
+		this.basePositions = null
 		console.log( 'wave dispose' )
 	}
 
 	show() {}
-	hide( cb ) { if ( cb )cb() }
+	hide( cb ) { if ( cb ) cb() }
 }
 
 export default new WavesExample()

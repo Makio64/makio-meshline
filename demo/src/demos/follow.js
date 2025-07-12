@@ -64,7 +64,7 @@ class FollowExample {
 
 		// ------------------------------------------------ width based on mouse speed
 		const speed = this.target.distanceTo( this.prevTarget ) / ( dt / 16 || 1 )
-		const targetWidth = MathUtils.clamp( 0.001 + speed, 0.15, 2 )
+		const targetWidth = MathUtils.clamp( 0.001 + speed, 0.01, 2 )
 
 		// Smooth interpolation to avoid jitter
 		this.line.material.lineWidth.value = MathUtils.lerp( this.line.material.lineWidth.value, targetWidth, 0.15 )
