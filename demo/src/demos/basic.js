@@ -72,30 +72,30 @@ class BasicExample {
 
 		// 16 different configurations to test all features
 		const configs = [
-			{ title: "Basic", color: 0xff0000, lineWidth: 0.2, isClose: true },
-			{ title: "Thick Line", color: 0x00ff00, lineWidth: 0.5, isClose: true },
-			{ title: "Open end", color: 0x0000ff, isClose: false },
-			{ title: "Wireframe", color: 0xff8080, wireframe: true, lineWidth: 0.3, isClose: true },
+			{ title: "Basic", color: 0xCE4257, lineWidth: 0.2, isClose: true },
+			{ title: "Thick Line", color: 0xCBDFBD, lineWidth: 0.5, isClose: true },
+			{ title: "Open end", color: 0xFCD581, isClose: false },
+			{ title: "Wireframe", color: 0x0A99FF, wireframe: true, lineWidth: 0.3, isClose: true },
 
-			{ title: "Dashed 4", color: 0xffff00, useDash: true, dashCount: 4, dashRatio: 0.5, isClose: true },
-			{ title: "Dashed 8", color: 0xff8000, useDash: true, dashCount: 8, dashRatio: 0.6, isClose: true },
-			{ title: "Dashed 16", color: 0x8000ff, useDash: true, dashCount: 16, dashRatio: 0.3, isClose: true },
-			{ title: "Long Dashes", color: 0x00ff80, useDash: true, dashCount: 6, lineWidth: 0.5, dashRatio: 0.8, isClose: true },
+			{ title: "Dashed 4", color: 0xC0F254, useDash: true, dashCount: 4, dashRatio: 0.5, isClose: true },
+			{ title: "Dashed 8", color: 0xF35B04, useDash: true, dashCount: 8, dashRatio: 0.6, isClose: true },
+			{ title: "Dashed 16", color: 0x7678ED, useDash: true, dashCount: 16, dashRatio: 0.3, isClose: true },
+			{ title: "Long Dashes", color: 0x00FF80, useDash: true, dashCount: 6, lineWidth: 0.5, dashRatio: 0.8, isClose: true },
 
-			{ title: "Map Texture", color: 0xff4080, useMap: true, map: this.mapTexture, lineWidth: 0.3, isClose: true },
-			{ title: "Dash + Gradient", color: 0x80ff40, isClose: true, useDash: true, lineWidth: 0.4, dashCount: 10, dashRatio: 0.7, useGradient: true, gradientColor: 0xff0040 },
-			{ title: "Gradient Only", color: 0xff0080, isClose: true, useGradient: true, lineWidth: 0.1, gradientColor: 0x0080ff },
-			{ title: "Gradient", color: 0xff00ff, useGradient: true, gradientColor: 0x00ffff, isClose: true },
+			{ title: "Map Texture", color: 0xFF0080, useMap: true, map: this.mapTexture, lineWidth: 0.3, isClose: true },
+			{ title: "Dash + Gradient", color: 0x00FF00, isClose: true, useDash: true, lineWidth: 0.4, dashCount: 10, dashRatio: 0.7, gradientColor: 0xFF0000 },
+			{ title: "Gradient Only", color: 0xFF00FF, isClose: true, lineWidth: 0.1, gradientColor: 0x00FFFF },
+			{ title: "Gradient", color: 0xFFFF00, gradientColor: 0x0000FF, isClose: true },
 
-			{ title: "Opacity", color: 0x8080ff, opacity: 0.6, lineWidth: 0.5, isClose: true },
-			{ title: "Alpha Map", color: 0xff40ff, useAlphaMap: true, alphaMap: this.alphaTexture, lineWidth: 0.3, isClose: true },
-			{ title: "No size Attenuation", color: 0x80ff80, sizeAttenuation: true, lineWidth: 5, isClose: true },
-			{ title: "All Features", color: 0xffffff, useGradient: true, gradientColor: 0xff0000, useDash: true, dashCount: 8, dashRatio: 0.5, isClose: true, lineWidth: 0.5 }
+			{ title: "Opacity", color: 0x8080FF, opacity: 0.6, lineWidth: 0.5, isClose: true },
+			{ title: "Alpha Map", color: 0xFF00FF, useAlphaMap: true, alphaMap: this.alphaTexture, lineWidth: 0.3, isClose: true },
+			{ title: "No size Attenuation", color: 0x80FF80, sizeAttenuation: true, lineWidth: 5, isClose: true },
+			{ title: "All Features", color: 0xFFFFFF, gradientColor: 0xFF0000, useDash: true, dashCount: 8, dashRatio: 0.5, isClose: true, lineWidth: 0.5 }
 		]
 
 		const positions = circlePositions( 64 )
 		const gridSize = 4 // 4x4 grid
-		const spacing = 3.3
+		const spacing = 4.5
 		const defaultConfig = {
 			usePercent: true,
 			verbose: true
