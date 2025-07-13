@@ -85,7 +85,7 @@ export default {
 
 <style lang="stylus" scoped>
 .MenuFullscreen
-	z-index 999
+	z-index 9999
 	position absolute
 	inset 0
 	background rgba( 0, 0, 0, 0.9 )

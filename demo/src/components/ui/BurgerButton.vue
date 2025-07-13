@@ -43,7 +43,7 @@ export default {
 
 <style lang="stylus" scoped>
 .BurgerButton
-	z-index 1000
+	z-index 10000
 	position absolute
 	top 16px
 	right 16px
