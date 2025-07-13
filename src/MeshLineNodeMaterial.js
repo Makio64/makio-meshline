@@ -1,5 +1,5 @@
 import { NodeMaterial, Color, Vector2 } from 'three/webgpu'
-import { float, vec4, vec2, Fn, uniform, uv, modelViewMatrix, normalize, positionGeometry, cameraProjectionMatrix, attribute, varyingProperty, Discard, step, mix, texture, mod, diffuseColor, output } from 'three/tsl'
+import { float, vec4, vec2, Fn, uniform, uv, modelViewMatrix, normalize, positionGeometry, cameraProjectionMatrix, attribute, varyingProperty, Discard, step, mix, texture, mod, abs, max, dot } from 'three/tsl'
 
 const fix = Fn( ( [i_immutable, aspect_immutable] ) => {
 	const aspect = float( aspect_immutable ).toVar()
@@ -24,28 +24,47 @@ class MeshLineNodeMaterial extends NodeMaterial {
 		this.depthTest = options.depthTest ?? true
 		this.wireframe = options.wireframe ?? false
 
-		this.transparent = options.transparent ?? ( options.alphaMap != null || ( ( options.opacity ?? 1 ) < 1 ) )
-
 		this.alphaTest = options.alphaTest ?? 0
 		this.sizeAttenuation = options.sizeAttenuation ?? true
+		this.useMiterLimit = options.useMiterLimit ?? false
 
-		// TODO : create only uniforms needed
 		// Can be changed dynamically
-		this.resolution = uniform( options.resolution ?? new Vector2( 1 ) )
+		this.resolution = uniform( options.resolution ?? new Vector2( 1, 1 ) )
 		this.lineWidth = uniform( options.lineWidth ?? 1 )
 		this.color = uniform( new Color( options.color ?? 0xffffff ) )
-		this.gradient = options.gradientColor ? uniform( new Color( options.gradientColor ) ) : null
-		this.opacity = uniform( options.opacity ?? 1 )
-		this.map = texture( options.map ?? null )
-		this.alphaMap = texture( options.alphaMap ?? null )
-		this.mapOffset = uniform( options.mapOffset ?? new Vector2( 0, 0 ) )
-		this.repeat = uniform( options.repeat ?? new Vector2( 1, 1 ) )
-		this.dashCount = options.dashCount ? uniform( options.dashCount ) : null
-		this.dashRatio = uniform( options.dashRatio ?? options.dashLength ?? null )
-		this.dashOffset = uniform( options.dashOffset ?? 0 )
-
-		// Device pixel ratio for screen-space width
 		this.dpr = uniform( options.dpr ?? ( ( typeof window !== 'undefined' ) ? window.devicePixelRatio || 1 : 1 ) )
+
+		// Conditional uniforms - only create what is needed
+		if ( options.gradientColor ) {
+			this.gradient = uniform( new Color( options.gradientColor ) )
+		}
+
+		const hasAlphaFeatures = options.alphaMap != null || ( options.opacity ?? 1 ) < 1 || this.alphaTest > 0
+		this.transparent = options.transparent ?? hasAlphaFeatures
+		if ( this.transparent || this.alphaTest > 0 ) {
+			this.opacity = uniform( options.opacity ?? 1 )
+		}
+
+		if ( options.map ) {
+			this.map = texture( options.map )
+		}
+		if ( options.alphaMap ) {
+			this.alphaMap = texture( options.alphaMap )
+		}
+		if ( options.map || options.alphaMap ) {
+			this.mapOffset = uniform( options.mapOffset ?? new Vector2( 0, 0 ) )
+			this.repeat = uniform( options.repeat ?? new Vector2( 1, 1 ) )
+		}
+
+		if ( options.dashCount ) {
+			this.dashCount = uniform( options.dashCount )
+			this.dashRatio = uniform( options.dashRatio ?? options.dashLength ?? 0.5 )
+			this.dashOffset = uniform( options.dashOffset ?? 0 )
+		}
+
+		if ( this.useMiterLimit ) {
+			this.miterLimit = uniform( options.miterLimit ?? 4.0 )
+		}
 
 		// GPU position node (optional)
 		this.gpuPositionNode = options.gpuPositionNode ?? null
@@ -110,31 +129,26 @@ class MeshLineNodeMaterial extends NodeMaterial {
 			const dir1 = normalize( currentP.sub( prevP ) ).toVar( 'dir1' )
 			const dir2 = normalize( nextP.sub( currentP ) ).toVar( 'dir2' )
 			const dir = normalize( dir1.add( dir2 ) ).toVar( 'dir' )
-			// THIS COMMENT WORKS WELL EXCEPT SOME ANGLES when they are too much in front of the camera			
-			// // Calculate miter length
-			// const miterLength = float( 1 ).div( dir1.dot( dir ) ).toVar( 'miterLength' )
-			
-			// // Apply miter limit to prevent extreme projections
-			// const miterLimit = float( 6.0 ).toVar( 'miterLimit' ) // Adjustable miter limit
-			// const limitedMiterLength = miterLength.min( miterLimit ).toVar( 'limitedMiterLength' )
-			
-			// // When the angle is too sharp, fall back to bevel join
-			// const useLimit = miterLength.smoothstep( miterLimit.sub( 2 ), miterLimit ).toVar( 'useLimit' )
-			
-			// // For very sharp angles, use average of the two directions
-			// const safeDir = Fn( () => {
-			// 	// If angle is too sharp, use perpendicular to one of the directions
-			// 	return mix( dir, normalize( vec2( dir1.y.negate(), dir1.x ) ), useLimit )
-			// } )()
-			
-			// // build normal in screen-space with limited miter
-			// const normal = vec4( safeDir.y.negate(), safeDir.x, 0., 1. ).toVar( 'normal' )
-			// normal.xy.mulAssign( w.mul( .5 ).mul( mix( limitedMiterLength, float( 1 ), useLimit ) ) )
 
-			// THIS WORKS NOT BAD WHEN IN FRONT OF THE CAMERA 
-			// build normal in screen-space
-			const normal = vec4( dir.y.negate(), dir.x, 0., 1. ).toVar( 'normal' )
-			normal.xy.mulAssign( w.mul( .5 ) )
+			// Calculate final normal based on whether miter limit is enabled
+			const normal = vec4( 0, 0, 0, 1 ).toVar( 'normal' )
+
+			if ( this.useMiterLimit ) {
+				// Calculate miter length
+				const miterLength = float( 1 ).div( max( dot( dir1, dir ), float( 0.01 ) ) ).toVar( 'miterLength' )
+				const limitedMiterLength = miterLength.min( this.miterLimit ).toVar( 'limitedMiterLength' )
+
+				// Advanced normal (perp to bisector, scaled by limited miter length)
+				const advancedNormal = vec2( dir.y.negate(), dir.x ).mul( limitedMiterLength ).toVar( 'advancedNormal' )
+
+				// Use advanced normal for consistent thickness
+				normal.xy.assign( advancedNormal )
+				normal.xy.mulAssign( w.mul( 0.5 ) )
+			} else {
+				// Simple approach only
+				normal.xy.assign( vec2( dir.y.negate(), dir.x ) )
+				normal.xy.mulAssign( w.mul( 0.5 ) )
+			}
 
 			if ( this.sizeAttenuation ) {
 				normal.xy.mulAssign( finalPosition.w )
@@ -153,7 +167,7 @@ class MeshLineNodeMaterial extends NodeMaterial {
 			vCounters = varyingProperty( 'float', 'vCounters' ).toVar()
 		}
 		let uvCoords
-		if ( this.map.value || this.alphaMap.value ) {
+		if ( ( this.map && this.map.value ) || ( this.alphaMap && this.alphaMap.value ) ) {
 			uvCoords = uv().mul( this.repeat ).add( this.mapOffset ).toVar( 'uvCoords' )
 		}
 
@@ -166,7 +180,7 @@ class MeshLineNodeMaterial extends NodeMaterial {
 				color.rgb.assign( mix( color.rgb, this.gradient, vCounters ) )
 			}
 
-			if ( this.map.value ) {
+			if ( this.map && this.map.value ) {
 				color.mulAssign( this.map.sample( uvCoords ) )
 			}
 
@@ -176,7 +190,7 @@ class MeshLineNodeMaterial extends NodeMaterial {
 		// Opacity node
 		this.opacityNode = Fn( () => {
 			let alpha = float( 1 ).toVar( 'alpha' )
-			if ( this.alphaMap.value ) {
+			if ( this.alphaMap && this.alphaMap.value ) {
 				alpha.mulAssign( this.alphaMap.sample( uvCoords ).b )
 			}
 
@@ -185,7 +199,7 @@ class MeshLineNodeMaterial extends NodeMaterial {
 			Discard( alpha.lessThan( this.alphaTest ) )
 
 			if ( this.dashCount ) {
-				const cyclePosition = mod( vCounters.mul( this.dashCount ).add( this.dashOffset ), float( 1 ) )
+				const cyclePosition = mod( vCounters.mul( this.dashCount ).add( this.dashOffset ), float( 1 ) ).toVar( 'cyclePosition' )
 				// dashLength represents a dash portion: 0.1 = 10% dash, 90% gap
 				const dashMask = step( cyclePosition, this.dashRatio )
 				Discard( dashMask.lessThan( 0.001 ) )
@@ -212,6 +226,7 @@ class MeshLineNodeMaterial extends NodeMaterial {
 		// Copy feature flags
 		this.alphaTest = source.alphaTest
 		this.sizeAttenuation = source.sizeAttenuation
+		this.useMiterLimit = source.useMiterLimit
 
 		// Copy uniform values
 		this.lineWidth.value = source.lineWidth.value
@@ -222,6 +237,7 @@ class MeshLineNodeMaterial extends NodeMaterial {
 		this.dashCount.value = source.dashCount.value
 		this.dashRatio.value = source.dashRatio.value
 		this.dashOffset.value = source.dashOffset.value
+		this.miterLimit.value = source.miterLimit.value
 
 		// Copy object uniforms with optional chaining
 		source.color.value && this.color.value.copy( source.color.value )

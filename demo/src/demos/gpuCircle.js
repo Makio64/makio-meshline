@@ -16,7 +16,7 @@ const circlePosition = Fn( ( [counter] ) => {
 const wavePosition = Fn( ( [counter] ) => {
 	// make a wavy line
 	const y = sin( counter.mul( Math.PI * 4  ).add( time.negate().mul( 4 ) ) )
-	return vec3( counter.oneMinus().mul( 4 ).sub( 2 ), y, 0 )
+	return vec3( counter.oneMinus().mul( 2 ).sub( 1 ), y.mul( 0.5 ), 0 )
 } )
 
 class GpuCircleExample {
@@ -59,6 +59,7 @@ class GpuCircleExample {
 
 		// GUI slider
 		this.gui = new GUI()
+		this.gui.domElement.style.right = '60px'
 		this.gui.add( { blend: 0 }, 'blend', 0, 1, 0.01 ).name( 'Wave ⇆ Circle' ).onChange( v => {
 			useWave.value = v
 		} )

@@ -63,6 +63,8 @@ class RicefieldExample {
 			isClose: true,
 			color: 0xffffff, // black at bottom
 			lineWidth: 0.1,
+			useMiterLimit: true,
+			miterLimit: 8,
 			usage: StaticDrawUsage
 		} )
 		this.fieldLine.rotation.x = Math.PI / 2
@@ -97,6 +99,11 @@ class RicefieldExample {
 			stage3d.remove( this.lines )
 			this.lines.dispose()
 			this.lines = null
+		}
+		if ( this.fieldLine ) {
+			stage3d.remove( this.fieldLine )
+			this.fieldLine.dispose()
+			this.fieldLine = null
 		}
 		stage3d.control.dispose()
 		this.lineArrays = []
