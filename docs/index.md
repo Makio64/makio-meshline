@@ -4,7 +4,7 @@ layout: home
 hero:
   name: "Makio MeshLine"
   text: "A performant and customizable line solution for Three.js."
-  tagline: Built for the Threejs future with TSL. Simple to use, yet powerful for complex effects.
+  tagline: "TSL-powered lines with gradients, dashes, textures and more."
   actions:
     - theme: brand
       text: Get Started

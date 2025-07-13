@@ -84,7 +84,7 @@ If `verbose` is enabled, a console message `[MeshLine] positions updated via set
 ### Basic Line
 
 ```javascript
-import { MeshLineGeometry } from 'meshline';
+import { MeshLineGeometry } from 'makio-meshline';
 
 const points = [
   [0, 0, 0],

@@ -152,7 +152,7 @@ const material = new MeshLineNodeMaterial({
 ### Basic Colored Line
 
 ```javascript
-import { MeshLineNodeMaterial } from 'meshline';
+import { MeshLineNodeMaterial } from 'makio-meshline';
 import * as THREE from 'three';
 
 const material = new MeshLineNodeMaterial({
@@ -224,7 +224,7 @@ When you don't want to upload an explicit polyline to the GPU you can let the sh
 Provide a **gpuPositionNode** function that receives the per-vertex counter (ranging from 0→1 along the line) and returns a `vec3` position.
 
 ```javascript
-import { MeshLine, MeshLineNodeMaterial } from 'meshline';
+import { MeshLine, MeshLineNodeMaterial } from 'makio-meshline';
 import { Fn, vec3, cos, sin } from 'three/tsl';
 import * as THREE from 'three';
 

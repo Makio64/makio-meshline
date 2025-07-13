@@ -4,10 +4,10 @@ This guide will walk you through the basics of installing and using Makio MeshLi
 
 ## Installation
 
-First, use your favoratie packages manager (`pnpm`, `npm`, `yarn`..) to install `makio-meshline` 
+First, install the package:
 
 ```bash
-pnpm i makio-meshline
+pnpm add makio-meshline #or npm/yarn
 ```
 
 ## Basic Setup
@@ -18,7 +18,7 @@ Here's a minimal example of how to create a simple circular line and add it to y
     You'll need `MeshLine` and a positions helper like `circlePositions`. You'll also need `three`.
 
     ```javascript
-    import { MeshLine, circlePositions } from 'meshline';
+    import { MeshLine, circlePositions } from 'makio-meshline';
     import * as THREE from 'three';
     ```
 

@@ -5,7 +5,7 @@ This page provides an overview of the **Makio MeshLine** API. For detailed docum
 ## Quick Start
 
 ```javascript
-import { MeshLine, circlePositions } from 'meshline';
+import { MeshLine, circlePositions } from 'makio-meshline';
 import * as THREE from 'three';
 
 // Create a scene
@@ -123,9 +123,9 @@ gsap.to(line.percent2, { value: 0, duration: 1 });
 The library consists of three main components working together:
 
 ```
-MeshLine (High-level API)
-    ├── MeshLineGeometry (Vertex generation)
-    └── MeshLineNodeMaterial (Rendering)
+MeshLine (friendly facade)
+    ├── MeshLineGeometry  – builds specialised vertex buffers
+    └── MeshLineNodeMaterial – GPU rendering (TSL NodeMaterial)
 ```
 
 - **MeshLine**: User-friendly interface, extends Three.js `Mesh`
