@@ -105,10 +105,33 @@ class MeshLineNodeMaterial extends NodeMaterial {
 			if ( width ) {
 				w.mulAssign( width )
 			}
+			
+			// Calculate the miter direction
 			const dir1 = normalize( currentP.sub( prevP ) ).toVar( 'dir1' )
 			const dir2 = normalize( nextP.sub( currentP ) ).toVar( 'dir2' )
 			const dir = normalize( dir1.add( dir2 ) ).toVar( 'dir' )
+			// THIS COMMENT WORKS WELL EXCEPT SOME ANGLES when they are too much in front of the camera			
+			// // Calculate miter length
+			// const miterLength = float( 1 ).div( dir1.dot( dir ) ).toVar( 'miterLength' )
+			
+			// // Apply miter limit to prevent extreme projections
+			// const miterLimit = float( 6.0 ).toVar( 'miterLimit' ) // Adjustable miter limit
+			// const limitedMiterLength = miterLength.min( miterLimit ).toVar( 'limitedMiterLength' )
+			
+			// // When the angle is too sharp, fall back to bevel join
+			// const useLimit = miterLength.smoothstep( miterLimit.sub( 2 ), miterLimit ).toVar( 'useLimit' )
+			
+			// // For very sharp angles, use average of the two directions
+			// const safeDir = Fn( () => {
+			// 	// If angle is too sharp, use perpendicular to one of the directions
+			// 	return mix( dir, normalize( vec2( dir1.y.negate(), dir1.x ) ), useLimit )
+			// } )()
+			
+			// // build normal in screen-space with limited miter
+			// const normal = vec4( safeDir.y.negate(), safeDir.x, 0., 1. ).toVar( 'normal' )
+			// normal.xy.mulAssign( w.mul( .5 ).mul( mix( limitedMiterLength, float( 1 ), useLimit ) ) )
 
+			// THIS WORKS NOT BAD WHEN IN FRONT OF THE CAMERA 
 			// build normal in screen-space
 			const normal = vec4( dir.y.negate(), dir.x, 0., 1. ).toVar( 'normal' )
 			normal.xy.mulAssign( w.mul( .5 ) )
