@@ -15,7 +15,9 @@ export default defineConfig({
       {
         text: 'Introduction',
         items: [
+          { text: 'Why Makio MeshLine ?', link: '/why-makio-meshline' },
           { text: 'Getting Started', link: '/guide' },
+          { text: 'Changelog & Roadmap', link: '/changelog-roadmap' },
         ]
       },
       {
@@ -25,6 +27,7 @@ export default defineConfig({
           { text: 'MeshLine', link: '/meshline' },
           { text: 'MeshLineGeometry', link: '/meshline-geometry' },
           { text: 'MeshLineNodeMaterial', link: '/meshline-material' },
+          { text: 'Performance', link: '/performance' },
         ]
       },
       {

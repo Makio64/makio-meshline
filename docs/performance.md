@@ -1,21 +1,18 @@
 # Performance Guide
 
-A few simple practices can dramatically improve rendering speed and memory usage when working with **MeshLine**.
+Makio MeshLine uses TSL-powered shaders for efficient GPU rendering, supporting both WebGPU and WebGL2 backends. The core approach minimizes overhead by generating only necessary vertex attributes and uniforms based on active features—like skipping UVs if no textures are used.
 
-## Golden Rules
+## Key Optimizations
+- **Selective Attributes**: Only creates buffers for what's needed (e.g., no 'previous/next' for GPU-driven positions).
+- **Batching**: Draw multiple lines in one call by passing an array to `lines`.
+- **Fast Updates**: `setPositions()` modifies existing buffers in-place without recreation.
+- **Miter Clipping**: Efficient sharp corner handling without extra geometry.
 
-1. **Prefer `Float32Array` inputs**  
-   Passing your point data as a typed array avoids internal conversions and keeps garbage-collection pressure low.
+## Best Practices
+- Use `Float32Array` for positions to avoid conversions.
+- Reuse arrays in hot loops to reduce GC pressure.
+- Call `dispose()` on unused lines to free GPU memory.
+- For massive lines, use GPU positions via `gpuPositionNode` to skip CPU uploads.
+- Test on target devices—WebGPU often yields 2x speedup over WebGL.
 
-2. **Batch multiple segments**  
-   One MeshLine can contain multiple lines, use `new Meshlines({line:[positionsLine1, positionsLine2]})`. to reduce draw calls.
-
-3. **Dispose what you no longer need**  
-   Call `dispose()` on a line (or directly on its geometry/material) once it leaves the scene to free GPU buffers.
-
-4. **Use Level-of-Detail for very long lines**  
-   For enormous datasets consider showing a simplified version until the camera gets close.
-
----
-
-Keep these in mind and your lines should stay smooth on both WebGPU and WebGL 2 back-ends. 
+Follow these for smooth 60FPS even with thousands of segments! 

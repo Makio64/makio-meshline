@@ -8,7 +8,7 @@ The `MeshLine` class is the main interface for creating performant, customizable
 new MeshLine(options?: MeshLineOptions)
 ```
 
-`MeshLine` now takes a **single** options object.  The line positions are provided via the `lines` field in this object.
+`MeshLine` takes a **single** options object.  The line positions are provided via the `lines` field in this object.
 
 ### Quick signature
 
@@ -51,7 +51,7 @@ interface MeshLineOptions {
   dpr?: number
 
   // ***Advanced / internal***
-  needsWidth?: boolean
+  needsWidth?: boolean                        // generate attributes width
   needsUV?: boolean
   needsCounter?: boolean
   needsPrevious?: boolean

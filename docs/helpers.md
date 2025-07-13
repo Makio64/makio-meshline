@@ -1,10 +1,8 @@
 # Helper Functions
 
-Makio MeshLine provides utility functions to help generate common line shapes.
+Utilities functions to help generate `Float32Array` for common line shapes.
 
-## Position Generators
-
-### circlePositions()
+## circlePositions()
 
 ```ts
 circlePositions(segments?: number, radius?: number): Float32Array
@@ -30,7 +28,7 @@ import { circlePositions, MeshLine } from 'makio-meshline';
 const circle = new MeshLine({ lines: circlePositions(64, 2), isClose: true });
 ```
 
-### squarePositions()
+## squarePositions()
 
 ```ts
 squarePositions(segments?: number): Float32Array
@@ -58,7 +56,7 @@ const square = new MeshLine({ lines: squarePositions(), isClose: true });
 const line = new MeshLine({ lines: squarePositions(4), isClose: true });
 ```
 
-### sineWavePositions()
+## sineWavePositions()
 
 ```ts
 sineWavePositions(wavelengths?: number, segments?: number, amplitude?: number, length?: number): Float32Array
