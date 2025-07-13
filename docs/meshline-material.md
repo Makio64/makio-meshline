@@ -24,7 +24,9 @@ new MeshLineNodeMaterial(
     repeat?: THREE.Vector2,
     dashCount?: number | null,
     dashRatio?: number | null,
-    dashOffset?: number
+    dashOffset?: number,
+    useMiterLimit?: boolean,
+    miterLimit?: number
   }
 )
 ```
@@ -63,23 +65,41 @@ Creates a new MeshLineNodeMaterial with the specified parameters.
 - `dashRatio` (number | null) — ratio of dash length to gap length (0 to 1). `dashLength` can be used as an alias. Default: `null`.
 - `dashOffset` (number) — offset into the dash cycle. Default: `0`.
 
-## Methods
+### Miter Limit (advanced)
 
-### dispose()
+`MeshLineNodeMaterial` can clamp very sharp joints to avoid oversized spikes by enabling miter clipping:
 
-```ts
-dispose(): void
+```js
+const material = new MeshLineNodeMaterial({
+  useMiterLimit: true, // activate clipping
+  miterLimit: 6        // (optional) maximum expansion factor
+})
 ```
 
-Cleans up material resources. Call when the material is no longer needed.
+If omitted, `miterLimit` defaults to **4.0** which works well for most scenes.
 
-### copy()
+### Textures
 
-```ts
-copy(source: MeshLineNodeMaterial): this
+Apply textures to lines with UV mapping control:
+
+```javascript
+const material = new MeshLineNodeMaterial({
+  map: myTexture,
+  repeat: new THREE.Vector2(4, 1),    // Repeat 4 times along line
+  mapOffset: new THREE.Vector2(0, 0)  // No offset
+});
 ```
 
-Copies properties from another MeshLineNodeMaterial instance.
+### Alpha Masking
+
+Use alpha maps for complex opacity patterns:
+
+```javascript
+const material = new MeshLineNodeMaterial({
+  alphaMap: alphaTexture,
+  transparent: true
+});
+```
 
 ## Features
 

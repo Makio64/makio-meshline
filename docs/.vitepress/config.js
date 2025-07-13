@@ -6,7 +6,9 @@ export default defineConfig({
   themeConfig: {
     nav: [
       { text: 'Guide', link: '/guide' },
-      { text: 'API', link: '/api' }
+      { text: 'API', link: '/api' },
+      { text: 'Patterns', link: '/common-patterns' },
+      { text: 'Helpers', link: '/helpers' },
     ],
 
     sidebar: [
@@ -17,17 +19,19 @@ export default defineConfig({
         ]
       },
       {
-        text: 'API Reference',
+        text: 'API',
         items: [
           { text: 'Overview', link: '/api' },
-        ]
-      },
-      {
-        text: 'Classes',
-        items: [
           { text: 'MeshLine', link: '/meshline' },
           { text: 'MeshLineGeometry', link: '/meshline-geometry' },
           { text: 'MeshLineNodeMaterial', link: '/meshline-material' },
+        ]
+      },
+      {
+        text: 'Patterns',
+        items: [
+          { text: 'Common', link: '/common-patterns' },
+          { text: 'Advanced', link: '/advanced-patterns' }
         ]
       },
       {

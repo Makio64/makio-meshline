@@ -7,7 +7,10 @@ hero:
   tagline: "TSL-powered lines with gradients, dashes, textures and more."
   actions:
     - theme: brand
-      text: Get Started
+      text: What is Makio-Meshline
+      link: /what-is
+    - theme: alt
+      text: Quickstart
       link: /guide
     - theme: alt
       text: View on GitHub

@@ -15,6 +15,8 @@ interface MeshLineGeometryOptions {
   lines?: Float32Array | number[][]          // Line points (required)
   isClose?: boolean | boolean[]              // Close the loop(s)
   widthCallback?: (t: number) => number      // variable width 
+  usage?: THREE.Usage                       // Optional buffer usage hint : StaticDrawUsage / DynamicDrawUsage / StreamDrawUsage
+  verbose?: boolean                         // Console logging
    
   // Flags to include / exclude generated attributes (advanced)
   needsPositions?: boolean
@@ -53,26 +55,36 @@ dispose(): void
 
 Releases geometry resources. Call when the geometry is no longer needed.
 
-### setPositions()  _(v0.9.0+)_ 
+### setPositions()
 
 ```ts
-setPositions( positions: Float32Array, updateBounding = false ): void
+setPositions(
+  positions: Float32Array | Float32Array[] | Array<Float32Array | number[][]>,
+  updateBounding?: boolean
+): void
 ```
 
-Efficiently updates the vertex positions of an **existing single-line** geometry without rebuilding or reallocating GPU buffers.  Use this when the number of points stays constant but their coordinates change every frame, e.g. for trails or rope physics.
+Efficiently updates vertex positions **without rebuilding GPU buffers**.  The function supports:
 
-• `positions` – A `Float32Array` containing **the same number of xyz values** as the original line.  Writing into the very same typed array each frame avoids garbage.  
-• `updateBounding` – Recomputes the bounding box / sphere when `true` (default `false`).  Skip it if the line remains roughly inside view for a small perf gain.
+• `Float32Array` – update a single line.  
+• `Float32Array[]` – update multiple lines (each array must keep its original length).  
+• `number[][][]` – nested arrays are converted under the hood (slower, avoid in hot loops).
 
-Example (paired with a reusable array):
+If the line count or point count changes the geometry falls back to a full rebuild automatically.
+
+• `positions` – Must match the original line(s) vertex count exactly.  Re-use the same typed arrays each frame for best performance.  
+• `updateBounding` – Recomputes bounding volumes when `true` (default `false`).  Skip when the line stays roughly inside view.
+
+Example with multiple dynamic lines:
 
 ```js
-const pts = new Float32Array( NUM * 3 );
-const geometry = new MeshLineGeometry({ lines: pts });
+const lines = [ new Float32Array( NUM * 3 ), new Float32Array( NUM * 3 ) ]
+const geometry = new MeshLineGeometry({ lines });
 
 function animate() {
-  writePointsInto( pts );      // mutate in place
-  geometry.setPositions( pts );// only uploads changed buffers
+  updateFirstLine(lines[0])
+  updateSecondLine(lines[1])
+  geometry.setPositions( lines ); // uploads changes for both lines
   requestAnimationFrame( animate );
 }
 ```
