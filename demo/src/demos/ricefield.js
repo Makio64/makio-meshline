@@ -33,7 +33,7 @@ class RicefieldExample {
 		this.lineArrays = []
 		for ( let x = 0; x < gridSize; x++ ) {
 			for ( let z = 0; z < gridSize; z++ ) {
-				const height = 1 + Math.random() * .5
+				const height = 2 + Math.random() * .5
 				const baseX = ( x - gridSize / 2 ) * spacing + ( Math.random() - .5 ) * jitter
 				const baseZ = ( z - gridSize / 2 ) * spacing + ( Math.random() - .5 ) * jitter
 				const positions = new Float32Array( new Array( lineSegments * 3 ) )
@@ -62,7 +62,7 @@ class RicefieldExample {
 			lines: squarePositions( 13.5, 10 ),
 			isClose: true,
 			color: 0xffffff, // black at bottom
-			lineWidth: 0.1,
+			lineWidth: 0.2,
 			useMiterLimit: true,
 			miterLimit: 8,
 			usage: StaticDrawUsage

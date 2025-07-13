@@ -40,7 +40,7 @@ class MeshLineNodeMaterial extends NodeMaterial {
 		}
 
 		const hasAlphaFeatures = options.alphaMap != null || ( options.opacity ?? 1 ) < 1 || this.alphaTest > 0
-		this.transparent = options.transparent ?? hasAlphaFeatures
+		this.transparent = hasAlphaFeatures || options.transparent
 		if ( this.transparent || this.alphaTest > 0 ) {
 			this.opacity = uniform( options.opacity ?? 1 )
 		}
@@ -68,6 +68,9 @@ class MeshLineNodeMaterial extends NodeMaterial {
 
 		// GPU position node (optional)
 		this.gpuPositionNode = options.gpuPositionNode ?? null
+
+		// Set default depthWrite based on transparent after all properties are set
+		this.depthWrite = options.depthWrite ?? ( this.transparent ? false : true )
 	}
 
 	dispose() {
@@ -190,11 +193,14 @@ class MeshLineNodeMaterial extends NodeMaterial {
 		// Opacity node
 		this.opacityNode = Fn( () => {
 			let alpha = float( 1 ).toVar( 'alpha' )
+			
 			if ( this.alphaMap && this.alphaMap.value ) {
-				alpha.mulAssign( this.alphaMap.sample( uvCoords ).b )
+				alpha.mulAssign( this.alphaMap.sample( uvCoords ).r )
 			}
 
-			alpha.mulAssign( this.opacity )
+			if ( this.opacity ) {
+				alpha.mulAssign( this.opacity )
+			}
 
 			Discard( alpha.lessThan( this.alphaTest ) )
 
