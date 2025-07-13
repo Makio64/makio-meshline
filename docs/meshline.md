@@ -164,6 +164,7 @@ scene.add( line );
 // Frame loop
 updatePositions( positions );           // write XYZs into the same array
 line.geometry.setPositions( positions ); // fast update
+requestAnimationFrame( animate );
 ```
 
 When verbose mode is enabled you'll see `[MeshLine] positions updated via setPositions` in the console.

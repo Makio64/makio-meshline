@@ -14,8 +14,8 @@ const scene = new THREE.Scene();
 // Create a MeshLine (circle)
 const line = new MeshLine({
   lines: circlePositions(64),
-  color: 0xff0000,
-  lineWidth: 0.5,
+  color: 0xCE4257,
+  lineWidth: 0.2,
   isClose: true,
 });
 

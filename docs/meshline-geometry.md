@@ -14,7 +14,7 @@ new MeshLineGeometry(options?: MeshLineGeometryOptions)
 interface MeshLineGeometryOptions {
   lines?: Float32Array | number[][]          // Line points (required)
   isClose?: boolean | boolean[]              // Close the loop(s)
-  widthCallback?: (t: number) => number      // variable width
+  widthCallback?: (t: number) => number      // variable width 
    
   // Flags to include / exclude generated attributes (advanced)
   needsPositions?: boolean
@@ -53,7 +53,7 @@ dispose(): void
 
 Releases geometry resources. Call when the geometry is no longer needed.
 
-### setPositions()  _(v0.9.0+)_
+### setPositions()  _(v0.9.0+)_ 
 
 ```ts
 setPositions( positions: Float32Array, updateBounding = false ): void

@@ -16,7 +16,7 @@ new MeshLineNodeMaterial(
     resolution?: THREE.Vector2,
     lineWidth?: number,
     color?: number | THREE.Color,
-    gradient?: THREE.Color | null,
+    gradientColor?: number | THREE.Color | null,
     opacity?: number,
     map?: THREE.Texture | null,
     alphaMap?: THREE.Texture | null,
@@ -47,7 +47,7 @@ Creates a new MeshLineNodeMaterial with the specified parameters.
 - `resolution` (`THREE.Vector2`) — viewport resolution for correct aspect scaling. Default: `new Vector2(1, 1)`.
 - `lineWidth` (number) — base width multiplier for the line in screen space. Default: `1`.
 - `color` (number | `THREE.Color`) — line color. Default: `0xffffff`.
-- `gradient` (`THREE.Color` | null) — optional gradient end color. Default: `null`.
+- `gradientColor` (`THREE.Color` | null) — optional gradient end color. Default: `null`.
 - `opacity` (number) — global opacity. Default: `1`.
 
 ### Textures
@@ -101,7 +101,7 @@ Create smooth color transitions along the line:
 ```javascript
 const material = new MeshLineNodeMaterial({
   color: 0xff0000,      // Red start
-  gradient: 0x0000ff,   // Blue end
+  gradientColor: 0x0000ff,   // Blue end
 });
 ```
 
@@ -167,7 +167,7 @@ const material = new MeshLineNodeMaterial({
 ```javascript
 const material = new MeshLineNodeMaterial({
   color: 0xff0000,
-  gradient: 0x00ff00,
+  gradientColor: 0x00ff00,
   dashCount: 12,
   dashRatio: 0.6,
   lineWidth: 2,
@@ -221,7 +221,7 @@ Internally it handles all the heavy lifting for:
 ## Dynamic GPU-Driven Positions (gpuPositionNode)
 
 When you don't want to upload an explicit polyline to the GPU you can let the shader compute each vertex position.  
-Provide a **gpuPositionNode** function that receives the per-vertex `counter` (ranging from 0→1 along the line) and returns a `vec3` position.
+Provide a **gpuPositionNode** function that receives the per-vertex counter (ranging from 0→1 along the line) and returns a `vec3` position.
 
 ```javascript
 import { MeshLine, MeshLineNodeMaterial } from 'meshline';
