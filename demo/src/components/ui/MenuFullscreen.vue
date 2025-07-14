@@ -17,8 +17,8 @@ export default {
 				{ text: 'Basic', href: '/examples/basic' },
 				{ text: 'Waves', href: '/examples/waves' },
 				{ text: 'Follow', href: '/examples/follow' },
-				{ text: 'GPU Circle', href: '/examples/gpu-circle' },
-				{ text: 'Stress', href: '/examples/stress' },
+				{ text: 'GPUCircle', href: '/examples/gpu-circle' },
+				// { text: 'Stress', href: '/examples/stress' },
 				{ text: 'Ricefield', href: '/examples/ricefield' },
 				{ text: 'GPUInstance', href: '/examples/gpu-instance' },
 			],
@@ -35,7 +35,9 @@ export default {
 		},
 		show() {
 			const { root, link } = this.$refs
-			animate( root, { opacity: [0, 1], duration: 0.4, ease: 'outExpo',
+			utils.remove( root )
+			utils.remove( link )
+			animate( root, { opacity: [0, 1], duration: 0.3, ease: 'outExpo',
 				onBegin: () => {
 					root.style.pointerEvents = 'all'
 					root.style.visibility = 'visible'
@@ -46,13 +48,15 @@ export default {
 				// x: [-50, 0],
 				width: [0, 200],
 				opacity: [0, 1],
-				delay: stagger( 0.1, { start: 0.2 } ),
+				delay: stagger( 0.05, { start: 0.1 } ),
 				duration: 0.8,
 				ease: 'outExpo',
 			} )
 		},
 		hide() {
 			const { root, link } = this.$refs
+			utils.remove( root )
+			utils.remove( link )
 			animate( root, { opacity: 0, duration: 0.3, delay: .1, ease: 'inQuad', } )
 			animate( link, {
 				width: 0,
