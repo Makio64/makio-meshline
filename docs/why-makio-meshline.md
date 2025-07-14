@@ -10,7 +10,7 @@ However, with Three.js evolving, I feel there was a need for a modern MeshLine t
 
 `Makio MeshLine` is my vision of it: built to be performant, flexible, and easy to extend, allowing creators to focus on ideas rather than implementation details.
 
-A big thanks to the community, especially to my friend [@Floz](https://x.com/florianzumbrunn) for his constant support, [Samsyyyy](https://x.com/Samsyyyy) for the early tests & feedbacks, to [TheSpite](thespite) for making the first version i knew of MeshLine, to [MrDoob](https://github.com/mrdoob) and [Sunag](https://github.com/sunag) for Three.js and TSL!
+A big thanks to the community, especially to my friend [@Floz](https://x.com/florianzumbrunn) for his constant support, [Samsyyyy](https://x.com/Samsyyyy) for the early tests & feedbacks, to [TheSpite](https://x.com/thespite) for making the first version i knew of MeshLine, to [MrDoob](https://x.com/mrdoob) and [Sunag](https://x.com/sea3dformat) for Three.js and TSL!
 
 Best, [Makio64](https://x.com/makio64)
 
