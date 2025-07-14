@@ -1,16 +1,19 @@
 import { Fn, step, uniform, uv } from "three/tsl"
 import { MeshLineGeometry } from "./MeshLineGeometry"
 import { MeshLineNodeMaterial } from "./MeshLineNodeMaterial"
-import { Mesh } from "three/webgpu"
+import { Mesh, InstancedBufferAttribute } from "three/webgpu"
+import { straightLine } from "./positions/straightLine"
 
-const defaultPositions = new Float32Array( [0, 0, 0, 1, 0, 0] )
+const defaultPositions = straightLine( 2 )
 export default class MeshLine extends Mesh {
 
 	constructor( options = {} ) {
 
+		let lines = options.lines || options.segments ? straightLine( options.segments ) : defaultPositions
 		// Merge options with defaults
 		options = { 
-			lines: defaultPositions,
+			lines: lines,
+			segments: 1,
 			isClose: false,
 			
 			color: 0xffffff,
@@ -57,6 +60,9 @@ export default class MeshLine extends Mesh {
 			gpuPositionNode: null,
 			usage: null,
 
+			// Instancing options
+			instanceCount: -1,
+
 			...options
 		}
 
@@ -67,6 +73,10 @@ export default class MeshLine extends Mesh {
 		} )
 
 		super( geometry, material )
+
+		if ( options.instanceCount != -1 ) {
+			this.count = options.instanceCount
+		}
 
 		this.frustumCulled = options.frustumCulled
 
@@ -95,6 +105,26 @@ export default class MeshLine extends Mesh {
 		this.resize( options.renderWidth, options.renderHeight )
 	}
 
+	addInstanceAttribute( name, components = 1 ) {
+		const array = new Float32Array( this.count * components )
+		const attribute = new InstancedBufferAttribute( array, components )
+		this.geometry.setAttribute( name, attribute )
+		return attribute
+	}
+
+	setInstanceValue( name, index, value ) {
+		const attribute = this.geometry.getAttribute( name )
+		if ( ! attribute ) return
+
+		if ( typeof value === 'number' ) value = [value]
+
+		const offset = index * attribute.itemSize
+		for ( let j = 0; j < Math.min( attribute.itemSize, value.length ); j++ ) {
+			attribute.array[ offset + j ] = value[ j ]
+		}
+		attribute.needsUpdate = true
+	}
+
 	setGeometry( geometry, culling = true ) {
 		this.geometry = geometry
 		this.frustumCulled = culling
@@ -111,5 +141,7 @@ export default class MeshLine extends Mesh {
 		this.parent?.remove( this )
 		this.geometry?.dispose()
 		this.material?.dispose()
+		if ( this.instanceMatrix ) this.instanceMatrix.dispose()
+		if ( this.instanceColor ) this.instanceColor.dispose()
 	}
 }

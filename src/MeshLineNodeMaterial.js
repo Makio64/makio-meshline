@@ -1,5 +1,5 @@
-import { NodeMaterial, Color, Vector2 } from 'three/webgpu'
-import { float, vec4, vec2, Fn, uniform, uv, modelViewMatrix, normalize, positionGeometry, cameraProjectionMatrix, attribute, varyingProperty, Discard, step, mix, texture, mod, abs, max, dot } from 'three/tsl'
+import { NodeMaterial, Color, Vector2, MeshBasicNodeMaterial } from 'three/webgpu'
+import { float, vec4, vec2, Fn, uniform, uv, modelViewMatrix, normalize, positionGeometry, cameraProjectionMatrix, attribute, varyingProperty, Discard, step, mix, texture, mod, abs, max, dot, clamp, smoothstep, sin, cos } from 'three/tsl'
 
 const fix = Fn( ( [i_immutable, aspect_immutable] ) => {
 	const aspect = float( aspect_immutable ).toVar()
@@ -12,7 +12,7 @@ const fix = Fn( ( [i_immutable, aspect_immutable] ) => {
 	{ name: 'aspect', type: 'float' }
 ] } )
 
-class MeshLineNodeMaterial extends NodeMaterial {
+class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 
 	constructor( options = {} ) {
 		super()
@@ -71,6 +71,22 @@ class MeshLineNodeMaterial extends NodeMaterial {
 
 		// Set default depthWrite based on transparent after all properties are set
 		this.depthWrite = options.depthWrite ?? ( this.transparent ? false : true )
+
+		// NODE HOOKS
+		this.positionFn = options.positionFn ?? null
+		this.previousFn = options.previousFn ?? null
+		this.nextFn = options.nextFn ?? null
+		this.widthFn = options.widthFn ?? null
+		this.normalFn = options.normalFn ?? null
+		this.colorFn = options.colorFn ?? null
+		this.gradientFn = options.gradientFn ?? null
+		this.opacityFn = options.opacityFn ?? null
+		this.dashFn = options.dashFn ?? null
+		this.uvFn = options.uvFn ?? null
+		this.vertexFn = options.vertexFn ?? null
+		this.fragmentColorFn = options.fragmentColorFn ?? null
+		this.fragmentAlphaFn = options.fragmentAlphaFn ?? null
+		this.discardFn = options.discardFn ?? null
 	}
 
 	dispose() {
@@ -86,27 +102,53 @@ class MeshLineNodeMaterial extends NodeMaterial {
 
 		// Only declare counters if needed
 		let counters
-		if ( this.options.needsCounter || this.gradient || this.dashCount || this.gpuPositionNode ) {
+		if ( this.options.needsCounter || this.gradient || this.dashCount || this.gpuPositionNode || 
+			 this.widthFn || this.colorFn || this.dashFn ) {
 			counters = attribute( 'counters', 'float' ).toVar( 'aCounters' )
 		}
 		
-		let segments = this.options.lines.length / 3 
+		let segments = this.options.lines?.length / 3 || 1
+		
+		// Apply position modifiers if provided
 		let pos = this.gpuPositionNode ? this.gpuPositionNode( counters, 0 ) : positionGeometry
-		let previous = this.gpuPositionNode ? this.gpuPositionNode( counters.sub( 1 / segments ) ) : attribute( 'previous', 'vec3' ).toVar( 'aPrevious' ) 
+		if ( this.positionFn ) {
+			pos = this.positionFn( pos, counters )
+		}
+		
+		let previous = this.gpuPositionNode ? this.gpuPositionNode( counters.sub( 1 / segments ) ) : attribute( 'previous', 'vec3' ).toVar( 'aPrevious' )
+		if ( this.previousFn ) {
+			previous = this.previousFn( previous, counters )
+		}
+		
 		let next = this.gpuPositionNode ? this.gpuPositionNode( counters.add( 1 / segments ) ) : attribute( 'next', 'vec3' ).toVar( 'aNext' )
+		if ( this.nextFn ) {
+			next = this.nextFn( next, counters )
+		}
 
 		const side = attribute( 'side', 'float' ).toVar( 'aSide' )
 		let width
-		if ( this.options.needsWidth ) {
+		if ( this.options.needsWidth || this.widthFn ) {
 			width = attribute( 'width', 'float' ).toVar( 'aWidth' )
+		}
+
+		// Make these available as varyings for fragment shader
+		varyingProperty( 'float', 'vSide' ).assign( side )
+		if ( width ) {
+			varyingProperty( 'float', 'vWidth' ).assign( width )
 		}
 
 		this.vertexNode = Fn( () => {
 
-			varyingProperty( 'vec4', 'vColor' ).assign( vec4( this.color, 1 ) )
+			let vertexColor = vec4( this.color, 1 ).toVar( 'vertexColor' )
+			
+			if ( this.colorFn ) {
+				vertexColor.assign( this.colorFn( vertexColor, counters, side ) )
+			}
+			
+			varyingProperty( 'vec4', 'vColor' ).assign( vertexColor )
 
 			// Only assign vCounters if needed to reduce varying bandwidth
-			if ( this.gradient || this.dashCount ) {
+			if ( this.gradient || this.dashCount || this.gradientFn || this.dashFn ) {
 				varyingProperty( 'float', 'vCounters' ).assign( counters )
 			}
 
@@ -123,9 +165,14 @@ class MeshLineNodeMaterial extends NodeMaterial {
 			const prevP = fix( prevPos, aspect ).toVar( 'prevP' )
 			const nextP = fix( nextPos, aspect ).toVar( 'nextP' )
 
-			const w = this.lineWidth.mul( this.dpr ).toVar( 'w' )
+			let w = this.lineWidth.mul( this.dpr ).toVar( 'w' )
 			if ( width ) {
 				w.mulAssign( width )
+			}
+			
+			// Apply width modifier if provided
+			if ( this.widthFn ) {
+				w.assign( this.widthFn( w, counters, side ) )
 			}
 			
 			// Calculate the miter direction
@@ -134,7 +181,7 @@ class MeshLineNodeMaterial extends NodeMaterial {
 			const dir = normalize( dir1.add( dir2 ) ).toVar( 'dir' )
 
 			// Calculate final normal based on whether miter limit is enabled
-			const normal = vec4( 0, 0, 0, 1 ).toVar( 'normal' )
+			let normal = vec4( 0, 0, 0, 1 ).toVar( 'normal' )
 
 			if ( this.useMiterLimit ) {
 				// Calculate miter length
@@ -153,6 +200,11 @@ class MeshLineNodeMaterial extends NodeMaterial {
 				normal.xy.mulAssign( w.mul( 0.5 ) )
 			}
 
+			// Apply normal modifier if provided
+			if ( this.normalFn ) {
+				normal.assign( this.normalFn( normal, dir, dir1, dir2, counters, side ) )
+			}
+
 			if ( this.sizeAttenuation ) {
 				normal.xy.mulAssign( finalPosition.w )
 				normal.xy.divAssign( vec4( this.resolution, 0., 1. ).mul( cameraProjectionMatrix ).xy.mul( aspect ) )
@@ -162,16 +214,28 @@ class MeshLineNodeMaterial extends NodeMaterial {
 			normal.x.divAssign( aspect )
 
 			finalPosition.xy.addAssign( normal.xy.mul( side ) )
+			
+			// Apply vertex modifier if provided
+			if ( this.vertexFn ) {
+				finalPosition.assign( this.vertexFn( finalPosition, normal, counters, side ) )
+			}
+			
 			return finalPosition
 		} )()
 
 		let vCounters
-		if ( this.gradient || this.dashCount ) {
+		if ( this.gradient || this.dashCount || this.gradientFn || this.dashFn ) {
 			vCounters = varyingProperty( 'float', 'vCounters' ).toVar()
 		}
+		
 		let uvCoords
-		if ( ( this.map && this.map.value ) || ( this.alphaMap && this.alphaMap.value ) ) {
-			uvCoords = uv().mul( this.repeat ).add( this.mapOffset ).toVar( 'uvCoords' )
+		if ( ( this.map && this.map.value ) || ( this.alphaMap && this.alphaMap.value ) || this.uvFn ) {
+			uvCoords = uv().mul( this.repeat || vec2( 1, 1 ) ).add( this.mapOffset || vec2( 0, 0 ) ).toVar( 'uvCoords' )
+			
+			// Apply UV modifier if provided
+			if ( this.uvFn ) {
+				uvCoords.assign( this.uvFn( uvCoords, vCounters, varyingProperty( 'float', 'vSide' ) ) )
+			}
 		}
 
 		// Color node
@@ -180,11 +244,23 @@ class MeshLineNodeMaterial extends NodeMaterial {
 			let color = varyingProperty( 'vec4', 'vColor' ).toVar( 'color' )
 
 			if ( this.gradient ) {
-				color.rgb.assign( mix( color.rgb, this.gradient, vCounters ) )
+				let gradientFactor = vCounters.toVar( 'gradientFactor' )
+				
+				// Apply gradient modifier if provided
+				if ( this.gradientFn ) {
+					gradientFactor.assign( this.gradientFn( gradientFactor, varyingProperty( 'float', 'vSide' ) ) )
+				}
+				
+				color.rgb.assign( mix( color.rgb, this.gradient, gradientFactor ) )
 			}
 
 			if ( this.map && this.map.value ) {
 				color.mulAssign( this.map.sample( uvCoords ) )
+			}
+			
+			// Apply fragment color modifier if provided
+			if ( this.fragmentColorFn ) {
+				color.assign( this.fragmentColorFn( color, uvCoords, vCounters, varyingProperty( 'float', 'vSide' ) ) )
 			}
 
 			return color
@@ -201,18 +277,34 @@ class MeshLineNodeMaterial extends NodeMaterial {
 			if ( this.opacity ) {
 				alpha.mulAssign( this.opacity )
 			}
+			
+			// Apply opacity modifier if provided
+			if ( this.opacityFn ) {
+				alpha.assign( this.opacityFn( alpha, vCounters, varyingProperty( 'float', 'vSide' ) ) )
+			}
 
 			Discard( alpha.lessThan( this.alphaTest ) )
 
 			if ( this.dashCount ) {
-				const cyclePosition = mod( vCounters.mul( this.dashCount ).add( this.dashOffset ), float( 1 ) ).toVar( 'cyclePosition' )
-				// dashLength represents a dash portion: 0.1 = 10% dash, 90% gap
+				let cyclePosition = mod( vCounters.mul( this.dashCount ).add( this.dashOffset ), float( 1 ) ).toVar( 'cyclePosition' )
+				
+				// Apply dash modifier if provided
+				if ( this.dashFn ) {
+					cyclePosition.assign( this.dashFn( cyclePosition, vCounters, varyingProperty( 'float', 'vSide' ) ) )
+				}
+				
+				// dashRatio represents a dash portion: 0.1 = 10% dash, 90% gap
 				const dashMask = step( cyclePosition, this.dashRatio )
 				Discard( dashMask.lessThan( 0.001 ) )
 			}
 
-			if ( this.discardConditionNode ) {
-				Discard( this.discardConditionNode )
+			if ( this.discardFn ) {
+				Discard( this.discardFn( vCounters, varyingProperty( 'float', 'vSide' ), uvCoords ) )
+			}
+			
+			// Apply fragment alpha modifier if provided
+			if ( this.fragmentAlphaFn ) {
+				alpha.assign( this.fragmentAlphaFn( alpha, uvCoords, vCounters, varyingProperty( 'float', 'vSide' ) ) )
 			}
 
 			return alpha
@@ -236,20 +328,36 @@ class MeshLineNodeMaterial extends NodeMaterial {
 
 		// Copy uniform values
 		this.lineWidth.value = source.lineWidth.value
-		this.opacity.value = source.opacity.value
-		this.map.value = source.map.value
-		this.alphaMap.value = source.alphaMap.value
-		this.gradient.value = source.gradient.value
-		this.dashCount.value = source.dashCount.value
-		this.dashRatio.value = source.dashRatio.value
-		this.dashOffset.value = source.dashOffset.value
-		this.miterLimit.value = source.miterLimit.value
 
-		// Copy object uniforms with optional chaining
-		source.color.value && this.color.value.copy( source.color.value )
-		source.resolution.value && this.resolution.value.copy( source.resolution.value )
-		source.repeat.value && this.repeat.value.copy( source.repeat.value )
-		source.mapOffset.value && this.mapOffset.value.copy( source.mapOffset.value )
+		// Copy uniforms
+		this.opacity?.value && ( this.opacity.value = source.opacity.value )
+		this.map?.value && ( this.map.value = source.map.value )
+		this.alphaMap?.value && ( this.alphaMap.value = source.alphaMap.value )
+		this.gradient?.value && ( this.gradient.value = source.gradient.value )
+		this.dashCount?.value && ( this.dashCount.value = source.dashCount.value )
+		this.dashRatio?.value && ( this.dashRatio.value = source.dashRatio.value )
+		this.dashOffset?.value && ( this.dashOffset.value = source.dashOffset.value )
+		this.miterLimit?.value && ( this.miterLimit.value = source.miterLimit.value )
+		source.color?.value && this.color.value.copy( source.color.value )
+		source.resolution?.value && this.resolution.value.copy( source.resolution.value )
+		source.repeat?.value && this.repeat.value.copy( source.repeat.value )
+		source.mapOffset?.value && this.mapOffset.value.copy( source.mapOffset.value )
+
+		// Copy node hooks
+		this.positionFn = source.positionFn
+		this.previousFn = source.previousFn
+		this.nextFn = source.nextFn
+		this.widthFn = source.widthFn
+		this.normalFn = source.normalFn
+		this.colorFn = source.colorFn
+		this.gradientFn = source.gradientFn
+		this.opacityFn = source.opacityFn
+		this.dashFn = source.dashFn
+		this.uvFn = source.uvFn
+		this.vertexFn = source.vertexFn
+		this.fragmentColorFn = source.fragmentColorFn
+		this.fragmentAlphaFn = source.fragmentAlphaFn
+		this.discardFn = source.discardFn
 
 		return this
 	}
