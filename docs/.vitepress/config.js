@@ -9,6 +9,7 @@ export default defineConfig({
       { text: 'API', link: '/api' },
       { text: 'Patterns', link: '/common-patterns' },
       { text: 'Helpers', link: '/helpers' },
+      { text: 'Demos', link: 'https://meshlines.netlify.app/' },
     ],
 
     sidebar: [
@@ -42,7 +43,14 @@ export default defineConfig({
         items: [
           { text: 'Helper Functions', link: '/helpers' },
         ]
+      },
+      {
+        text: 'Examples',
+        items: [
+          { text: 'Live Demos', link: 'https://meshlines.netlify.app/' },
+        ]
       }
+
     ],
 
     socialLinks: [

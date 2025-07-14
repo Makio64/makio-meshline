@@ -1,15 +1,13 @@
 # Makio MeshLine
 *A modern, performant TSL-powered meshline solution for Three.js*
 
-The concept was to build a performant but easily customizable MeshLine with TSL for WebGPURenderer, allowing the devs to focus on creativity instead of implementation.  ([read more about it](https://meshlines-docs.netlify.app/why-makio-meshline.html))
+## [Live Demo](https://meshlines.netlify.app)
 
-Features: gradients, dashes, textures, variable width, instancing, gpu control or cpu batching, advanced mitter, tsl Hook, etc..
-
-Performance: the MeshLine will upload to the gpu only whats needed to keep performance optimal, also supporting instancing and gpu movement.
+See it in action with simple examples on [https://meshlines.netlify.app](https://meshlines.netlify.app) and check out the code here : [demo/src/demos](https://github.com/Makio64/Meshline/tree/main/demo/src/demos)
 
 <img width="1661" alt="Screenshot 2025-06-26 at 15 58 30" src="https://github.com/user-attachments/assets/deb1ccd7-46a9-4be0-8f07-280c21aafe81" />
 
-## Documentation
+## [Documentation](https://meshlines-docs.netlify.app)
 Check out the [documentation site](https://meshlines-docs.netlify.app/) for detailed instructions, API reference, and examples.
 - [Why Makio MeshLine](https://meshlines-docs.netlify.app/why-makio-meshline.html)
 - [Getting started](https://meshlines-docs.netlify.app/why-makio-meshline.html)
@@ -56,6 +54,14 @@ function animate() {
 }
 animate()
 ```
+
+## About
+
+The concept was to build a performant but easily customizable MeshLine with TSL for WebGPURenderer, allowing the devs to focus on creativity instead of implementation.  ([read more about it](https://meshlines-docs.netlify.app/why-makio-meshline.html))
+
+Features includes : gradients, dashes, textures, variable width, instancing, gpu control or cpu batching, advanced mitter, tsl Hook, etc..
+
+Performance: the MeshLine will upload to the gpu only whats needed to keep performance optimal, also supporting instancing and gpu movement.
 
 ## Thanks
 

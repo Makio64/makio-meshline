@@ -62,5 +62,6 @@ That's it! You should now see a vibrant orange circle in your scene.
 
 ## Next Steps
 
--   Check out the [API Reference](./api.md) to explore all the available customization options.
--   Look at the examples in the `site` directory of the repository for more advanced usage. 
+- Check out the [Live Demos](https://meshlines.netlify.app) to see various implementations in action
+- Check out their source code [`demo/`](https://github.com/Makio64/Meshline/tree/main/demo/src/demos) directory of the repository for more advanced usage. 
+- Check out the [API Reference](./api.md) to explore all the available customization options.

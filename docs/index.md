@@ -10,6 +10,9 @@ hero:
       text: What is Makio-Meshline
       link: /why-makio-meshline
     - theme: alt
+      text: Live Demos
+      link: https://meshlines.netlify.app
+    - theme: alt
       text: Quickstart
       link: /guide
     - theme: alt
