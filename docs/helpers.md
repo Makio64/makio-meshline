@@ -92,3 +92,67 @@ const line = new MeshLine({
   color: 0x00ff00
 });
 ```
+
+## straightLine()
+
+```ts
+straightLine(segments?: number, isVertical?: boolean): Float32Array
+```
+
+Generates a `Float32Array` of `[x, y, z]` points forming a straight line.
+
+#### Parameters
+
+- `segments` (number, optional) — number of segments along the line. Default: `1`.
+- `isVertical` (boolean, optional) — whether the line is vertical (Y-axis) or horizontal (X-axis). Default: `false`.
+
+#### Returns
+
+`Float32Array` containing straight line vertex positions.
+
+#### Example
+
+```javascript
+import { straightLine, MeshLine } from 'makio-meshline';
+
+// Create a horizontal line from (0,0,0) to (1,0,0)
+const horizontal = new MeshLine({ lines: straightLine(10, false) });
+
+// Create a vertical line from (0,0,0) to (0,1,0)
+const vertical = new MeshLine({ lines: straightLine(10, true) });
+```
+
+## straightLineBetween()
+
+```ts
+straightLineBetween(start: Vector3 | [x, y, z], end: Vector3 | [x, y, z], segments?: number): Float32Array
+```
+
+Generates a `Float32Array` of `[x, y, z]` points forming a straight line between two points.
+
+#### Parameters
+
+- `start` (`Vector3` | array) — starting point as Vector3 object or `[x, y, z]` array.
+- `end` (`Vector3` | array) — ending point as Vector3 object or `[x, y, z]` array.
+- `segments` (number, optional) — number of segments along the line. Default: `1`.
+
+#### Returns
+
+`Float32Array` containing straight line vertex positions.
+
+#### Example
+
+```javascript
+import { straightLineBetween, MeshLine } from 'makio-meshline';
+import * as THREE from 'three';
+
+// Line between two Vector3 points
+const start = new THREE.Vector3(-2, 1, 0);
+const end = new THREE.Vector3(3, -1, 2);
+const line = new MeshLine({ lines: straightLineBetween(start, end, 20) });
+
+// Line between array coordinates
+const line2 = new MeshLine({ 
+  lines: straightLineBetween([0, 0, 0], [5, 5, 5], 15) 
+});
+```

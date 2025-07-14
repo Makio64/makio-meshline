@@ -238,6 +238,163 @@ Internally it handles all the heavy lifting for:
 - UV generation for textures & dashes
 - Dash pattern evaluation
 
+## Hook System
+
+The `MeshLineNodeMaterial` provides an extensive hook system that allows you to inject custom TSL (Three.js Shading Language) functions at various stages of the rendering pipeline. This enables powerful customization without modifying the core material code.
+
+### Available Hooks
+
+#### Position Processing Hooks
+
+- `positionFn` — Modify the final vertex position
+- `previousFn` — Modify the previous vertex position (used for line direction calculation)
+- `nextFn` — Modify the next vertex position (used for line direction calculation)
+
+#### Width and Normal Hooks
+
+- `widthFn` — Modify line width per vertex
+- `normalFn` — Modify vertex normals
+
+#### Color and Shading Hooks
+
+- `colorFn` — Modify base line color
+- `gradientFn` — Modify gradient color calculation
+- `fragmentColorFn` — Modify final fragment color
+
+#### Opacity and Alpha Hooks
+
+- `opacityFn` — Modify vertex opacity
+- `fragmentAlphaFn` — Modify final fragment alpha
+
+#### UV and Effects Hooks
+
+- `uvFn` — Modify UV coordinates
+- `dashFn` — Modify dash pattern calculation
+
+#### Vertex and Fragment Control
+
+- `vertexFn` — Custom vertex shader logic
+- `discardFn` — Custom fragment discard conditions
+
+### Hook Usage Examples
+
+#### Custom Width Variation
+
+```javascript
+import { Fn, sin } from 'three/tsl';
+
+const material = new MeshLineNodeMaterial({
+  lineWidth: 2,
+  widthFn: Fn(([counter]) => {
+    // Vary width along the line using sine wave
+    return sin(counter.mul(Math.PI * 4)).add(1).mul(0.5);
+  })
+});
+```
+
+#### Animated Color Effects
+
+```javascript
+import { Fn, vec3, cos, sin, uniform } from 'three/tsl';
+
+const time = uniform(0); // Update this in your animation loop
+
+const material = new MeshLineNodeMaterial({
+  colorFn: Fn(([counter, position]) => {
+    const phase = counter.mul(Math.PI * 2).add(time);
+    const r = cos(phase).mul(0.5).add(0.5);
+    const g = sin(phase.add(Math.PI * 0.33)).mul(0.5).add(0.5);
+    const b = sin(phase.add(Math.PI * 0.66)).mul(0.5).add(0.5);
+    return vec3(r, g, b);
+  })
+});
+```
+
+#### Position Displacement
+
+```javascript
+import { Fn, vec3, sin, uniform } from 'three/tsl';
+
+const time = uniform(0);
+
+const material = new MeshLineNodeMaterial({
+  positionFn: Fn(([position, counter]) => {
+    // Add wave displacement
+    const wave = sin(counter.mul(Math.PI * 8).add(time)).mul(0.1);
+    return position.add(vec3(0, wave, 0));
+  })
+});
+```
+
+#### Custom Dash Pattern
+
+```javascript
+import { Fn, step, fract } from 'three/tsl';
+
+const material = new MeshLineNodeMaterial({
+  dashFn: Fn(([dashDistance, counter]) => {
+    // Custom dash pattern - double dashes
+    const pattern = fract(dashDistance.mul(10));
+    const dash1 = step(0.2, pattern).mul(step(pattern, 0.4));
+    const dash2 = step(0.6, pattern).mul(step(pattern, 0.8));
+    return dash1.add(dash2);
+  })
+});
+```
+
+#### Fragment Discard for Cut-out Effects
+
+```javascript
+import { Fn, noise } from 'three/tsl';
+
+const material = new MeshLineNodeMaterial({
+  discardFn: Fn(([position, counter]) => {
+    // Discard fragments based on noise pattern
+    const noiseValue = noise(position.mul(10));
+    return noiseValue.lessThan(0.3); // Discard if noise < 0.3
+  })
+});
+```
+
+### Hook Function Signatures
+
+All hook functions receive relevant parameters and should return appropriate values:
+
+```typescript
+// Position hooks
+positionFn: (position: Node, counter: Node, ...args) => Node<vec3>
+previousFn: (position: Node, counter: Node, ...args) => Node<vec3>
+nextFn: (position: Node, counter: Node, ...args) => Node<vec3>
+
+// Width/Normal hooks
+widthFn: (counter: Node, position: Node, ...args) => Node<float>
+normalFn: (normal: Node, position: Node, ...args) => Node<vec3>
+
+// Color hooks
+colorFn: (counter: Node, position: Node, ...args) => Node<vec3>
+gradientFn: (color: Node, counter: Node, ...args) => Node<vec3>
+fragmentColorFn: (color: Node, position: Node, ...args) => Node<vec3>
+
+// Alpha hooks
+opacityFn: (counter: Node, position: Node, ...args) => Node<float>
+fragmentAlphaFn: (alpha: Node, position: Node, ...args) => Node<float>
+
+// UV/Dash hooks
+uvFn: (uv: Node, counter: Node, ...args) => Node<vec2>
+dashFn: (dashDistance: Node, counter: Node, ...args) => Node<float>
+
+// Control hooks
+vertexFn: (context: NodeContext) => void
+discardFn: (position: Node, counter: Node, ...args) => Node<bool>
+```
+
+### Performance Considerations
+
+- Hook functions run on the GPU for maximum performance
+- Keep hook logic simple to avoid shader compilation issues
+- Use uniforms for time-based animations to avoid constant recompilation
+- Consider the impact on shader complexity when using multiple hooks
+
 ## Dynamic GPU-Driven Positions (gpuPositionNode)
 
 When you don't want to upload an explicit polyline to the GPU you can let the shader compute each vertex position.  
