@@ -17,9 +17,10 @@ export default {
 				{ text: 'Basic', href: '/examples/basic' },
 				{ text: 'Waves', href: '/examples/waves' },
 				{ text: 'Follow', href: '/examples/follow' },
-				{ text: 'GPU Circle', href: '/examples/gpuCircle' },
+				{ text: 'GPU Circle', href: '/examples/gpu-circle' },
 				{ text: 'Stress', href: '/examples/stress' },
 				{ text: 'Ricefield', href: '/examples/ricefield' },
+				{ text: 'GPUInstance', href: '/examples/gpu-instance' },
 			],
 		}
 	},

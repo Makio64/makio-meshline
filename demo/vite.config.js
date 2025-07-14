@@ -62,7 +62,7 @@ export default defineConfig( {
 	},
 	server: {
 		https: true,
-		port: 3020,
+		port: 3000,
 		strictPort: false
 	},
 } )

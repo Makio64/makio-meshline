@@ -6,9 +6,10 @@
 import waves from '@/demos/waves'
 import basic from '@/demos/basic'
 import follow from '@/demos/follow'
-import gpuCircle from '@/demos/gpuCircle'
 import stress from '@/demos/stress'
 import ricefield from '@/demos/ricefield'
+import gpuCircle from '@/demos/gpuCircle'
+import gpuInstance from '@/demos/gpuInstance'
 import { contentLoaded } from '@/store'
 
 export default {
@@ -18,7 +19,8 @@ export default {
 		const mapping = {
 			waves,
 			follow,
-			gpuCircle,
+			'gpu-circle': gpuCircle,
+			'gpu-instance': gpuInstance,
 			stress,
 			ricefield
 		}
