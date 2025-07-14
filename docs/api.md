@@ -17,6 +17,9 @@ It used `TSL` and is compatible with the new `WebGPURenderer` & both backend: `W
 #### Implementation Notes
 
 * Only the uniforms / attributes needs are created & uploaded to the GPU.
+* There is many hooks available for customizing the basic behavior / rendering of the lines
+* You can use batching for cpu control animation
+* Instancing + gpu position will allow you to render thousands of lines like a breeze
 * No runtime dependencies beyond `three`
 
 ## Classes

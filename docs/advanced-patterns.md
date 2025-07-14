@@ -80,4 +80,139 @@ const dashed = new MeshLine({
 stage.onUpdate.add( dt => {
   dashed.material.dashOffset.value += dt * 0.002
 })
+```
+
+## 6. Instanced Lines
+
+Render thousands of lines efficiently with instancing:
+
+```js
+import { MeshLine } from 'makio-meshline'
+import { Fn, vec3, cos, sin, attribute, instanceIndex } from 'three/tsl'
+
+const instanceCount = 1000
+const segments = 32
+
+// Create instanced line
+const instancedLine = new MeshLine( {
+	instanceCount, // Enable instancing
+	segments, // Segments per line instance
+	lineWidth: 0.1,
+	color: 0xffffff
+} )
+
+// Add custom instance attributes
+instancedLine.addInstanceAttribute( 'instanceOffset', 3 )
+instancedLine.addInstanceAttribute( 'instanceScale', 1 )
+
+// Set per-instance data
+for ( let i = 0; i < instanceCount; i++ ) {
+	const x = ( Math.random() - 0.5 ) * 20
+	const y = ( Math.random() - 0.5 ) * 20
+	const z = ( Math.random() - 0.5 ) * 20
+	instancedLine.setInstanceValue( 'instanceOffset', i, [x, y, z] )
+	
+	const scale = 0.5 + Math.random() * 1.5
+	instancedLine.setInstanceValue( 'instanceScale', i, scale )
+}
+
+scene.add( instancedLine )
+```
+
+## 7. GPU Instanced Circles
+
+Combine GPU position nodes with instancing for animated effects:
+
+```js
+import { Fn, vec3, cos, sin, time, attribute, instanceIndex } from 'three/tsl'
+
+const gpuPositionNode = Fn( ( [counters] ) => {
+	const offset = attribute( 'instanceOffset', 'vec3' )
+	const radius = attribute( 'instanceRadius', 'float' )
+	const angle = counters.mul( Math.PI * 2 ).add( time.negate() )
+	return vec3( cos( angle ), sin( angle ), 0 ).mul( radius ).add( offset )
+} )
+
+const instancedCircles = new MeshLine( {
+	instanceCount: 100,
+	segments: 64,
+	gpuPositionNode,
+	lineWidth: 0.2,
+	colorFn: Fn( ( [color, counters] ) => {
+		const col = float( instanceIndex ).mod( 10 )
+		const row = float( instanceIndex ).div( 10 )
+		return vec3( col.div( 9 ), row.div( 9 ), 0.8 )
+	} )
+} )
+
+// Setup instance attributes
+instancedCircles.addInstanceAttribute( 'instanceOffset', 3 )
+instancedCircles.addInstanceAttribute( 'instanceRadius', 1 )
+
+// Position instances in a grid
+for ( let i = 0; i < 100; i++ ) {
+	const col = i % 10
+	const row = Math.floor( i / 10 )
+	const x = ( col - 4.5 ) * 3
+	const y = ( row - 4.5 ) * 3
+	instancedCircles.setInstanceValue( 'instanceOffset', i, [x, y, 0] )
+	instancedCircles.setInstanceValue( 'instanceRadius', i, 0.5 + col * 0.1 )
+}
+```
+
+## 8. Material Hooks for Custom Effects
+
+Use material hooks to create custom shader effects:
+
+### Dynamic Width Variation
+```js
+import { Fn, sin, time } from 'three/tsl'
+
+const pulsatingLine = new MeshLine( {
+	lines: circlePositions( 64 ),
+	lineWidth: 0.3,
+	widthFn: Fn( ( [width, counters] ) => {
+		return width.mul( sin( time.add( counters.mul( 10 ) ) ).mul( 0.5 ).add( 1 ) )
+	} )
+} )
+```
+
+### Custom Color Gradients
+```js
+const rainbowLine = new MeshLine( {
+	lines: sineWavePositions(),
+	colorFn: Fn( ( [color, counters] ) => {
+		const hue = counters.mul( 6.28 ).add( time )
+		return vec3(
+			sin( hue ).mul( 0.5 ).add( 0.5 ),
+			sin( hue.add( 2.09 ) ).mul( 0.5 ).add( 0.5 ),
+			sin( hue.add( 4.18 ) ).mul( 0.5 ).add( 0.5 )
+		)
+	} )
+} )
+```
+
+### Opacity Fading
+```js
+const fadingLine = new MeshLine( {
+	lines: straightLine( 100 ),
+	transparent: true,
+	opacityFn: Fn( ( [alpha, counters] ) => {
+		return alpha.mul( smoothstep( 0, 0.1, counters ) ).mul( smoothstep( 1, 0.9, counters ) )
+	} )
+} )
+```
+
+### Custom Dash Patterns
+```js
+const customDashes = new MeshLine( {
+	lines: circlePositions( 128 ),
+	dashCount: 10,
+	dashRatio: 0.3,
+	dashFn: Fn( ( [cyclePos, counters] ) => {
+		// Create variable dash lengths
+		const variation = sin( counters.mul( 20 ) ).mul( 0.2 ).add( 1 )
+		return mod( cyclePos.mul( variation ), float( 1 ) )
+	} )
+})
 ``` 

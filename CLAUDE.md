@@ -22,6 +22,8 @@ Key architectural principles:
 - Only required uniforms/attributes are created and uploaded to GPU
 - TSL (Three.js Shading Language) for custom shader logic
 - Compatible with both WebGPU and WebGL2 renderers
+- Built-in instancing support for efficient batch rendering
+- Extensive hook system for shader customization
 - No runtime dependencies beyond Three.js
 
 ## Development Commands
@@ -83,6 +85,14 @@ The material supports extensive customization through function hooks:
 - Multi-line support with individual loop settings
 - Efficient 16-bit/32-bit index selection based on vertex count
 
+### Instancing System (MeshLine)
+The MeshLine class supports efficient instanced rendering:
+- `instanceCount` option - Enable instancing with specified instance count
+- `addInstanceAttribute(name, components)` - Create instanced buffer attributes
+- `setInstanceValue(name, index, value)` - Set per-instance attribute data
+- Works seamlessly with hooks and GPU position nodes
+- Allows thousands of lines with minimal performance impact
+
 ## Dependencies
 
 - **Three.js ^0.178.0** (peer dependency)
@@ -95,3 +105,5 @@ The material supports extensive customization through function hooks:
 - Geometry only uploads needed attributes to GPU
 - Material only creates required uniforms
 - Supports both CPU and GPU position calculation modes
+- Instancing allows rendering thousands of lines with single draw call
+- Hook functions run in GPU for maximum performance

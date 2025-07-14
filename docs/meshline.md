@@ -63,6 +63,22 @@ interface MeshLineOptions {
   // Procedural GPU positions
   gpuPositionNode?: Fn< number, THREE.Vector3 > | null
 
+  // Instancing
+  instanceCount?: number                          // Enable instancing with count
+
+  // Hook Functions (TSL Fn)
+  positionFn?: Fn | null
+  widthFn?: Fn | null
+  colorFn?: Fn | null
+  gradientFn?: Fn | null
+  opacityFn?: Fn | null
+  dashFn?: Fn | null
+  uvFn?: Fn | null
+  vertexFn?: Fn | null
+  fragmentColorFn?: Fn | null
+  fragmentAlphaFn?: Fn | null
+  discardFn?: Fn | null
+
   // Debugging
   verbose?: boolean
 }
@@ -150,9 +166,33 @@ interface MeshLineOptions {
 
 - **`verbose`** (`boolean`) — When `true` logs to the console which buffer attributes are generated for the geometry. Useful for debugging option combinations. Default: `false`.
 
+### Instancing
+
+- **`instanceCount`** (`number`) — When set to a positive number, enables instanced rendering for the specified number of instances. Each instance renders the same line geometry but can have different transformations, colors, and other per-instance properties via custom attributes. Default: `-1` (instancing disabled).
+
+> **Instance Attributes:** Use `addInstanceAttribute(name, components)` to create per-instance attributes and `setInstanceValue(name, index, value)` to set data for specific instances. Instance attributes can be accessed in hook functions using `attribute(name, type)`.
+
+### Hook Functions
+
+Hook functions allow custom TSL (Three.js Shading Language) code to modify various aspects of line rendering. All hooks are optional and receive relevant parameters for their processing stage:
+
+- **`positionFn`** (`Fn | null`) — Modify vertex positions. Receives `(position, counters)`.
+- **`widthFn`** (`Fn | null`) — Modify line width. Receives `(width, counters, side)`.
+- **`colorFn`** (`Fn | null`) — Modify vertex colors. Receives `(color, counters, side)`.
+- **`gradientFn`** (`Fn | null`) — Modify gradient factor. Receives `(gradientFactor, side)`.
+- **`opacityFn`** (`Fn | null`) — Modify opacity in fragment shader. Receives `(alpha, counters, side)`.
+- **`dashFn`** (`Fn | null`) — Modify dash pattern. Receives `(cyclePosition, counters, side)`.
+- **`uvFn`** (`Fn | null`) — Modify UV coordinates. Receives `(uvCoords, counters, side)`.
+- **`vertexFn`** (`Fn | null`) — Final vertex position modification. Receives `(finalPosition, normal, counters, side)`.
+- **`fragmentColorFn`** (`Fn | null`) — Final fragment color modification. Receives `(color, uvCoords, counters, side)`.
+- **`fragmentAlphaFn`** (`Fn | null`) — Final fragment alpha modification. Receives `(alpha, uvCoords, counters, side)`.
+- **`discardFn`** (`Fn | null`) — Custom discard condition. Receives `(counters, side, uvCoords)`. Return truthy to discard fragment.
+
+> **TSL Functions:** Hook functions must be created using `Fn()` from `three/tsl`. They run on the GPU for maximum performance and can access uniform values, attributes, and built-in variables like `time` and `instanceIndex`.
+
 ### Updating geometry efficiently
 
-For lines whose vertices change every frame (e.g. interactive trails) you can avoid rebuilding the full geometry by calling **`geometry.setPositions( positionsF32 )`**.  
+For lines controled by `cpu` and whose vertices change every frame (e.g. interactive trails) you can avoid rebuilding the full geometry by calling **`geometry.setPositions( positionsF32 )`**.  
 `positionsF32` must be the same length as the original `lines` array (and ideally the same Float32Array reused each frame).  Only the `position`, `previous` and `next` buffers are updated in-place, so no new GPU buffers are created.
 
 ```js
@@ -168,3 +208,41 @@ requestAnimationFrame( animate );
 ```
 
 When verbose mode is enabled you'll see `[MeshLine] positions updated via setPositions` in the console.
+
+## Methods
+
+### Instance Management
+
+**`addInstanceAttribute(name: string, components: number): InstancedBufferAttribute`**
+
+Creates a new instanced buffer attribute with the specified name and component count. Returns the created `InstancedBufferAttribute` for direct manipulation if needed.
+
+```js
+// Create a 3-component attribute for instance positions
+const offsetAttr = line.addInstanceAttribute('instanceOffset', 3)
+
+// Create a 1-component attribute for instance scale
+const scaleAttr = line.addInstanceAttribute('instanceScale', 1)
+```
+
+**`setInstanceValue(name: string, index: number, value: number | number[]): void`**
+
+Sets the value for a specific instance at the given index. The value can be a single number (for 1-component attributes) or an array of numbers (for multi-component attributes).
+
+```js
+// Set position for instance 0
+line.setInstanceValue('instanceOffset', 0, [1, 2, 3])
+
+// Set scale for instance 0
+line.setInstanceValue('instanceScale', 0, 1.5)
+```
+
+### Other Methods
+
+**`resize(width?: number, height?: number): void`**
+
+Updates the material's resolution uniform. Call this when the canvas size changes to maintain correct line width scaling.
+
+**`dispose(): void`**
+
+Cleans up GPU resources including geometry, material, and instance attributes. Call this when the line is no longer needed.
