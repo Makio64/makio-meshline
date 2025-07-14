@@ -27,8 +27,6 @@ pnpm add makio-meshline # or npm/yarn
 
 MeshLine is published as the **`makio-meshline`** package.  Use your favourite package manager.
 
----
-
 ## Quick Start
 
 ```javascript
@@ -59,16 +57,6 @@ function animate() {
 animate()
 ```
 
----
-
-
-## Contributing
-
-Bug reports, feature requests and PRs are welcome. Please open an issue first to discuss major changes.
-
----
-
-
 ## Thanks
 
 A big thanks to the community, especially to my friend [@Floz](https://x.com/florianzumbrunn) for his constant support, [Samsyyyy](https://x.com/Samsyyyy) for the early tests & feedbacks, to [TheSpite](https://x.com/thespite) for making the first version i knew of MeshLine, to [MrDoob](https://x.com/mrdoob) and [Sunag](https://x.com/sea3dformat) for Three.js and TSL!
@@ -79,10 +67,14 @@ A big thanks to the community, especially to my friend [@Floz](https://x.com/flo
 
 ---
 
+## Contributing
+
+Bug reports, feature requests and PRs are welcome. Please open an issue first to discuss major changes.
+
 ## License
 
 This project is licensed under the [MIT License](./LICENSE) . 
 
 ---
 
-Made with love by [Makio64](https://x.com/makio64)
+Made with ❤️ by [Makio64](https://x.com/makio64)
