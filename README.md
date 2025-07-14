@@ -5,6 +5,8 @@
 
 See it in action with simple examples on [https://meshlines.netlify.app](https://meshlines.netlify.app) and check out the code here : [demo/src/demos](https://github.com/Makio64/Meshline/tree/main/demo/src/demos)
 
+![demo](https://github.com/user-attachments/assets/4f1c7cee-0f8f-4c21-a720-531eb26bf485)
+
 <img width="1661" alt="Screenshot 2025-06-26 at 15 58 30" src="https://github.com/user-attachments/assets/deb1ccd7-46a9-4be0-8f07-280c21aafe81" />
 
 ## [Documentation](https://meshlines-docs.netlify.app)
@@ -16,6 +18,8 @@ Check out the [documentation site](https://meshlines-docs.netlify.app/) for deta
 - [Advanced Patterns](https://meshlines-docs.netlify.app/advanced-patterns.html)
 - [Performance tips](https://meshlines-docs.netlify.app/performance.html)
 - [Helpers functions](https://meshlines-docs.netlify.app/helpers.html)
+
+<img width="1709" height="970" alt="Screenshot 2025-07-14 at 19 45 01" src="https://github.com/user-attachments/assets/0cbe4a1f-b84e-462a-aeeb-3cb190097bf8" />
 
 ## Installation
 
