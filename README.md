@@ -1,15 +1,23 @@
 # Makio MeshLine
 *A modern, performant TSL-powered meshline solution for Three.js*
 
-The concept was to build a performant but easily customizable MeshLine in TSL. 
+The concept was to build a performant but easily customizable MeshLine with TSL for WebGPURenderer, allowing the devs to focus on creativity instead of implementation.  ([read more about it](https://meshlines-docs.netlify.app/why-makio-meshline.html))
 
-Features : gradients, dashes, textures, variable width, percent-based visibility, advanced mitter, nodeHook, etc..
-Note: the MeshLine will upload to the gpu only whats needed to keep performance optimal.
+Features: gradients, dashes, textures, variable width, instancing, gpu control or cpu batching, advanced mitter, tsl Hook, etc..
+
+Performance: the MeshLine will upload to the gpu only whats needed to keep performance optimal, also supporting instancing and gpu movement.
 
 <img width="1661" alt="Screenshot 2025-06-26 at 15 58 30" src="https://github.com/user-attachments/assets/deb1ccd7-46a9-4be0-8f07-280c21aafe81" />
 
-
+## Documentation
 Check out the [documentation site](https://meshlines-docs.netlify.app/) for detailed instructions, API reference, and examples.
+- [Why Makio MeshLine](https://meshlines-docs.netlify.app/why-makio-meshline.html)
+- [Getting started](https://meshlines-docs.netlify.app/why-makio-meshline.html)
+- [API overview](https://meshlines-docs.netlify.app/api.html)
+- [Common Patterns](https://meshlines-docs.netlify.app/common-patterns.html)
+- [Advanced Patterns](https://meshlines-docs.netlify.app/advanced-patterns.html)
+- [Performance tips](https://meshlines-docs.netlify.app/performance.html)
+- [Helpers functions](https://meshlines-docs.netlify.app/helpers.html)
 
 ## Installation
 
@@ -53,20 +61,6 @@ animate()
 
 ---
 
-## Documentation
-
-The full documentation lives in the [`docs/`](./docs) folder and on the hosted site:
-
-▶ **https://meshlines-docs.netlify.app**
-
-You will find:
-
-* Guides & live examples
-* Complete API reference (`MeshLine`, `MeshLineGeometry`, `MeshLineNodeMaterial`)
-* Helper functions (`circlePositions`, `squarePositions`, `sineWavePositions`)
-* Performance tips
-
----
 
 ## Contributing
 
@@ -74,6 +68,21 @@ Bug reports, feature requests and PRs are welcome. Please open an issue first to
 
 ---
 
+
+## Thanks
+
+A big thanks to the community, especially to my friend [@Floz](https://x.com/florianzumbrunn) for his constant support, [Samsyyyy](https://x.com/Samsyyyy) for the early tests & feedbacks, to [TheSpite](https://x.com/thespite) for making the first version i knew of MeshLine, to [MrDoob](https://x.com/mrdoob) and [Sunag](https://x.com/sea3dformat) for Three.js and TSL!
+
+#### Learn more about meshlines : 
+- [Matt DesLauriers](https://github.com/mattdesl)'s [`drawing-lines-is-hard`](https://mattdesl.svbtle.com/drawing-lines-is-hard)
+- [Nathan Gordon](https://x.com/gordonnl)'s [`crafting-stylised-mouse-trails-with-ogl`](https://tympanus.net/codrops/2019/09/24/crafting-stylised-mouse-trails-with-ogl/)
+
+---
+
 ## License
 
 This project is licensed under the [MIT License](./LICENSE) . 
+
+---
+
+Made with love by [Makio64](https://x.com/makio64)

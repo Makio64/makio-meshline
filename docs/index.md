@@ -8,7 +8,7 @@ hero:
   actions:
     - theme: brand
       text: What is Makio-Meshline
-      link: /what-is
+      link: /why-makio-meshline
     - theme: alt
       text: Quickstart
       link: /guide
