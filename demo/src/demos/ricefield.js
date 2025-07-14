@@ -21,8 +21,10 @@ class RicefieldExample {
 	async init() {
 		await stage3d.initRender()
 		stage3d.control = new OrbitControl( stage3d.camera, 20 )
-		stage3d.camera.position.set( 0, 5, 15 )
-		stage3d.camera.lookAt( 0, 0, 0 )
+		stage3d.control._phi = 0.9
+		stage3d.control._theta = 0.5
+		stage3d.control.maxRadius = 40
+		stage3d.control.minRadius = 10
 		this.initScene()
 		window.addEventListener( 'resize', this.onResize )
 		stage.onUpdate.add( this.update )

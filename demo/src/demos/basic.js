@@ -21,7 +21,8 @@ class BasicExample {
 
 	async init() {
 		await stage3d.initRender()
-		stage3d.control = new OrbitControl( stage3d.camera, 13 )
+		stage3d.control = new OrbitControl( stage3d.camera, 20 )
+		stage3d.control.blockZoom = true
 		this.initCSSRenderer()
 		this.initScene()
 	}

@@ -11,6 +11,8 @@ class InstancedGpuExample {
 	async init() {
 		await stage3d.initRender()
 		stage3d.control = new OrbitControl( stage3d.camera, 30 )
+		stage3d.control.maxRadius = 60
+		stage3d.control.minRadius = 30
 		this.initScene()
 		window.addEventListener( 'resize', this.onResize )
 	}
