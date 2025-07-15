@@ -251,7 +251,7 @@ export default class OrbitControl {
 	}
 
 	disable() {
-		console.log( 'disable' )
+		// console.log( 'disable' )
 		this._pinch.disable()
 		this.interactionTarget.removeEventListener( 'pointerdown', this._onDown )
 		this.interactionTarget.removeEventListener( 'pointerup', this._onUp )
