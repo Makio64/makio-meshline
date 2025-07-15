@@ -60,6 +60,9 @@ export default class MeshLine extends Mesh {
 	lines( lines, isClose = this._options.isClose ) {
 		this._options.lines = lines
 		this._options.isClose = isClose
+		if ( this._built ) {
+			this.geometry.setPositions( lines, false )
+		}
 		return this
 	}
 
@@ -75,11 +78,17 @@ export default class MeshLine extends Mesh {
 
 	color( color ) {
 		this._options.color = color
+		if ( this.material.color ) {
+			this.material.color.value.set( color )
+		}
 		return this
 	}
 
 	lineWidth( lineWidth ) {
 		this._options.lineWidth = lineWidth
+		if ( this.material.lineWidth ) {
+			this.material.lineWidth.value = lineWidth
+		}
 		return this
 	}
 
@@ -95,21 +104,29 @@ export default class MeshLine extends Mesh {
 
 	opacity( opacity ) {
 		this._options.opacity = opacity
+		if ( this.material.opacity ) {
+			if ( typeof opacity === 'number' ) {
+				this.uOpacity.value = opacity
+			}
+		}
 		return this
 	}
 
 	alphaTest( alphaTest ) {
 		this._options.alphaTest = alphaTest
+		this.material.alphaTest = alphaTest
 		return this
 	}
 
 	transparent( transparent ) {
 		this._options.transparent = transparent
+		this.material.transparent = transparent
 		return this
 	}
 
 	wireframe( wireframe ) {
 		this._options.wireframe = wireframe
+		this.material.wireframe = wireframe
 		return this
 	}
 
@@ -121,26 +138,41 @@ export default class MeshLine extends Mesh {
 
 	miterLimit( miterLimit ) {
 		this._options.miterLimit = miterLimit
+		if ( this.material.miterLimit ) {
+			this.material.miterLimit.value = miterLimit
+		}
 		return this
 	}
 
 	gradientColor( gradientColor ) {
 		this._options.gradientColor = gradientColor
+		if ( this.material.gradient ) {
+			this.material.gradient.value.set( gradientColor )
+		}
 		return this
 	}
 
 	map( map ) {
 		this._options.map = map
+		if ( this.material.map ) {
+			this.material.map.value = map
+		}
 		return this
 	}
 
 	mapOffset( mapOffset ) {
 		this._options.mapOffset = mapOffset
+		if ( this.material.mapOffset ) {
+			this.material.mapOffset.value.copy( mapOffset )
+		}
 		return this
 	}
 
 	alphaMap( alphaMap ) {
 		this._options.alphaMap = alphaMap
+		if ( this.material.alphaMap ) {
+			this.material.alphaMap = alphaMap
+		}
 		return this
 	}
 
@@ -148,11 +180,21 @@ export default class MeshLine extends Mesh {
 		this._options.dashCount = dashCount
 		this._options.dashRatio = dashRatio
 		this._options.dashOffset = dashOffset
+		if ( this._built ) {
+			if ( this.material.dashCount ) {
+				this.material.dashCount.value = dashCount
+				this.material.dashRatio.value = dashRatio
+				this.material.dashOffset.value = dashOffset
+			}
+		}
 		return this
 	}
 
 	dpr( dpr ) {
 		this._options.dpr = dpr
+		if ( this.material.dpr ) {
+			this.material.dpr.value = dpr
+		}
 		return this
 	}
 
@@ -184,103 +226,140 @@ export default class MeshLine extends Mesh {
 
 	instances( instanceCount ) {
 		this._options.instanceCount = instanceCount
+		if ( this._built ) {
+			console.warn( "MeshLine: Changing instance count after build is not supported yet." )
+		}
 		return this
 	}
 
 	// Optional attribute toggles
 	needsUV( needsUV ) {
 		this._options.needsUV = needsUV
+		if ( this._built ) {
+			console.warn( "MeshLine: Changing UV needs after build is not supported yet." )
+		}
 		return this
 	}
 	needsWidth( needsWidth ) {
 		this._options.needsWidth = needsWidth
+		if ( this._built ) {
+			console.warn( "MeshLine: Changing width needs after build is not supported yet." )
+		}
 		return this
 	}
 	needsCounter( needsCounter ) {
 		this._options.needsCounter = needsCounter
+		if ( this._built ) {
+			console.warn( "MeshLine: Changing counter needs after build is not supported yet." )
+		}
 		return this
 	}
 	needsPrevious( needsPrevious ) {
 		this._options.needsPrevious = needsPrevious
+		if ( this._built ) {
+			console.warn( "MeshLine: Changing previous needs after build is not supported yet." )
+		}
 		return this
 	}
 	needsNext( needsNext ) {
 		this._options.needsNext = needsNext
+		if ( this._built ) {
+			console.warn( "MeshLine: Changing previous needs after build is not supported yet." )
+		}
 		return this
 	}
 	needsSide( needsSide ) {
 		this._options.needsSide = needsSide
+		if ( this._built ) {
+			console.warn( "MeshLine: Changing previous needs after build is not supported yet." )
+		}
 		return this
 	}
 
 	// Chainable methods for node hooks
 	positionFn( fn ) {
 		this._options.positionFn = fn
+		if ( this._built ) {
+			console.warn( "MeshLine: Changing position function after build is not supported yet." )
+		}
 		return this
 	}
 
 	previousFn( fn ) {
 		this._options.previousFn = fn
+		this._built = false
 		return this
 	}
 
 	nextFn( fn ) {
 		this._options.nextFn = fn
+		this._built = false
 		return this
 	}
 
 	widthFn( fn ) {
 		this._options.widthFn = fn
+		this._built = false
 		return this
 	}
 
 	normalFn( fn ) {
 		this._options.normalFn = fn
+		this._built = false
 		return this
 	}
 
 	colorFn( fn ) {
 		this._options.colorFn = fn
+		this._built = false
 		return this
 	}
 
 	gradientFn( fn ) {
 		this._options.gradientFn = fn
+		this._built = false
 		return this
 	}
 
 	opacityFn( fn ) {
 		this._options.opacityFn = fn
+		this._built = false
 		return this
 	}
 
 	dashFn( fn ) {
 		this._options.dashFn = fn
+		this._built = false
 		return this
 	}
 
 	uvFn( fn ) {
 		this._options.uvFn = fn
+		this._built = false
 		return this
 	}
 
 	vertexFn( fn ) {
 		this._options.vertexFn = fn
+		this._built = false
 		return this
 	}
 
 	fragmentColorFn( fn ) {
 		this._options.fragmentColorFn = fn
+		this._built = false
 		return this
 	}
 
 	fragmentAlphaFn( fn ) {
 		this._options.fragmentAlphaFn = fn
+		this._built = false
 		return this
 	}
 
 	discardFn( fn ) {
 		this._options.discardFn = fn
+		this._built = false
 		return this
 	}
 

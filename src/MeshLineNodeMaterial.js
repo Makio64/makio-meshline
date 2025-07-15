@@ -92,6 +92,8 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 		this.fragmentColorFn = options.fragmentColorFn ?? null
 		this.fragmentAlphaFn = options.fragmentAlphaFn ?? null
 		this.discardFn = options.discardFn ?? null
+
+		this.needsUpdate = true
 	}
 
 	dispose() {
