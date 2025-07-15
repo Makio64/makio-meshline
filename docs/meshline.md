@@ -8,7 +8,101 @@ The `MeshLine` class is the main interface for creating performant, customizable
 new MeshLine(options?: MeshLineOptions)
 ```
 
-`MeshLine` takes a **single** options object.  The line positions are provided via the `lines` field in this object.
+`MeshLine` supports both options object configuration and a fluent API with chainable methods for easy configuration.
+
+## Fluent API
+
+MeshLine supports a fluent interface with chainable methods that return the instance for easy configuration:
+
+```js
+const line = new MeshLine()
+	.lines(positions)
+	.color(0xff0000)
+	.gradientColor(0x0000ff)
+	.lineWidth(2)
+	.opacity(0.8)
+```
+
+### Configuration Methods
+
+All methods return the `MeshLine` instance for chaining:
+
+**Geometry Configuration:**
+- `lines(lines: Float32Array | number[][], isClose?: boolean | boolean[])` - Set line(s) positions and optional close flag
+- `segments(segments: number)` - Set number of segments for auto-generated lines
+- `isClose(isClose: boolean | boolean[])` - Set whether to close the line loop
+
+**Appearance:**
+- `color(color: number | THREE.Color)` - Set line color
+- `lineWidth(lineWidth: number)` - Set line width
+- `widthCallback(callback: (t: number) => number)` - Set variable width function
+- `sizeAttenuation(enable: boolean)` - Enable/disable size attenuation
+- `gradientColor(color: number | THREE.Color)` - Set gradient end color
+- `opacity(opacity: number)` - Set opacity level
+
+**Material Properties:**
+- `alphaTest(threshold: number)` - Set alpha test threshold
+- `transparent(enable: boolean)` - Enable/disable transparency, enable by default if opacity != 1 or alphaMap
+- `wireframe(enable: boolean)` - Enable/disable wireframe mode
+
+**Textures:**
+- `map(texture: THREE.Texture)` - Set diffuse texture
+- `alphaMap(texture: THREE.Texture)` - Set alpha mask texture
+- `mapOffset(offset: THREE.Vector2)` - Set texture UV offset
+
+**Dashes:**
+- `dashes(count: number, ratio?: number, offset?: number)` - Configure dash pattern
+
+**Advanced:**
+
+- `useMiterLimit(enable: boolean, limit?: number)` - Enable miter limit with optional limit value
+- `miterLimit(limit: number)` - Set miter limit value
+- `dpr(ratio: number)` - Set device pixel ratio
+- `frustumCulled(enable: boolean)` - Enable/disable frustum culling & geometry BoundingBox/boundingSphere creation
+- `verbose(enable: boolean)` - Enable/disable verbose logging
+- `renderSize(width: number, height: number)` - Set render resolution
+- `gpuPositionNode(node: Fn)` - Set GPU position calculation node
+- `usage(usage: THREE.Usage)` - Set buffer usage hint for position/next/prev (if they exist)
+- `instances(count: number)` - Enable instancing with specified count
+
+**Hook Functions:**
+
+The hook are used in the TSL Nodes in MeshLineNodeMaterial
+
+- `positionFn(fn: Fn)` - Set position modification hook
+- `previousFn(fn: Fn)` - Set previous position hook
+- `nextFn(fn: Fn)` - Set next position hook
+- `widthFn(fn: Fn)` - Set width modification hook
+- `normalFn(fn: Fn)` - Set normal modification hook
+- `colorFn(fn: Fn)` - Set color modification hook
+- `gradientFn(fn: Fn)` - Set gradient modification hook
+- `opacityFn(fn: Fn)` - Set opacity modification hook
+- `dashFn(fn: Fn)` - Set dash modification hook
+- `uvFn(fn: Fn)` - Set UV modification hook
+- `vertexFn(fn: Fn)` - Set vertex modification hook
+- `fragmentColorFn(fn: Fn)` - Set fragment color modification hook
+- `fragmentAlphaFn(fn: Fn)` - Set fragment alpha modification hook
+- `discardFn(fn: Fn)` - Set fragment discard condition hook
+
+**Attribute Control:**
+
+These controls give you control on which attributes are added to the geometry.
+
+- `needsUV(enable: boolean)` - Control UV attribute generation
+- `needsWidth(enable: boolean)` - Control width attribute generation
+- `needsCounter(enable: boolean)` - Control counter attribute generation
+- `needsPrevious(enable: boolean)` - Control previous position attribute generation
+- `needsNext(enable: boolean)` - Control next position attribute generation
+- `needsSide(enable: boolean)` - Control side attribute generation
+
+**Building:**
+- `build()` - Finalize configuration and build the line (returns the instance).
+
+> **Note:** Call `build()` to finalize the configuration & build the geometry and tsl nodes, or the line will auto-build on first render ( during `onBeforeRender`).
+
+## Options Object Configuration
+
+Alternatively, you can use the traditional options object approach:
 
 ### Quick signature
 
@@ -35,10 +129,6 @@ interface MeshLineOptions {
   dashRatio?: number | null
   dashOffset?: number
 
-  // ***Visibility***
-  usePercent?: boolean                       // Enable percents
-  percent?: number                           // Start percentage (0-1)
-  percent2?: number                          // End   percentage (0-1)
 
   // ***Rendering flags***
   opacity?: number
@@ -121,14 +211,6 @@ interface MeshLineOptions {
 - **`dashRatio`** (`number | null`) — Ratio of dash length to gap length (0 to 1). For example, `0.5` creates equal dash and gap lengths, `0.7` creates longer dashes with shorter gaps. Only works when `dashCount` is set. Default: `null`.
 
 - **`dashOffset`** (`number`) — Offset into the dash cycle pattern. Animate this value to create moving dash effects. Default: `0`.
-
-### Visibility
-
-- **`usePercent`** (`boolean`) — Enables percent-based visibility uniforms. When `true`, creates `percent` and `percent2` uniforms for line reveal animations. If `percent` or `percent2` are not provided, they default to `1`. Default: `false`.
-
-- **`percent`** (`number`) — Start visibility percentage (0 to 1). The `percent` and `percent2` uniforms are only created if `usePercent` is `true`, or if both `percent` and `percent2` values are provided. If created, the default value for the uniform is `1`.
-
-- **`percent2`** (`number`) — End visibility percentage (0 to 1). The `percent` and `percent2` uniforms are only created if `usePercent` is `true`, or if both `percent` and `percent2` values are provided. If created, the default value for the uniform is `1`.
 
 ### Rendering Flags
 
