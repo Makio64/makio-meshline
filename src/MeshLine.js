@@ -78,9 +78,6 @@ export default class MeshLine extends Mesh {
 
 	color( color ) {
 		this._options.color = color
-		if ( this.material.color ) {
-			this.material.color.value.set( color )
-		}
 		return this
 	}
 
@@ -105,7 +102,7 @@ export default class MeshLine extends Mesh {
 	opacity( opacity ) {
 		this._options.opacity = opacity
 		if ( this.material.opacity ) {
-			if ( typeof opacity === 'number' ) {
+			if ( this.uOpacity && typeof opacity === 'number' ) {
 				this.uOpacity.value = opacity
 			}
 		}
@@ -147,7 +144,7 @@ export default class MeshLine extends Mesh {
 	gradientColor( gradientColor ) {
 		this._options.gradientColor = gradientColor
 		if ( this.material.gradient ) {
-			this.material.gradient.value.set( gradientColor )
+			this.material.gradient.value = gradientColor
 		}
 		return this
 	}
