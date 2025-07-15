@@ -40,15 +40,14 @@ class StressExample {
 		// Dummy positions array - length determines vertex count
 		const positions = new Float32Array( segments * 3 )
 
-		this.line = new MeshLine( {
-			lines: positions,
-			isClose: false,
-			gpuPositionNode: positionNode,
-			lineWidth: 0.2,
-			gradientColor: 0x0000ff,
-			color: 0xffffff,
-			verbose: true,
-		} )
+		this.line = new MeshLine()
+			.lines( positions, false )
+			.gpuPositionNode( positionNode )
+			.lineWidth( 0.2 )
+			.gradientColor( 0x0000ff )
+			.color( 0xffffff )
+			.verbose( true )
+
 		stage3d.add( this.line )
 	}
 

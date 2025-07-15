@@ -6,6 +6,7 @@ import OrbitControl from '@/makio/three/controls/OrbitControl'
 import stage3d from '@/makio/three/stage3d'
 import { stage } from '@/makio/core/stage'
 import { MeshLine, circlePositions } from 'meshline'
+import { step, uv, uniform, Fn } from 'three/tsl'
 
 class BasicExample {
 	constructor() {
@@ -97,10 +98,6 @@ class BasicExample {
 		const positions = circlePositions( 64 )
 		const gridSize = 4 // 4x4 grid
 		const spacing = 4.5
-		const defaultConfig = {
-			usePercent: true,
-			verbose: true
-		}
 
 		for ( let i = 0; i < configs.length; i++ ) {
 			const config = configs[i]
@@ -108,7 +105,32 @@ class BasicExample {
 			const col = i % gridSize
 
 			// Create line with inverted Y (so Basic is top-left)
-			const line = new MeshLine( { ...defaultConfig, ...config, lines: positions } )
+
+
+			const line = new MeshLine()
+				.lines( positions, config.isClose )
+				.color( config.color )
+				.lineWidth( config.lineWidth ?? 0.3 )
+				.wireframe( config.wireframe ?? false )
+				.verbose( true )
+				.needsUV( true )
+
+			// options setters 
+			if ( config.useDash ) { line.dashes( config.dashCount, config.dashRatio ) }
+			if ( config.gradientColor ) { line.gradientColor( config.gradientColor ) }
+			if ( config.useMap ) { line.map( config.map ) }
+			if ( config.opacity ) { line.opacity( config.opacity ) }
+			if ( config.useAlphaMap ) { line.alphaMap( config.alphaMap ) }
+			if ( 'sizeAttenuation' in config ) { line.sizeAttenuation( config.sizeAttenuation ) }
+
+			// for making the line appear / disapear
+			line.percent1 = uniform( 0 )
+			line.percent2 = uniform( 1 )
+
+			line.discardFn( Fn( () => {
+				return step( uv().x, line.percent1 ).mul( step( uv().x.oneMinus(), line.percent2 ) ).lessThan( 0.00001 )
+			} ) )
+
 			line.position.x = ( col - gridSize / 2 + 0.5 ) * spacing
 			line.position.y = -( row - gridSize / 2 + 0.5 ) * spacing  // Inverted Y
 			line.position.z = 0
@@ -179,9 +201,9 @@ class BasicExample {
 	show() {
 		this.lines.forEach( ( line, i ) => {
 			// Animate lines in, perhaps with a stagger
-			line.percent.value = -0.01
+			line.percent1.value = -0.01
 			line.percent2.value = 1.01
-			animate( line.percent, { duration: 1, value: 1.01, delay: i * 0.05, ease: 'easeOut' } )
+			animate( line.percent1, { duration: 1, value: 1.01, delay: i * 0.05, ease: 'easeOut' } )
 			animate( line.percent2, { duration: 1, value: -0.01, delay: 3 + i * 0.05, ease: 'easeOut', onComplete: () => { if ( i === this.lines.length - 1 ) this.show() } } )
 		} )
 	}

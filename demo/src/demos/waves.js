@@ -32,16 +32,12 @@ class WavesExample {
 			this.lines.dispose()
 		}
 
-		// Create a single Line object using setLines for all waves
-		const options = {
-			lines: this.createWaveLines(),
-			lineWidth: 0.5,
-			isClose: false,
-			gradientColor: 0xff0000,
-			verbose: true
-		}
+		this.lines = new MeshLine()
+			.lines( this.createWaveLines(), false )
+			.lineWidth( 0.5 )
+			.gradientColor( 0xff0000 )
+			.verbose( true )
 
-		this.lines = new MeshLine( options )
 		stage3d.add( this.lines )
 
 		stage.onUpdate.add( this.update )
@@ -81,7 +77,7 @@ class WavesExample {
 		const animatedLines = this.createWaveLines( this.time )
 		
 		// Use setPositions to update all lines efficiently
-		this.lines.geometry.setPositions( animatedLines, false )
+		this.lines.setPositions( animatedLines )
 	}
 
 	onResize = () => {

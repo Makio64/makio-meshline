@@ -31,20 +31,18 @@ class FollowExample {
 	}
 
 	initLine() {
-		const lineOptions = {
-			lines: this._pointsToFloat32( this.positionsF32 ),
-			lineWidth: 0.01,
-			isClose: false,
-			gradientColor: 0x00ff00,
-			widthCallback: ( t ) => {
+		this.line = new MeshLine()
+			.lines( this.updatePosition( this.positionsF32 ), false )
+			.lineWidth( 0.01 )
+			.gradientColor( 0x00ff00 )
+			.widthCallback( ( t ) => {
 				const edge = 0.1
 				if ( t < edge ) return MathUtils.lerp( 0.1, 1, t / edge )
 				if ( t > 1 - edge ) return MathUtils.lerp( 0.1, 1, ( 1 - t ) / edge )
 				return 1 // full width in the middle
-			},
-			verbose: true
-		}
-		this.line = new MeshLine( lineOptions )
+			} )
+			.verbose( true )
+
 		stage3d.add( this.line )
 	}
 
@@ -62,7 +60,7 @@ class FollowExample {
 
 		
 		// Efficiently update positions without rebuilding attributes
-		this.line.geometry.setPositions( this._pointsToFloat32( this.positionsF32 ) )
+		this.line.setPositions( this.updatePosition( this.positionsF32 ) )
 
 		// ------------------------------------------------ width based on mouse speed
 		const speed = this.target.distanceTo( this.prevTarget ) / ( dt / 16 || 1 )
@@ -74,7 +72,7 @@ class FollowExample {
 	}
 
 	// -------------------------------------------------- HELPERS
-	_pointsToFloat32( arr ) {
+	updatePosition( arr ) {
 		for ( let i = 0; i < NUM_POINTS; i++ ) {
 			const p = this.points[i]
 			arr[i * 3] = p.x

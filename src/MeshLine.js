@@ -7,12 +7,11 @@ import { straightLine } from "./positions/straightLine"
 const defaultPositions = straightLine( 2 )
 export default class MeshLine extends Mesh {
 
-	constructor( options = {} ) {
+	constructor() {
+		
+		super( new MeshLineGeometry(), new MeshLineNodeMaterial() )
 
-		let lines = options.lines || options.segments ? straightLine( options.segments ) : defaultPositions
-		// Merge options with defaults
-		options = { 
-			lines: lines,
+		this._options = {
 			segments: 1,
 			isClose: false,
 			
@@ -34,19 +33,9 @@ export default class MeshLine extends Mesh {
 			dashCount: null,
 			dashRatio: null,
 			dashOffset: 0,
-			
-			usePercent: false,
 
 			// device pixel ratio scaling for screen-space width
 			dpr: ( window.devicePixelRatio || 1 ),
-
-			// What attributes are needed for the shader
-			needsWidth: options.widthCallback ? true : false,
-			needsUV: options.map || options.alphaMap || options.usePercent || options.percent !== undefined || options.percent2 !== undefined ? true : false,
-			needsCounter: true,
-			needsPrevious: options.gpuPositionNode ? false : true,
-			needsNext: options.gpuPositionNode ? false : true,
-			needsSide: true,
 
 			frustumCulled: true,
 
@@ -62,17 +51,258 @@ export default class MeshLine extends Mesh {
 
 			// Instancing options
 			instanceCount: -1,
-
-			...options
 		}
+		this._built = false
+		this.onBeforeRender = this._onBeforeRender
+	}
 
-		const geometry = new MeshLineGeometry( options )
+	// Chainable setters
+	lines( lines, isClose = this._options.isClose ) {
+		this._options.lines = lines
+		this._options.isClose = isClose
+		return this
+	}
 
-		let material = new MeshLineNodeMaterial( {
-			...options,
-		} )
+	segments( segments ) {
+		this._options.segments = segments
+		return this
+	}
 
-		super( geometry, material )
+	isClose( isClose ) {
+		this._options.isClose = isClose
+		return this
+	}
+
+	color( color ) {
+		this._options.color = color
+		return this
+	}
+
+	lineWidth( lineWidth ) {
+		this._options.lineWidth = lineWidth
+		return this
+	}
+
+	widthCallback( widthCallback ) {
+		this._options.widthCallback = widthCallback
+		return this
+	}
+
+	sizeAttenuation( sizeAttenuation ) {
+		this._options.sizeAttenuation = sizeAttenuation
+		return this
+	}
+
+	opacity( opacity ) {
+		this._options.opacity = opacity
+		return this
+	}
+
+	alphaTest( alphaTest ) {
+		this._options.alphaTest = alphaTest
+		return this
+	}
+
+	transparent( transparent ) {
+		this._options.transparent = transparent
+		return this
+	}
+
+	wireframe( wireframe ) {
+		this._options.wireframe = wireframe
+		return this
+	}
+
+	useMiterLimit( useMiterLimit, miterLimit = 4 ) {
+		this._options.useMiterLimit = useMiterLimit
+		this._options.miterLimit = miterLimit
+		return this
+	}
+
+	miterLimit( miterLimit ) {
+		this._options.miterLimit = miterLimit
+		return this
+	}
+
+	gradientColor( gradientColor ) {
+		this._options.gradientColor = gradientColor
+		return this
+	}
+
+	map( map ) {
+		this._options.map = map
+		return this
+	}
+
+	mapOffset( mapOffset ) {
+		this._options.mapOffset = mapOffset
+		return this
+	}
+
+	alphaMap( alphaMap ) {
+		this._options.alphaMap = alphaMap
+		return this
+	}
+
+	dashes( dashCount, dashRatio = 0.5, dashOffset = 0 ) {
+		this._options.dashCount = dashCount
+		this._options.dashRatio = dashRatio
+		this._options.dashOffset = dashOffset
+		return this
+	}
+
+	dpr( dpr ) {
+		this._options.dpr = dpr
+		return this
+	}
+
+	frustumCulled( frustumCulled ) {
+		this._options.frustumCulled = frustumCulled
+		return this
+	}
+
+	verbose( verbose ) {
+		this._options.verbose = verbose
+		return this
+	}
+
+	renderSize( width, height ) {
+		this._options.renderWidth = width
+		this._options.renderHeight = height
+		return this
+	}
+
+	gpuPositionNode( gpuPositionNode ) {
+		this._options.gpuPositionNode = gpuPositionNode
+		return this
+	}
+
+	usage( usage ) {
+		this._options.usage = usage
+		return this
+	}
+
+	instances( instanceCount ) {
+		this._options.instanceCount = instanceCount
+		return this
+	}
+
+	// Optional attribute toggles
+	needsUV( needsUV ) {
+		this._options.needsUV = needsUV
+		return this
+	}
+	needsWidth( needsWidth ) {
+		this._options.needsWidth = needsWidth
+		return this
+	}
+	needsCounter( needsCounter ) {
+		this._options.needsCounter = needsCounter
+		return this
+	}
+	needsPrevious( needsPrevious ) {
+		this._options.needsPrevious = needsPrevious
+		return this
+	}
+	needsNext( needsNext ) {
+		this._options.needsNext = needsNext
+		return this
+	}
+	needsSide( needsSide ) {
+		this._options.needsSide = needsSide
+		return this
+	}
+
+	// Chainable methods for node hooks
+	positionFn( fn ) {
+		this._options.positionFn = fn
+		return this
+	}
+
+	previousFn( fn ) {
+		this._options.previousFn = fn
+		return this
+	}
+
+	nextFn( fn ) {
+		this._options.nextFn = fn
+		return this
+	}
+
+	widthFn( fn ) {
+		this._options.widthFn = fn
+		return this
+	}
+
+	normalFn( fn ) {
+		this._options.normalFn = fn
+		return this
+	}
+
+	colorFn( fn ) {
+		this._options.colorFn = fn
+		return this
+	}
+
+	gradientFn( fn ) {
+		this._options.gradientFn = fn
+		return this
+	}
+
+	opacityFn( fn ) {
+		this._options.opacityFn = fn
+		return this
+	}
+
+	dashFn( fn ) {
+		this._options.dashFn = fn
+		return this
+	}
+
+	uvFn( fn ) {
+		this._options.uvFn = fn
+		return this
+	}
+
+	vertexFn( fn ) {
+		this._options.vertexFn = fn
+		return this
+	}
+
+	fragmentColorFn( fn ) {
+		this._options.fragmentColorFn = fn
+		return this
+	}
+
+	fragmentAlphaFn( fn ) {
+		this._options.fragmentAlphaFn = fn
+		return this
+	}
+
+	discardFn( fn ) {
+		this._options.discardFn = fn
+		return this
+	}
+
+	build() {
+		let options = { ...this._options }
+
+		let lines = options.lines ?? ( options.segments ? straightLine( options.segments ) : defaultPositions )
+
+		options.lines = lines
+
+		// Computed needs
+		options.needsWidth = options.widthCallback ?? true
+		options.needsCounter = options.needsCounter ?? true
+		options.needsSide = options.needsSide ?? true
+		options.needsUV = options.needsUV ?? ( options.map || options.alphaMap )
+
+		// If using GPU position node, we don't need previous/next positions
+		options.needsPrevious = options.needsPrevious ?? options.gpuPositionNode ? false : true
+		options.needsNext = options.needsNext ?? options.gpuPositionNode ? false : true
+
+		this.geometry.buildLine( options )
+		this.material.buildLine( options )
 
 		if ( options.instanceCount != -1 ) {
 			this.count = options.instanceCount
@@ -80,32 +310,34 @@ export default class MeshLine extends Mesh {
 
 		this.frustumCulled = options.frustumCulled
 
-		if ( ( options.percent !== undefined && options.percent2 !== undefined ) || options.usePercent ) {
-			this.percent = uniform( options.percent ?? 1 )
-			this.percent2 = uniform( options.percent2 ?? 1 )
-		}
-
 		if ( options.opacity ) {
 			if ( options.opacity.isNode ) {
-				this.opacity = options.opacity
-			}
-			else if ( typeof options.opacity === 'number' ) {
-				this.opacity = uniform( options.opacity )
+				this.uOpacity = options.opacity
+			} else if ( typeof options.opacity === 'number' ) {
+				this.uOpacity = uniform( options.opacity )
 			}
 		} else {
-			this.opacity = uniform( 1 )
-		}
-
-		if ( this.percent !== undefined && this.percent2 !== undefined ) {
-			material.discardConditionNode = Fn( () => {
-				return step( uv().x, this.percent ).mul( step( uv().x.oneMinus(), this.percent2 ) ).mul( this.opacity ).lessThan( 0.00001 )
-			} )()
+			this.uOpacity = uniform( 1 )
 		}
 
 		this.resize( options.renderWidth, options.renderHeight )
+
+		this._built = true
+
+		return this
+	}
+
+	_onBeforeRender() {
+		if ( !this._built ) this.build()
+	}
+
+	setPositions( positions ) {
+		if ( !this._built ) this.build()
+		this.geometry.setPositions( positions )
 	}
 
 	addInstanceAttribute( name, components = 1 ) {
+		if ( !this._built ) this.build()
 		const array = new Float32Array( this.count * components )
 		const attribute = new InstancedBufferAttribute( array, components )
 		this.geometry.setAttribute( name, attribute )
@@ -125,12 +357,6 @@ export default class MeshLine extends Mesh {
 		attribute.needsUpdate = true
 	}
 
-	setGeometry( geometry, culling = true ) {
-		this.geometry = geometry
-		this.frustumCulled = culling
-		this.geometry.computeBoundingSphere()
-	}
-
 	resize( width = window.innerWidth, height = window.innerHeight ) {
 		if ( this.material && this.material.resolution ) {
 			this.material.resolution.value.set( width, height )
@@ -143,5 +369,6 @@ export default class MeshLine extends Mesh {
 		this.material?.dispose()
 		if ( this.instanceMatrix ) this.instanceMatrix.dispose()
 		if ( this.instanceColor ) this.instanceColor.dispose()
+		this._built = false
 	}
 }

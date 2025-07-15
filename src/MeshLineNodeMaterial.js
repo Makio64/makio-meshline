@@ -1,4 +1,4 @@
-import { NodeMaterial, Color, Vector2, MeshBasicNodeMaterial } from 'three/webgpu'
+import { Color, Vector2, MeshBasicNodeMaterial } from 'three/webgpu'
 import { float, vec4, vec2, Fn, uniform, uv, modelViewMatrix, normalize, positionGeometry, cameraProjectionMatrix, attribute, varyingProperty, Discard, step, mix, texture, mod, abs, max, dot, clamp, smoothstep, sin, cos } from 'three/tsl'
 
 const fix = Fn( ( [i_immutable, aspect_immutable] ) => {
@@ -14,11 +14,16 @@ const fix = Fn( ( [i_immutable, aspect_immutable] ) => {
 
 class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 
-	constructor( options = {} ) {
+	constructor() {
 		super()
+		this.type = 'MeshLineNodeMaterial'
+		this.isMeshLineNodeMaterial = true
+	}
+
+	buildLine( options = {} ) {
 
 		this.options = options
-
+		
 		// classic properties
 		this.depthWrite = options.depthWrite ?? true
 		this.depthTest = options.depthTest ?? true
@@ -153,9 +158,7 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 			}
 
 			const aspect = this.resolution.x.div( this.resolution.y ).toVar( 'aspect' )
-
 			const mvpMatrix = cameraProjectionMatrix.mul( modelViewMatrix ).toVar( 'mvpMatrix' )
-
 			const finalPosition = mvpMatrix.mul( vec4( pos, 1.0 ) ).toVar( 'finalPosition' )
 			const prevPos = mvpMatrix.mul( vec4( previous, 1.0 ) ).toVar( 'prevPos' )
 			const nextPos = mvpMatrix.mul( vec4( next, 1.0 ) ).toVar( 'nextPos' )

@@ -1,10 +1,13 @@
 import { BufferAttribute, BufferGeometry, Vector2, Vector3, Box3, Sphere, StreamDrawUsage, StaticDrawUsage } from 'three/webgpu'
 
 export class MeshLineGeometry extends BufferGeometry {
-	constructor( options = {} ) {
+	constructor() {
 		super()
 		this.type = 'MeshLine'
 		this.isMeshLine = true
+	}
+
+	buildLine( options ) {
 
 		this.options = {
 			needsPositions: true,
@@ -395,12 +398,14 @@ export class MeshLineGeometry extends BufferGeometry {
 	}
 
 	computeBoundingBoxes() {
+		if ( !this._lines || this._lines.length === 0 ) return
 		this.boundingBoxes = this._lines.map( ( line, idx ) =>
 			( this.boundingBoxes[idx] || new Box3() ).setFromArray( line )
 		)
 	}
 	
 	computeBoundingBox() {
+		if ( !this.boundingBoxes || this.boundingBoxes.length === 0 ) return
 		if ( !this.boundingBox ) this.boundingBox = new Box3()
 		if ( !this.boundingBoxes.length ) {
 			this.boundingBox?.makeEmpty()
@@ -415,7 +420,7 @@ export class MeshLineGeometry extends BufferGeometry {
 	computeBoundingSphere() {
 		if ( !this.boundingBox ) this.computeBoundingBox()
 		if ( !this.boundingSphere ) this.boundingSphere = new Sphere()
-		this.boundingBox.getBoundingSphere( this.boundingSphere )
+		this.boundingBox?.getBoundingSphere( this.boundingSphere )
 	}
 
 	// release GPU resources and attributes

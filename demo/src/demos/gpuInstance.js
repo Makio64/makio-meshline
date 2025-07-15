@@ -34,19 +34,18 @@ class InstancedGpuExample {
 			return vec3( cos( angle ), sin( angle ), 0 ).mul( radius ).add( offset ) 
 		} )
 
-		this.line = new MeshLine( {
-			instanceCount, // Number of instances
-			segments, // Segments per line
-			gpuPositionNode, // Custom GPU position node
-			lineWidth: 0.2, // Width of the line
-			color: 0xffffff, // Basic color of the line
-			verbose: true, // Enable verbose logging
-			colorFn: Fn( ( [counters] ) => {
+		this.line = new MeshLine()
+			.instances( instanceCount )
+			.segments( segments )
+			.lineWidth( 0.2 )
+			.color( 0xffffff )
+			.verbose( true )
+			.gpuPositionNode( gpuPositionNode )
+			.colorFn( Fn( ( [counters] ) => {
 				const col = float( instanceIndex ).mod( 10 )
 				const row = float( instanceIndex ).div( 10 )
 				return vec3( col.div( 9 ), row.div( 9 ), ( col.add( row ) ).div( 18 ).oneMinus() )
-			} )
-		} )
+			} ) )
 
 		// Add custom instance attributes
 		this.line.addInstanceAttribute( 'instanceOffset', 3 )

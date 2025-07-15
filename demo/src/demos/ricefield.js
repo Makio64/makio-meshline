@@ -27,7 +27,6 @@ class RicefieldExample {
 		stage3d.control.minRadius = 10
 		this.initScene()
 		window.addEventListener( 'resize', this.onResize )
-		stage.onUpdate.add( this.update )
 	}
 
 	initScene() {
@@ -48,46 +47,27 @@ class RicefieldExample {
 			}
 		}
 
-		this.lines = new MeshLine( {
-			lines: this.lineArrays,
-			isClose: false,
-			color: 0x000000, // black at bottom
-			gradientColor: 0xffffff, // white at top
-			lineWidth: 0.1,
-			widthCallback: ( t ) => ( 1 - smoothstep( 0.3, 1, t ) ), // taper to 0 at top
-			verbose: true,
-			usage: StaticDrawUsage
-		} )
+		this.lines = new MeshLine()
+			.lines( this.lineArrays, false )
+			.color( 0x000000 )
+			.gradientColor( 0xffffff )
+			.lineWidth( 0.1 )
+			.widthCallback( ( t ) => ( 1 - smoothstep( 0.3, 1, t ) ) )
+			.verbose( true )
+			.usage( StaticDrawUsage )
+
 		stage3d.add( this.lines )
 
-		this.fieldLine = new MeshLine( {
-			lines: squarePositions( 13.5, 10 ),
-			isClose: true,
-			color: 0xffffff, // black at bottom
-			lineWidth: 0.2,
-			useMiterLimit: true,
-			miterLimit: 8,
-			usage: StaticDrawUsage
-		} )
+		this.fieldLine = new MeshLine()
+			.lines( squarePositions( 13.5, 10 ), true )
+			.color( 0xffffff )
+			.lineWidth( 0.2 )
+			.useMiterLimit( true )
+			.miterLimit( 8 )
+			.usage( StaticDrawUsage )
+
 		this.fieldLine.rotation.x = Math.PI / 2
 		stage3d.add( this.fieldLine )
-	}
-
-	update = ( dt ) => {
-		this.time += dt * 0.001 // slow animation
-		const windStrength = Math.sin( this.time ) * 0.5 + 0.5 // 0-1
-		const windDir = this.time * 0.2 // slowly changing direction
-
-		// Update positions with wind
-		// for ( let i = 0; i < this.lineArrays.length; i++ ) {
-		// 	const arr = this.lineArrays[i]
-		// 	const height = arr[4] // y of top point
-		// 	const windOffset = windStrength * height * 0.3 // taller stalks bend more
-		// 	arr[3] = arr[0] + Math.cos( windDir ) * windOffset // top x
-		// 	arr[5] = arr[2] + Math.sin( windDir ) * windOffset // top z
-		// }
-
-		// this.lines.geometry.setPositions( this.lineArrays )
 	}
 
 	onResize = () => {
@@ -95,7 +75,6 @@ class RicefieldExample {
 	}
 
 	dispose() {
-		stage.onUpdate.remove( this.update )
 		window.removeEventListener( 'resize', this.onResize )
 		if ( this.lines ) {
 			stage3d.remove( this.lines )
