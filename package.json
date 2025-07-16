@@ -12,7 +12,7 @@
     "lint:fix": "eslint src/ demo/src/ --fix"
   },
   "devDependencies": {
-    "@stylistic/eslint-plugin": "^5.1.0",
+    "@stylistic/eslint-plugin": "^5.2.0",
     "eslint": "^9.31.0",
     "eslint-plugin-vue": "^10.3.0",
     "typescript": "^5.8.3"
