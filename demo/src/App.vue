@@ -1,8 +1,8 @@
 <template>
 	<div class="view">
 		<TinyRouter v-if="basicLoaded" :routes="routes" :redirects="redirects" />
-		<BurgerButton color="white" spacing="10" />
-		<MenuFullscreen />
+		<BurgerButton v-if="!hideMenu" color="white" spacing="10" />
+		<MenuFullscreen v-if="!hideMenu" />
 	</div>
 </template>
 
@@ -25,6 +25,9 @@ export default {
 		}
 	},
 	computed: {
+		hideMenu() {
+			return new URL( location.href ).searchParams.has( 'noMenu' )
+		},
 		routes() {
 			return [
 				{
@@ -42,7 +45,7 @@ export default {
 			return contentLoaded.value
 		},
 	},
-	async mounted() {
+	async mounted() {		
 		// Load important stuff here
 		// await injectFonts(
 		// 	[

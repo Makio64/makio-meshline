@@ -1,6 +1,6 @@
 <template>
 	<div class="sandbox-view">
-		<div ref="codeOutput" class="code-output">
+		<div ref="codeOutput" class="code-output" :class="{ 'no-menu': hasNoMenu }">
 			<div class="code-header">
 				<span class="code-title">Generated Code</span>
 				<button class="copy-button" @click="$emit('copy-code')">📋 Copy</button>
@@ -22,6 +22,10 @@ export default {
 		highlightedCode: {
 			type: String,
 			default: ''
+		},
+		hasNoMenu: {
+			type: Boolean,
+			default: false
 		}
 	},
 	emits: ['copy-code']
@@ -47,6 +51,10 @@ export default {
 	display flex
 	flex-direction column
 	max-width 400px
+	
+	&.no-menu
+		right 240px
+		max-width 320px
 
 .code-header
 	background rgba(255, 255, 255, 0.05)
@@ -87,6 +95,11 @@ export default {
 	overflow-y auto
 	flex 1
 	text-align left
+	
+	.no-menu &
+		font-size 11px
+		line-height 1.5
+		padding 12px
 	
 	// Shiki styles
 	:deep(pre)

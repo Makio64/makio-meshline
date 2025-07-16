@@ -22,6 +22,16 @@ export default defineConfig({
         ]
       },
       {
+        text: 'Examples',
+        items: [
+          { text: 'Interactive Sandbox', link: '/examples/sandbox' },
+          { text: 'Basic Examples', link: '/examples/basic' },
+          { text: 'GPU Circle', link: '/examples/gpucircle' },
+          { text: 'Instancing', link: '/examples/instancing' },
+          { text: 'Live Demos', link: 'https://meshlines.netlify.app/' },
+        ]
+      },
+      {
         text: 'API',
         items: [
           { text: 'Overview', link: '/api' },
@@ -42,12 +52,6 @@ export default defineConfig({
         text: 'Utilities',
         items: [
           { text: 'Helper Functions', link: '/helpers' },
-        ]
-      },
-      {
-        text: 'Examples',
-        items: [
-          { text: 'Live Demos', link: 'https://meshlines.netlify.app/' },
         ]
       }
 

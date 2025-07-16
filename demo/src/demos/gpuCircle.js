@@ -56,8 +56,11 @@ class GpuCircleExample {
 		stage3d.add( this.line )
 
 		// GUI slider
-		this.gui = new GUI()
-		this.gui.domElement.style.right = '60px'
+		const urlParams = new URLSearchParams( window.location.search )
+		const hasNoMenu = urlParams.has( 'noMenu' )
+		
+		this.gui = new GUI( { width: hasNoMenu ? 220 : 300 } )
+		this.gui.domElement.style.right = hasNoMenu ? '0' : '60px'
 		this.gui.add( { blend: 0 }, 'blend', 0, 1, 0.01 ).name( 'Wave ⇆ Circle' ).onChange( v => {
 			useWave.value = v
 		} )

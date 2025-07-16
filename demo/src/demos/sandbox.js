@@ -14,6 +14,7 @@ class SandboxExample {
 		this.gui = null
 		this.animationHandler = null
 		this.highlighter = null
+		this.hasNoMenu = false
 		
 		// Reactive configuration
 		this.config = reactive( {
@@ -53,6 +54,10 @@ class SandboxExample {
 	}
 
 	async init() {
+		// Check for noMenu parameter
+		const urlParams = new URLSearchParams( window.location.search )
+		this.hasNoMenu = urlParams.has( 'noMenu' )
+		
 		// Initialize 3D scene
 		await stage3d.initRender()
 		stage3d.camera.position.set( 0, 0, 30 )
@@ -79,6 +84,7 @@ class SandboxExample {
 			render: () => h( SandboxView, {
 				generatedCode: this.config.generatedCode,
 				highlightedCode: this.config.highlightedCode,
+				hasNoMenu: this.hasNoMenu,
 				'onCopy-code': () => this.copyCode()
 			} )
 		} )
@@ -91,8 +97,8 @@ class SandboxExample {
 	}
 	
 	initGUI() {
-		this.gui = new GUI( { width: 350 } )
-		this.gui.domElement.style.right = '60px'
+		this.gui = new GUI( { width: this.hasNoMenu ? 220 : 350 } )
+		this.gui.domElement.style.right = this.hasNoMenu ? '0' : '60px'
 		
 		// Line Shape folder
 		const geometryFolder = this.gui.addFolder( 'Line Shape' )
