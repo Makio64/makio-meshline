@@ -14,6 +14,7 @@
 		"animejs": "^4.0.2",
 		"lil-gui": "^0.20.0",
 		"meshline": "workspace:*",
+		"shiki": "^3.8.0",
 		"stats-gl": "^3.6.0",
 		"three": "^0.178.0",
 		"vue": "^3.5.17",
