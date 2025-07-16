@@ -28,7 +28,7 @@ export default {
       
       if (isExamplePage) {
         // Force hide ONLY the right aside (table of contents), not the left sidebar
-        const rightAsideElements = document.querySelectorAll('.VPDocAside')
+        const rightAsideElements = document.querySelectorAll('.aside')
         rightAsideElements.forEach(el => {
           el.style.display = 'none'
           el.style.visibility = 'hidden'
