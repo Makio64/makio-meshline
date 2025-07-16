@@ -2,6 +2,11 @@
 
 The `MeshLineGeometry` class builds the line mesh geometry from raw point data, handling the complex vertex calculations needed for thick, smooth lines.
 
+**Quick Links:**
+- [Common Patterns](./common-patterns.md) - Basic geometry usage examples
+- [Advanced Patterns](./advanced-patterns.md) - Dynamic updates and performance tips
+- [MeshLine Class](./meshline.md) - Main API reference
+
 ## Constructor
 
 ```ts
@@ -43,9 +48,14 @@ setLines(
 
 Replace or initialize the geometry with one or multiple line segments. This method always expects an array of lines, so if you have a single line, wrap it in an array.
 
+When a `THREE.BufferGeometry` is provided, the positions are extracted from its 'position' attribute. This allows direct conversion of existing Three.js geometries into MeshLine format.
+
 #### Parameters
 
-- `lines` – Array of line data, where each element represents a separate line. Each element can be a `Float32Array` of points, a nested number array `[x,y,z]`, or a `THREE.BufferGeometry`.
+- `lines` – Array of line data, where each element represents a separate line. Each element can be:
+  - `Float32Array` of flattened XYZ coordinates
+  - Nested number array of `[x,y,z]` coordinates
+  - `THREE.BufferGeometry` with a 'position' attribute
 
 ### dispose()
 
@@ -70,7 +80,7 @@ Efficiently updates vertex positions **without rebuilding GPU buffers**.  The fu
 • `Float32Array[]` – update multiple lines (each array must keep its original length).  
 • `number[][][]` – nested arrays are converted under the hood (slower, avoid in hot loops).
 
-If the line count or point count changes the geometry falls back to a full rebuild automatically.
+If the line count or point count changes, the geometry falls back to a full rebuild automatically using `setLines()`. This ensures proper buffer allocation but is less efficient than in-place updates. For best performance, maintain consistent line counts and point counts when using `setPositions()`.
 
 • `positions` – Must match the original line(s) vertex count exactly.  Re-use the same typed arrays each frame for best performance.  
 • `updateBounding` – Recomputes bounding volumes when `true` (default `false`).  Skip when the line stays roughly inside view.
@@ -93,50 +103,11 @@ If `verbose` is enabled, a console message `[MeshLine] positions updated via set
 
 ## Usage Examples
 
-### Basic Line
-
-```javascript
-import { MeshLineGeometry } from 'makio-meshline';
-
-const points = [
-  [0, 0, 0],
-  [1, 1, 0],
-  [2, 0, 0]
-];
-
-const geometry = new MeshLineGeometry({ lines: [points] });
-```
-
-### Multiple Line Segments
-
-```javascript
-const lines = [
-  [[0, 0, 0], [1, 0, 0], [1, 1, 0]], // First line
-  [[2, 0, 0], [3, 1, 0], [3, 2, 0]]  // Second line
-];
-
-const geometry = new MeshLineGeometry({ lines });
-// OR
-const geometry = new MeshLineGeometry();
-geometry.setLines(lines);
-```
-
-### From Float32Array (Optimal Performance)
-
-```javascript
-// Pre-allocate Float32Array for best performance
-const pointCount = 100;
-const points = new Float32Array(pointCount * 3);
-
-for (let i = 0; i < pointCount; i++) {
-  const angle = (i / pointCount) * Math.PI * 2;
-  points[i * 3] = Math.cos(angle);
-  points[i * 3 + 1] = Math.sin(angle);
-  points[i * 3 + 2] = 0;
-}
-
-const geometry = new MeshLineGeometry({ lines: [points] });
-```
+For practical examples, see:
+- [Basic Line Creation](./common-patterns.md#1-basic-line) in Common Patterns
+- [Multi-Line Segments](./common-patterns.md#8-multi-line-segments) for multiple disconnected lines
+- [Dynamic Updates](./common-patterns.md#9-dynamic-updates) for efficient position updates
+- [From BufferGeometry](./common-patterns.md#12-from-buffergeometry) for converting existing geometries
 
 ## Internal Structure
 

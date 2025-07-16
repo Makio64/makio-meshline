@@ -1,6 +1,11 @@
 # MeshLine Class
 
-The `MeshLine` class is the main interface for creating performant, customizable lines in Three.js.
+The `MeshLine` class is the main interface for creating performant, customizable lines in Three.js. It extends `Mesh` from `three/webgpu` and provides TSL-powered line rendering capabilities.
+
+**Quick Links:**
+- [Common Patterns](./common-patterns.md) - Basic usage examples
+- [Advanced Patterns](./advanced-patterns.md) - GPU-driven positions, instancing, custom shaders
+- [Migration Guide](./migration-guide.md) - Migrating from THREE.MeshLine
 
 ## Constructor
 
@@ -22,6 +27,8 @@ const line = new MeshLine()
 	.lineWidth(2)
 	.opacity(0.8)
 ```
+
+See [Common Patterns](./common-patterns.md) for complete examples.
 
 ### Configuration Methods
 
@@ -114,7 +121,7 @@ interface MeshLineOptions {
 
   // ***Appearance***
   color?: number | THREE.Color
-  lineWidth?: number                         // Screen-space px
+  lineWidth?: number                         // Line width (default: 0.3)
   widthCallback?: (t: number) => number      // variable width modifier
   sizeAttenuation?: boolean
   gradientColor?: number | null              // End-gradient colour
@@ -188,7 +195,7 @@ interface MeshLineOptions {
 
 - **`color`** (`number | THREE.Color`) — Base color of the line. Can be a hex number (`0xff0000`) or `THREE.Color` instance. Default: `0xffffff` (white).
 
-- **`lineWidth`** (`number`) — Width of the line. When `sizeAttenuation` is `false`, this is in screen pixels. When `true`, it's scaled by distance. Default: `0.3`.
+- **`lineWidth`** (`number`) — Width of the line. When `sizeAttenuation` is `false`, this value is multiplied by `dpr` for screen-space rendering. When `true`, it's scaled by distance. Default: `0.3`.
 
 - **`widthCallback`** (`(t: number) => number | null`) — A function that receives the line progress (`t`, from 0 to 1) and returns a width multiplier. Allows for variable line width. Default: `null`.
 
@@ -277,17 +284,7 @@ Hook functions allow custom TSL (Three.js Shading Language) code to modify vario
 For lines controled by `cpu` and whose vertices change every frame (e.g. interactive trails) you can avoid rebuilding the full geometry by calling **`geometry.setPositions( positionsF32 )`**.  
 `positionsF32` must be the same length as the original `lines` array (and ideally the same Float32Array reused each frame).  Only the `position`, `previous` and `next` buffers are updated in-place, so no new GPU buffers are created.
 
-```js
-// Allocate once
-const positions = new Float32Array( NUM_POINTS * 3 );
-const line = new MeshLine({ lines: positions, lineWidth: 0.02 });
-scene.add( line );
-
-// Frame loop
-updatePositions( positions );           // write XYZs into the same array
-line.geometry.setPositions( positions ); // fast update
-requestAnimationFrame( animate );
-```
+For efficient position updates, see [Dynamic Updates](./common-patterns.md#9-dynamic-updates) in Common Patterns.
 
 When verbose mode is enabled you'll see `[MeshLine] positions updated via setPositions` in the console.
 
@@ -318,6 +315,10 @@ line.setInstanceValue('instanceOffset', 0, [1, 2, 3])
 // Set scale for instance 0
 line.setInstanceValue('instanceScale', 0, 1.5)
 ```
+
+For advanced instancing examples, see:
+- [Basic Instancing](./common-patterns.md#10-basic-instancing) for simple use cases
+- [GPU Instanced Circles](./advanced-patterns.md#7-gpu-instanced-circles) for complex animated instances
 
 ### Other Methods
 

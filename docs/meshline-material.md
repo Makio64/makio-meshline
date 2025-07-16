@@ -2,6 +2,11 @@
 
 The `MeshLineNodeMaterial` class is a specialized Three.js NodeMaterial that implements the vertex and fragment shaders for rendering thick, dashed, and textured lines using GPU-friendly techniques.
 
+**Quick Links:**
+- [Common Patterns](./common-patterns.md) - Basic usage examples
+- [Advanced Patterns](./advanced-patterns.md) - Custom shader effects with hooks
+- [MeshLine Class](./meshline.md) - Main API reference
+
 ## Constructor
 
 ```ts
@@ -110,7 +115,8 @@ When `sizeAttenuation` is enabled, lines maintain consistent visual thickness re
 ```javascript
 const material = new MeshLineNodeMaterial({
   sizeAttenuation: true,
-  lineWidth: 2
+  lineWidth: 2 // value in px , the dpr adjustment is automatic 
+  dpr: window.devicePixelRatio // optional, window.devicePixelRatio is already the default value
 });
 ```
 
@@ -144,88 +150,12 @@ const material = new MeshLineNodeMaterial({
 });
 ```
 
-### Textures
-
-Apply textures to lines with UV mapping control:
-
-```javascript
-const material = new MeshLineNodeMaterial({
-  map: myTexture,
-  repeat: new THREE.Vector2(4, 1),    // Repeat 4 times along line
-  mapOffset: new THREE.Vector2(0, 0)  // No offset
-});
-```
-
-### Alpha Masking
-
-Use alpha maps for complex opacity patterns:
-
-```javascript
-const material = new MeshLineNodeMaterial({
-  alphaMap: alphaTexture,
-  transparent: true
-});
-```
 
 ## Usage Examples
 
-### Basic Colored Line
-
-```javascript
-import { MeshLineNodeMaterial } from 'makio-meshline';
-import * as THREE from 'three';
-
-const material = new MeshLineNodeMaterial({
-  color: 0xff6600,
-  lineWidth: 3,
-  resolution: new THREE.Vector2(window.innerWidth, window.innerHeight)
-});
-```
-
-### Gradient Dashed Line
-
-```javascript
-const material = new MeshLineNodeMaterial({
-  color: 0xff0000,
-  gradientColor: 0x00ff00,
-  dashCount: 12,
-  dashRatio: 0.6,
-  lineWidth: 2,
-  resolution: new THREE.Vector2(window.innerWidth, window.innerHeight)
-});
-```
-
-### Textured Line with Animation
-
-```javascript
-const material = new MeshLineNodeMaterial({
-  map: striipeTexture,
-  repeat: new THREE.Vector2(8, 1),
-  dashCount: 6,
-  dashRatio: 0.8,
-  dashOffset: 0, // Animate this for moving effect
-  lineWidth: 4,
-  resolution: new THREE.Vector2(window.innerWidth, window.innerHeight)
-});
-
-// Animation loop
-function animate() {
-  material.dashOffset += 0.01;
-  requestAnimationFrame(animate);
-}
-```
-
-### Tapered Line with Alpha Map
-
-```javascript
-const material = new MeshLineNodeMaterial({
-  color: 0xffffff,
-  alphaMap: gradientTexture, // Fades from opaque to transparent
-  transparent: true,
-  lineWidth: 5,
-  resolution: new THREE.Vector2(window.innerWidth, window.innerHeight)
-});
-```
+For practical examples, see:
+- [Common Patterns](./common-patterns.md) - Basic material usage like gradients, dashes, and textures
+- [Advanced Patterns](./advanced-patterns.md#8-material-hooks-for-custom-effects) - Custom shader effects using hooks
 
 ## NodeMaterial Integration
 
@@ -278,83 +208,7 @@ The `MeshLineNodeMaterial` provides an extensive hook system that allows you to 
 
 ### Hook Usage Examples
 
-#### Custom Width Variation
-
-```javascript
-import { Fn, sin } from 'three/tsl';
-
-const material = new MeshLineNodeMaterial({
-  lineWidth: 2,
-  widthFn: Fn(([counter]) => {
-    // Vary width along the line using sine wave
-    return sin(counter.mul(Math.PI * 4)).add(1).mul(0.5);
-  })
-});
-```
-
-#### Animated Color Effects
-
-```javascript
-import { Fn, vec3, cos, sin, uniform } from 'three/tsl';
-
-const time = uniform(0); // Update this in your animation loop
-
-const material = new MeshLineNodeMaterial({
-  colorFn: Fn(([counter, position]) => {
-    const phase = counter.mul(Math.PI * 2).add(time);
-    const r = cos(phase).mul(0.5).add(0.5);
-    const g = sin(phase.add(Math.PI * 0.33)).mul(0.5).add(0.5);
-    const b = sin(phase.add(Math.PI * 0.66)).mul(0.5).add(0.5);
-    return vec3(r, g, b);
-  })
-});
-```
-
-#### Position Displacement
-
-```javascript
-import { Fn, vec3, sin, uniform } from 'three/tsl';
-
-const time = uniform(0);
-
-const material = new MeshLineNodeMaterial({
-  positionFn: Fn(([position, counter]) => {
-    // Add wave displacement
-    const wave = sin(counter.mul(Math.PI * 8).add(time)).mul(0.1);
-    return position.add(vec3(0, wave, 0));
-  })
-});
-```
-
-#### Custom Dash Pattern
-
-```javascript
-import { Fn, step, fract } from 'three/tsl';
-
-const material = new MeshLineNodeMaterial({
-  dashFn: Fn(([dashDistance, counter]) => {
-    // Custom dash pattern - double dashes
-    const pattern = fract(dashDistance.mul(10));
-    const dash1 = step(0.2, pattern).mul(step(pattern, 0.4));
-    const dash2 = step(0.6, pattern).mul(step(pattern, 0.8));
-    return dash1.add(dash2);
-  })
-});
-```
-
-#### Fragment Discard for Cut-out Effects
-
-```javascript
-import { Fn, noise } from 'three/tsl';
-
-const material = new MeshLineNodeMaterial({
-  discardFn: Fn(([position, counter]) => {
-    // Discard fragments based on noise pattern
-    const noiseValue = noise(position.mul(10));
-    return noiseValue.lessThan(0.3); // Discard if noise < 0.3
-  })
-});
-```
+For detailed hook examples with complete code, see [Material Hooks for Custom Effects](./advanced-patterns.md#8-material-hooks-for-custom-effects) in Advanced Patterns.
 
 ### Hook Function Signatures
 
@@ -362,30 +216,30 @@ All hook functions receive relevant parameters and should return appropriate val
 
 ```typescript
 // Position hooks
-positionFn: (position: Node, counter: Node, ...args) => Node<vec3>
-previousFn: (position: Node, counter: Node, ...args) => Node<vec3>
-nextFn: (position: Node, counter: Node, ...args) => Node<vec3>
+positionFn: (position: Node, counter: Node) => Node<vec3>
+previousFn: (position: Node, counter: Node) => Node<vec3>
+nextFn: (position: Node, counter: Node) => Node<vec3>
 
 // Width/Normal hooks
-widthFn: (counter: Node, position: Node, ...args) => Node<float>
-normalFn: (normal: Node, position: Node, ...args) => Node<vec3>
+widthFn: (width: Node, counter: Node, side: Node) => Node<float>
+normalFn: (normal: Node, dir: Node, dir1: Node, dir2: Node, counter: Node, side: Node) => Node<vec3>
 
 // Color hooks
-colorFn: (counter: Node, position: Node, ...args) => Node<vec3>
-gradientFn: (color: Node, counter: Node, ...args) => Node<vec3>
-fragmentColorFn: (color: Node, position: Node, ...args) => Node<vec3>
+colorFn: (color: Node, counter: Node, side: Node) => Node<vec4>
+gradientFn: (gradientFactor: Node, side: Node) => Node<float>
+fragmentColorFn: (color: Node, uv: Node, counter: Node, side: Node) => Node<vec4>
 
 // Alpha hooks
-opacityFn: (counter: Node, position: Node, ...args) => Node<float>
-fragmentAlphaFn: (alpha: Node, position: Node, ...args) => Node<float>
+opacityFn: (alpha: Node, counter: Node, side: Node) => Node<float>
+fragmentAlphaFn: (alpha: Node, uv: Node, counter: Node, side: Node) => Node<float>
 
 // UV/Dash hooks
-uvFn: (uv: Node, counter: Node, ...args) => Node<vec2>
-dashFn: (dashDistance: Node, counter: Node, ...args) => Node<float>
+uvFn: (uv: Node, counter: Node, side: Node) => Node<vec2>
+dashFn: (cyclePosition: Node, counter: Node, side: Node) => Node<float>
 
 // Control hooks
-vertexFn: (context: NodeContext) => void
-discardFn: (position: Node, counter: Node, ...args) => Node<bool>
+vertexFn: (finalPosition: Node, normal: Node, counter: Node, side: Node) => Node<vec3>
+discardFn: (counter: Node, side: Node, uv: Node) => Node<bool>
 ```
 
 ### Performance Considerations
