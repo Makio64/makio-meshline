@@ -46,7 +46,6 @@ class FollowExample {
 		stage3d.add( this.line )
 	}
 
-
 	// -------------------------------------------------- UPDATE LOOP
 	update = ( dt ) => {
 
@@ -57,7 +56,6 @@ class FollowExample {
 		for ( let i = 1; i < NUM_POINTS; i++ ) {
 			this.points[i].lerp( this.points[i - 1], LERP_FACTOR )
 		}
-
 		
 		// Efficiently update positions without rebuilding attributes
 		this.line.setPositions( this.updatePosition( this.positionsF32 ) )

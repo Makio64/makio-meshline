@@ -106,7 +106,6 @@ class BasicExample {
 
 			// Create line with inverted Y (so Basic is top-left)
 
-
 			const line = new MeshLine()
 				.lines( positions, config.isClose )
 				.color( config.color )
