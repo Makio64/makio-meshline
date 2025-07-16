@@ -27,9 +27,9 @@ export default {
       const isExamplePage = route.path.includes('/examples/')
       
       if (isExamplePage) {
-        // Force hide aside elements
-        const asideElements = document.querySelectorAll('.VPDocAside, .aside, aside')
-        asideElements.forEach(el => {
+        // Force hide ONLY the right aside (table of contents), not the left sidebar
+        const rightAsideElements = document.querySelectorAll('.VPDocAside')
+        rightAsideElements.forEach(el => {
           el.style.display = 'none'
           el.style.visibility = 'hidden'
           el.style.width = '0'

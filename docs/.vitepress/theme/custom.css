@@ -1,8 +1,5 @@
-/* Hide aside on example pages - use more specific selectors */
-.example-page .VPDocAside,
-.example-page .VPDoc .aside,
-.example-page aside.VPDocAside,
-.example-page .VPDocAside.aside {
+/* Hide ONLY the right aside (table of contents) on example pages */
+.example-page .VPDocAside {
   display: none !important;
   visibility: hidden !important;
   width: 0 !important;
