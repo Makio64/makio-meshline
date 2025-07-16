@@ -5,7 +5,6 @@ The `MeshLine` class is the main interface for creating performant, customizable
 **Quick Links:**
 - [Common Patterns](./common-patterns.md) - Basic usage examples
 - [Advanced Patterns](./advanced-patterns.md) - GPU-driven positions, instancing, custom shaders
-- [Migration Guide](./migration-guide.md) - Migrating from THREE.MeshLine
 
 ## Constructor
 
