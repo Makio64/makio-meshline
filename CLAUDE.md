@@ -56,6 +56,23 @@ ESLint configuration (`eslint.config.mjs`) enforces:
 - Consistent array formatting
 - Vue-specific rules for demo components
 
+### Stylus CSS Style
+When writing CSS in Vue components, use Stylus with these conventions:
+- No semicolons or colons
+- Tab indentation
+- No braces
+- Nested selectors with `&` for pseudo-classes
+- Simplified syntax: `color white` instead of `color: #fff;`
+- Example:
+```stylus
+.button
+	background rgba(255, 255, 255, 0.1)
+	padding 10px 20px
+	border-radius 4px
+	&:hover
+		background rgba(255, 255, 255, 0.2)
+```
+
 When editing code, maintain these style conventions exactly as they appear in existing files.
 
 ## Testing
