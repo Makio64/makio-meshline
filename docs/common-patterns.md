@@ -2,7 +2,7 @@
 
 Quick recipes covering typical simple use-cases. Copy-paste and tweak. 
 
-<iframe src="https://meshlines.netlify.app/examples/sandbox?noMenu" width="100%" height="500" style="border: 1px solid #ddd; border-radius: 8px;"></iframe>
+For testing yourself and have code generated, see [Interactive sandbox](./examples/sandbox.md)
 
 For advanced techniques like GPU-driven positions and custom shaders, see [Advanced Patterns](./advanced-patterns.md).
 
