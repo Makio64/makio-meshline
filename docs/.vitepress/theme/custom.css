@@ -1,0 +1,58 @@
+/* Hide aside on example pages - use more specific selectors */
+.example-page .VPDocAside,
+.example-page .VPDoc .aside,
+.example-page aside.VPDocAside,
+.example-page .VPDocAside.aside {
+  display: none !important;
+  visibility: hidden !important;
+  width: 0 !important;
+  opacity: 0 !important;
+}
+
+/* Make content full width on example pages */
+.example-page .VPDoc .content,
+.example-page .VPContent .content,
+.example-page .content {
+  max-width: 100% !important;
+  width: 100% !important;
+  padding: 0 32px !important;
+}
+
+/* Adjust content container on example pages */
+.example-page .VPDoc .content-container,
+.example-page .VPContent .content-container,
+.example-page .content-container {
+  max-width: 100% !important;
+  width: 100% !important;
+}
+
+/* Override VPDoc aside behavior - be more specific */
+.example-page .VPDoc.has-aside .content-container,
+.example-page .Layout.has-aside .content-container {
+  max-width: 100% !important;
+  width: 100% !important;
+}
+
+.example-page .VPDoc,
+.example-page .VPDoc.has-aside {
+  padding-right: 0 !important;
+  padding-left: 0 !important;
+}
+
+/* Force layout adjustments */
+.example-page .Layout,
+.example-page .VPContent {
+  padding-right: 0 !important;
+}
+
+/* Ensure main content uses full width */
+.example-page main {
+  max-width: 100% !important;
+  width: 100% !important;
+}
+
+/* Ensure iframes can use full width */
+.example-page iframe {
+  max-width: 100%;
+  width: 100%;
+}
