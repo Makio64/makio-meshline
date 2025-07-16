@@ -4,6 +4,7 @@ import MeshLineNodeMaterial from './MeshLineNodeMaterial.js'
 import { circlePositions } from './positions/circlePositions.js'
 import { squarePositions } from './positions/squarePositions.js'
 import { sineWavePositions } from './positions/sineWavePositions.js'
+import { straightLine, straightLineBetween } from './positions/straightLine.js'
 
 export {
 	MeshLine,
@@ -11,5 +12,7 @@ export {
 	MeshLineNodeMaterial,
 	circlePositions,
 	squarePositions,
-	sineWavePositions
+	sineWavePositions,
+	straightLine,
+	straightLineBetween
 } 
