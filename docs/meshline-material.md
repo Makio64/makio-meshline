@@ -50,7 +50,7 @@ Creates a new MeshLineNodeMaterial with the specified parameters.
 
 ### Line Appearance
 
-- `sizeAttenuation` (boolean) — whether line width attenuates with perspective. Default: `true`.
+- `sizeAttenuation` (boolean) — whether line width attenuates with perspective (gets smaller with distance). When `false`, maintains constant pixel size. Default: `true`.
 - `resolution` (`THREE.Vector2`) — viewport resolution for correct aspect scaling. Default: `new Vector2(1, 1)`.
 - `lineWidth` (number) — base width multiplier for the line in screen space. Default: `1`.
 - `color` (number | `THREE.Color`) — line color. Default: `0xffffff`.

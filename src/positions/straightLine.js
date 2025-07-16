@@ -1,12 +1,12 @@
-export function straightLine( segments = 1, isVertical = false ) {
+export function straightLine( width = 1, segments = 2, isVertical = false ) {
 	const positions = new Float32Array( ( segments + 1 ) * 3 )
 	
 	for ( let i = 0; i <= segments; i++ ) {
 		const t = i / segments
 		const index = i * 3
 
-		positions[ index ] = isVertical ? 0 : t
-		positions[ index + 1 ] = isVertical ? t : 0
+		positions[ index ] = isVertical ? 0 : t * width
+		positions[ index + 1 ] = isVertical ? t * width : 0
 		positions[ index + 2 ] = 0
 	}
 

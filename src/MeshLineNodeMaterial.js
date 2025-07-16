@@ -207,7 +207,7 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 				normal.assign( this.normalFn( normal, dir, dir1, dir2, aCounters, aSide ) )
 			}
 
-			if ( this.sizeAttenuation ) {
+			if ( !this.sizeAttenuation ) {
 				normal.xy.mulAssign( finalPosition.w )
 				normal.xy.divAssign( vec4( this.resolution, 0., 1. ).mul( cameraProjectionMatrix ).xy.mul( aspect ) )
 			}

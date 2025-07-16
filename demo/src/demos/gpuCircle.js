@@ -47,7 +47,6 @@ class GpuCircleExample {
 		
 		this.line = new MeshLine()
 			.segments( segments )
-			.isClose( false )
 			.gpuPositionNode( positionNode )
 			.lineWidth( 0.1 )
 			.gradientColor( 0x0000ff )

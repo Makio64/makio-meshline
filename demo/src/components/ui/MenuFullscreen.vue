@@ -21,6 +21,7 @@ export default {
 				// { text: 'Stress', href: '/examples/stress' },
 				{ text: 'Ricefield', href: '/examples/ricefield' },
 				{ text: 'GPUInstance', href: '/examples/gpu-instance' },
+				{ text: 'Sandbox', href: '/examples/sandbox' },
 			],
 		}
 	},

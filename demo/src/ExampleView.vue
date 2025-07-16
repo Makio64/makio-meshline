@@ -10,6 +10,7 @@ import stress from '@/demos/stress'
 import ricefield from '@/demos/ricefield'
 import gpuCircle from '@/demos/gpuCircle'
 import gpuInstance from '@/demos/gpuInstance'
+import sandbox from '@/demos/sandbox'
 import { contentLoaded } from '@/store'
 
 export default {
@@ -22,7 +23,8 @@ export default {
 			'gpu-circle': gpuCircle,
 			'gpu-instance': gpuInstance,
 			stress,
-			ricefield
+			ricefield,
+			sandbox
 		}
 		this.example = mapping[id] || basic
 		await this.example.init()

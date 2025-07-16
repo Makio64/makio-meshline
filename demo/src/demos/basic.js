@@ -91,7 +91,7 @@ class BasicExample {
 
 			{ title: "Opacity", color: 0x8080FF, opacity: 0.6, lineWidth: 0.5, isClose: true },
 			{ title: "Alpha Map", color: 0xFF00FF, useAlphaMap: true, alphaMap: this.alphaTexture, lineWidth: 0.3, isClose: true },
-			{ title: "No size Attenuation", color: 0x80FF80, sizeAttenuation: true, lineWidth: 5, isClose: true },
+			{ title: "Size Attenuation", color: 0x80FF80, sizeAttenuation: true, lineWidth: 0.5, isClose: true },
 			{ title: "All Features", color: 0xFFFFFF, gradientColor: 0xFF0000, useDash: true, dashCount: 8, dashRatio: 0.5, isClose: true, lineWidth: 0.5 }
 		]
 

@@ -44,13 +44,13 @@ export default {
 	},
 	async mounted() {
 		// Load important stuff here
-		await injectFonts(
-			[
-				// Order optimize for the font use on the home
-				{ name: 'Black Han Sans', url: '/fonts/subset-BlackHanSans-Regular', weight: 'normal' },
-			],
-			true,
-		)
+		// await injectFonts(
+		// 	[
+		// 		// Order optimize for the font use on the home
+		// 		{ name: 'Black Han Sans', url: '/fonts/subset-BlackHanSans-Regular', weight: 'normal' },
+		// 	],
+		// 	true,
+		// )
 		await loadTranslations( '/translations/' + detectLang( ['en', 'fr'] ) + '.json' )
 		this.basicLoaded = true
 	},

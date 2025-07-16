@@ -96,14 +96,15 @@ const line = new MeshLine({
 ## straightLine()
 
 ```ts
-straightLine(segments?: number, isVertical?: boolean): Float32Array
+straightLine(width?: number, segments?: number, isVertical?: boolean): Float32Array
 ```
 
 Generates a `Float32Array` of `[x, y, z]` points forming a straight line.
 
 #### Parameters
 
-- `segments` (number, optional) — number of segments along the line. Default: `1`.
+- `width` (number, optional) — length of the line. Default: `1`.
+- `segments` (number, optional) — number of segments along the line. Default: `2`.
 - `isVertical` (boolean, optional) — whether the line is vertical (Y-axis) or horizontal (X-axis). Default: `false`.
 
 #### Returns
@@ -115,11 +116,14 @@ Generates a `Float32Array` of `[x, y, z]` points forming a straight line.
 ```javascript
 import { straightLine, MeshLine } from 'makio-meshline';
 
-// Create a horizontal line from (0,0,0) to (1,0,0)
-const horizontal = new MeshLine({ lines: straightLine(10, false) });
+// Create a horizontal line 5 units long with 10 segments
+const horizontal = new MeshLine({ lines: straightLine(5, 10, false) });
 
-// Create a vertical line from (0,0,0) to (0,1,0)
-const vertical = new MeshLine({ lines: straightLine(10, true) });
+// Create a vertical line 3 units long with 20 segments
+const vertical = new MeshLine({ lines: straightLine(3, 20, true) });
+
+// Create a simple horizontal line with default width and segments
+const simple = new MeshLine({ lines: straightLine() });
 ```
 
 ## straightLineBetween()

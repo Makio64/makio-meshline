@@ -18,7 +18,7 @@ export default class MeshLine extends Mesh {
 			color: 0xffffff,
 			lineWidth: 0.3,
 			widthCallback: null,
-			sizeAttenuation: false,
+			sizeAttenuation: true,
 
 			opacity: 1,
 			alphaTest: 0,
@@ -363,7 +363,7 @@ export default class MeshLine extends Mesh {
 	build() {
 		let options = { ...this._options }
 
-		let lines = options.lines ?? ( options.segments ? straightLine( options.segments ) : defaultPositions )
+		let lines = options.lines ?? ( options.segments ? straightLine( 1, options.segments ) : defaultPositions )
 
 		options.lines = lines
 

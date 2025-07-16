@@ -199,7 +199,7 @@ interface MeshLineOptions {
 
 - **`widthCallback`** (`(t: number) => number | null`) — A function that receives the line progress (`t`, from 0 to 1) and returns a width multiplier. Allows for variable line width. Default: `null`.
 
-- **`sizeAttenuation`** (`boolean`) — Whether line width should scale with camera distance. When `false`, lines maintain constant pixel width regardless of distance. Default: `false`.
+- **`sizeAttenuation`** (`boolean`) — Whether line width should scale with camera distance. When `false`, lines maintain constant pixel width regardless of distance. Default: `true`.
 
 - **`gradientColor`** (`number | null`) — Optional gradient end color. When set, the line will smoothly transition from `color` to `gradientColor` along its length. Default: `null` (no gradient).
 
