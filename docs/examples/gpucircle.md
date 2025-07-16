@@ -5,20 +5,9 @@ pageClass: example-page
 
 # GPU Circle Example
 
-Demonstrates GPU-based position calculation using Three.js TSL (Three Shading Language) nodes.
+Demonstrates GPU-based position calculation using Three.js TSL (Three Shading Language) nodes, enabling complex animations with minimal CPU overhead.
 
 <iframe src="https://meshlines.netlify.app/examples/gpu-circle?noMenu" width="100%" height="600" style="border: 1px solid #ddd; border-radius: 8px;"></iframe>
-
-## Overview
-
-This example showcases how to use GPU position nodes to create dynamic, animated lines. The positions are calculated entirely on the GPU using TSL functions, enabling complex animations with minimal CPU overhead.
-
-## Features
-
-- **GPU Position Calculation** - Positions computed in vertex shader
-- **Real-time Morphing** - Smooth transition between circle and wave shapes
-- **Time-based Animation** - Automatic rotation/movement using time uniform
-- **Interactive Control** - Slider to blend between two shapes
 
 ## Code Implementation
 

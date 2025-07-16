@@ -18,7 +18,6 @@ This example demonstrates how to use MeshLine's instancing capabilities to rende
 - **High Performance** - Render 1000+ lines with minimal overhead
 - **Per-Instance Attributes** - Each instance can have unique properties
 - **Dynamic Updates** - Modify instance properties in real-time
-- **Spatial Optimization** - Instances arranged in optimized patterns
 
 ## Basic Implementation
 
