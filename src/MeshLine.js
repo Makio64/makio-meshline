@@ -127,9 +127,10 @@ export default class MeshLine extends Mesh {
 		return this
 	}
 
-	useMiterLimit( useMiterLimit, miterLimit = 4 ) {
+	useMiterLimit( useMiterLimit, miterLimit = 4, highQualityMiter = false ) {
 		this._options.useMiterLimit = useMiterLimit
 		this._options.miterLimit = miterLimit
+		this._options.highQualityMiter = highQualityMiter
 		return this
 	}
 
@@ -138,6 +139,11 @@ export default class MeshLine extends Mesh {
 		if ( this.material.miterLimit ) {
 			this.material.miterLimit.value = miterLimit
 		}
+		return this
+	}
+
+	highQualityMiter( highQualityMiter ) {
+		this._options.highQualityMiter = highQualityMiter
 		return this
 	}
 

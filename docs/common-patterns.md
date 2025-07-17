@@ -6,14 +6,13 @@ For testing yourself and have code generated, see [Interactive sandbox](./exampl
 
 For advanced techniques like GPU-driven positions and custom shaders, see [Advanced Patterns](./advanced-patterns.md).
 
-## 1. Basic Line
+## 1. Basic White Line
 
 ```js
 const line = new MeshLine()
   .lines([[0,0,0],[1,1,0],[2,0,0]])
-  .color(0xff3300)
-  .lineWidth(0.4)
-  .build()
+  .color(0xffffff)
+  .lineWidth(1) // value in unit of threejs
 ```
 
 ## 2. Closed Circle
@@ -21,33 +20,30 @@ const line = new MeshLine()
 ```js
 const line = new MeshLine()
   .lines(circlePositions(64))
-  .isClose(true)
-  .color(0x00ccff)
-  .lineWidth(0.2)
-  .build()
+  .isClose(true) // close the last 2 points
+```
+
+shorter methods : 
+```js
+const line = new MeshLine()
+  .lines(circlePositions(64), true) // lines( lines, isClose )
 ```
 
 ## 3. Dashed Line
 
 ```js
 const line = new MeshLine()
-  .lines([[0,0,0],[1,1,0],[2,0,0]])
-  .dashes(8, 0.5)
-  .color(0x00ff00)
-  .lineWidth(0.5)
-  .build()
+  .lines(circlePositions(64), true)
+  .dashes(8, 0.5) // dashes( dashCount, dashRatio = 0.5, dashOffset = 0 )
 ```
 
 ## 4. Gradient
 
 ```js
 const line = new MeshLine()
-  .lines(squarePositions(4))
-  .isClose(true)
-  .color(0xff0000)
-  .gradientColor(0x0000ff)
-  .lineWidth(0.3)
-  .build()
+  .lines(squarePositions(4), true)
+  .color(0xff0000) // start of the gradient will be Red
+  .gradientColor(0x0000ff) // end of the gradient will be Blue
 ```
 
 ## 5. Textured Rope
@@ -55,10 +51,7 @@ const line = new MeshLine()
 ```js
 const line = new MeshLine()
   .lines(myFloat32Array)
-  .map(ropeTexture)
-  .lineWidth(1)
-  .sizeAttenuation(true)
-  .build()
+  .map(ropeTexture) // add your texture here.
 ```
 
 ## 6. Variable Width
@@ -67,22 +60,17 @@ const line = new MeshLine()
 const line = new MeshLine()
   .lines(sineWavePositions(100))
   .widthCallback(t => 0.1 + t * 0.9) // Thin to thick
-  .lineWidth(2)
-  .build()
 ```
 
 ## 7. Animated Dashes
 
 ```js
 const line = new MeshLine()
-  .lines(circlePositions(64))
-  .isClose(true)
+  .lines(circlePositions(64), true)
   .dashes(12, 0.3)
-  .lineWidth(0.5)
-  .build()
 
 // In render loop:
-line.material.dashOffset += 0.01
+line.material.dashOffset -= 0.01 // -= for clockwise movement
 ```
 
 ## 8. Multi-Line Segments
@@ -94,11 +82,10 @@ const lines = [
   [[4,0,0], [5,0,1], [4,1,1]]   // Third segment
 ]
 
+// this will create 3 differents lines
 const meshLine = new MeshLine()
   .lines(lines)
   .color(0xffffff)
-  .lineWidth(0.3)
-  .build()
 ```
 
 ## 9. Dynamic Updates
@@ -111,51 +98,40 @@ const line = new MeshLine({ lines: positions })
 // Update positions efficiently
 function animate() {
   updatePositions(positions) // Your update logic
-  line.geometry.setPositions(positions)
+  line.geometry.setPositions(positions) // this is optimized to be fast cpu->gpu
   requestAnimationFrame(animate)
 }
 ```
+** Note ** check advanced examples for more performant techniques using full gpu approach : instancing / gpu positionning.
 
-## 10. Basic Instancing
-
-```js
-// 10 instances in a row
-const line = new MeshLine()
-  .lines(circlePositions(32))
-  .instances(10)
-  .lineWidth(0.2)
-  .build()
-
-// Add offset attribute
-line.addInstanceAttribute('instanceOffset', 3)
-
-// Position each instance
-for (let i = 0; i < 10; i++) {
-  line.setInstanceValue('instanceOffset', i, [i * 2, 0, 0])
-}
-```
-
-## 11. Window Resize Handling
+## 10. Window Resize Handling
 
 ```js
-const line = new MeshLine()
-  .lines(points)
-  .lineWidth(2)
-  .build()
+const line = new MeshLine().lines(points)
 
 window.addEventListener('resize', () => {
+  // or the size of your threejs canvas.
   line.resize(window.innerWidth, window.innerHeight)
 })
 ```
 
-## 12. From BufferGeometry
+## 11. Miter Limit for Sharp Corners
 
 ```js
-// Convert existing geometry to MeshLine
-const geometry = new THREE.TorusKnotGeometry(10, 3, 100, 16)
+// Basic miter limit (prevents oversized spikes)
 const line = new MeshLine()
-  .lines([geometry]) // Wrap in array
-  .color(0xff00ff)
-  .lineWidth(0.5)
-  .build()
+  .lines(squarePositions(16), true)
+  .useMiterLimit(true) // Default limit of 4
+  .lineWidth(2)
+
+// Custom miter limit
+const line2 = new MeshLine()
+  .useMiterLimit(true, 6) // Higher limit = sharper corners but potential bigger spikes ( see under ) 
+  .miterLimit(6) // or use this
+
+// High quality miter (fix for when the screen-centered sharp corners)
+const line3 = new MeshLine()
+  .lines(squarePositions(16), true)
+  .useMiterLimit(true, 4, true) // Enable high quality mode with third params
+  .highQualityMiter( true ) // or this
 ``` 

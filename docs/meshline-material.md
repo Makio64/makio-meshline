@@ -31,7 +31,8 @@ new MeshLineNodeMaterial(
     dashRatio?: number | null,
     dashOffset?: number,
     useMiterLimit?: boolean,
-    miterLimit?: number
+    miterLimit?: number,
+    highQualityMiter?: boolean
   }
 )
 ```
@@ -82,6 +83,17 @@ const material = new MeshLineNodeMaterial({
 ```
 
 If omitted, `miterLimit` defaults to **4.0** which works well for most scenes.
+
+For avoiding extra strech at sharp corners near the screen center, enable high quality miter:
+
+```js
+const material = new MeshLineNodeMaterial({
+  useMiterLimit: true,
+  highQualityMiter: true  // Reduces spikes at screen center
+})
+```
+
+The `highQualityMiter` option applies advanced calculations to prevent visual artifacts when sharp corners appear near the horizontal or vertical screen axes. This is particularly useful for square or rectangular shapes.
 
 ### Textures
 

@@ -61,8 +61,9 @@ All methods return the `MeshLine` instance for chaining:
 
 **Advanced:**
 
-- `useMiterLimit(enable: boolean, limit?: number)` - Enable miter limit with optional limit value
+- `useMiterLimit(enable: boolean, limit?: number, highQualityMiter?: boolean)` - Enable miter limit with optional limit value (default: 4) and optional high quality mode (default: false)
 - `miterLimit(limit: number)` - Set miter limit value
+- `highQualityMiter(enable: boolean)` - Enable high quality miter joints (reduces spikes at screen center for sharp corners)
 - `dpr(ratio: number)` - Set device pixel ratio
 - `frustumCulled(enable: boolean)` - Enable/disable frustum culling & geometry BoundingBox/boundingSphere creation
 - `verbose(enable: boolean)` - Enable/disable verbose logging

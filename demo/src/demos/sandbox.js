@@ -44,8 +44,9 @@ class SandboxExample {
 			
 			// Advanced
 			wireframe: false,
-			useMiterLimit: true,
-			miterLimit: 4,
+			useMiterLimit: false,
+			miterLimit: 3,
+			highQualityMiter: false,
 			
 			// Generated code
 			generatedCode: '',
@@ -110,24 +111,29 @@ class SandboxExample {
 			} else if ( value === 'sine' || value === 'straight' ) {
 				this.config.isClose = false
 			}
+			// Enable miter options for square shape only
+			if ( value === 'square' ) {
+				this.config.useMiterLimit = true
+				this.config.highQualityMiter = true
+			} else {
+				this.config.useMiterLimit = false
+				this.config.highQualityMiter = false
+			}
 		} )
 		geometryFolder.add( this.config, 'segments', 8, 256, 1 )
 		geometryFolder.add( this.config, 'isClose' )
 		geometryFolder.open()
 		
-		// Appearance folder
+		// Appearance folder (merged with colors)
 		const appearanceFolder = this.gui.addFolder( 'Appearance' )
-		appearanceFolder.add( this.config, 'lineWidth', 0.01, 10, 0.01 )
-		appearanceFolder.add( this.config, 'sizeAttenuation' ).name( 'Size Attenuation' )
+		appearanceFolder.addColor( this.config, 'color' )
 		appearanceFolder.add( this.config, 'opacity', 0, 1, 0.01 )
+		appearanceFolder.add( this.config, 'useGradient' ).name( 'Gradient Enabled' )
+		appearanceFolder.addColor( this.config, 'gradientColor' ).name( 'Gradient Color' )
+		appearanceFolder.add( this.config, 'lineWidth', 0.01, 10, 0.01 ).name( 'Line Width' )
+		appearanceFolder.add( this.config, 'sizeAttenuation' ).name( 'Size Attenuation' )
+		appearanceFolder.add( this.config, 'wireframe' )
 		appearanceFolder.open()
-		
-		// Colors folder
-		const colorsFolder = this.gui.addFolder( 'Colors' )
-		colorsFolder.addColor( this.config, 'color' )
-		colorsFolder.add( this.config, 'useGradient' )
-		colorsFolder.addColor( this.config, 'gradientColor' )
-		colorsFolder.open()
 		
 		// Dashes folder
 		const dashFolder = this.gui.addFolder( 'Dashes' )
@@ -139,9 +145,9 @@ class SandboxExample {
 		
 		// Advanced folder
 		const advancedFolder = this.gui.addFolder( 'Advanced' )
-		advancedFolder.add( this.config, 'wireframe' )
-		advancedFolder.add( this.config, 'useMiterLimit' )
+		advancedFolder.add( this.config, 'useMiterLimit' ).listen()
 		advancedFolder.add( this.config, 'miterLimit', 1, 10, 0.1 )
+		advancedFolder.add( this.config, 'highQualityMiter' ).name( 'High Quality Miter' ).listen()
 		
 		// Actions
 		this.gui.add( { copyCode: () => this.copyCode() }, 'copyCode' ).name( '📋 Copy Code' )
@@ -170,6 +176,7 @@ class SandboxExample {
 				wireframe: this.config.wireframe,
 				useMiterLimit: this.config.useMiterLimit,
 				miterLimit: this.config.miterLimit,
+				highQualityMiter: this.config.highQualityMiter,
 			} ),
 			() => this.updateMaterial()
 		)
@@ -206,6 +213,8 @@ class SandboxExample {
 			.transparent( this.config.opacity < 1 )
 			.sizeAttenuation( this.config.sizeAttenuation )
 			.wireframe( this.config.wireframe )
+			.renderSize( stage.width, stage.height )
+			.dpr( stage.pixelRatio )
 		
 		if ( this.config.useGradient ) {
 			this.line.gradientColor( this.config.gradientColor )
@@ -216,7 +225,7 @@ class SandboxExample {
 		}
 		
 		if ( this.config.useMiterLimit ) {
-			this.line.useMiterLimit( true, this.config.miterLimit )
+			this.line.useMiterLimit( true, this.config.miterLimit, this.config.highQualityMiter )
 		}
 		
 		this.line.build()
@@ -297,7 +306,14 @@ class SandboxExample {
 		}
 		
 		if ( this.config.useMiterLimit ) {
-			code += `\t.useMiterLimit( true, ${this.config.miterLimit} )\n`
+			code += `\t.useMiterLimit( true`
+			if ( this.config.miterLimit !== 4 || this.config.highQualityMiter ) {
+				code += `, ${this.config.miterLimit}`
+			}
+			if ( this.config.highQualityMiter ) {
+				code += `, true`
+			}
+			code += ` )\n`
 		}
 		
 		code += `\t.build()\n\n`
@@ -368,7 +384,7 @@ class SandboxExample {
 	}
 	
 	onResize = () => {
-		this.line?.resize()
+		this.line?.resize( stage.width, stage.height )
 	}
 
 	dispose() {

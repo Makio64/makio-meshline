@@ -1,5 +1,5 @@
 import { Color, Vector2, MeshBasicNodeMaterial } from 'three/webgpu'
-import { float, vec4, vec2, Fn, uniform, uv, modelViewMatrix, normalize, positionGeometry, cameraProjectionMatrix, attribute, varyingProperty, Discard, step, mix, texture, mod, abs, max, dot, clamp, smoothstep, sin, cos } from 'three/tsl'
+import { float, vec4, vec2, Fn, uniform, uv, modelViewMatrix, normalize, positionGeometry, cameraProjectionMatrix, attribute, varyingProperty, Discard, step, mix, texture, mod, abs, max, min, dot, clamp, smoothstep, sin, cos, acos } from 'three/tsl'
 
 const fix = Fn( ( [i_immutable, aspect_immutable] ) => {
 	const aspect = float( aspect_immutable ).toVar()
@@ -41,6 +41,7 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 		this.alphaTest = options.alphaTest ?? 0
 		this.sizeAttenuation = options.sizeAttenuation ?? true
 		this.useMiterLimit = options.useMiterLimit ?? false
+		this.highQualityMiter = options.highQualityMiter ?? false
 
 		// Can be changed dynamically
 		this.resolution = uniform( options.resolution ?? new Vector2( 1, 1 ) )
@@ -192,9 +193,36 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 
 				// Advanced normal (perp to bisector, scaled by limited miter length)
 				const advancedNormal = vec2( dir.y.negate(), dir.x ).mul( limitedMiterLength ).toVar( 'advancedNormal' )
+				
+				if ( this.highQualityMiter ) {
+					// High quality miter with screen center spike fix
+					const basicNormal = vec2( dir.y.negate(), dir.x ).toVar( 'basicNormal' )
+					
+					// Check proximity to screen center axes
+					const ndcPos = finalPosition.xy.div( finalPosition.w ).toVar( 'ndcPos' )
+					const distToHorizontal = abs( ndcPos.y ).toVar( 'distToHorizontal' )
+					const distToVertical = abs( ndcPos.x ).toVar( 'distToVertical' )
+					const minDistToAxis = min( distToHorizontal, distToVertical ).toVar( 'minDistToAxis' )
+					
+					// Check angle between segments - smooth transition based on sharpness
+					const segmentDot = dot( dir1, dir2 ).toVar( 'segmentDot' )
+					// Smooth transition: 1 when very sharp (< -0.8), 0 when moderate (> -0.3)
+					const sharpnessFactor = float( 1 ).sub( smoothstep( float( -0.8 ), float( -0.3 ), segmentDot ) ).toVar( 'sharpnessFactor' )
+					
+					// Smooth blend based on distance to center axes
+					// 1 when very close to axis (< 0.25), 0 when far (> 0.5)
+					const centerProximity = float( 1 ).sub( smoothstep( 0.25, 0.5, minDistToAxis ) ).toVar( 'centerProximity' )
+					
+					// Combine both factors smoothly - use minimum to ensure both conditions contribute
+					const isCentered = centerProximity.mul( sharpnessFactor ).toVar( 'isCentered' )
 
-				// Use advanced normal for consistent thickness
-				normal.xy.assign( advancedNormal )
+					// Use advanced normal for consistent thickness
+					normal.xy.assign( mix( advancedNormal, basicNormal, isCentered ) )
+				} else {
+					// Standard miter approach
+					normal.xy.assign( advancedNormal )
+				}
+				
 				normal.xy.mulAssign( w.mul( 0.5 ) )
 			} else {
 				// Simple approach only
