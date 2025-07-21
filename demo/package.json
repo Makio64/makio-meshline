@@ -23,7 +23,7 @@
 	},
 	"devDependencies": {
 		"@eslint/eslintrc": "^3.3.1",
-		"@stylistic/eslint-plugin": "^5.1.0",
+		"@stylistic/eslint-plugin": "^5.2.1",
 		"@vitejs/plugin-vue": "^6.0.0",
 		"eslint": "^9.31.0",
 		"eslint-plugin-vue": "^10.3.0",
