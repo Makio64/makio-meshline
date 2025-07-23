@@ -35,7 +35,7 @@
 		"vite-plugin-brotli-size": "^1.1.0",
 		"vite-plugin-mkcert": "^1.17.8",
 		"vite-plugin-qrcode": "^0.3.0",
-		"vite-plugin-tsl-operator": "^1.4.1",
+		"vite-plugin-tsl-operator": "^1.4.3",
 		"vue-eslint-parser": "^10.2.0"
 	},
 	"packageManager": "pnpm@10.13.1"
