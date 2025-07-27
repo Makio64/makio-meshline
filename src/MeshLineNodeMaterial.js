@@ -266,7 +266,7 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 		this.colorNode = Fn( () => {
 			let color = vColor.toVar( 'color' )
 			if ( this.gradient ) {
-				let gradientFactor = vCounters
+				let gradientFactor = vCounters.toVar( 'gradientFactor' )
 
 				// Apply gradient modifier if provided
 				if ( this.gradientFn ) {
