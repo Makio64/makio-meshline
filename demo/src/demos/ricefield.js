@@ -5,7 +5,7 @@ import { MeshLine, rectanglePositions } from 'meshline'
 import { MeshBasicNodeMaterial, MeshStandardNodeMaterial } from 'three/webgpu'
 import { smoothstep } from '@/makio/utils/math'
 import { Mesh, MeshBasicMaterial, PlaneGeometry, StaticDrawUsage, Group, Color, Raycaster, Vector2, Vector3, Plane, StorageBufferAttribute, TextureLoader, RepeatWrapping, SRGBColorSpace } from 'three/webgpu'
-import { reflector, sin, time, uv, screenUV, Fn, float, attribute, vec3, uniform, length, clamp, smoothstep as tslSmoothstep, storage, instanceIndex, If, min, sub, mul, add, vec4, mix, fract, vec2, texture, textureBicubic, rangeFogFactor } from 'three/tsl'
+import { reflector, abs, sin, time, uv, Fn, float, attribute, vec3, uniform, length, clamp, smoothstep as tslSmoothstep, storage, instanceIndex, If, sub, mul, add, vec4, mix, fract, vec2, texture, textureBicubic } from 'three/tsl'
 import QuadTree from '@/makio/generative/QuadTree'
 import { DynamicDrawUsage } from 'three'
 
@@ -36,8 +36,8 @@ class RicefieldExample {
 		this.centerOffsetX = FIELD_WIDTH / 2
 		this.centerOffsetZ = FIELD_HEIGHT / 2
 		this.water = null
-		this.waterBorder = null
 		this.reflectionTarget = null
+		this.noiseTexture = null
 	}
 
 	async init() {
@@ -68,6 +68,13 @@ class RicefieldExample {
 	}
 
 	initScene() {
+		// Load shared noise texture first
+		const textureLoader = new TextureLoader()
+		this.noiseTexture = textureLoader.load( '/textures/noises/perlin/rgb-256x256.png' )
+		this.noiseTexture.wrapS = RepeatWrapping
+		this.noiseTexture.wrapT = RepeatWrapping
+		this.noiseTexture.colorSpace = SRGBColorSpace
+		
 		this.initQuadtree()
 		this.initWater()
 		this.initRicefield()
@@ -106,13 +113,6 @@ class RicefieldExample {
 	}
 
 	initWater() {
-		// Load texture for water roughness
-		const textureLoader = new TextureLoader()
-		const perlinMap = textureLoader.load( '/textures/noises/perlin/rgb-256x256.png' )
-		perlinMap.wrapS = RepeatWrapping
-		perlinMap.wrapT = RepeatWrapping
-		perlinMap.colorSpace = SRGBColorSpace
-
 		// water - size based on quadtree + padding
 		const reflection = reflector( { resolution: 0.5, bounces: false, generateMipmaps: true } ) // 0.5 is half of the rendering view
 		this.reflectionTarget = reflection.target
@@ -121,7 +121,7 @@ class RicefieldExample {
 
 		// Animated UV for water ripples
 		const animatedUV = uv().mul( 3 ).add( vec2( time.mul( 0.05 ), time.mul( 0.03 ) ) )
-		const roughness = texture( perlinMap, animatedUV ).r
+		const roughness = texture( this.noiseTexture, animatedUV ).r
 
 		let geo = new PlaneGeometry( FIELD_WIDTH + waterPadding, FIELD_HEIGHT + waterPadding, 1, 1 )
 		let material = new MeshStandardNodeMaterial()
@@ -145,27 +145,6 @@ class RicefieldExample {
 		this.water = new Mesh( geo, material )
 		this.water.rotation.x = - Math.PI / 2
 		stage3d.add( this.water )
-
-		// Add white border around water
-		const borderWidth = FIELD_WIDTH + waterPadding
-		const borderHeight = FIELD_HEIGHT + waterPadding
-		const borderPositions = rectanglePositions( borderWidth, borderHeight, 8 )
-		// Convert to XZ plane for ground positioning
-		for ( let i = 0; i < borderPositions.length; i += 3 ) {
-			const y = borderPositions[i + 1]
-			borderPositions[i + 1] = 0  // y becomes 0
-			borderPositions[i + 2] = y  // original y becomes z
-		}
-
-		this.waterBorder = new MeshLine()
-			.lines( borderPositions, true )
-			.color( 0x8b7355 ) // Brown color
-			.lineWidth( 0.1 ) // Thick line
-			.useMiterLimit( true )
-			.miterLimit( 8 )
-			.usage( StaticDrawUsage )
-		this.waterBorder.position.y = 0.01 // Slightly above water
-		stage3d.add( this.waterBorder )
 	}
 
 	initRicefield() {
@@ -283,7 +262,7 @@ class RicefieldExample {
 				return vec4( gradientFactor.rgb.mul( colorScale ), gradientFactor.a )
 			} ) )
 			// Remove widthCallback to eliminate width attribute
-			.positionFn( Fn( ( [position] ) => {
+			.positionFn( Fn( ( [position, counters] ) => {
 				// Get instance attributes
 				const instancePos = attribute( 'instancePosition', 'vec3' )
 				const instanceScl = attribute( 'instanceScale', 'float' )
@@ -302,8 +281,35 @@ class RicefieldExample {
 				// Apply scale to height
 				const scaledY = position.y.mul( finalScale )
 				
+				// Wind effect
+				// Sample wind texture using world position and animated time
+				const windUV = vec2( 
+					worldX.div( 128 ).add( time.mul( 0.05 ) ),
+					worldZ.div( 128 ).add( time.mul( 0.03 ) )
+				)
+				const windSample = texture( this.noiseTexture, windUV )
+				
+				// Extract wind direction and strength from texture channels
+				const windDirX = windSample.r.sub( 0.5 ).mul( 2 ) // -1 to 1
+				const windDirZ = windSample.g.sub( 0.5 ).mul( 2 ) // -1 to 1
+				const windStrength = windSample.b.mul( abs( sin( time.mul( 0.1 ) ) ).mul( 0.3 ).add( 0.2 ) ).add( 0.5 ) // 0.5 to 1
+				
+				// Apply wind displacement based on height (more at top) and scale (small rice less affected)
+				const heightFactor = position.y.div( 3 ) // 0 to 1 along height
+				// Scale the wind effect by the current scale (finalScale goes from 0.01 to 1.0)
+				const scaleInfluence = tslSmoothstep( 0.4, 1, finalScale ) // Smooth transition from no wind to full wind
+				const windDisplacement = heightFactor.mul( heightFactor ).mul( windStrength ).mul( scaleInfluence ).mul( 1.5 )
+				
+				// Add slight vertical sway (also affected by scale)
+				const swayAmount = sin( time.mul( 2 ).add( instanceIndex.mul( 0.1 ) ) ).mul( 0.05 ).mul( heightFactor ).mul( scaleInfluence )
+				
+				// Final position with wind
+				const finalX = worldX.add( windDirX.mul( windDisplacement ) )
+				const finalZ = worldZ.add( windDirZ.mul( windDisplacement ) )
+				const finalY = scaledY.add( swayAmount )
+				
 				// Return transformed position
-				return vec3( worldX, scaledY, worldZ )
+				return vec3( finalX, finalY, finalZ )
 			} ) )
 			.usage( DynamicDrawUsage ) // Use dynamic usage for instancing
 		
@@ -323,6 +329,22 @@ class RicefieldExample {
 		const allBorderPositions = []
 		const borderLoops = []
 		
+		// Add water border as first segment
+		const borderWidth = FIELD_WIDTH + waterPadding
+		const borderHeight = FIELD_HEIGHT + waterPadding
+		const waterBorderPositions = rectanglePositions( borderWidth, borderHeight, 8 )
+		
+		// Convert to XZ plane and create Float32Array
+		const waterBorderFloat32 = new Float32Array( waterBorderPositions.length )
+		for ( let i = 0; i < waterBorderPositions.length; i += 3 ) {
+			waterBorderFloat32[i] = waterBorderPositions[i]
+			waterBorderFloat32[i + 1] = 0.01  // Slightly above water
+			waterBorderFloat32[i + 2] = waterBorderPositions[i + 1]  // original y becomes z
+		}
+		allBorderPositions.push( waterBorderFloat32 )
+		borderLoops.push( true )
+		
+		// Add field borders
 		this.cells.forEach( ( cell ) => {
 			// Calculate border size: cell size minus padding on both sides, minus 0.5 units from rice
 			const cellPadding = cell.padding || 0.3
@@ -477,12 +499,6 @@ class RicefieldExample {
 			this.water = null
 		}
 		
-		// Dispose water border
-		if ( this.waterBorder ) {
-			stage3d.remove( this.waterBorder )
-			this.waterBorder.dispose()
-			this.waterBorder = null
-		}
 		
 		// Dispose reflection target
 		if ( this.reflectionTarget ) {
@@ -525,6 +541,12 @@ class RicefieldExample {
 		// Clear background node
 		if ( stage3d.scene.backgroundNode ) {
 			stage3d.scene.backgroundNode = null
+		}
+		
+		// Dispose noise texture
+		if ( this.noiseTexture ) {
+			this.noiseTexture.dispose()
+			this.noiseTexture = null
 		}
 	}
 
