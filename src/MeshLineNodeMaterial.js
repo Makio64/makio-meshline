@@ -127,14 +127,24 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 
 		let segments = this.options.lines?.length / 3 || 1
 		
-		// Apply position modifiers if provided
-		let pos = this.gpuPositionNode ? this.gpuPositionNode( aCounters, 0 ) : positionGeometry
-		if ( this.positionFn ) { pos = this.positionFn( pos, aCounters )}
-
-		let previous = this.gpuPositionNode ? this.gpuPositionNode( aCounters.sub( 1 / segments ) ) : attribute( 'previous', 'vec3' ).toVar( 'aPrevious' )
+		// Get base positions first
+		let basePos = this.gpuPositionNode ? this.gpuPositionNode( aCounters, 0 ) : positionGeometry
+		let basePrevious = this.gpuPositionNode ? this.gpuPositionNode( aCounters.sub( 1 / segments ) ) : attribute( 'previous', 'vec3' ).toVar( 'aPrevious' )
+		let baseNext = this.gpuPositionNode ? this.gpuPositionNode( aCounters.add( 1 / segments ) ) : attribute( 'next', 'vec3' ).toVar( 'aNext' )
+		
+		// Apply position modifiers consistently
+		let pos = basePos
+		let previous = basePrevious
+		let next = baseNext
+		
+		if ( this.positionFn ) {
+			pos = this.positionFn( pos, aCounters )
+			// For instanced lines, the positionFn should be applied consistently to all positions
+			previous = this.positionFn( previous, aCounters )
+			next = this.positionFn( next, aCounters )
+		}
+		
 		if ( this.previousFn ) { previous = this.previousFn( previous, aCounters ) }
-
-		let next = this.gpuPositionNode ? this.gpuPositionNode( aCounters.add( 1 / segments ) ) : attribute( 'next', 'vec3' ).toVar( 'aNext' )
 		if ( this.nextFn ) { next = this.nextFn( next, aCounters ) }
 
 		vSide.assign( aSide )
