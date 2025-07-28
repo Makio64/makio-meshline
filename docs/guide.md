@@ -19,7 +19,7 @@ Here's a minimal example of how to create a simple circular line and add it to y
 
     ```javascript
     import { MeshLine, circlePositions } from 'makio-meshline';
-    import * as THREE from 'three';
+    import * as THREE from 'three/webgpu';
     ```
 
 2.  **Initialize your scene:**

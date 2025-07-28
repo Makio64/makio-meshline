@@ -269,7 +269,7 @@ Provide a **gpuPositionNode** function that receives the per-vertex counter (ran
 ```javascript
 import { MeshLine, MeshLineNodeMaterial } from 'makio-meshline';
 import { Fn, vec3, cos, sin } from 'three/tsl';
-import * as THREE from 'three';
+import * as THREE from 'three/webgpu';
 
 // 1. GPU function returning a point on a unit circle
 const circlePosition = Fn( ( [index] ) => {

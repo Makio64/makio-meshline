@@ -148,7 +148,7 @@ Generates a `Float32Array` of `[x, y, z]` points forming a straight line between
 
 ```javascript
 import { straightLineBetween, MeshLine } from 'makio-meshline';
-import * as THREE from 'three';
+import * as THREE from 'three/webgpu';
 
 // Line between two Vector3 points
 const start = new THREE.Vector3(-2, 1, 0);

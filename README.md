@@ -32,7 +32,7 @@ MeshLine is published as the **`makio-meshline`** package.  Use your favourite p
 ## Quick Start
 
 ```javascript
-import * as THREE from 'three'
+import * as THREE from 'three/webgpu'
 import { MeshLine, circlePositions } from 'meshline'
 
 // 1. Basic Three.js scaffolding ------------------------------------------------
