@@ -5,19 +5,22 @@ import { MeshLine, rectanglePositions } from 'meshline'
 import { MeshBasicNodeMaterial, MeshStandardNodeMaterial } from 'three/webgpu'
 import { smoothstep } from '@/makio/utils/math'
 import { Mesh, MeshBasicMaterial, PlaneGeometry, StaticDrawUsage, Group, Color, Raycaster, Vector2, Vector3, Plane, StorageBufferAttribute, TextureLoader, RepeatWrapping, SRGBColorSpace } from 'three/webgpu'
-import { reflector, abs, sin, time, uv, Fn, float, attribute, vec3, uniform, length, clamp, smoothstep as tslSmoothstep, storage, instanceIndex, If, sub, mul, add, vec4, mix, fract, vec2, texture, textureBicubic } from 'three/tsl'
+import { reflector, abs, sin, cos, time, uv, Fn, float, attribute, vec3, uniform, length, clamp, smoothstep as tslSmoothstep, storage, instanceIndex, If, sub, mul, add, vec4, mix, fract, vec2, texture, textureBicubic } from 'three/tsl'
 import QuadTree from '@/makio/generative/QuadTree'
 import { DynamicDrawUsage } from 'three'
 
 import { PMREMGenerator } from 'three/webgpu'
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
+import GUI from 'lil-gui'
+import { animate } from 'animejs'
 
 const FIELD_WIDTH = 64 // Total width of the rice field
 const FIELD_HEIGHT = 64 // Total height of the rice field
 const spacing = 0.3 // Distance between stalks
-const jitter = 0.2
+const jitter = 0.1
 const lineSegments = 3 // number of segments per line
 const waterPadding = 8 // Extra padding for water plane
+const intersectPoint = new Vector3()
 
 class RicefieldExample {
 	constructor() {
@@ -30,7 +33,10 @@ class RicefieldExample {
 		this.mouse = new Vector2()
 		this.mouseWorldPos = new Vector3()
 		this.groundPlane = new Plane( new Vector3( 0, 1, 0 ), 0 ) // Y-up plane at Y=0
-		this.mouseUniform = uniform( vec3( 0, 0, 0 ) )
+		this.mouseUniform = uniform( vec3( 1000, 0, 1000 ) ) // Initialize far away
+		this.cutDistMin = uniform( float( 0 ) ) // Inner radius of shockwave
+		this.cutDistMax = uniform( float( 0 ) ) // Outer radius of shockwave
+		this.shockwaveOrigin = uniform( vec3( 0, 0, 0 ) ) // Fixed origin for shockwave
 		this.cells = []
 		this.riceInstances = []
 		this.centerOffsetX = FIELD_WIDTH / 2
@@ -38,6 +44,15 @@ class RicefieldExample {
 		this.water = null
 		this.reflectionTarget = null
 		this.noiseTexture = null
+		this.gui = null
+		this.params = {}
+		// Drag detection
+		this.isDragging = false
+		this.isPointerDown = false
+		this.pointerDownPos = new Vector2()
+		this.dragThreshold = 5 // pixels
+		this.pointerDownTime = 0
+		this.clickTimeThreshold = 100 // milliseconds
 	}
 
 	async init() {
@@ -54,17 +69,10 @@ class RicefieldExample {
 		await this.initHDR()
 		this.initScene()
 		window.addEventListener( 'resize', this.onResize )
-		window.addEventListener( 'mousemove', this.onMouseMove )
-	}
-
-	async initHDR() {
-		const env = new RoomEnvironment()
-		const pmrem = new PMREMGenerator( stage3d.	renderer )
-		pmrem.compileCubemapShader()
-		const envMap = await pmrem.fromScene( env ).texture
-		stage3d.scene.environment = envMap
-		env.dispose()
-		pmrem.dispose()
+		window.addEventListener( 'pointermove', this.onPointerMove )
+		window.addEventListener( 'pointerdown', this.onPointerDown )
+		window.addEventListener( 'pointerup', this.onPointerUp )
+		document.addEventListener( 'pointerleave', this.onDocumentPointerLeave )
 	}
 
 	initScene() {
@@ -80,6 +88,17 @@ class RicefieldExample {
 		this.initRicefield()
 		this.initCompute()
 		this.initSky()
+		this.initGUI()
+	}
+
+	async initHDR() {
+		const env = new RoomEnvironment()
+		const pmrem = new PMREMGenerator( stage3d.	renderer )
+		pmrem.compileCubemapShader()
+		const envMap = await pmrem.fromScene( env ).texture
+		stage3d.scene.environment = envMap
+		env.dispose()
+		pmrem.dispose()
 	}
 
 	initSky() {
@@ -93,19 +112,13 @@ class RicefieldExample {
 
 	initQuadtree() {
 		let quadtree = new QuadTree( FIELD_WIDTH, FIELD_HEIGHT, {
-			maxDepth: 3,
-			minSize: 4,
+			maxDepth: 8,
+			minSize: 1,
 			jitter: 0.4,
 			minPadding: 1,
 			maxPadding: 2,
-			sizes: {
-				0: 0, // 0 means force subdivision at depth 0
-				1: 0, // 0 means force subdivision at depth 1
-				2: 5, // lock 5 cells at depth 2
-				3: 10  // lock 10 cells at depth 3
-			},
 			randomNext: 0.2,
-			total: 16 // Set a total number of cells to generate
+			total: 14 // Set a total number of cells to generate
 		} )
 
 		this.cells = quadtree.compute()
@@ -261,7 +274,18 @@ class RicefieldExample {
 				// Apply to color
 				return vec4( gradientFactor.rgb.mul( colorScale ), gradientFactor.a )
 			} ) )
-			// Remove widthCallback to eliminate width attribute
+			// Add width function that varies with scale
+			.widthFn( Fn( ( [width, counters] ) => {
+				// Access storage buffer to get current scale
+				const scaleStorage = storage( this.scaleStorageBuffer, 'float', this.riceInstances.length )
+				const storageScale = scaleStorage.element( instanceIndex )
+				
+				// Make width proportional to scale (thinner when growing)
+				// Scale from 0.3 (at scale 0.01) to 1.0 (at scale 1.0)
+				const widthMultiplier = tslSmoothstep( 0.01, 1.0, storageScale ).mul( 0.7 ).add( 0.3 )
+				
+				return width.mul( widthMultiplier )
+			} ) )
 			.positionFn( Fn( ( [position, counters] ) => {
 				// Get instance attributes
 				const instancePos = attribute( 'instancePosition', 'vec3' )
@@ -283,25 +307,27 @@ class RicefieldExample {
 				
 				// Wind effect
 				// Sample wind texture using world position and animated time
+				// Create rotating wind pattern by using sin/cos
+				const windTime = time.mul( 0.2 ).toVar()
 				const windUV = vec2( 
-					worldX.div( 128 ).add( time.mul( 0.05 ) ),
-					worldZ.div( 128 ).add( time.mul( 0.03 ) )
-				)
-				const windSample = texture( this.noiseTexture, windUV )
+					worldX.div( 64 ).add( sin( windTime ).mul( 0.5 ) ),
+					worldZ.div( 64 ).add( cos( windTime.mul( 0.7 ) ).mul( 0.5 ) )
+				).toVar()
+				const windSample = texture( this.noiseTexture, windUV ).toVar()
 				
 				// Extract wind direction and strength from texture channels
-				const windDirX = windSample.r.sub( 0.5 ).mul( 2 ) // -1 to 1
-				const windDirZ = windSample.g.sub( 0.5 ).mul( 2 ) // -1 to 1
-				const windStrength = windSample.b.mul( abs( sin( time.mul( 0.1 ) ) ).mul( 0.3 ).add( 0.2 ) ).add( 0.5 ) // 0.5 to 1
+				const windDirX = windSample.r.toVar() // -1 to 1
+				const windDirZ = windSample.g.toVar() // -1 to 1
+				const windStrength = abs( sin( time.mul( 0.2 ) ) ).add( 0.5 ).toVar() // 0.5 to 1.5
 				
 				// Apply wind displacement based on height (more at top) and scale (small rice less affected)
 				const heightFactor = position.y.div( 3 ) // 0 to 1 along height
 				// Scale the wind effect by the current scale (finalScale goes from 0.01 to 1.0)
-				const scaleInfluence = tslSmoothstep( 0.4, 1, finalScale ) // Smooth transition from no wind to full wind
-				const windDisplacement = heightFactor.mul( heightFactor ).mul( windStrength ).mul( scaleInfluence ).mul( 1.5 )
+				const scaleInfluence = tslSmoothstep( 0.6, 1, finalScale ) // Smooth transition from no wind to full wind
+				const windDisplacement = heightFactor.mul( heightFactor ).mul( windStrength ).mul( scaleInfluence )
 				
 				// Add slight vertical sway (also affected by scale)
-				const swayAmount = sin( time.mul( 2 ).add( instanceIndex.mul( 0.1 ) ) ).mul( 0.05 ).mul( heightFactor ).mul( scaleInfluence )
+				const swayAmount = 0//sin( time.mul( 2 ).add( instanceIndex.mul( 0.1 ) ) ).mul( 0.05 ).mul( heightFactor ).mul( scaleInfluence )
 				
 				// Final position with wind
 				const finalX = worldX.add( windDirX.mul( windDisplacement ) )
@@ -422,24 +448,36 @@ class RicefieldExample {
 		
 		// Create compute update function
 		this.computeUpdate = Fn( () => {
-			// Calculate distance to mouse
+			// Calculate distance to mouse for normal interaction
 			const mousePos = this.mouseUniform
 			const worldPos = vec3( instancePos.x, float( 0 ), instancePos.z )
-			const dist = length( sub( worldPos, mousePos ) )
+			const mouseDist = length( sub( worldPos, mousePos ) )
 			
-			// Target scale based on distance (3m to 8m falloff)
-			const targetScale = add( mul( tslSmoothstep( 3, 8, dist ), 0.99 ), 0.01 )
+			// Calculate distance to shockwave origin for shockwave effect
+			const shockwaveOrigin = this.shockwaveOrigin
+			const shockwaveDist = length( sub( worldPos, shockwaveOrigin ) )
 			
-			// Check if we're shrinking (target < current) or growing (target > current)
-			If( targetScale.lessThan( currentScale ), () => {
-				// Instant shrinking when mouse is near
-				currentScale.assign( targetScale )
+			// Check if within shockwave ring (using fixed shockwave origin)
+			const withinShockwave = shockwaveDist.greaterThanEqual( this.cutDistMin ).and( shockwaveDist.lessThanEqual( this.cutDistMax ) )
+			
+			// If within shockwave, instantly cut the rice
+			If( withinShockwave, () => {
+				currentScale.assign( 0.01 )
 			} ).Else( () => {
-				// Slow growth when mouse moves away
-				const growthSpeed = float( 0.1 ) // Slower growth speed factor (was 0.3)
-				const frameTime = float( 0.016 ) // Assuming 60fps, ~16ms per frame
-				const diff = sub( targetScale, currentScale )
-				currentScale.addAssign( mul( mul( diff, growthSpeed ), frameTime ) )
+				// Normal mouse interaction - Target scale based on distance (3m to 7m falloff)
+				const targetScale = add( mul( tslSmoothstep( 3, 7, mouseDist ), 0.99 ), 0.01 )
+				
+				// Check if we're shrinking (target < current) or growing (target > current)
+				If( targetScale.lessThan( currentScale ), () => {
+					// Instant shrinking when mouse is near
+					currentScale.assign( targetScale )
+				} ).Else( () => {
+					// Slow growth when mouse moves away
+					const growthSpeed = float( 0.1 ) // Fixed growth speed
+					const frameTime = float( 0.016 ) // Assuming 60fps, ~16ms per frame
+					const diff = sub( targetScale, currentScale )
+					currentScale.addAssign( mul( mul( diff, growthSpeed ), frameTime ) )
+				} )
 			} )
 			
 			// Clamp to valid range
@@ -453,29 +491,157 @@ class RicefieldExample {
 		this.fieldBorder?.resize()
 	}
 	
-	onMouseMove = ( event ) => {
-		// Convert mouse position to normalized device coordinates
+	onPointerMove = ( event ) => {
+		// Get canvas bounds
 		const rect = stage3d.renderer.domElement.getBoundingClientRect()
+		
+		// Check if pointer is within canvas bounds
+		const isWithinBounds = 
+			event.clientX >= rect.left && 
+			event.clientX <= rect.right && 
+			event.clientY >= rect.top && 
+			event.clientY <= rect.bottom
+		
+		if ( !isWithinBounds ) {
+			// Move mouse position far away when outside canvas
+			this.mouseUniform.value.set( 1000, 0, 1000 )
+			// Reset drag state when leaving canvas
+			if ( this.isPointerDown ) {
+				this.isDragging = true // Mark as dragging to prevent click on re-enter
+			}
+			return
+		}
+		
+		// Check if we're dragging (only if pointer is down)
+		if ( this.isPointerDown && this.pointerDownPos.x !== -1 ) {
+			const dx = event.clientX - this.pointerDownPos.x
+			const dy = event.clientY - this.pointerDownPos.y
+			const distance = Math.sqrt( dx * dx + dy * dy )
+			
+			if ( distance > this.dragThreshold ) {
+				this.isDragging = true
+			}
+		}
+		
+		// Convert pointer position to normalized device coordinates
 		this.mouse.x = ( ( event.clientX - rect.left ) / rect.width ) * 2 - 1
 		this.mouse.y = -( ( event.clientY - rect.top ) / rect.height ) * 2 + 1
 		
-		// Update raycaster with camera and mouse position
+		// Update raycaster with camera and pointer position
 		this.raycaster.setFromCamera( this.mouse, stage3d.camera )
 		
 		// Calculate intersection with ground plane
-		const intersectPoint = new Vector3()
+		intersectPoint.set( 0, 0, 0 )
 		this.raycaster.ray.intersectPlane( this.groundPlane, intersectPoint )
-		
-		if ( intersectPoint ) {
+		if ( intersectPoint && !( intersectPoint.x == 0 && intersectPoint.z == 0 && intersectPoint.y == 0 ) ) {
 			// Update the uniform with the world position
 			this.mouseUniform.value.set( intersectPoint.x, 0, intersectPoint.z )
 		}
+	}
+	
+	onDocumentPointerLeave = () => {
+		// Move pointer position far away when leaving the document/window
+		this.mouseUniform.value.set( 1000, 0, 1000 )
+		// Reset all pointer states
+		this.isDragging = false
+		this.isPointerDown = false
+		this.pointerDownPos.set( -1, -1 )
+		this.pointerDownTime = 1000
+	}
+	
+	onPointerDown = ( event ) => {
+		// Record pointer down position and time for drag/click detection
+		this.pointerDownPos.set( event.clientX, event.clientY )
+		this.pointerDownTime = Date.now()
+		this.isDragging = false
+		this.isPointerDown = true
+	}
+	
+	onPointerUp = ( event ) => {
+		// Only process if pointer was actually down
+		if ( !this.isPointerDown ) {
+			return
+		}
+		
+		// Calculate time elapsed
+		const timeElapsed = Date.now() - this.pointerDownTime
+		
+		// Check if it's a click (not dragged and quick enough)
+		if ( !this.isDragging && timeElapsed < this.clickTimeThreshold ) {
+			// Get canvas bounds
+			const rect = stage3d.renderer.domElement.getBoundingClientRect()
+			
+			// Check if pointer is within canvas bounds
+			const isWithinBounds = 
+				event.clientX >= rect.left && 
+				event.clientX <= rect.right && 
+				event.clientY >= rect.top && 
+				event.clientY <= rect.bottom
+			
+			if ( isWithinBounds ) {
+				// Convert pointer position to normalized device coordinates
+				const clickMouse = new Vector2()
+				clickMouse.x = ( ( event.clientX - rect.left ) / rect.width ) * 2 - 1
+				clickMouse.y = -( ( event.clientY - rect.top ) / rect.height ) * 2 + 1
+				
+				// Update raycaster with camera and pointer position
+				this.raycaster.setFromCamera( clickMouse, stage3d.camera )
+				
+				// Calculate intersection with ground plane
+				const clickPoint = new Vector3()
+				this.raycaster.ray.intersectPlane( this.groundPlane, clickPoint )
+				
+				if ( clickPoint && !( clickPoint.x == 0 && clickPoint.z == 0 && clickPoint.y == 0 ) ) {
+					// Trigger shockwave animation
+					this.createShockwave( clickPoint )
+				}
+			}
+		}
+		
+		// Reset all pointer states
+		this.isDragging = false
+		this.isPointerDown = false
+		this.pointerDownPos.set( -1, -1 )
+		this.pointerDownTime = 0
+	}
+	
+	createShockwave( clickPoint ) {
+		// Reset the shockwave radii
+		this.cutDistMin.value = 0
+		this.cutDistMax.value = 0
+		
+		// Set fixed shockwave origin (won't change during animation)
+		this.shockwaveOrigin.value.set( clickPoint.x, 0, clickPoint.z )
+		
+		// Animate the shockwave using anime.js
+		animate( {
+			min: 0,
+			max: 5
+		}, {
+			min: 110, // Final inner radius
+			max: 120, // Final outer radius
+			duration: .9,
+			ease: 'inOutQuad',
+			onUpdate: ( anim ) => {
+				const targets = anim.targets[0]
+				this.cutDistMin.value = targets.min
+				this.cutDistMax.value = targets.max
+			},
+			onComplete: () => {
+				this.cutDistMin.value = 0
+				this.cutDistMax.value = 0
+
+			}
+		} )
 	}
 
 	dispose() {
 		// Remove event listeners
 		window.removeEventListener( 'resize', this.onResize )
-		window.removeEventListener( 'mousemove', this.onMouseMove )
+		window.removeEventListener( 'pointermove', this.onPointerMove )
+		window.removeEventListener( 'pointerdown', this.onPointerDown )
+		window.removeEventListener( 'pointerup', this.onPointerUp )
+		document.removeEventListener( 'pointerleave', this.onDocumentPointerLeave )
 		
 		// Dispose rice lines
 		if ( this.lines ) {
@@ -548,6 +714,12 @@ class RicefieldExample {
 			this.noiseTexture.dispose()
 			this.noiseTexture = null
 		}
+		
+		// Dispose GUI
+		if ( this.gui ) {
+			this.gui.destroy()
+			this.gui = null
+		}
 	}
 
 	show() {
@@ -568,6 +740,21 @@ class RicefieldExample {
 		if ( this.computeUpdate && stage3d.renderer ) {
 			stage3d.renderer.compute( this.computeUpdate )
 		}
+	}
+	
+	initGUI() {
+		this.gui = new GUI()
+		
+		// Actions folder
+		const actionsFolder = this.gui.addFolder( 'Actions' )
+		actionsFolder.add( this, 'harvest' ).name( 'Harvest All Rice' )
+		actionsFolder.open()
+	}
+	
+	harvest() {
+		// Trigger shockwave from center of field
+		const centerPoint = new Vector3( 0, 0, 0 ) // Center of the field
+		this.createShockwave( centerPoint )
 	}
 }
 
