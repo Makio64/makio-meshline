@@ -5,7 +5,7 @@ export const permute = /*#__PURE__*/ Fn( ( [x_immutable] ) => {
 
 	const x = vec4( x_immutable ).toVar()
 
-	return mod( x.mul( 34. ).add( 1. ).mul( x ), 289. )
+	return mod( x.mul( 34. ).add( 1. ).mul( x ), 289. ).toVar()
 
 } ).setLayout( {
 	name: 'permute',
@@ -51,7 +51,7 @@ export const snoise3d = /*#__PURE__*/ Fn( ( [v_immutable] ) => {
 	p3.mulAssign( norm.w )
 	const m = vec4( max( sub( 0.6, vec4( dot( x0, x0 ), dot( x1, x1 ), dot( x2, x2 ), dot( x3, x3 ) ) ), 0. ) ).toVar()
 
-	return add( 0.5, mul( 12., dot( m.mul( m ).mul( m ), vec4( dot( p0, x0 ), dot( p1, x1 ), dot( p2, x2 ), dot( p3, x3 ) ) ) ) )
+	return add( 0.5, mul( 12., dot( m.mul( m ).mul( m ), vec4( dot( p0, x0 ), dot( p1, x1 ), dot( p2, x2 ), dot( p3, x3 ) ) ) ) ).toVar()
 
 } ).setLayout( {
 	name: 'snoise',
