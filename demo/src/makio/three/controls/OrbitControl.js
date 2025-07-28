@@ -1,4 +1,4 @@
-import { Vector3 } from 'three'
+import { Vector3 } from 'three/webgpu'
 import stage from '../../core/stage'
 import wheel from '@/makio/utils/input/wheel'
 import pinch from '@/makio/utils/input/pinch'
