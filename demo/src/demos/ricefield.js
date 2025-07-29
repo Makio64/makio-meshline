@@ -471,9 +471,8 @@ class RicefieldExample {
 					const frameTime = float( 0.016 ) // Assuming 60fps, ~16ms per frame
 					const diff = sub( targetScale, currentScale )
 					
-					// Check if we're below 40% for linear growth, or above for bounce easing
-					If( currentScale.lessThan( 0.4 ), () => {
-						// Linear growth until 40%
+					// Check if we're below 50% for linear growth, or above for bounce easing
+					If( currentScale.lessThan( 0.5 ), () => {
 						currentScale.addAssign( mul( mul( diff, growthSpeed ), frameTime ) )
 					} ).Else( () => {
 						currentScale.addAssign( targetScale.sub( currentScale ).mul( 0.03 ) )
