@@ -2,9 +2,9 @@ import OrbitControl from '@/makio/three/controls/OrbitControl'
 import stage3d from '@/makio/three/stage3d'
 import { stage } from '@/makio/core/stage'
 import { MeshLine, rectanglePositions } from 'meshline'
-import { MeshBasicNodeMaterial, MeshStandardNodeMaterial } from 'three/webgpu'
+import { MeshStandardNodeMaterial } from 'three/webgpu'
 import { smoothstep } from '@/makio/utils/math'
-import { Mesh, MeshBasicMaterial, PlaneGeometry, StaticDrawUsage, Group, Color, Raycaster, Vector2, Vector3, Plane, StorageBufferAttribute, TextureLoader, RepeatWrapping, SRGBColorSpace } from 'three/webgpu'
+import { Mesh, MeshBasicMaterial, PlaneGeometry, StaticDrawUsage, Group, Color, Raycaster, Vector2, Vector3, Plane, StorageBufferAttribute, TextureLoader, RepeatWrapping, SRGBColorSpace, MathUtils } from 'three/webgpu'
 import { reflector, abs, sin, cos, time, uv, Fn, float, attribute, vec3, uniform, length, clamp, smoothstep as tslSmoothstep, storage, instanceIndex, If, sub, mul, add, vec4, mix, fract, vec2, texture, textureBicubic } from 'three/tsl'
 import QuadTree from '@/makio/generative/QuadTree'
 import { DynamicDrawUsage } from 'three'
@@ -13,6 +13,8 @@ import { PMREMGenerator } from 'three/webgpu'
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
 import GUI from 'lil-gui'
 import { animate } from 'animejs'
+import { mouse, onMove, onClick } from '@/makio/utils/input/mouse'
+import { isMobile } from '@/makio/utils/detect'
 
 const FIELD_WIDTH = 64 // Total width of the rice field
 const FIELD_HEIGHT = 64 // Total height of the rice field
@@ -37,6 +39,7 @@ class RicefieldExample {
 		this.cutDistMin = uniform( float( 0 ) ) // Inner radius of shockwave
 		this.cutDistMax = uniform( float( 0 ) ) // Outer radius of shockwave
 		this.shockwaveOrigin = uniform( vec3( 0, 0, 0 ) ) // Fixed origin for shockwave
+		this.mouseSpeedUniform = uniform( float( 1 ) ) // Mouse speed multiplier for interaction radius
 		this.cells = []
 		this.riceInstances = []
 		this.centerOffsetX = FIELD_WIDTH / 2
@@ -46,13 +49,9 @@ class RicefieldExample {
 		this.noiseTexture = null
 		this.gui = null
 		this.params = {}
-		// Drag detection
-		this.isDragging = false
-		this.isPointerDown = false
-		this.pointerDownPos = new Vector2()
-		this.dragThreshold = 5 // pixels
-		this.pointerDownTime = 0
-		this.clickTimeThreshold = 100 // milliseconds
+		// Mouse speed tracking
+		this.mouseSpeed = 0
+		this.targetMouseSpeed = 0
 	}
 
 	async init() {
@@ -69,10 +68,8 @@ class RicefieldExample {
 		await this.initHDR()
 		this.initScene()
 		window.addEventListener( 'resize', this.onResize )
-		window.addEventListener( 'pointermove', this.onPointerMove )
-		window.addEventListener( 'pointerdown', this.onPointerDown )
-		window.addEventListener( 'pointerup', this.onPointerUp )
-		document.addEventListener( 'pointerleave', this.onDocumentPointerLeave )
+		onMove.add( this.onMouseMove )
+		onClick.add( this.onMouseClick )
 	}
 
 	initScene() {
@@ -127,7 +124,7 @@ class RicefieldExample {
 
 	initWater() {
 		// water - size based on quadtree + padding
-		const reflection = reflector( { resolution: 0.5, bounces: false, generateMipmaps: true } ) // 0.5 is half of the rendering view
+		const reflection = reflector( { resolution: isMobile ? 0.5 : 1, bounces: false, generateMipmaps: true } ) // 0.5 is half of the rendering view
 		this.reflectionTarget = reflection.target
 		this.reflectionTarget.rotateX( - Math.PI / 2 )
 		stage3d.add( this.reflectionTarget )
@@ -139,8 +136,8 @@ class RicefieldExample {
 		let geo = new PlaneGeometry( FIELD_WIDTH + waterPadding, FIELD_HEIGHT + waterPadding, 1, 1 )
 		let material = new MeshStandardNodeMaterial()
 		material.transparent = true
-		material.metalness = 0.8
-		material.roughnessNode = 0.3
+		material.metalness = 0.2
+		material.roughnessNode = 0.4
 		material.colorNode = Fn( () => {
 			// Blur reflection based on roughness
 			const dirtyReflection = textureBicubic( reflection, roughness )
@@ -259,19 +256,13 @@ class RicefieldExample {
 			.widthCallback( ( t ) => ( 1 - smoothstep( 0.4, 1, t ) ) )
 			// Add colorFn to apply random color variation
 			.colorFn( Fn( ( [color, counters, side] ) => {
-				// Create a pseudo-random value from instanceIndex
 				const rand = fract( sin( float( instanceIndex ).mul( 12.9898 ) ).mul( 43758.5453 ) )
-				// Scale between 0.7 and 1.0
 				const colorScale = rand.mul( 1.1 ).add( .5 )
-				// Apply to color
 				return vec4( color.rgb.mul( colorScale ), color.a )
 			} ) )
 			.gradientFn( Fn( ( [gradientFactor, side] ) => {
-				// Modify the gradient factor to add variation per instance
 				const rand = fract( sin( float( instanceIndex ).mul( 12.9898 ) ).mul( 43758.5453 ) )
-				// Scale between 0.7 and 1.0
 				const colorScale = rand.mul( 1.1 ).add( .5 )
-				// Apply to color
 				return vec4( gradientFactor.rgb.mul( colorScale ), gradientFactor.a )
 			} ) )
 			// Add width function that varies with scale
@@ -282,7 +273,7 @@ class RicefieldExample {
 				
 				// Make width proportional to scale (thinner when growing)
 				// Scale from 0.3 (at scale 0.01) to 1.0 (at scale 1.0)
-				const widthMultiplier = tslSmoothstep( 0.01, 1.0, storageScale ).mul( 0.7 ).add( 0.3 )
+				const widthMultiplier = tslSmoothstep( 0.1, 1.0, storageScale ).mul( 0.7 ).add( 0.3 )
 				
 				return width.mul( widthMultiplier )
 			} ) )
@@ -465,7 +456,10 @@ class RicefieldExample {
 				currentScale.assign( 0.01 )
 			} ).Else( () => {
 				// Normal mouse interaction - Target scale based on distance (3m to 7m falloff)
-				const targetScale = add( mul( tslSmoothstep( 3, 7, mouseDist ), 0.99 ), 0.01 )
+				// Apply mouse speed multiplier to adjust the interaction radius
+				const adjustedMinDist = float( 1 ).mul( this.mouseSpeedUniform )
+				const adjustedMaxDist = float( 5 ).mul( this.mouseSpeedUniform )
+				const targetScale = add( mul( tslSmoothstep( adjustedMinDist, adjustedMaxDist, mouseDist ), 0.99 ), 0.01 )
 				
 				// Check if we're shrinking (target < current) or growing (target > current)
 				If( targetScale.lessThan( currentScale ), () => {
@@ -491,43 +485,12 @@ class RicefieldExample {
 		this.fieldBorder?.resize()
 	}
 	
-	onPointerMove = ( event ) => {
-		// Get canvas bounds
-		const rect = stage3d.renderer.domElement.getBoundingClientRect()
+	onMouseMove = ( mouseData ) => {
+		// Convert mouse position to normalized device coordinates
+		this.mouse.x = mouseData.normalizedX
+		this.mouse.y = -mouseData.normalizedY
 		
-		// Check if pointer is within canvas bounds
-		const isWithinBounds = 
-			event.clientX >= rect.left && 
-			event.clientX <= rect.right && 
-			event.clientY >= rect.top && 
-			event.clientY <= rect.bottom
-		
-		if ( !isWithinBounds ) {
-			// Move mouse position far away when outside canvas
-			this.mouseUniform.value.set( 1000, 0, 1000 )
-			// Reset drag state when leaving canvas
-			if ( this.isPointerDown ) {
-				this.isDragging = true // Mark as dragging to prevent click on re-enter
-			}
-			return
-		}
-		
-		// Check if we're dragging (only if pointer is down)
-		if ( this.isPointerDown && this.pointerDownPos.x !== -1 ) {
-			const dx = event.clientX - this.pointerDownPos.x
-			const dy = event.clientY - this.pointerDownPos.y
-			const distance = Math.sqrt( dx * dx + dy * dy )
-			
-			if ( distance > this.dragThreshold ) {
-				this.isDragging = true
-			}
-		}
-		
-		// Convert pointer position to normalized device coordinates
-		this.mouse.x = ( ( event.clientX - rect.left ) / rect.width ) * 2 - 1
-		this.mouse.y = -( ( event.clientY - rect.top ) / rect.height ) * 2 + 1
-		
-		// Update raycaster with camera and pointer position
+		// Update raycaster with camera and mouse position
 		this.raycaster.setFromCamera( this.mouse, stage3d.camera )
 		
 		// Calculate intersection with ground plane
@@ -539,70 +502,21 @@ class RicefieldExample {
 		}
 	}
 	
-	onDocumentPointerLeave = () => {
-		// Move pointer position far away when leaving the document/window
-		this.mouseUniform.value.set( 1000, 0, 1000 )
-		// Reset all pointer states
-		this.isDragging = false
-		this.isPointerDown = false
-		this.pointerDownPos.set( -1, -1 )
-		this.pointerDownTime = 1000
-	}
-	
-	onPointerDown = ( event ) => {
-		// Record pointer down position and time for drag/click detection
-		this.pointerDownPos.set( event.clientX, event.clientY )
-		this.pointerDownTime = Date.now()
-		this.isDragging = false
-		this.isPointerDown = true
-	}
-	
-	onPointerUp = ( event ) => {
-		// Only process if pointer was actually down
-		if ( !this.isPointerDown ) {
-			return
+	onMouseClick = ( mouseData ) => {
+		// Convert mouse position to normalized device coordinates
+		const clickMouse = new Vector2( mouseData.normalizedX, -mouseData.normalizedY )
+		
+		// Update raycaster with camera and mouse position
+		this.raycaster.setFromCamera( clickMouse, stage3d.camera )
+		
+		// Calculate intersection with ground plane
+		const clickPoint = new Vector3()
+		this.raycaster.ray.intersectPlane( this.groundPlane, clickPoint )
+		
+		if ( clickPoint && !( clickPoint.x == 0 && clickPoint.z == 0 && clickPoint.y == 0 ) ) {
+			// Trigger shockwave animation
+			this.createShockwave( clickPoint )
 		}
-		
-		// Calculate time elapsed
-		const timeElapsed = Date.now() - this.pointerDownTime
-		
-		// Check if it's a click (not dragged and quick enough)
-		if ( !this.isDragging && timeElapsed < this.clickTimeThreshold ) {
-			// Get canvas bounds
-			const rect = stage3d.renderer.domElement.getBoundingClientRect()
-			
-			// Check if pointer is within canvas bounds
-			const isWithinBounds = 
-				event.clientX >= rect.left && 
-				event.clientX <= rect.right && 
-				event.clientY >= rect.top && 
-				event.clientY <= rect.bottom
-			
-			if ( isWithinBounds ) {
-				// Convert pointer position to normalized device coordinates
-				const clickMouse = new Vector2()
-				clickMouse.x = ( ( event.clientX - rect.left ) / rect.width ) * 2 - 1
-				clickMouse.y = -( ( event.clientY - rect.top ) / rect.height ) * 2 + 1
-				
-				// Update raycaster with camera and pointer position
-				this.raycaster.setFromCamera( clickMouse, stage3d.camera )
-				
-				// Calculate intersection with ground plane
-				const clickPoint = new Vector3()
-				this.raycaster.ray.intersectPlane( this.groundPlane, clickPoint )
-				
-				if ( clickPoint && !( clickPoint.x == 0 && clickPoint.z == 0 && clickPoint.y == 0 ) ) {
-					// Trigger shockwave animation
-					this.createShockwave( clickPoint )
-				}
-			}
-		}
-		
-		// Reset all pointer states
-		this.isDragging = false
-		this.isPointerDown = false
-		this.pointerDownPos.set( -1, -1 )
-		this.pointerDownTime = 0
 	}
 	
 	createShockwave( clickPoint ) {
@@ -638,10 +552,8 @@ class RicefieldExample {
 	dispose() {
 		// Remove event listeners
 		window.removeEventListener( 'resize', this.onResize )
-		window.removeEventListener( 'pointermove', this.onPointerMove )
-		window.removeEventListener( 'pointerdown', this.onPointerDown )
-		window.removeEventListener( 'pointerup', this.onPointerUp )
-		document.removeEventListener( 'pointerleave', this.onDocumentPointerLeave )
+		onMove.remove( this.onMouseMove )
+		onClick.remove( this.onMouseClick )
 		
 		// Dispose rice lines
 		if ( this.lines ) {
@@ -727,11 +639,14 @@ class RicefieldExample {
 		if ( this.computeUpdate ) {
 			stage.onUpdate.add( this.updateCompute )
 		}
+		// Add mouse speed tracking
+		stage.onUpdate.add( this.updateMouseSpeed )
 	}
 	
 	hide( cb ) { 
 		// Stop compute shader updates
 		stage.onUpdate.remove( this.updateCompute )
+		stage.onUpdate.remove( this.updateMouseSpeed )
 		if ( cb ) cb() 
 	}
 	
@@ -740,6 +655,13 @@ class RicefieldExample {
 		if ( this.computeUpdate && stage3d.renderer ) {
 			stage3d.renderer.compute( this.computeUpdate )
 		}
+	}
+	
+	updateMouseSpeed = ( dt ) => {
+		const distance = Math.sqrt( mouse.moveX * mouse.moveX + mouse.moveY * mouse.moveY )
+		this.targetMouseSpeed = distance / ( dt / 16 || 1 )
+		this.mouseSpeed = MathUtils.lerp( this.mouseSpeed, this.targetMouseSpeed, 0.15 )
+		this.mouseSpeedUniform.value = MathUtils.clamp( 1 + this.mouseSpeed * 0.1, 1, 3 )
 	}
 	
 	initGUI() {
