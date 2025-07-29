@@ -475,7 +475,7 @@ class RicefieldExample {
 					If( currentScale.lessThan( 0.5 ), () => {
 						currentScale.addAssign( mul( mul( diff, growthSpeed ), frameTime ) )
 					} ).Else( () => {
-						currentScale.addAssign( targetScale.sub( currentScale ).mul( 0.03 ) )
+						currentScale.addAssign( targetScale.sub( currentScale ).mul( 0.05 ) )
 					} )
 				} )
 			} )
