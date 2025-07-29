@@ -3,6 +3,7 @@ import stage3d from '@/makio/three/stage3d'
 import { stage } from '@/makio/core/stage'
 import OrbitControl from '@/makio/three/controls/OrbitControl'
 import { MeshLine } from 'meshline'
+import { mouse, onMove } from '@/makio/utils/input/mouse'
 
 const NUM_POINTS = 20
 const LERP_FACTOR = 0.35 // smoothness of the follow behaviour
@@ -15,6 +16,8 @@ class FollowExample {
 		this.target = new Vector3()
 		this.prevTarget = new Vector3()
 		this.raycaster = new Raycaster()
+		this.mouseSpeed = 0
+		this.targetMouseSpeed = 0
 	}
 
 	// -------------------------------------------------- INIT
@@ -25,7 +28,7 @@ class FollowExample {
 		
 		this.initLine()
 
-		window.addEventListener( 'pointermove', this.onMove )
+		onMove.add( this.onMouseMove )
 		window.addEventListener( 'resize', this.onResize )
 		stage.onUpdate.add( this.update )
 	}
@@ -61,12 +64,15 @@ class FollowExample {
 		this.line.setPositions( this.updatePosition( this.positionsF32 ) )
 
 		// ------------------------------------------------ width based on mouse speed
-		const speed = this.target.distanceTo( this.prevTarget ) / ( dt / 16 || 1 )
-		const targetWidth = MathUtils.clamp( 0.001 + speed * 0.3, 0.01, 0.5 )
+		// Use mouse.moveX and mouse.moveY for speed calculation
+		const distance = Math.sqrt( mouse.moveX * mouse.moveX + mouse.moveY * mouse.moveY )
+		this.targetMouseSpeed = distance / ( dt / 16 || 1 )
+		this.mouseSpeed = MathUtils.lerp( this.mouseSpeed, this.targetMouseSpeed * 0.01, 0.15 )
+		const targetWidth = MathUtils.clamp( this.mouseSpeed, 0.01, 1 )
+		console.log( targetWidth )
 
 		// Smooth interpolation to avoid jitter
 		this.line.material.lineWidth.value = MathUtils.lerp( this.line.material.lineWidth.value, targetWidth, 0.15 )
-		this.prevTarget.copy( this.target )
 	}
 
 	// -------------------------------------------------- HELPERS
@@ -80,29 +86,22 @@ class FollowExample {
 		return arr
 	}
 
-	_screenToWorld( x, y ) {
-		// Convert mouse position to normalized device coordinates (-1 to +1)
-		const mouse = new Vector3(
-			( x / stage.width ) * 2 - 1,
-			- ( y / stage.height ) * 2 + 1,
-			0
-		)
+	onMouseMove = ( mouseData ) => {
+		// Use normalized coordinates from mouse.js
+		const mouse3D = new Vector3( mouseData.normalizedX, -mouseData.normalizedY, 0 )
 		
 		// Update the raycaster with the camera and mouse position
-		this.raycaster.setFromCamera( mouse, stage3d.camera )
+		this.raycaster.setFromCamera( mouse3D, stage3d.camera )
 		
 		// Get ray origin and direction
 		const origin = this.raycaster.ray.origin
 		const direction = this.raycaster.ray.direction
 		
 		// Calculate intersection with z=0 plane
-		// Ray equation: point = origin + t * direction
-		// For z=0 plane: origin.z + t * direction.z = 0
-		// Therefore: t = -origin.z / direction.z
-		
 		if ( Math.abs( direction.z ) < 0.0001 ) {
 			// Ray is nearly parallel to the plane, use a default distance
-			return origin.clone().add( direction.clone().multiplyScalar( 10 ) )
+			this.target.copy( origin ).add( direction.multiplyScalar( 10 ) )
+			return
 		}
 		
 		const t = -origin.z / direction.z
@@ -110,11 +109,12 @@ class FollowExample {
 		// If t is negative, the intersection is behind the camera
 		if ( t < 0 ) {
 			// Project forward anyway with a reasonable distance
-			return origin.clone().add( direction.clone().multiplyScalar( 10 ) )
+			this.target.copy( origin ).add( direction.multiplyScalar( 10 ) )
+			return
 		}
 		
 		// Calculate intersection point
-		return new Vector3(
+		this.target.set(
 			origin.x + t * direction.x,
 			origin.y + t * direction.y,
 			0 // z = 0 by definition
@@ -125,15 +125,12 @@ class FollowExample {
 		this.line?.resize()
 	}
 
-	onMove = ( e ) => {
-		this.target.copy( this._screenToWorld( e.clientX, e.clientY ) )
-	}
 
 	// -------------------------------------------------- CLEANUP
 	dispose() {
 		stage.onUpdate.remove( this.update )
 		window.removeEventListener( 'resize', this.onResize )
-		window.removeEventListener( 'pointermove', this.onMove )
+		onMove.remove( this.onMouseMove )
 		stage3d.remove( this.line )
 		stage3d.control.dispose()
 		this.line?.dispose()

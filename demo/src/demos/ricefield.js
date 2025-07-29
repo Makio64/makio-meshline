@@ -11,7 +11,6 @@ import { DynamicDrawUsage } from 'three'
 
 import { PMREMGenerator } from 'three/webgpu'
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
-import GUI from 'lil-gui'
 import { animate } from 'animejs'
 import { mouse, onMove, onClick } from '@/makio/utils/input/mouse'
 import { isMobile } from '@/makio/utils/detect'
@@ -40,6 +39,7 @@ class RicefieldExample {
 		this.cutDistMax = uniform( float( 0 ) ) // Outer radius of shockwave
 		this.shockwaveOrigin = uniform( vec3( 0, 0, 0 ) ) // Fixed origin for shockwave
 		this.mouseSpeedUniform = uniform( float( 1 ) ) // Mouse speed multiplier for interaction radius
+		this.areaOfEffectUniform = uniform( float( 1 ) ) // Area of effect multiplier (0-1)
 		this.cells = []
 		this.riceInstances = []
 		this.centerOffsetX = FIELD_WIDTH / 2
@@ -47,7 +47,6 @@ class RicefieldExample {
 		this.water = null
 		this.reflectionTarget = null
 		this.noiseTexture = null
-		this.gui = null
 		this.params = {}
 		// Mouse speed tracking
 		this.mouseSpeed = 0
@@ -85,7 +84,6 @@ class RicefieldExample {
 		this.initRicefield()
 		this.initCompute()
 		this.initSky()
-		this.initGUI()
 	}
 
 	async initHDR() {
@@ -457,8 +455,9 @@ class RicefieldExample {
 			} ).Else( () => {
 				// Normal mouse interaction - Target scale based on distance (3m to 7m falloff)
 				// Apply mouse speed multiplier to adjust the interaction radius
-				const adjustedMinDist = float( 1 ).mul( this.mouseSpeedUniform )
-				const adjustedMaxDist = float( 5 ).mul( this.mouseSpeedUniform )
+				// Also apply area of effect uniform to scale the interaction area
+				const adjustedMinDist = float( 1 ).mul( this.mouseSpeedUniform ).mul( this.areaOfEffectUniform )
+				const adjustedMaxDist = float( 5 ).mul( this.mouseSpeedUniform ).mul( this.areaOfEffectUniform )
 				const targetScale = add( mul( tslSmoothstep( adjustedMinDist, adjustedMaxDist, mouseDist ), 0.99 ), 0.01 )
 				
 				// Check if we're shrinking (target < current) or growing (target > current)
@@ -530,17 +529,15 @@ class RicefieldExample {
 		this.cutDistMin.value = 0
 		this.cutDistMax.value = 0
 		
-		// Set fixed shockwave origin (won't change during animation)
 		this.shockwaveOrigin.value.set( clickPoint.x, 0, clickPoint.z )
 		
-		// Animate the shockwave using anime.js
 		animate( {
-			min: 0,
-			max: 5
+			min: 1,
+			max: 6
 		}, {
-			min: 110, // Final inner radius
-			max: 120, // Final outer radius
-			duration: .9,
+			min: 70, // Final inner radius
+			max: 95, // Final outer radius
+			duration: 1.1,
 			ease: 'inOutQuad',
 			onUpdate: ( anim ) => {
 				const targets = anim.targets[0]
@@ -633,11 +630,6 @@ class RicefieldExample {
 			this.noiseTexture = null
 		}
 		
-		// Dispose GUI
-		if ( this.gui ) {
-			this.gui.destroy()
-			this.gui = null
-		}
 	}
 
 	show() {
@@ -668,22 +660,19 @@ class RicefieldExample {
 		this.targetMouseSpeed = distance / ( dt / 16 || 1 )
 		this.mouseSpeed = MathUtils.lerp( this.mouseSpeed, this.targetMouseSpeed, 0.15 )
 		this.mouseSpeedUniform.value = MathUtils.clamp( 1 + this.mouseSpeed * 0.1, 1, 3 )
-	}
-	
-	initGUI() {
-		this.gui = new GUI()
 		
-		// Actions folder
-		const actionsFolder = this.gui.addFolder( 'Actions' )
-		actionsFolder.add( this, 'harvest' ).name( 'Harvest All Rice' )
-		actionsFolder.open()
+		// Update area of effect based on mouse movement
+		let isMouseMoving = distance > 1 // Threshold to detect if mouse is moving
+
+		console.log( distance )
+		if ( isMouseMoving ) {
+			this.areaOfEffectUniform.value += ( 1 - this.areaOfEffectUniform.value ) * 0.15
+		} else {
+			// Mouse stopped - decrease by 0.95 per frame
+			this.areaOfEffectUniform.value *= 0.95
+		}
 	}
 	
-	harvest() {
-		// Trigger shockwave from center of field
-		const centerPoint = new Vector3( 0, 0, 0 ) // Center of the field
-		this.createShockwave( centerPoint )
-	}
 }
 
 export default new RicefieldExample() 

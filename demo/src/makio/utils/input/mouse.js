@@ -90,11 +90,24 @@ if ( typeof window !== 'undefined' ) {
 		onDown.dispatch( refreshMouseState( { x, y } ) )
 	}
 
+	let moveTimeout = null
+	
 	const moveHandler = ( e ) => {
 		const x = e.touches ? e.touches[0].clientX : e.x
 		const y = e.touches ? e.touches[0].clientY : e.y
 		Object.assign( prevMouse, mouse )
 		onMove.dispatch( refreshMouseState( { x, y } ) )
+		
+		// Clear any existing timeout
+		if ( moveTimeout ) {
+			clearTimeout( moveTimeout )
+		}
+		
+		// Set a timeout to reset moveX/moveY after mouse stops
+		moveTimeout = setTimeout( () => {
+			mouse.moveX = 0
+			mouse.moveY = 0
+		}, 50 ) // Reset after 50ms of no movement
 	}
 
 	const endHandler = ( e ) => {
