@@ -16,7 +16,7 @@
 		"meshline": "workspace:*",
 		"shiki": "^3.8.0",
 		"stats-gl": "^3.6.0",
-		"three": "^0.178.0",
+		"three": "^0.179.0",
 		"vue": "^3.5.17",
 		"vue-tiny-router": "^1.4.0",
 		"vue-tiny-translation": "^1.0.0"

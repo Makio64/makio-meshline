@@ -37,10 +37,10 @@ importers:
         version: 3.8.0
       stats-gl:
         specifier: ^3.6.0
-        version: 3.6.0(three@0.178.0)
+        version: 3.6.0(three@0.179.0)
       three:
-        specifier: ^0.178.0
-        version: 0.178.0
+        specifier: ^0.179.0
+        version: 0.179.0
       vue:
         specifier: ^3.5.17
         version: 3.5.17(typescript@5.8.3)
@@ -1778,6 +1778,9 @@ packages:
 
   three@0.178.0:
     resolution: {integrity: sha512-ybFIB0+x8mz0wnZgSGy2MO/WCO6xZhQSZnmfytSPyNpM0sBafGRVhdaj+erYh5U+RhQOAg/eXqw5uVDiM2BjhQ==}
+
+  three@0.179.0:
+    resolution: {integrity: sha512-V04E7nW9QS+ZDugmpu50x7cLT69th15elaXJPDo79CZs3q/0V8zHf1d3vrm9q2vQ/jef1fXdg8FvaMq2gJvzkw==}
 
   tinyglobby@0.2.14:
     resolution: {integrity: sha512-tX5e7OM1HnYr2+a2C/4V0htOcSQcoSTH9KgJnVvNm5zm/cyEWKJ7j7YutsH9CxMdtOkkLFy2AHrMci9IM8IPZQ==}
@@ -3648,9 +3651,9 @@ snapshots:
 
   speakingurl@14.0.1: {}
 
-  stats-gl@3.6.0(three@0.178.0):
+  stats-gl@3.6.0(three@0.179.0):
     optionalDependencies:
-      three: 0.178.0
+      three: 0.179.0
 
   string-width@4.2.3:
     dependencies:
@@ -3704,6 +3707,8 @@ snapshots:
   tabbable@6.2.0: {}
 
   three@0.178.0: {}
+
+  three@0.179.0: {}
 
   tinyglobby@0.2.14:
     dependencies:
