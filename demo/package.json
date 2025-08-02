@@ -11,32 +11,32 @@
 		"lint": "eslint src --fix"
 	},
 	"dependencies": {
-		"animejs": "^4.0.2",
+		"animejs": "^4.1.2",
 		"lil-gui": "^0.20.0",
 		"meshline": "workspace:*",
-		"shiki": "^3.8.0",
+		"shiki": "^3.9.1",
 		"stats-gl": "^3.6.0",
-		"three": "^0.178.0",
-		"vue": "^3.5.17",
+		"three": "^0.179.1",
+		"vue": "^3.5.18",
 		"vue-tiny-router": "^1.4.0",
 		"vue-tiny-translation": "^1.0.0"
 	},
 	"devDependencies": {
 		"@eslint/eslintrc": "^3.3.1",
-		"@stylistic/eslint-plugin": "^5.1.0",
-		"@vitejs/plugin-vue": "^6.0.0",
-		"eslint": "^9.31.0",
-		"eslint-plugin-vue": "^10.3.0",
+		"@stylistic/eslint-plugin": "^5.2.2",
+		"@vitejs/plugin-vue": "^6.0.1",
+		"eslint": "^9.32.0",
+		"eslint-plugin-vue": "^10.4.0",
 		"rollup-plugin-visualizer": "^6.0.3",
 		"stylus": "^0.64.0",
 		"unplugin-auto-import": "^19.3.0",
 		"unplugin-vue-components": "^28.8.0",
-		"vite": "^7.0.4",
+		"vite": "^7.0.6",
 		"vite-plugin-brotli-size": "^1.1.0",
 		"vite-plugin-mkcert": "^1.17.8",
 		"vite-plugin-qrcode": "^0.3.0",
-		"vite-plugin-tsl-operator": "^1.4.1",
+		"vite-plugin-tsl-operator": "^1.4.3",
 		"vue-eslint-parser": "^10.2.0"
 	},
-	"packageManager": "pnpm@10.13.1"
+	"packageManager": "pnpm@10.14.0"
 }

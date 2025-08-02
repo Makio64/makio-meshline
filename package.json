@@ -14,8 +14,8 @@
   "devDependencies": {
     "@stylistic/eslint-plugin": "^5.2.2",
     "eslint": "^9.32.0",
-    "eslint-plugin-vue": "^10.3.0",
-    "typescript": "^5.8.3"
+    "eslint-plugin-vue": "^10.4.0",
+    "typescript": "^5.9.2"
   },
-  "packageManager": "pnpm@10.13.1"
+  "packageManager": "pnpm@10.14.0"
 }
