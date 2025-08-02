@@ -5,6 +5,7 @@ import stage from '@/makio/core/stage'
 import { MeshLine, circlePositions, sineWavePositions, squarePositions, straightLine } from 'meshline'
 import GUI from 'lil-gui'
 import SandboxView from '@/views/SandboxView.vue'
+import { PlaneGeometry, MeshBasicMaterial, Mesh, DoubleSide } from 'three/webgpu'
 
 class SandboxExample {
 	constructor() {
@@ -25,7 +26,7 @@ class SandboxExample {
 			
 			// Appearance
 			color: '#ff3300',
-			lineWidth: 2,
+			lineWidth: 20,
 			opacity: 1.0,
 			
 			// Gradient
@@ -40,7 +41,7 @@ class SandboxExample {
 			animateDashes: false,
 			
 			// Size
-			sizeAttenuation: true,
+			sizeAttenuation: false,
 			
 			// Advanced
 			wireframe: false,
@@ -68,6 +69,9 @@ class SandboxExample {
 		
 		// Initialize GUI
 		this.initGUI()
+		
+		// Create reference plane
+		this.createReferencePlane()
 		
 		// Create initial line
 		this.createLine()
@@ -130,7 +134,7 @@ class SandboxExample {
 		appearanceFolder.add( this.config, 'opacity', 0, 1, 0.01 )
 		appearanceFolder.add( this.config, 'useGradient' ).name( 'Gradient Enabled' )
 		appearanceFolder.addColor( this.config, 'gradientColor' ).name( 'Gradient Color' )
-		appearanceFolder.add( this.config, 'lineWidth', 0.01, 10, 0.01 ).name( 'Line Width' )
+		appearanceFolder.add( this.config, 'lineWidth', 0.1, 25, 0.1 ).name( 'Line Width' )
 		appearanceFolder.add( this.config, 'sizeAttenuation' ).name( 'Size Attenuation' )
 		appearanceFolder.add( this.config, 'wireframe' )
 		appearanceFolder.open()
@@ -194,6 +198,19 @@ class SandboxExample {
 			default:
 				return straightLine( 20, this.config.segments )
 		}
+	}
+	
+	createReferencePlane() {
+		// Create a 1x1 unit plane at the origin
+		const geometry = new PlaneGeometry( 1, 1 )
+		const material = new MeshBasicMaterial( {
+			color: 0xffffff,
+			opacity: 0.1,
+			transparent: true,
+			side: DoubleSide
+		} )
+		this.referencePlane = new Mesh( geometry, material )
+		stage3d.add( this.referencePlane )
 	}
 	
 	createLine() {
@@ -397,6 +414,12 @@ class SandboxExample {
 		if ( this.line ) {
 			stage3d.remove( this.line )
 			this.line.dispose()
+		}
+		
+		if ( this.referencePlane ) {
+			stage3d.remove( this.referencePlane )
+			this.referencePlane.geometry.dispose()
+			this.referencePlane.material.dispose()
 		}
 		
 		if ( this.gui ) {

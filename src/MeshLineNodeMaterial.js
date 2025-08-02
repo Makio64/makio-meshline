@@ -245,13 +245,16 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 				normal.assign( this.normalFn( normal, dir, dir1, dir2, aCounters, aSide ) )
 			}
 
-			if ( !this.sizeAttenuation ) {
-				normal.xy.mulAssign( finalPosition.w )
-				normal.xy.divAssign( vec4( this.resolution, 0., 1. ).mul( cameraProjectionMatrix ).xy.mul( aspect ) )
-			}
-
 			// un-stretch X
 			normal.x.divAssign( aspect )
+
+			if ( !this.sizeAttenuation ) {
+				// Convert normal from NDC to screen pixels
+				// Multiply by w to get back to clip space
+				normal.xy.mulAssign( finalPosition.w )
+				// Divide by resolution but only y component to maintain aspect ratio
+				normal.xy.divAssign( this.resolution.y )
+			}
 
 			finalPosition.xy.addAssign( normal.xy.mul( aSide ) )
 
