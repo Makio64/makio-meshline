@@ -6,6 +6,7 @@
 import waves from '@/demos/waves'
 import basic from '@/demos/basic'
 import follow from '@/demos/follow'
+import drawlines from '@/demos/drawlines'
 import stress from '@/demos/stress'
 import ricefield from '@/demos/ricefield'
 import gpuCircle from '@/demos/gpuCircle'
@@ -20,6 +21,7 @@ export default {
 		const mapping = {
 			waves,
 			follow,
+			drawlines,
 			'gpu-circle': gpuCircle,
 			'gpu-instance': gpuInstance,
 			stress,

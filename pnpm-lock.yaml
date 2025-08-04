@@ -35,6 +35,9 @@ importers:
       shiki:
         specifier: ^3.9.1
         version: 3.9.1
+      simplify-js:
+        specifier: ^1.2.4
+        version: 1.2.4
       stats-gl:
         specifier: ^3.6.0
         version: 3.6.0(three@0.179.1)
@@ -1677,6 +1680,9 @@ packages:
   signal-exit@4.1.0:
     resolution: {integrity: sha512-bzyZ1e88w9O1iNJbKnOlvYTrWPDl46O1bG0D3XInv+9tkPrxrN8jUUTiFlDkkmKWgn1M6CfIA13SuGqOa9Korw==}
     engines: {node: '>=14'}
+
+  simplify-js@1.2.4:
+    resolution: {integrity: sha512-vITfSlwt7h/oyrU42R83mtzFpwYk3+mkH9bOHqq/Qw6n8rtR7aE3NZQ5fbcyCUVVmuMJR6ynsAhOfK2qoah8Jg==}
 
   source-map-js@1.2.1:
     resolution: {integrity: sha512-UXWMKhLOwVKb728IUtQPXxfYU+usdybtUrK/8uGE8CQMvrhOpwvzDBwj0QhSL7MQc7vIsISBG8VQ8+IDQxpfQA==}
@@ -3535,6 +3541,8 @@ snapshots:
       '@types/hast': 3.0.4
 
   signal-exit@4.1.0: {}
+
+  simplify-js@1.2.4: {}
 
   source-map-js@1.2.1: {}
 

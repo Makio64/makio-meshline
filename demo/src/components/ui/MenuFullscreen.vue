@@ -17,6 +17,7 @@ export default {
 				{ text: 'Basic', href: '/examples/basic' },
 				{ text: 'Waves', href: '/examples/waves' },
 				{ text: 'Follow', href: '/examples/follow' },
+				{ text: 'DrawLines', href: '/examples/drawlines' },
 				{ text: 'GPUCircle', href: '/examples/gpu-circle' },
 				// { text: 'Stress', href: '/examples/stress' },
 				{ text: 'Ricefield', href: '/examples/ricefield' },
