@@ -128,9 +128,9 @@ class DrawLinesExample {
 		}
 		
 		// with the rest of the lines 
-		for ( let i = LINES_BY_PATH; i < NUM_LINES; i++ ) {
+		for ( let i = LINES_FOLLOWING_MOUSE; i < NUM_LINES; i++ ) {
 			let line = this.lines[i]
-			let linepath = this.linePath[Math.floor( i / LINES_BY_PATH )]
+			let linepath = this.linePath[Math.floor( ( i - LINES_FOLLOWING_MOUSE ) / LINES_BY_PATH )]
 			if ( linepath ) {
 				this.updateLineOnPath( line, linepath, dt )
 			} else {
