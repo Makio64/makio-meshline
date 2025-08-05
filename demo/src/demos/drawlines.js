@@ -6,12 +6,13 @@ import { MeshLine } from 'meshline'
 import { mouse, onDown, onMove, onUp } from '@/makio/utils/input/mouse'
 import { Fn, vec4, attribute } from 'three/tsl'
 import random from '@/makio/utils/random'
-import simplify from 'simplify-js'
+// import simplify from 'simplify-js'
+import { smoothstep } from '@/makio/utils/math'
 
 const NUM_POINTS = 20
 const NUM_LINES = 1000
 const LINES_FOLLOWING_MOUSE = 5
-const LINES_BY_PATH = 20
+const LINES_BY_PATH = 10
 const force3 = new Vector3()
 
 class DrawLinesExample {
@@ -24,6 +25,7 @@ class DrawLinesExample {
 		this.raycaster = new Raycaster()
 		this.mouseSpeed = 0
 		this.targetMouseSpeed = 0
+		this.timespeed = 1
 
 		// Generate lines with circular offsets and varied physics
 		for ( let i = 0; i < NUM_LINES; i++ ) {
@@ -144,7 +146,10 @@ class DrawLinesExample {
 			// Update width array for all points in this line (2 vertices per point)
 			for ( let k = 0; k < NUM_POINTS; k++ ) {
 				const t = k / ( NUM_POINTS - 1 ) // Calculate t value for this point (0 to 1)
-				const widthWithCallback = this.widthFactor( t ) * line.speed
+				let widthWithCallback = this.widthFactor( t ) * line.speed
+				if ( line.pathTime > 0 ) {
+					widthWithCallback *= smoothstep( 0, 100, line.pathTime )
+				}
 				const widthIndex = i * NUM_POINTS * 2 + k * 2
 				this.widthArray[widthIndex] = widthWithCallback
 				this.widthArray[widthIndex + 1] = widthWithCallback
@@ -152,17 +157,13 @@ class DrawLinesExample {
 		
 			// Update points from tail to head
 			if ( line.justTeleported ) {
-				// Skip physics for one frame after teleport, just set positions
-				for ( let k = 0; k < NUM_POINTS; k++ ) {
-					line.points[k].copy( line.target )
-				}
 				line.justTeleported = false
 			} else {
 				// Normal "spring" update
 				for ( let k = NUM_POINTS - 1; k >= 0; k-- ) {
 					if ( k === 0 ) {
 					// Head follows target with spring physics
-						const force = force3.copy( line.target ).sub( line.points[k] ).multiplyScalar( line.spring )
+						const force = force3.copy( line.target ).sub( line.points[k] ).multiplyScalar( line.spring * this.timespeed )
 						line.velocity.add( force ).multiplyScalar( line.friction )
 						line.points[k].add( line.velocity )
 					} else {
@@ -196,7 +197,7 @@ class DrawLinesExample {
 		let range = endTime - startTime
 			
 		// Update path time
-		line.pathTime += dt
+		line.pathTime += dt * this.timespeed
 		let percent = ( line.pathTime / range ) % 1
 			
 		// Check if we've completed a full cycle
@@ -210,11 +211,10 @@ class DrawLinesExample {
 
 				// Get starting position
 				const startPt = this.getPointAt( linePath, 0 )
-				const startPos = new Vector3( startPt.x, startPt.y, 0 )
 					
 				// Teleport all points to the starting position
 				for ( let i = 0; i < NUM_POINTS; i++ ) {
-					line.points[i].copy( startPos ).add( line.offset )
+					line.points[i].set( startPt.x + line.offset.x, startPt.y + line.offset.y, 0 )
 				}
 			} else {
 				percent = 1
@@ -224,7 +224,7 @@ class DrawLinesExample {
 		let pts = this.getPointAt( linePath, percent )
 		let moveX = line.target.x - pts.x
 		let moveY = line.target.y - pts.y
-		let speed = Math.sqrt( moveX ** 2 + moveY ** 2 ) * 1
+		let speed = Math.sqrt( moveX ** 2 + moveY ** 2 ) * 0.5
 		line.speed = MathUtils.lerp( line.speed, speed, 0.15 )
 		line.target.set( pts.x, pts.y, 0 ).add( line.offset )
 	}
@@ -267,14 +267,10 @@ class DrawLinesExample {
 	}
 
 	getDistanceFromEnd( line, linepath ) {
-		// Get the last point of the path
 		const endPoint = linepath.points[linepath.points.length - 1]
 		const endVector = new Vector3( endPoint.x, endPoint.y, 0 )
 		
-		// Get the last point of the line (tail)
 		const tailPoint = line.points[line.points.length - 1]
-		
-		// Calculate distance
 		return endVector.distanceTo( tailPoint )
 	}
 
@@ -321,11 +317,6 @@ class DrawLinesExample {
 	}
 
 	addPoint( point ) {
-		// Safety check
-		if ( !point || point.x === undefined || point.y === undefined ) {
-			console.warn( 'addPoint called with invalid point:', point )
-			return
-		}
 		
 		const currentTime = performance.now()
 		// Store the actual width value being used for drawing
