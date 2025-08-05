@@ -158,7 +158,7 @@ class DrawLinesExample {
 				}
 				line.justTeleported = false
 			} else {
-				// Normal "physics" update
+				// Normal "spring" update
 				for ( let k = NUM_POINTS - 1; k >= 0; k-- ) {
 					if ( k === 0 ) {
 					// Head follows target with spring physics
@@ -222,11 +222,11 @@ class DrawLinesExample {
 		}
 			
 		let pts = this.getPointAt( linePath, percent )
+		let moveX = line.target.x - pts.x
+		let moveY = line.target.y - pts.y
+		let speed = Math.sqrt( moveX ** 2 + moveY ** 2 ) * 1
+		line.speed = MathUtils.lerp( line.speed, speed, 0.15 )
 		line.target.set( pts.x, pts.y, 0 ).add( line.offset )
-			
-		// Use recorded width directly
-		const lineSpeed = 0.1//this.getWidthAt( linePath, percent )
-		line.speed = MathUtils.lerp( line.speed, lineSpeed, 0.15 )
 	}
 
 	getPointAt( line, percent ) {
@@ -343,6 +343,7 @@ class DrawLinesExample {
 			const dy = y - lastPoint.y
 			const distance = Math.sqrt( dx * dx + dy * dy )
 			
+			// ignore point to close from last point
 			if ( distance > 0.01 ) {
 				this.points.push( { x, y, time: currentTime, width: currentWidth } )
 			}
