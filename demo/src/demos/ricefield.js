@@ -579,7 +579,7 @@ class RicefieldExample {
 			this.water.material.dispose()
 			this.water = null
 		}
-		
+
 		
 		// Dispose reflection target
 		if ( this.reflectionTarget ) {
@@ -664,7 +664,6 @@ class RicefieldExample {
 		// Update area of effect based on mouse movement
 		let isMouseMoving = distance > 1 // Threshold to detect if mouse is moving
 
-		console.log( distance )
 		if ( isMouseMoving ) {
 			this.areaOfEffectUniform.value += ( 1 - this.areaOfEffectUniform.value ) * 0.15
 		} else {
