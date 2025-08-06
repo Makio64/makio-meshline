@@ -10,9 +10,35 @@ import Components from 'unplugin-vue-components/vite'
 import AutoImport from 'unplugin-auto-import/vite'
 import path from 'path'
 
+// Custom plugin to remove PWA functionality
+const removePWAPlugin = () => {
+	return {
+		name: 'remove-pwa',
+		configureServer( server ) {
+			// Intercept PWA-related requests
+			server.middlewares.use( ( req, res, next ) => {
+				if ( req.url && ( req.url.includes( '@vite-plugin-pwa' ) || req.url.includes( '/sw.js' ) || req.url.includes( '/manifest.json' ) ) ) {
+					res.statusCode = 204
+					res.end()
+					return
+				}
+				next()
+			} )
+		},
+		transform( code, id ) {
+			// Remove PWA imports from HTML
+			if ( id.endsWith( '.html' ) ) {
+				return code.replace( /<link[^>]*manifest[^>]*>/g, '' )
+					.replace( /<script[^>]*serviceWorker[^>]*>[\s\S]*?<\/script>/g, '' )
+			}
+		}
+	}
+}
+
 // https://vitejs.dev/config/
 export default defineConfig( {
 	plugins: [
+		removePWAPlugin(),
 		mkcert(),
 		Components( {
 			/* options https://github.com/antfu/unplugin-vue-components */
@@ -38,12 +64,9 @@ export default defineConfig( {
 		target: 'esnext',
 		emptyOutDir: true,
 		sourcemap: true,
-		// rollupOptions: {
-		// 	external: ['three', 'three/tsl', 'three/webgpu', 'animejs']
-		// }
 	},
 	esbuild: {
-		keepNames: false,
+		keepNames: true,
 		legalComments: 'none',
 	},
 
@@ -56,7 +79,6 @@ export default defineConfig( {
 	resolve: {
 		alias: {
 			'@': path.resolve( __dirname, './src' ),
-			'three/tsl': path.resolve( __dirname, 'node_modules/three/build/three.tsl.js' ),
 		},
 		extensions: ['.mjs', '.js', '.ts', '.jsx', '.tsx', '.json', '.vue', '.styl'],
 	},

@@ -12,16 +12,16 @@ const fix = Fn( ( [i_immutable, aspect_immutable] ) => {
 	{ name: 'aspect', type: 'float' }
 ] } )
 
+// build these nodes once for all instances
+const aSide = attribute( 'side', 'float' )
+const aCounters = attribute( 'counters', 'float' )
+const aWidth = attribute( 'width', 'float' )
+const vSide = varyingProperty( 'float', 'vSide' )
+const vWidth = varyingProperty( 'float', 'vWidth' )
+const vCounters = varyingProperty( 'float', 'vCounters' )
+const vColor = varyingProperty( 'vec4', 'vColor' )
+
 class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
-	
-	// build these nodes once for all instances
-	static aSide = attribute( 'side', 'float' )
-	static aCounters = attribute( 'counters', 'float' )
-	static aWidth = attribute( 'width', 'float' )
-	static vSide = varyingProperty( 'float', 'vSide' )
-	static vWidth = varyingProperty( 'float', 'vWidth' )
-	static vCounters = varyingProperty( 'float', 'vCounters' )
-	static vColor = varyingProperty( 'vec4', 'vColor' )
 
 	constructor() {
 		super()
@@ -116,14 +116,6 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 	}
 
 	setupShaders( {  } ) {
-
-		let aSide = MeshLineNodeMaterial.aSide
-		let aCounters = MeshLineNodeMaterial.aCounters
-		let aWidth = MeshLineNodeMaterial.aWidth
-		let vSide = MeshLineNodeMaterial.vSide
-		let vWidth = MeshLineNodeMaterial.vWidth
-		let vCounters = MeshLineNodeMaterial.vCounters
-		let vColor = MeshLineNodeMaterial.vColor
 
 		let segments = this.options.lines?.length / 3 || 1
 		
@@ -274,7 +266,6 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 				uvCoords.assign( this.uvFn( uvCoords, vCounters, vSide ) )
 			}
 		}
-
 		// Color node
 		this.colorNode = Fn( () => {
 			let color = vColor.toVar( 'color' )
