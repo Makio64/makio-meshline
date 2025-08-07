@@ -179,7 +179,6 @@ class DrawLinesExample {
 			} )
 		} 
 		
-		
 		this.meshline.setPositions( this.lineArrays )
 		
 		// Update the width buffer
@@ -340,7 +339,6 @@ class DrawLinesExample {
 			}
 		}
 	}
-
 
 	onResize = () => {
 		this.line?.resize()

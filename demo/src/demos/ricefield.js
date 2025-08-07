@@ -579,7 +579,6 @@ class RicefieldExample {
 			this.water.material.dispose()
 			this.water = null
 		}
-
 		
 		// Dispose reflection target
 		if ( this.reflectionTarget ) {
