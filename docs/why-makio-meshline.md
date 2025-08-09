@@ -1,19 +1,22 @@
-# Why Makio MeshLine
+# **Makio MeshLine**
 
-In the world of creative coding, lines are more than just lines—they're expressive tools for visualization, animation, and art. I think it's fascinating how `meshlines` can create such a variety of renders, feelings & experiences.
+Back in 2015s, TheSpite released [TheSpite's MeshLine](https://github.com/spite/THREE.MeshLine), it opened up new possibilities for thick, styled lines in Three.js, allowing the creation of new effects & explore new horizons. 
 
-Back in 2015s, I particularly enjoyed using [TheSpite's MeshLine](https://github.com/spite/THREE.MeshLine), which opened up new possibilities for thick, styled lines in Three.js, allowing us (creative devs) to create new effects & explore new horizons. 
+With Three.js evolving, there was a need for a modern Meshline version that leverages TSL power and improved the core concept.
 
-This interest in advanced line rendering was shared by talented creative coders who've pushed boundaries with custom shaders and effects.
+`Makio MeshLine` is my vision of it : built to be performant, simple but flexible. It allows creators to focus on ideas rather than implementation details.
 
-However, with Three.js evolving, I feel there was a need for a modern MeshLine that leverages TSL (Three Shader Language) for more efficient & customizable shaders. 
+Best,
 
-`Makio MeshLine` is my vision of it: built to be performant, flexible, and easy to extend, allowing creators to focus on ideas rather than implementation details.
+[Makio64](https://x.com/makio64) 
 
-A big thanks to the community, especially to my friend [@Floz](https://x.com/florianzumbrunn) for his constant support, [Samsyyyy](https://x.com/Samsyyyy) for the early tests & feedbacks, to [TheSpite](https://x.com/thespite) for making the first version i knew of MeshLine, to [MrDoob](https://x.com/mrdoob) and [Sunag](https://x.com/sea3dformat) for Three.js and TSL!
+## Thanks
 
-Best, [Makio64](https://x.com/makio64)
+A big shout-out to the community, [@Floz](https://x.com/florianzumbrunn) for constant support, [MrDoob](https://x.com/mrdoob) for his feedbacks, [Sunag](https://x.com/sea3dformat) for making & improving TSL everyday,  [Samsyyyy](https://x.com/Samsyyyy) for early feedbacks, to [TheSpite](https://x.com/thespite) for pioneering MeshLine & all my Threejs friends!
 
-#### Learn more about meshlines : 
+## MeshLines
+
+A `Meshline` is a mesh with special geometry / material representing one or more lines, it helps to create a variety of renders, feelings & experiences.
+
 - [Matt DesLauriers](https://github.com/mattdesl)'s [`drawing-lines-is-hard`](https://mattdesl.svbtle.com/drawing-lines-is-hard)
 - [Nathan Gordon](https://x.com/gordonnl)'s [`crafting-stylised-mouse-trails-with-ogl`](https://tympanus.net/codrops/2019/09/24/crafting-stylised-mouse-trails-with-ogl/)

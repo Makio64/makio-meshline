@@ -17,8 +17,7 @@ export default defineConfig({
         text: 'Introduction',
         items: [
           { text: 'Why Makio MeshLine ?', link: '/why-makio-meshline' },
-          { text: 'Getting Started', link: '/guide' },
-          { text: 'Changelog & Roadmap', link: '/changelog-roadmap' },
+          { text: 'Getting Started', link: '/guide' }
         ]
       },
       {
@@ -26,9 +25,12 @@ export default defineConfig({
         items: [
           { text: 'Interactive Sandbox', link: '/examples/sandbox' },
           { text: 'Basic Examples', link: '/examples/basic' },
-          { text: 'GPU Circle', link: '/examples/gpucircle' },
-          { text: 'Instancing', link: '/examples/instancing' },
-          { text: 'Live Demos', link: 'https://meshlines.netlify.app/' },
+          { text: 'Demo : Follow', link: '/examples/follow' },
+          { text: 'Demo : Draw Lines', link: '/examples/drawlines' },
+          { text: 'Demo : Rice Field', link: '/examples/ricefield' },
+          { text: 'Tutorial : GPU position', link: '/examples/gpucircle' },
+          { text: 'Tutorial : Instancing', link: '/examples/instancing' },
+          { text: 'Demos page', link: 'https://meshlines.netlify.app/' },
         ]
       },
       {
@@ -38,7 +40,7 @@ export default defineConfig({
           { text: 'MeshLine', link: '/meshline' },
           { text: 'MeshLineGeometry', link: '/meshline-geometry' },
           { text: 'MeshLineNodeMaterial', link: '/meshline-material' },
-          { text: 'Performance', link: '/performance' },
+          { text: 'Helper Functions', link: '/helpers' },
         ]
       },
       {
@@ -48,10 +50,11 @@ export default defineConfig({
           { text: 'Advanced', link: '/advanced-patterns' }
         ]
       },
-      {
-        text: 'Utilities',
+       {
+        text: 'Other',
         items: [
-          { text: 'Helper Functions', link: '/helpers' },
+          { text: 'Performance', link: '/performance' },
+          { text: 'Changelog & Roadmap', link: '/changelog-roadmap' },
         ]
       }
 

@@ -16,12 +16,12 @@ export function straightLine( width = 1, segments = 2, isVertical = false ) {
 export function straightLineBetween( start, end, segments = 1 ) {
 	const positions = new Float32Array( ( segments + 1 ) * 3 )
 
-	let x1 = start.x || start[0]
-	let y1 = start.y || start[1]
-	let z1 = start.z || start[2]
-	let x2 = end.x || end[0]
-	let y2 = end.y || end[1]
-	let z2 = end.z || end[2]
+	const x1 = start.x ?? start[0] ?? 0
+	const y1 = start.y ?? start[1] ?? 0
+	const z1 = start.z ?? start[2] ?? 0
+	const x2 = end.x ?? end[0] ?? 0
+	const y2 = end.y ?? end[1] ?? 0
+	const z2 = end.z ?? end[2] ?? 0
 	
 	for ( let i = 0; i <= segments; i++ ) {
 		const t = i / segments

@@ -1,6 +1,6 @@
 # MeshLine Class
 
-The `MeshLine` class is the main interface for creating performant, customizable lines in Three.js. It extends `Mesh` from `three/webgpu` and provides TSL-powered line rendering capabilities.
+The `MeshLine` class is the main interface for creating lines. It extends `Mesh` from `three/webgpu` and provides TSL-powered line rendering capabilities.
 
 **Quick Links:**
 - [Common Patterns](./common-patterns.md) - Basic usage examples
@@ -16,7 +16,7 @@ new MeshLine(options?: MeshLineOptions)
 
 ## Fluent API
 
-MeshLine supports a fluent interface with chainable methods that return the instance for easy configuration:
+The fluent API allow you to chain methods like the example bellow:
 
 ```js
 const line = new MeshLine()
@@ -27,11 +27,7 @@ const line = new MeshLine()
 	.opacity(0.8)
 ```
 
-See [Common Patterns](./common-patterns.md) for complete examples.
-
-### Configuration Methods
-
-All methods return the `MeshLine` instance for chaining:
+See [Common Patterns](./common-patterns.md) for more examples.
 
 **Geometry Configuration:**
 - `lines(lines: Float32Array | number[][], isClose?: boolean | boolean[])` - Set line(s) positions and optional close flag

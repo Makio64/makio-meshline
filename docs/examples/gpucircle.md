@@ -9,6 +9,28 @@ Demonstrates GPU-based position calculation using Three.js TSL (Three Shading La
 
 <iframe src="https://meshlines.netlify.app/examples/gpu-circle?noMenu" width="100%" height="600" style="border: 1px solid #ddd; border-radius: 8px;"></iframe>
 
+## Key Concepts
+
+Instead of providing vertex positions as a buffer, you define a TSL function that computes positions based on:
+- `counter` - Normalized position along the line (0 to 1)
+- `time` - Global time uniform for animations
+- Any custom uniforms you define
+
+### Benefits
+
+1. **Performance** - Calculations happen in parallel on GPU
+2. **Memory Efficient** - No need to store position arrays
+3. **Dynamic** - Easy to create complex, animated shapes
+4. **Parametric** - Change shape by modifying shader parameters
+
+### Use Cases
+
+- Animated visualizations
+- Parametric curves and surfaces
+- Music visualizers
+- Data-driven graphics
+- Procedural line generation
+
 ## Code Implementation
 
 ```javascript
@@ -37,29 +59,3 @@ const line = new MeshLine()
   .color( 0xffffff )
   .build()
 ```
-
-## Key Concepts
-
-### GPU Position Nodes
-
-Instead of providing vertex positions as a buffer, you define a TSL function that computes positions based on:
-- `counter` - Normalized position along the line (0 to 1)
-- `time` - Global time uniform for animations
-- Any custom uniforms you define
-
-### Benefits
-
-1. **Performance** - Calculations happen in parallel on GPU
-2. **Memory Efficient** - No need to store position arrays
-3. **Dynamic** - Easy to create complex, animated shapes
-4. **Parametric** - Change shape by modifying shader parameters
-
-### Use Cases
-
-- Animated visualizations
-- Parametric curves and surfaces
-- Music visualizers
-- Data-driven graphics
-- Procedural line generation
-
-This approach is particularly powerful when combined with other TSL nodes for creating complex, interactive line effects.

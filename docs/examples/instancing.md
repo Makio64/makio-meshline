@@ -3,7 +3,7 @@ outline: false
 pageClass: example-page
 ---
 
-# Instancing Example
+# Instancing
 
 Efficiently render thousands of lines with a single draw call using GPU instancing.
 
@@ -11,13 +11,21 @@ Efficiently render thousands of lines with a single draw call using GPU instanci
 
 ## Overview
 
-This example demonstrates how to use MeshLine's instancing capabilities to render many lines efficiently. Instead of creating separate geometries for each line, instancing reuses a single geometry with per-instance attributes.
+MeshLine's instancing capabilities help to render many lines efficiently.
 
-## Features
+Instead of creating separate mesh / geometries / material for each line, instancing reuses a single geometry with per-instance attributes so we can customize each lines.
 
-- **High Performance** - Render 1000+ lines with minimal overhead
-- **Per-Instance Attributes** - Each instance can have unique properties
-- **Dynamic Updates** - Modify instance properties in real-time
+### Performance Benefits
+
+#### Traditional Approach
+- 1000 lines = 1000 draw calls
+- High CPU overhead
+- Poor GPU utilization
+
+#### Instanced Approach  
+- 1000 lines = 1 draw call
+- Minimal CPU overhead
+- Optimal GPU utilization
 
 ## Basic Implementation
 
@@ -80,18 +88,6 @@ line.widthFn( Fn( ( [ width, counter, side, scale ] ) => {
 } ) )
 ```
 
-## Performance Benefits
-
-### Traditional Approach
-- 1000 lines = 1000 draw calls
-- High CPU overhead
-- Poor GPU utilization
-
-### Instanced Approach  
-- 1000 lines = 1 draw call
-- Minimal CPU overhead
-- Optimal GPU utilization
-
 ## Use Cases
 
 - **Particle Systems** - Hair, grass, fur rendering
@@ -105,7 +101,5 @@ line.widthFn( Fn( ( [ width, counter, side, scale ] ) => {
 1. **Batch Similar Lines** - Group lines with same material properties
 2. **Use Instance Attributes** - Avoid creating unique geometries
 3. **Update Efficiently** - Modify only changed instance values
-4. **Consider LOD** - Reduce segment count for distant instances
-5. **Profile Performance** - Monitor GPU memory usage
 
 Instancing is essential for applications requiring many lines while maintaining smooth performance.
