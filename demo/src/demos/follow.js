@@ -6,12 +6,14 @@ import { MeshLine } from 'meshline'
 import { mouse, onMove } from '@/makio/utils/input/mouse'
 import { Fn, vec4, attribute } from 'three/tsl'
 import random from '@/makio/utils/random'
+import { isMobile } from '@/makio/utils/detect'
 
 const NUM_POINTS = 20
 const NUM_LINES = 4
 
 class FollowExample {
 	constructor() {
+		this.text = isMobile ? `touch & move` : `move your mouse`
 		this.lines = []
 		this.lineArrays = []
 		

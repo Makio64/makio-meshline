@@ -1,6 +1,7 @@
 <template>
-	<div class="ExampleView view" />
-</template>
+	<div class="ExampleView view">
+		<div v-if="text" class="instruction" v-html="text" />
+	</div></template>
 
 <script>
 import waves from '@/demos/waves'
@@ -16,6 +17,11 @@ import { contentLoaded } from '@/store'
 
 export default {
 	name: 'ExampleView',
+	data: function() {
+		return {
+			text: '',
+		}
+	},
 	async mounted() {
 		const id = this.$router.params.id
 		const mapping = {
@@ -30,6 +36,7 @@ export default {
 		}
 		this.example = mapping[id] || basic
 		await this.example.init()
+		this.text = this.example.text || ''
 		contentLoaded.value = true
 		this.transitionIn()
 	},

@@ -17,6 +17,7 @@ const force3 = new Vector3()
 
 class DrawLinesExample {
 	constructor() {
+		this.text = 'Click & drag to draw lines'
 		this.linePath = []
 		this.lines = []
 		this.lineArrays = []
