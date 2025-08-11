@@ -115,7 +115,7 @@ class BasicExample {
 				.needsUV( true )
 
 			// options setters 
-			if ( config.useDash ) { line.dashes( config.dashCount, config.dashRatio ) }
+			if ( config.useDash ) { line.dash( { count: config.dashCount, ratio: config.dashRatio } ) }
 			if ( config.gradientColor ) { line.gradientColor( config.gradientColor ) }
 			if ( config.useMap ) { line.map( config.map ) }
 			if ( config.opacity ) { line.opacity( config.opacity ) }

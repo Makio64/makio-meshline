@@ -238,11 +238,11 @@ class SandboxExample {
 		}
 		
 		if ( this.config.useDashes ) {
-			this.line.dashes( this.config.dashCount, this.config.dashRatio, this.config.dashOffset )
+			this.line.dash( { count: this.config.dashCount, ratio: this.config.dashRatio, offset: this.config.dashOffset } )
 		}
 		
 		if ( this.config.useMiterLimit ) {
-			this.line.useMiterLimit( true, this.config.miterLimit, this.config.highQualityMiter )
+			this.line.join( { type: 'miter', limit: this.config.miterLimit, quality: this.config.highQualityMiter ? 'high' : 'standard' } )
 		}
 		
 		this.line.build()
@@ -311,7 +311,7 @@ class SandboxExample {
 		}
 		
 		if ( this.config.useDashes ) {
-			code += `\t.dashes( ${this.config.dashCount}, ${this.config.dashRatio}`
+			code += `\t.dash( { count: ${this.config.dashCount}, ratio: ${this.config.dashRatio}`
 			if ( this.config.dashOffset !== 0 ) {
 				code += `, ${this.config.dashOffset}`
 			}
@@ -323,7 +323,7 @@ class SandboxExample {
 		}
 		
 		if ( this.config.useMiterLimit ) {
-			code += `\t.useMiterLimit( true`
+			code += `\t.join({ type: 'miter', limit: ${this.config.miterLimit}, quality: ${this.config.highQualityMiter ? `'high'` : `'standard'`} })\n`
 			if ( this.config.miterLimit !== 4 || this.config.highQualityMiter ) {
 				code += `, ${this.config.miterLimit}`
 			}

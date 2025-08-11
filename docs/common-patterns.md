@@ -34,7 +34,7 @@ const line = new MeshLine()
 ```js
 const line = new MeshLine()
   .lines(circlePositions(64), true)
-  .dashes(8, 0.5) // dashes( dashCount, dashRatio = 0.5, dashOffset = 0 )
+  .dash({ count: 8, ratio: 0.5 }) // dash({ count, ratio = 0.5, offset = 0 })
 ```
 
 ## 4. Gradient
@@ -121,17 +121,15 @@ window.addEventListener('resize', () => {
 // Basic miter limit (prevents oversized spikes)
 const line = new MeshLine()
   .lines(squarePositions(16), true)
-  .useMiterLimit(true) // Default limit of 4
+  .join({ type: 'miter', limit: 4 })
   .lineWidth(2)
 
 // Custom miter limit
 const line2 = new MeshLine()
-  .useMiterLimit(true, 6) // Higher limit = sharper corners but potential bigger spikes ( see under ) 
-  .miterLimit(6) // or use this
+  .join({ type: 'miter', limit: 6 }) // Higher limit = sharper corners but potential bigger spikes ( see under )
 
 // High quality miter (fix for when the screen-centered sharp corners)
 const line3 = new MeshLine()
   .lines(squarePositions(16), true)
-  .useMiterLimit(true, 4, true) // Enable high quality mode with third params
-  .highQualityMiter( true ) // or this
+  .join({ type: 'miter', limit: 4, quality: 'high' }) // High quality mode
 ``` 

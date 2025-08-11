@@ -53,13 +53,11 @@ See [Common Patterns](./common-patterns.md) for more examples.
 - `mapOffset(offset: THREE.Vector2)` - Set texture UV offset
 
 **Dashes:**
-- `dashes(count: number, ratio?: number, offset?: number)` - Configure dash pattern
+- `dash({ count: number, ratio?: number, offset?: number })` - Configure dash pattern
 
 **Advanced:**
 
-- `useMiterLimit(enable: boolean, limit?: number, highQualityMiter?: boolean)` - Enable miter limit with optional limit value (default: 4) and optional high quality mode (default: false)
-- `miterLimit(limit: number)` - Set miter limit value
-- `highQualityMiter(enable: boolean)` - Enable high quality miter joints (reduces spikes at screen center for sharp corners)
+- `join({ type: 'miter'|'bevel'|'round', limit?: number, quality?: 'standard'|'high' })` - Control line joins; when `type: 'miter'`, `limit` and `quality` apply
 - `dpr(ratio: number)` - Set device pixel ratio
 - `frustumCulled(enable: boolean)` - Enable/disable frustum culling & geometry BoundingBox/boundingSphere creation
 - `verbose(enable: boolean)` - Enable/disable verbose logging
@@ -67,6 +65,8 @@ See [Common Patterns](./common-patterns.md) for more examples.
 - `gpuPositionNode(node: Fn)` - Set GPU position calculation node
 - `usage(usage: THREE.Usage)` - Set buffer usage hint for position/next/prev (if they exist)
 - `instances(count: number)` - Enable instancing with specified count
+- `dynamic(enable: boolean)` - Toggle dynamic geometry updates (usage hints)
+- `autoResize(target?: Window|HTMLElement)` - Automatically update resolution on resize
 
 **Hook Functions:**
 

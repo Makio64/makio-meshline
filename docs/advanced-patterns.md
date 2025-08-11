@@ -74,7 +74,7 @@ const sharp = new MeshLine()
 ```js
 const dashed = new MeshLine()
   .lines(sineWavePositions())
-  .dashes(20, 0.4)
+  .dash({ count: 20, ratio: 0.4 })
   .lineWidth(0.4)
   .build()
 
@@ -208,7 +208,7 @@ const fadingLine = new MeshLine()
 ```js
 const customDashes = new MeshLine()
 	.lines(circlePositions( 128 ))
-	.dashes(10, 0.3)
+	.dash({ count: 10, ratio: 0.3 })
 	.dashFn(Fn( ( [cyclePos, counters] ) => {
 		// Create variable dash lengths
 		const variation = sin( counters.mul( 20 ) ).mul( 0.2 ).add( 1 )

@@ -1,7 +1,7 @@
 import { Fn, step, uniform, uv } from "three/tsl"
 import { MeshLineGeometry } from "./MeshLineGeometry"
 import { MeshLineNodeMaterial } from "./MeshLineNodeMaterial"
-import { Mesh, InstancedBufferAttribute } from "three/webgpu"
+import { Mesh, InstancedBufferAttribute, StreamDrawUsage, StaticDrawUsage } from "three/webgpu"
 import { straightLine } from "./positions/straightLine"
 
 const defaultPositions = straightLine( 2 )
@@ -57,6 +57,34 @@ export default class MeshLine extends Mesh {
 	}
 
 	// Chainable setters
+	configure( options = {} ) {
+		if ( options.lines !== undefined || options.closed !== undefined ) {
+			const lines = options.lines ?? this._options.lines
+			const closed = options.closed ?? this._options.closed
+			this.lines( lines, closed )
+		}
+		if ( options.color !== undefined ) this.color( options.color )
+		if ( options.lineWidth !== undefined ) this.lineWidth( options.lineWidth )
+		if ( options.widthCallback !== undefined ) this.widthCallback( options.widthCallback )
+		if ( options.sizeAttenuation !== undefined ) this.sizeAttenuation( options.sizeAttenuation )
+		if ( options.gradientColor !== undefined ) this.gradientColor( options.gradientColor )
+		if ( options.map !== undefined ) this.map( options.map )
+		if ( options.mapOffset !== undefined ) this.mapOffset( options.mapOffset )
+		if ( options.alphaMap !== undefined ) this.alphaMap( options.alphaMap )
+		if ( options.opacity !== undefined ) this.opacity( options.opacity )
+		if ( options.alphaTest !== undefined ) this.alphaTest( options.alphaTest )
+		if ( options.transparent !== undefined ) this.transparent( options.transparent )
+		if ( options.wireframe !== undefined ) this.wireframe( options.wireframe )
+		if ( options.dpr !== undefined ) this.dpr( options.dpr )
+		if ( options.frustumCulled !== undefined ) this.frustumCulled( options.frustumCulled )
+		if ( options.verbose !== undefined ) this.verbose( options.verbose )
+		if ( options.renderWidth !== undefined || options.renderHeight !== undefined ) this.renderSize( options.renderWidth, options.renderHeight )
+		if ( options.dash ) this.dash( options.dash )
+		if ( options.join ) this.join( options.join )
+		if ( options.dynamic !== undefined ) this.dynamic( options.dynamic )
+		if ( options.autoResize ) this.autoResize( options.autoResize )
+		return this
+	}
 	lines( lines, closed = this._options.closed ) {
 		this._options.lines = lines
 		this._options.closed = closed
@@ -134,6 +162,20 @@ export default class MeshLine extends Mesh {
 		return this
 	}
 
+	join( { type = 'miter', limit = 4, quality = 'standard' } = {} ) {
+		const useMiter = type === 'miter'
+		const high = quality === 'high'
+		this._options.useMiterLimit = useMiter
+		this._options.miterLimit = limit
+		this._options.highQualityMiter = high
+		if ( this._built && this.material ) {
+			this.material.useMiterLimit = useMiter
+			if ( this.material.miterLimit ) this.material.miterLimit.value = limit
+			this.material.highQualityMiter = high
+		}
+		return this
+	}
+
 	miterLimit( miterLimit ) {
 		this._options.miterLimit = miterLimit
 		if ( this.material.miterLimit ) {
@@ -179,6 +221,19 @@ export default class MeshLine extends Mesh {
 		return this
 	}
 
+	dash( params ) {
+		const { count, ratio = 0.5, offset = 0 } = params || {}
+		this._options.dashCount = count
+		this._options.dashRatio = ratio
+		this._options.dashOffset = offset
+		if ( this._built && this.material.dashCount ) {
+			this.material.dashCount.value = count
+			this.material.dashRatio.value = ratio
+			this.material.dashOffset.value = offset
+		}
+		return this
+	}
+
 	dashes( dashCount, dashRatio = 0.5, dashOffset = 0 ) {
 		this._options.dashCount = dashCount
 		this._options.dashRatio = dashRatio
@@ -197,6 +252,15 @@ export default class MeshLine extends Mesh {
 		this._options.dpr = dpr
 		if ( this.material.dpr ) {
 			this.material.dpr.value = dpr
+		}
+		return this
+	}
+
+	// New dynamic usage helper
+	dynamic( enable ) {
+		this._options.usage = enable ? StreamDrawUsage : StaticDrawUsage
+		if ( this._built && this.geometry?.setUsage ) {
+			this.geometry.setUsage( this._options.usage )
 		}
 		return this
 	}
@@ -445,10 +509,27 @@ export default class MeshLine extends Mesh {
 		}
 	}
 
+	// Auto-resize to window (or external handler)
+	autoResize( target = window ) {
+		if ( this._autoResizeHandler ) {
+			window.removeEventListener( 'resize', this._autoResizeHandler )
+			this._autoResizeHandler = null
+		}
+		this._autoResizeHandler = () => {
+			this.resize( window.innerWidth, window.innerHeight )
+		}
+		window.addEventListener( 'resize', this._autoResizeHandler )
+		return this
+	}
+
 	dispose = () => {
 		this.parent?.remove( this )
 		this.geometry?.dispose()
 		this.material?.dispose()
+		if ( this._autoResizeHandler ) {
+			window.removeEventListener( 'resize', this._autoResizeHandler )
+			this._autoResizeHandler = null
+		}
 		if ( this.instanceMatrix ) this.instanceMatrix.dispose()
 		if ( this.instanceColor ) this.instanceColor.dispose()
 		this._built = false
