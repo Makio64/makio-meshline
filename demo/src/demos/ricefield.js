@@ -395,8 +395,7 @@ class RicefieldExample {
 				.lines( allBorderPositions, borderLoops )
 				.color( 0x8b7355 ) // Brown color for field borders
 				.lineWidth( 0.15 )
-				.useMiterLimit( true )
-				.miterLimit( 8 )
+				.join( { type: 'miter', limit: 8 } )
 				.usage( StaticDrawUsage )
 			
 			stage3d.add( this.fieldBorder )
