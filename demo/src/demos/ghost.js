@@ -54,5 +54,3 @@ class GhostExample {
 }
 
 export default new GhostExample()
-
-

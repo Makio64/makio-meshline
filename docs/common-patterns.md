@@ -20,13 +20,13 @@ const line = new MeshLine()
 ```js
 const line = new MeshLine()
   .lines(circlePositions(64))
-  .isClose(true) // close the last 2 points
+  .closed(true) // close the last 2 points
 ```
 
 shorter methods : 
 ```js
 const line = new MeshLine()
-  .lines(circlePositions(64), true) // lines( lines, isClose )
+  .lines(circlePositions(64), true) // lines( lines, closed )
 ```
 
 ## 3. Dashed Line

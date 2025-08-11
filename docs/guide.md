@@ -29,7 +29,7 @@ document.body.append(renderer.domElement)
 
 const line = new MeshLine()
   .lines(circlePositions(32, 10))// 64-segment circle, radius 10
-  .isClose(true)
+  .closed(true)
   .lineWidth(1)        // world units
   .color(0xff8800)
   .gradientColor(0xffffff)

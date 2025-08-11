@@ -52,7 +52,7 @@ const wavePosition = Fn( ( [counter] ) => {
 // Create line with GPU position node
 const line = new MeshLine()
   .segments( 128 )
-  .isClose( true )
+  .closed( true )
   .gpuPositionNode( circlePosition )
   .lineWidth( 0.1 )
   .gradientColor( 0x0000ff )

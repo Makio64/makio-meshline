@@ -31,7 +31,7 @@ const rings = [ circlePositions(64,1), circlePositions(64,1.5), circlePositions(
 
 const multi = new MeshLine()
   .lines(rings)
-  .isClose(true)
+  .closed(true)
   .color(0xffffff)
   .sizeAttenuation(true)
   .lineWidth(2)

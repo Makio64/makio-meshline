@@ -34,7 +34,7 @@ import { MeshLineGeometry } from 'makio-meshline'
 
 const geom = new MeshLineGeometry({
   lines: [ myFloat32Array ],
-  isClose: false,
+  closed: false,
   widthCallback: t => 0.2 + 0.8*Math.sin(t*Math.PI)
 })
 ```

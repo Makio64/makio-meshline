@@ -25,7 +25,7 @@ Generates a `Float32Array` of `[x, y, z]` coordinates evenly spaced around a cir
 import { circlePositions, MeshLine } from 'makio-meshline';
 
 // Create a circle with 64 segments and a radius of 2unit
-const circle = new MeshLine({ lines: circlePositions(64, 2), isClose: true });
+const circle = new MeshLine({ lines: circlePositions(64, 2), closed: true });
 ```
 
 ## squarePositions()
@@ -50,10 +50,10 @@ Generates a `Float32Array` of `[x, y, z]` points outlining a square.
 import { squarePositions, MeshLine } from 'makio-meshline';
 
 // Create a simple square
-const square = new MeshLine({ lines: squarePositions(), isClose: true });
+const square = new MeshLine({ lines: squarePositions(), closed: true });
 
 // Create a square with more segments per side for smoother corners
-const line = new MeshLine({ lines: squarePositions(4), isClose: true });
+const line = new MeshLine({ lines: squarePositions(4), closed: true });
 ```
 
 ## sineWavePositions()
@@ -83,7 +83,7 @@ import { sineWavePositions, MeshLine } from 'makio-meshline';
 // Create a basic sine wave
 const wave = new MeshLine({
   lines: sineWavePositions(),
-  isClose: false
+  closed: false
 });
 
 // Create a wave with 3 cycles, higher amplitude

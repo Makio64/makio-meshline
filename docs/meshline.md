@@ -30,9 +30,9 @@ const line = new MeshLine()
 See [Common Patterns](./common-patterns.md) for more examples.
 
 **Geometry Configuration:**
-- `lines(lines: Float32Array | number[][], isClose?: boolean | boolean[])` - Set line(s) positions and optional close flag
+- `lines(lines: Float32Array | number[][], closed?: boolean | boolean[])` - Set line(s) positions and optional close flag
 - `segments(segments: number)` - Set number of segments for auto-generated lines
-- `isClose(isClose: boolean | boolean[])` - Set whether to close the line loop
+- `closed(closed: boolean | boolean[])` - Set whether to close the line loop
 
 **Appearance:**
 - `color(color: number | THREE.Color)` - Set line color
@@ -113,7 +113,7 @@ Alternatively, you can use the traditional options object approach:
 interface MeshLineOptions {
   // ***Geometry***
   lines?: Float32Array | number[][]          // Line points (required)
-  isClose?: boolean | boolean[]              // Close the loop(s)
+  closed?: boolean | boolean[]               // Close the loop(s)
 
   // ***Appearance***
   color?: number | THREE.Color
@@ -185,7 +185,7 @@ interface MeshLineOptions {
 
 > **Procedural alternative:** instead of supplying a `lines` array you can provide a **`gpuPositionNode`** function (TSL `Fn`).  The node receives the per-vertex `counter` (0→1) and must return a `vec3` position.  When set, the geometry sent to the GPU can be minimal – only its length matters so that the `counter` attribute is generated.
 
-- **`isClose`** (`boolean | boolean[]`) — Whether to close the line loop(s). If `true`, connects the last point back to the first. For multiple lines, can be an array of booleans. Default: `false`.
+- **`closed`** (`boolean | boolean[]`) — Whether to close the line loop(s). If `true`, connects the last point back to the first. For multiple lines, can be an array of booleans. Default: `false`.
 
 ### Appearance
 

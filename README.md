@@ -45,7 +45,7 @@ camera.position.set(0, 0, 4)
 // 2. Create a line -------------------------------------------------------------
 const line = new MeshLine({
   lines: circlePositions(64), // Float32Array helper – use your own points too
-  isClose: true,              // close the loop
+  closed: true,               // close the loop
   color: 0xff6600,            // hex or THREE.Color
   lineWidth: 0.4              // in pixels (when sizeAttenuation=false)
 })

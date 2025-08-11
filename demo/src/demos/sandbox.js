@@ -22,7 +22,7 @@ class SandboxExample {
 			// Geometry
 			lineType: 'circle',
 			segments: 64,
-			isClose: true,
+            closed: true,
 			
 			// Appearance
 			color: '#ff3300',
@@ -109,11 +109,11 @@ class SandboxExample {
 		const geometryFolder = this.gui.addFolder( 'Line Shape' )
 		geometryFolder.add( this.config, 'lineType', ['circle', 'sine', 'square', 'straight'] ).onChange( ( value ) => {
 			// Auto-configure based on line type
-			if ( value === 'circle' || value === 'square' ) {
-				this.config.isClose = true
+            if ( value === 'circle' || value === 'square' ) {
+                this.config.closed = true
 				this.config.useGradient = true
 			} else if ( value === 'sine' || value === 'straight' ) {
-				this.config.isClose = false
+                this.config.closed = false
 			}
 			// Enable miter options for square shape only
 			if ( value === 'square' ) {
@@ -125,7 +125,7 @@ class SandboxExample {
 			}
 		} )
 		geometryFolder.add( this.config, 'segments', 8, 256, 1 )
-		geometryFolder.add( this.config, 'isClose' )
+        geometryFolder.add( this.config, 'closed' )
 		geometryFolder.open()
 		
 		// Appearance folder (merged with colors)
@@ -160,7 +160,7 @@ class SandboxExample {
 	setupWatchers() {
 		// Watch for geometry changes that require recreation
 		watch(
-			() => ( { lineType: this.config.lineType, segments: this.config.segments, isClose: this.config.isClose } ),
+            () => ( { lineType: this.config.lineType, segments: this.config.segments, closed: this.config.closed } ),
 			() => this.createLine()
 		)
 		
@@ -221,9 +221,9 @@ class SandboxExample {
 		
 		const positions = this.getLinePositions()
 		
-		this.line = new MeshLine()
-			.lines( positions )
-			.isClose( this.config.isClose )
+        this.line = new MeshLine()
+            .lines( positions )
+            .closed( this.config.closed )
 			.color( this.config.color )
 			.lineWidth( this.config.lineWidth )
 			.opacity( this.config.opacity )
@@ -287,8 +287,8 @@ class SandboxExample {
 		code += `const line = new MeshLine()\n`
 		code += `\t.lines( positions )\n`
 		
-		if ( this.config.isClose ) {
-			code += `\t.isClose( true )\n`
+        if ( this.config.closed ) {
+            code += `\t.closed( true )\n`
 		}
 		
 		code += `\t.color( 0x${this.config.color.substring( 1 )} )\n`

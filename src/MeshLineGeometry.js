@@ -21,8 +21,8 @@ export class MeshLineGeometry extends BufferGeometry {
 			...options
 		}
 
-		this.widthCallback = options.widthCallback || null
-		this.closeLoop = false
+        this.widthCallback = options.widthCallback || null
+        this.closeLoop = false
 		this._points = null
 		this._attrs = {}
 		this._lineCount = 0
@@ -42,9 +42,11 @@ export class MeshLineGeometry extends BufferGeometry {
 			lines = [lines]
 		}
 
-		// convert isClose to an array if needed
-		const lineLoops = Array.isArray( this.options.isClose ) ? this.options.isClose : new Array( lines.length ).fill( this.options.isClose )
-		const actualLoops = [] 
+        // Handle `closed` as boolean or array
+        // If it's a single boolean, we don't create an array to save bandwidth
+        const isSingleLoop = typeof this.options.closed === 'boolean'
+        const lineLoops = isSingleLoop ? this.options.closed : this.options.closed
+		const actualLoops = isSingleLoop ? null : [] // Don't create array if single boolean
 
 		// Convert each line to Float32Array and store separately
 		const convertedLines = []
@@ -54,7 +56,9 @@ export class MeshLineGeometry extends BufferGeometry {
 			if ( !pts || pts.length === 0 ) continue
 
 			let arr = toFloat32( pts )
-			const shouldLoop = lineLoops[i] && arr.length >= 9 // Need at least 3 points (9 values) for a loop
+			// Get loop value either from single boolean or from array
+			const loopValue = isSingleLoop ? lineLoops : ( lineLoops?.[i] ?? false )
+			const shouldLoop = loopValue && arr.length >= 9 // Need at least 3 points (9 values) for a loop
 
 			if ( shouldLoop ) {
 				const newArr = new Float32Array( arr.length + 3 )
@@ -66,12 +70,16 @@ export class MeshLineGeometry extends BufferGeometry {
 			}
 
 			convertedLines.push( arr )
-			actualLoops.push( shouldLoop )
+			if ( !isSingleLoop ) {
+				actualLoops.push( shouldLoop )
+			}
 		}
 
 		// Store the lines separately
 		this._lines = convertedLines
-		this._lineLoops = actualLoops
+		// Store loops as single boolean or array
+		this._lineLoops = isSingleLoop ? lineLoops : actualLoops
+		this._isSingleLoopValue = isSingleLoop
 		this._lineCount = convertedLines.length
 		this._points = new Float32Array() // Clear single line data
 		this.closeLoop = false // Multi-lines handle their own loops individually
@@ -209,7 +217,7 @@ export class MeshLineGeometry extends BufferGeometry {
 		// Process each line separately
 		for ( let lineIdx = 0; lineIdx < lines.length; lineIdx++ ) {
 			const line = lines[lineIdx]
-			const isLooped = lineLoops[lineIdx]
+			const isLooped = this._isSingleLoopValue ? lineLoops : lineLoops[lineIdx]
 			const numPoints = line.length / 3
 			if ( numPoints < 2 ) continue
 
@@ -477,7 +485,7 @@ export class MeshLineGeometry extends BufferGeometry {
 
 		for ( let lineIdx = 0; lineIdx < newLines.length; lineIdx++ ) {
 			const line = newLines[lineIdx]
-			const isLooped = this._lineLoops[lineIdx]
+			const isLooped = this._isSingleLoopValue ? this._lineLoops : this._lineLoops[lineIdx]
 			const numPoints = line.length / 3
 
 			for ( let i = 0; i < numPoints; i++ ) {

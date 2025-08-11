@@ -24,7 +24,7 @@ import { MeshLine } from 'meshline'
 // Create uniforms for animation control
 const line = new MeshLine()
   .lines( circlePositions(64) )
-  .isClose( true )
+  .closed( true )
   .needsUV( true )
   .color( 0xff3300 )
 

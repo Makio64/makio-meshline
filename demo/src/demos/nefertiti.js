@@ -5,7 +5,8 @@ import { Box3, Vector3, Raycaster, MeshBasicNodeMaterial } from 'three/webgpu'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js'
 import { computeBoundsTree, disposeBoundsTree, acceleratedRaycast } from 'three-mesh-bvh'
-import { Fn, vec3 } from 'three/tsl'
+import { Fn, vec3, uv } from 'three/tsl'
+
 class NefertitiExample {
 	constructor() {
 		this.line = null
@@ -110,15 +111,18 @@ class NefertitiExample {
 		console.time( 'Generate rings with BVH' )
 		const lines = this.generateRings()
 		console.timeEnd( 'Generate rings with BVH' )
-		const loops = new Array( lines.length ).fill( true )
 
 		this.line = new MeshLine()
-			.lines( lines, loops )
+			.lines( lines, true )
 			.needsUV( true )
 			.colorFn( Fn( () => {
 				return vec3( 1, 0, 0 )
 			} ) )
-			.lineWidth( 0.05 )
+			.opacityFn( Fn( () => {
+				return vec3( uv().x.sub( .5 ).mul( 2 ).abs().smoothstep( 0, .5 ).oneMinus(), 0, 0 )
+			} ) )
+			.transparent( true )
+			.lineWidth( 0.02 )
 			.verbose( true )
 
 		this.line.build()
@@ -148,7 +152,7 @@ class NefertitiExample {
 			let hasAnyHit = false
 
 			for ( let i = 0; i < this.samplesPerRing; i++ ) {
-				const a = ( i / this.samplesPerRing ) * Math.PI * 2
+				const a = ( i / this.samplesPerRing ) * Math.PI * 2 + r * .2
 				dir.set( Math.cos( a ), 0, Math.sin( a ) ).normalize()
 				origin.copy( dir ).multiplyScalar( this.outerRadius ).add( target )
 

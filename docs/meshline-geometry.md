@@ -18,7 +18,7 @@ new MeshLineGeometry(options?: MeshLineGeometryOptions)
 ```ts
 interface MeshLineGeometryOptions {
   lines?: Float32Array | number[][]          // Line points (required)
-  isClose?: boolean | boolean[]              // Close the loop(s)
+  closed?: boolean | boolean[]               // Close the loop(s)
   widthCallback?: (t: number) => number      // variable width 
   usage?: THREE.Usage                       // Optional buffer usage hint : StaticDrawUsage / DynamicDrawUsage / StreamDrawUsage
   verbose?: boolean                         // Console logging
