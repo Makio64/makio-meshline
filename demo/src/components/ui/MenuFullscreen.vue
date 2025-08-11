@@ -23,7 +23,7 @@ export default {
 				{ text: 'Ricefield', href: '/examples/ricefield' },
 				{ text: 'GPUInstance', href: '/examples/gpu-instance' },
 				{ text: 'Ghost', href: '/examples/ghost' },
-				{ text: 'Nefertiti', href: '/examples/nefertiti' },
+				{ text: 'Venus & David', href: '/examples/venus-and-david' },
 				{ text: 'Sandbox', href: '/examples/sandbox' },
 			],
 		}

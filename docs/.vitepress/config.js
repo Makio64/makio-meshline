@@ -28,6 +28,7 @@ export default defineConfig({
           { text: 'Demo : Follow', link: '/examples/follow' },
           { text: 'Demo : Draw Lines', link: '/examples/drawlines' },
           { text: 'Demo : Rice Field', link: '/examples/ricefield' },
+          { text: 'Demo : Venus & David', link: '/examples/venus-and-david' },
           { text: 'Tutorial : GPU position', link: '/examples/gpucircle' },
           { text: 'Tutorial : Instancing', link: '/examples/instancing' },
           { text: 'Demos page', link: 'https://meshlines.netlify.app/' },
