@@ -6,6 +6,6 @@
   "module": "index.js",
   "sideEffects": false,
   "peerDependencies": {
-    "three": "^0.178.0"
+    "three": "^0.179.1"
   }
 } 
