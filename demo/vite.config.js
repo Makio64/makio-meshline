@@ -10,35 +10,9 @@ import Components from 'unplugin-vue-components/vite'
 import AutoImport from 'unplugin-auto-import/vite'
 import path from 'path'
 
-// Custom plugin to remove PWA functionality
-const removePWAPlugin = () => {
-	return {
-		name: 'remove-pwa',
-		configureServer( server ) {
-			// Intercept PWA-related requests
-			server.middlewares.use( ( req, res, next ) => {
-				if ( req.url && ( req.url.includes( '@vite-plugin-pwa' ) || req.url.includes( '/sw.js' ) || req.url.includes( '/manifest.json' ) ) ) {
-					res.statusCode = 204
-					res.end()
-					return
-				}
-				next()
-			} )
-		},
-		transform( code, id ) {
-			// Remove PWA imports from HTML
-			if ( id.endsWith( '.html' ) ) {
-				return code.replace( /<link[^>]*manifest[^>]*>/g, '' )
-					.replace( /<script[^>]*serviceWorker[^>]*>[\s\S]*?<\/script>/g, '' )
-			}
-		}
-	}
-}
-
 // https://vitejs.dev/config/
 export default defineConfig( {
 	plugins: [
-		removePWAPlugin(),
 		mkcert(),
 		Components( {
 			/* options https://github.com/antfu/unplugin-vue-components */

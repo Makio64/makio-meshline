@@ -1,31 +1,32 @@
 import OrbitControl from '@/makio/three/controls/OrbitControl'
 import stage3d from '@/makio/three/stage3d'
 import { MeshLine } from 'meshline'
-import { Box3, Vector3, Raycaster, MeshBasicNodeMaterial } from 'three/webgpu'
+import { Vector3, Raycaster, MeshBasicNodeMaterial, DataTexture, RGBAFormat, FloatType, RepeatWrapping } from 'three/webgpu'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js'
 import { computeBoundsTree, disposeBoundsTree, acceleratedRaycast } from 'three-mesh-bvh'
-import { Fn, vec3, uv, time, positionWorld, uniform } from 'three/tsl'
+import { Fn, vec2, vec3, uv, time, positionWorld, uniform, texture, mix, instanceIndex, float, fract } from 'three/tsl'
 import GUI from 'lil-gui'
 import { centerAndScaleModel } from '@/utils/modelUtils'
 
-class NefertitiExample {
+class VenusExample {
 	constructor() {
 		this.line = null
-		this.modelA = null // Nefertiti
+		this.modelA = null // David
 		this.modelB = null // Venus
 		this.boundsA = null
 		this.boundsB = null
 		this.outerRadius = 100
 		this.raycaster = new Raycaster()
 		this.samplesPerRing = 64
-		this.numRings = 100
+		this.numRings = 128
 		this.center = new Vector3()
 		this.linesA = null
 		this.linesB = null
-		this.linesMorph = null
 		this.morph = uniform( 0 )
 		this.gui = null
+		this.texA = null
+		this.texB = null
 	}
 
 	async init() {
@@ -55,7 +56,7 @@ class NefertitiExample {
 		this.modelA = gltfA.scene
 		this.modelB = gltfB.scene
 
-		for ( const model of [ this.modelA, this.modelB ] ) {
+		for ( const model of [this.modelA, this.modelB] ) {
 			model.traverse( obj => {
 				if ( obj.isMesh ) {
 					if ( !obj.geometry.computeBoundsTree ) {
@@ -97,29 +98,45 @@ class NefertitiExample {
 		this.linesB = this.generateRingsForModel( this.modelB, minY, maxY )
 		console.timeEnd( 'Generate rings (A & B)' )
 
-		// Prepare closed morph buffers matching the geometry's closed layout (length + 3)
-		this.linesMorphClosed = this.linesA.map( line => {
-			const len = line.length
-			const closed = new Float32Array( len + 3 )
-			closed.set( line, 0 )
-			// duplicate first xyz at end for closed loop
-			closed[len] = line[0]
-			closed[len + 1] = line[1]
-			closed[len + 2] = line[2]
-			return closed
+		// Build position textures (RGB=xyz)
+		this.buildPositionTextures()
+
+		// GPU position node: sample A and B rows by instance, blend by morph
+		const numRings = this.numRings
+		const texA = texture( this.texA )
+		const texB = texture( this.texB )
+		const morph = this.morph
+
+		let quadOut = Fn( ( [value] ) => {
+			return value.mul( value ).mul( value ).mul( value )
+		} )
+
+		const positionNode = Fn( ( [counter] ) => {
+			let y = float( instanceIndex ).div( float( numRings ) ).toVar()
+			const v = y.add( float( 0.5 ).div( float( numRings ) ) )
+			const u = fract( counter )
+			const posA = texA.sample( vec2( u, v ) ).xyz
+			const posB = texB.sample( vec2( u, v ) ).xyz
+			const m = quadOut( morph ).mul( 8 ).sub( y.mul( 4 ) ).clamp()
+			return mix( posA, posB, m )
 		} )
 
 		this.line = new MeshLine()
-			.lines( this.linesMorphClosed, true )
+			.instances( this.numRings )
+			.segments( this.samplesPerRing )
+			.closed( true )
+			.gpuPositionNode( positionNode )
 			.needsUV( true )
+			.color( 0xffffff )
 			.colorFn( Fn( () => {
-				return vec3( 1, positionWorld.y.smoothstep( -5, 5 ), positionWorld.y.smoothstep( 0, 6 ) )
+				const y = float( instanceIndex ).div( float( numRings ) )
+				const m = quadOut( morph ).mul( 8 ).sub( y.mul( 4 ) ).clamp()
+				return vec3( 1, y.smoothstep( 0, 1 ), m.smoothstep( 0, .5 ) )
 			} ) )
 			.transparent( true )
-			.lineWidth( 0.02 )
+			.lineWidth( 0.015 )
 			.verbose( true )
 
-		this.line.build()
 		stage3d.add( this.line )
 
 		// remove meshes, keep only lines
@@ -133,8 +150,44 @@ class NefertitiExample {
 		this.gui.domElement.style.right = hasNoMenu ? '0' : '60px'
 		this.gui.add( { percent: 0 }, 'percent', 0, 1, 0.01 ).name( 'Morph David ⇆ Venus' ).onChange( v => {
 			this.morph.value = v
-			this.applyMorph( v )
 		} )
+	}
+
+	// Pack ring positions into 2D float textures (width=samples, height=numRings)
+	buildPositionTextures() {
+		const width = this.samplesPerRing
+		const height = this.numRings
+		const size = width * height
+		const dataA = new Float32Array( size * 4 )
+		const dataB = new Float32Array( size * 4 )
+
+		for ( let r = 0; r < height; r++ ) {
+			const ringA = this.linesA[r]
+			const ringB = this.linesB[r]
+			for ( let i = 0; i < width; i++ ) {
+				const idx = r * width + i
+				const doff = idx * 4
+				const o = i * 3
+				dataA[doff] = ringA[o]
+				dataA[doff + 1] = ringA[o + 1]
+				dataA[doff + 2] = ringA[o + 2]
+				dataA[doff + 3] = 1
+
+				dataB[doff] = ringB[o]
+				dataB[doff + 1] = ringB[o + 1]
+				dataB[doff + 2] = ringB[o + 2]
+				dataB[doff + 3] = 1
+			}
+		}
+
+		const texA = new DataTexture( dataA, width, height, RGBAFormat, FloatType )
+		const texB = new DataTexture( dataB, width, height, RGBAFormat, FloatType )
+		texA.wrapS = RepeatWrapping
+		texB.wrapS = RepeatWrapping
+		texA.needsUpdate = true
+		texB.needsUpdate = true
+		this.texA = texA
+		this.texB = texB
 	}
 
 	generateRingsForModel( model, minY, maxY ) {
@@ -180,25 +233,6 @@ class NefertitiExample {
 		return lines
 	}
 
-	applyMorph( t ) {
-		if ( !this.linesA || !this.linesB || !this.linesMorphClosed ) return
-		for ( let li = 0; li < this.linesMorphClosed.length; li++ ) {
-			const a = this.linesA[ li ]
-			const b = this.linesB[ li ]
-			const m = this.linesMorphClosed[ li ]
-			const baseLen = a.length // without duplicate
-			// interpolate base points
-			for ( let i = 0; i < baseLen; i++ ) {
-				m[ i ] = a[ i ] * ( 1 - t ) + b[ i ] * t
-			}
-			// set duplicate at end to match closed layout
-			m[ baseLen ] = m[ 0 ]
-			m[ baseLen + 1 ] = m[ 1 ]
-			m[ baseLen + 2 ] = m[ 2 ]
-		}
-		this.line.geometry.setPositions( this.linesMorphClosed )
-	}
-
 	onResize = () => {
 		this.line?.resize()
 	}
@@ -210,7 +244,7 @@ class NefertitiExample {
 			this.line.dispose()
 			this.line = null
 		}
-		for ( const model of [ this.modelA, this.modelB ] ) {
+		for ( const model of [this.modelA, this.modelB] ) {
 			if ( model ) {
 				model.traverse( obj => {
 					if ( obj.isMesh && obj.geometry.disposeBoundsTree ) {
@@ -220,11 +254,16 @@ class NefertitiExample {
 				stage3d.remove( model )
 			}
 		}
+		this.texA?.dispose?.()
+		this.texB?.dispose?.()
 		stage3d.control?.dispose()
+		this.gui?.destroy(); this.gui = null
 	}
 
 	show() {}
 	hide( cb ) { if ( cb ) cb() }
 }
 
-export default new NefertitiExample()
+export default new VenusExample()
+
+
