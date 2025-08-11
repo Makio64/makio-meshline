@@ -11,9 +11,9 @@ export default class MeshLine extends Mesh {
 		
 		super( new MeshLineGeometry(), new MeshLineNodeMaterial() )
 
-        this._options = {
+		this._options = {
 			segments: 1,
-            closed: false,
+			closed: false,
 			
 			color: 0xffffff,
 			lineWidth: 0.3,
@@ -57,9 +57,9 @@ export default class MeshLine extends Mesh {
 	}
 
 	// Chainable setters
-    lines( lines, closed = this._options.closed ) {
+	lines( lines, closed = this._options.closed ) {
 		this._options.lines = lines
-        this._options.closed = closed
+		this._options.closed = closed
 		if ( this._built ) {
 			this.geometry.setPositions( lines, false )
 		}
@@ -71,10 +71,10 @@ export default class MeshLine extends Mesh {
 		return this
 	}
 
-    closed( closed ) {
-        this._options.closed = closed
-        return this
-    }
+	closed( closed ) {
+		this._options.closed = closed
+		return this
+	}
 
 	color( color ) {
 		this._options.color = color

@@ -21,8 +21,8 @@ export class MeshLineGeometry extends BufferGeometry {
 			...options
 		}
 
-        this.widthCallback = options.widthCallback || null
-        this.closeLoop = false
+		this.widthCallback = options.widthCallback || null
+		this.closeLoop = false
 		this._points = null
 		this._attrs = {}
 		this._lineCount = 0
@@ -42,11 +42,11 @@ export class MeshLineGeometry extends BufferGeometry {
 			lines = [lines]
 		}
 
-        // Handle `closed` as boolean or array
-        // If it's a single boolean, we don't create an array to save bandwidth
-        const isSingleLoop = typeof this.options.closed === 'boolean'
-        const lineLoops = isSingleLoop ? this.options.closed : this.options.closed
-		const actualLoops = isSingleLoop ? null : [] // Don't create array if single boolean
+		// Handle `closed` as boolean or array
+		// If it's a single boolean, we don't create an array to save bandwidth
+		const isSingleLoop = typeof this.options.closed === 'boolean'
+		const lineLoops = isSingleLoop ? this.options.closed : this.options.closed
+		const actualLoops = isSingleLoop ? null : []
 
 		// Convert each line to Float32Array and store separately
 		const convertedLines = []
