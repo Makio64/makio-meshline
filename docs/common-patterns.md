@@ -67,7 +67,7 @@ const line = new MeshLine()
 ```js
 const line = new MeshLine()
   .lines(circlePositions(64), true)
-  .dashes(12, 0.3)
+  .dash({ count: 12, ratio: 0.3 })
 
 // In render loop:
 line.material.dashOffset -= 0.01 // -= for clockwise movement

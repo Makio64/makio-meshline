@@ -155,13 +155,6 @@ export default class MeshLine extends Mesh {
 		return this
 	}
 
-	useMiterLimit( useMiterLimit, miterLimit = 4, highQualityMiter = false ) {
-		this._options.useMiterLimit = useMiterLimit
-		this._options.miterLimit = miterLimit
-		this._options.highQualityMiter = highQualityMiter
-		return this
-	}
-
 	join( { type = 'miter', limit = 4, quality = 'standard' } = {} ) {
 		const useMiter = type === 'miter'
 		const high = quality === 'high'
@@ -173,19 +166,6 @@ export default class MeshLine extends Mesh {
 			if ( this.material.miterLimit ) this.material.miterLimit.value = limit
 			this.material.highQualityMiter = high
 		}
-		return this
-	}
-
-	miterLimit( miterLimit ) {
-		this._options.miterLimit = miterLimit
-		if ( this.material.miterLimit ) {
-			this.material.miterLimit.value = miterLimit
-		}
-		return this
-	}
-
-	highQualityMiter( highQualityMiter ) {
-		this._options.highQualityMiter = highQualityMiter
 		return this
 	}
 
@@ -230,20 +210,6 @@ export default class MeshLine extends Mesh {
 			this.material.dashCount.value = count
 			this.material.dashRatio.value = ratio
 			this.material.dashOffset.value = offset
-		}
-		return this
-	}
-
-	dashes( dashCount, dashRatio = 0.5, dashOffset = 0 ) {
-		this._options.dashCount = dashCount
-		this._options.dashRatio = dashRatio
-		this._options.dashOffset = dashOffset
-		if ( this._built ) {
-			if ( this.material.dashCount ) {
-				this.material.dashCount.value = dashCount
-				this.material.dashRatio.value = dashRatio
-				this.material.dashOffset.value = dashOffset
-			}
 		}
 		return this
 	}

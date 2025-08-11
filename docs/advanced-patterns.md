@@ -65,7 +65,7 @@ No buffers recreated, only a sub-data upload.
 const sharp = new MeshLine()
   .lines(myPolyline)
   .lineWidth(0.8)
-  .useMiterLimit(true, 5) // enable clipping with limit
+  .join({ type: 'miter', limit: 5 })
   .build()
 ```
 
