@@ -69,7 +69,5 @@ export default {
 		font-size 1.5rem
 	.bottom
 		position absolute
-		bottom 20px
-		left 0
-		right 0
+		bottom 10px
 </style>

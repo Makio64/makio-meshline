@@ -2,8 +2,18 @@
 	<div class="morph-ui">
 		<div class="select-gender">Select your gender</div>
 		<div class="buttons">
-			<button :class="{ active: selectedGender === 'man', man: true }" @click="onMan">Man</button>
-			<button :class="{ active: selectedGender === 'woman', woman: true }" @click="onWoman">Woman</button>
+			<button :class="{ active: selectedGender === 'man', man: true }" title="Man" @click="onMan">
+				<span>Man</span>
+				<svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+					<path d="M15.05 8.537L18.585 5H14V3h8v8h-2V6.414l-3.537 3.537a7.5 7.5 0 1 1-1.414-1.414zM10.5 20a5.5 5.5 0 1 0 0-11 5.5 5.5 0 0 0 0 11z" />
+				</svg>
+			</button>
+			<button :class="{ active: selectedGender === 'woman', woman: true }" title="Woman" @click="onWoman">
+				<span>Woman</span>
+				<svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+					<path d="M11 15.934V19H9v2h2v2h2v-2h2v-2h-2v-3.066A7.5 7.5 0 1 0 11 15.934zM12 14a5.5 5.5 0 1 1 0-11 5.5 5.5 0 0 1 0 11z" />
+				</svg>
+			</button>
 		</div>
 	</div>
 </template>
@@ -40,101 +50,83 @@ export default {
 <style lang="stylus" scoped>
 .morph-ui
 	position fixed
-	bottom 40px
+	bottom 10px
+	left auto 
+	right auto
 	display flex
 	flex-direction column
-	max-width 320px
+	max-width 200px
 	margin auto
 	gap 20px
-	padding 24px 28px
-	border-radius 24px
-	// background linear-gradient(135deg, rgba(30, 30, 40, 0.95) 0%, rgba(20, 20, 30, 0.85) 100%)
-	border 1px solid transparent
-	background-clip padding-box
-	position relative
-	backdrop-filter blur(4px)
+	padding 20px
+	border-radius 20px
+	background rgba(15, 15, 20, 0.4)
+	border 1px solid rgba(255, 255, 255, 0.1)
+	backdrop-filter blur(12px)
+	-webkit-backdrop-filter blur(12px)
 	z-index 1000
 	align-items center
 	font-family 'SF Pro Display', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif
 	letter-spacing 0.4px
-	
-	&::before
-		content ''
-		position absolute
-		inset -2px
-		border-radius 16px
-		padding 2px
-		background linear-gradient(135deg, rgba(255, 100, 255, 0.15), rgba(100, 150, 255, 0.15))
-		-webkit-mask linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)
-		-webkit-mask-composite xor
-		mask-composite exclude
-		pointer-events none
+	box-shadow 0 0px 32px rgba(0, 0, 0, 0.8)
 
 	.buttons
 		display flex
 		gap 16px
 		width 100%
+		display flex
+		align-items center
+		justify-content center
 
 	.select-gender
 		color rgba(255, 255, 255, 0.7)
-		font-size 16px
+		font-size 12px
 		font-weight 500
 		text-transform uppercase
-		letter-spacing 1.2px
-		margin-bottom 4px
+		letter-spacing 1.1px
 		
 	button
 		appearance none
 		margin 0
-		padding 16px 32px
-		border-radius 16px
-		background linear-gradient(135deg, rgba(255, 255, 0, 0.08), rgba(0, 255, 255, 0.04))
-		color rgba(255, 255, 255, 0.85)
+		padding 10px 20px
+		border-radius 14px
+		background linear-gradient(180deg, rgba(255, 255, 255, 0.12) 0%, rgba(255, 255, 255, 0.06) 100%)
+		color rgba(255, 255, 255, 0.9)
 		cursor pointer
-		transition all 0.3s cubic-bezier(0.4, 0, 0.2, 1)
-		font-size 18px
-		font-weight 600
-		letter-spacing 0.5px
-		text-transform capitalize
-		flex 1
+		transition background 0.8s cubic-bezier(0.4, 0, 0.2, 1)
 		position relative
 		overflow hidden
-		border 1px solid rgba(255, 255, 255, 0.1)
-		backdrop-filter blur(10px)
+		border none
+		box-shadow 0 4px 12px rgba(0, 0, 0, 0.15), 0 2px 4px rgba(0, 0, 0, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.1), inset 0 -1px 0 rgba(0, 0, 0, 0.2)
+		display flex
+		align-items center
+		justify-content center
+		// min-width 80px
+		border-radius 50px
+		font-size 14px
+		
+		svg
+			width 28px
+			height 28px
 				
 		&:hover
-			background linear-gradient(135deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.06))
-			box-shadow 0 8px 24px rgba(0, 0, 0, 0.2)
+			box-shadow 0 6px 16px rgba(0, 0, 0, 0.2), 0 3px 6px rgba(0, 0, 0, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.15), inset 0 -1px 0 rgba(0, 0, 0, 0.2)
 			
 		&:active
-			transform translateY(0)
-			transition-duration 0.1s
-		
-		&.man.active
-			background linear-gradient(135deg, rgba(255, 50, 50, 0.9) 0%, rgba(255, 200, 50, 0.9) 100%)
-			color rgba(10, 10, 30, 1)
-			font-weight 700
-			box-shadow 0 12px 32px rgba(255, 100, 50, 0.3), inset 0 0 20px rgba(255, 255, 100, 0.2)
+			box-shadow 0 2px 8px rgba(0, 0, 0, 0.15), 0 1px 3px rgba(0, 0, 0, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.1), inset 0 -1px 0 rgba(0, 0, 0, 0.25)
+			transition-duration 0.05s
+		&.man.active, &.woman.active
+			background linear-gradient(135deg, #f093fb 0%, #f5576c 100%)
+			color rgba(255, 255, 255, 1)
+			font-weight 600
+			box-shadow 0 4px 12px rgba(240, 147, 251, 0.15), 0 2px 4px rgba(240, 147, 251, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.3), inset 0 -2px 4px rgba(215, 67, 87, 0.3)
+			text-shadow 0 1px 2px rgba(0, 0, 0, 0.15)
 			
-		&.woman.active
-			background linear-gradient(135deg, rgba(255, 150, 200, 0.9) 0%, rgba(255, 255, 255, 0.95) 100%)
-			color rgba(10, 10, 30, 1)
-			font-weight 700
-			box-shadow 0 12px 32px rgba(255, 150, 200, 0.3), inset 0 0 20px rgba(255, 255, 255, 0.3)
-
-@media (max-width: 480px)
-	.morph-ui
-		bottom 30px
-		max-width 90%
-		padding 20px 24px
-		gap 16px
-		
-		.select-gender
-			font-size 14px
+			&:hover
+				box-shadow 0 6px 16px rgba(240, 147, 251, 0.2), 0 3px 6px rgba(240, 147, 251, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.35), inset 0 -2px 4px rgba(215, 67, 87, 0.3)
 			
-		button
-			padding 14px 24px
-			font-size 16px
+			&:active
+				box-shadow 0 2px 8px rgba(240, 147, 251, 0.15), 0 1px 3px rgba(240, 147, 251, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.25), inset 0 -2px 4px rgba(215, 67, 87, 0.4)
 </style>
 
 
