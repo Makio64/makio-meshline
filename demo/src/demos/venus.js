@@ -5,6 +5,7 @@ import { Vector3, PostProcessing, MeshBasicNodeMaterial, DataTexture, RGBAFormat
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js'
 import { MeshBVH, SAH } from 'three-mesh-bvh'
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import { Fn, vec2, vec3, uv, pass, uniform, texture, mix, instanceIndex, float, fract } from 'three/tsl'
 import GUI from 'lil-gui'
 import { centerAndScaleModel } from '@/utils/modelUtils'
@@ -82,18 +83,12 @@ class VenusExample {
 		this.modelB = gltfB.scene
 
 		// Store all mesh references for complete raycasting
+		// We'll merge David's geometries after scaling/positioning
 		this.meshesA = []
 		this.modelA.traverse( obj => {
 			if ( obj.isMesh ) {
 				this.meshesA.push( obj )
-				// Optimize BVH for raycast performance
-				obj.geometry.boundsTree = new MeshBVH( obj.geometry, {
-					maxLeafTris: 3,
-					strategy: SAH
-				} )
-				obj.geometry.computeBoundingBox()
 				obj.material = new MeshBasicNodeMaterial()
-				obj.updateMatrixWorld( true )
 			}
 		} )
 		
@@ -101,14 +96,7 @@ class VenusExample {
 		this.modelB.traverse( obj => {
 			if ( obj.isMesh ) {
 				this.meshesB.push( obj )
-				// Optimize BVH for raycast performance
-				obj.geometry.boundsTree = new MeshBVH( obj.geometry, {
-					maxLeafTris: 3,
-					strategy: SAH
-				} )
-				obj.geometry.computeBoundingBox()
 				obj.material = new MeshBasicNodeMaterial()
-				obj.updateMatrixWorld( true )
 			}
 		} )
 
@@ -118,6 +106,59 @@ class VenusExample {
 		this.boundsA = bA
 		this.boundsB = bB
 		this.outerRadius = Math.max( rA, rB )
+
+		// Now merge David's geometries after they've been scaled and positioned
+		const davidGeometries = []
+		for ( const obj of this.meshesA ) {
+			obj.updateMatrixWorld( true )
+			// Clone and apply matrix to geometry for merging
+			const geom = obj.geometry.clone()
+			geom.applyMatrix4( obj.matrixWorld )
+			davidGeometries.push( geom )
+		}
+		
+		// Replace individual meshes with merged geometry for David
+		if ( davidGeometries.length > 1 ) {
+			console.log( `Merging ${davidGeometries.length} geometries for David after scaling` )
+			const mergedGeometry = mergeGeometries( davidGeometries, false )
+			
+			// Create BVH for merged geometry
+			mergedGeometry.boundsTree = new MeshBVH( mergedGeometry, {
+				maxLeafTris: 1,  // Lower for better ray performance
+				strategy: SAH,
+				indirect: true   // Better memory layout for raycasting
+			} )
+			mergedGeometry.computeBoundingBox()
+			
+			// Replace meshesA with a single dummy mesh containing merged geometry
+			const mergedMesh = {
+				isMesh: true,
+				geometry: mergedGeometry,
+				matrixWorld: new Matrix4() // Identity matrix since geometry is pre-transformed
+			}
+			this.meshesA = [mergedMesh]
+		} else if ( this.meshesA.length === 1 ) {
+			// Single mesh, just create BVH
+			const obj = this.meshesA[0]
+			obj.geometry.boundsTree = new MeshBVH( obj.geometry, {
+				maxLeafTris: 1,
+				strategy: SAH,
+				indirect: true
+			} )
+			obj.geometry.computeBoundingBox()
+			obj.updateMatrixWorld( true )
+		}
+		
+		// Create BVH for Venus meshes
+		for ( const obj of this.meshesB ) {
+			obj.geometry.boundsTree = new MeshBVH( obj.geometry, {
+				maxLeafTris: 1,
+				strategy: SAH,
+				indirect: true
+			} )
+			obj.geometry.computeBoundingBox()
+			obj.updateMatrixWorld( true )
+		}
 
 		stage3d.add( this.modelA )
 		stage3d.add( this.modelB )
@@ -294,6 +335,7 @@ class VenusExample {
 		let totalRaycastTime = 0
 		let totalRayCount = 0
 		let totalHitCount = 0
+		let earlyExitCount = 0
 		
 		for ( let r = 0; r < this.numRings; r++ ) {
 			const t = r / ( this.numRings - 1 )
@@ -330,8 +372,12 @@ class VenusExample {
 			let ringHitCount = 0
 			for ( const { mesh, invMat } of meshData ) {
 				for ( const rayData of rays ) {
-					// Skip if we already found a closer hit  
-					if ( rayData.distance === 0 ) continue
+					// Early exit: Skip if we already found a very close hit
+					// This prevents unnecessary ray tests when we've already hit a surface
+					if ( rayData.distance < 0.01 ) {
+						earlyExitCount++
+						continue
+					}
 					
 					// Setup and transform ray to mesh's local space
 					this.ray.set( rayData.origin, rayData.dir )
@@ -406,6 +452,7 @@ class VenusExample {
 		console.log( `Total rings: ${this.numRings}` )
 		console.log( `Samples per ring: ${this.samplesPerRing}` )
 		console.log( `Total rays cast: ${totalRayCount}` )
+		console.log( `Early exits (skipped): ${earlyExitCount}` )
 		console.log( `Total hits: ${totalHitCount}` )
 		console.log( `Hit rate: ${( totalHitCount / ( this.numRings * this.samplesPerRing ) * 100 ).toFixed( 1 )}%` )
 		console.log( `Average rays per mesh per ring: ${( this.samplesPerRing * meshData.length ).toFixed( 0 )}` )

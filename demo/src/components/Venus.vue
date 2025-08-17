@@ -93,7 +93,7 @@ export default {
 		background linear-gradient(180deg, rgba(255, 255, 255, 0.12) 0%, rgba(255, 255, 255, 0.06) 100%)
 		color rgba(255, 255, 255, 0.9)
 		cursor pointer
-		transition background 0.8s cubic-bezier(0.4, 0, 0.2, 1)
+		transition background 0.2s cubic-bezier(0.4, 0, 0.2, 1), color 0.8s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.8s cubic-bezier(0.4, 0, 0.2, 1), text-shadow 0.8s cubic-bezier(0.4, 0, 0.2, 1), transform 0.1s cubic-bezier(0.4, 0, 0.2, 1)
 		position relative
 		overflow hidden
 		border none
@@ -105,6 +105,18 @@ export default {
 		border-radius 50px
 		font-size 14px
 		
+		&::before
+			content ''
+			position absolute
+			top 0
+			left 0
+			right 0
+			bottom 0
+			border-radius inherit
+			opacity 0
+			transition opacity 0.8s cubic-bezier(0.4, 0, 0.2, 1)
+			z-index -1
+		
 		svg
 			width 28px
 			height 28px
@@ -115,18 +127,46 @@ export default {
 		&:active
 			box-shadow 0 2px 8px rgba(0, 0, 0, 0.15), 0 1px 3px rgba(0, 0, 0, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.1), inset 0 -1px 0 rgba(0, 0, 0, 0.25)
 			transition-duration 0.05s
-		&.man.active, &.woman.active
-			background linear-gradient(135deg, #f093fb 0%, #f5576c 100%)
-			color rgba(255, 255, 255, 1)
-			font-weight 600
-			box-shadow 0 4px 12px rgba(240, 147, 251, 0.15), 0 2px 4px rgba(240, 147, 251, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.3), inset 0 -2px 4px rgba(215, 67, 87, 0.3)
-			text-shadow 0 1px 2px rgba(0, 0, 0, 0.15)
-			
-			&:hover
-				box-shadow 0 6px 16px rgba(240, 147, 251, 0.2), 0 3px 6px rgba(240, 147, 251, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.35), inset 0 -2px 4px rgba(215, 67, 87, 0.3)
-			
-			&:active
-				box-shadow 0 2px 8px rgba(240, 147, 251, 0.15), 0 1px 3px rgba(240, 147, 251, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.25), inset 0 -2px 4px rgba(215, 67, 87, 0.4)
+			transform scale(0.95)
+		&.man
+			&::before
+				background linear-gradient(135deg, #ffeb3b 0%, #ff5722 100%)
+				
+			&.active
+				color rgba(255, 255, 255, 1)
+				font-weight 600
+				box-shadow 0 4px 12px rgba(255, 152, 0, 0.25), 0 2px 4px rgba(255, 87, 34, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.3), inset 0 -2px 4px rgba(255, 87, 34, 0.3)
+				text-shadow 0 1px 2px rgba(0, 0, 0, 0.15)
+				
+				&::before
+					opacity 1
+				
+				&:hover
+					box-shadow 0 6px 16px rgba(255, 152, 0, 0.3), 0 3px 6px rgba(255, 87, 34, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.35), inset 0 -2px 4px rgba(255, 87, 34, 0.3)
+				
+				&:active
+					box-shadow 0 2px 8px rgba(255, 152, 0, 0.2), 0 1px 3px rgba(255, 87, 34, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.25), inset 0 -2px 4px rgba(255, 87, 34, 0.4)
+					transform scale(0.95)
+					
+		&.woman
+			&::before
+				background linear-gradient(135deg, #f093fb 0%, #f5576c 100%)
+				
+			&.active
+				color rgba(255, 255, 255, 1)
+				font-weight 600
+				box-shadow 0 4px 12px rgba(240, 147, 251, 0.15), 0 2px 4px rgba(240, 147, 251, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.3), inset 0 -2px 4px rgba(215, 67, 87, 0.3)
+				text-shadow 0 1px 2px rgba(0, 0, 0, 0.15)
+				
+				&::before
+					opacity 1
+				
+				&:hover
+					box-shadow 0 6px 16px rgba(240, 147, 251, 0.2), 0 3px 6px rgba(240, 147, 251, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.35), inset 0 -2px 4px rgba(215, 67, 87, 0.3)
+				
+				&:active
+					box-shadow 0 2px 8px rgba(240, 147, 251, 0.15), 0 1px 3px rgba(240, 147, 251, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.25), inset 0 -2px 4px rgba(215, 67, 87, 0.4)
+					transform scale(0.95)
 </style>
 
 
