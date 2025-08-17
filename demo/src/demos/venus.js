@@ -29,7 +29,7 @@ class VenusExample {
 		this.outerRadius = 100
 		this.ray = new Ray()
 		this.invMat = new Matrix4()
-		this.samplesPerRing = isMobile ? 64 : 128
+		this.samplesPerRing = isMobile ? 64 : 96
 		this.numRings = 64
 		this.center = new Vector3()
 		this.linesA = null
@@ -46,6 +46,7 @@ class VenusExample {
 	async init() {
 		await stage3d.initRender()
 		stage3d.control = new OrbitControl( stage3d.camera, 16 )
+		stage3d.control._theta = 1.8 + Math.PI * 2
 		stage3d.control.maxRadius = 30
 		stage3d.control.minRadius = 6
 		// BVH raycasting setup is done in loadModels()
@@ -56,7 +57,7 @@ class VenusExample {
 		const scenePass = pass( stage3d.scene, stage3d.camera )
 		const scenePassColor = scenePass.getTextureNode( 'output' )
 		const bloomIntensity = isMobile ? 0.5 : 1
-		const bloomRadius = 0.05 //isMobile ? 0.05 : 0.1
+		const bloomRadius = 0.02 //isMobile ? 0.05 : 0.1
 		const bloomPass = bloom( scenePassColor, bloomIntensity, bloomRadius, 0.1 )
 		this.postProcessing.outputNode = scenePassColor.add( bloomPass )
 
@@ -374,7 +375,7 @@ class VenusExample {
 				for ( const rayData of rays ) {
 					// Early exit: Skip if we already found a very close hit
 					// This prevents unnecessary ray tests when we've already hit a surface
-					if ( rayData.distance < 0.01 ) {
+					if ( rayData.distance < 0.1 ) {
 						earlyExitCount++
 						continue
 					}
@@ -450,7 +451,6 @@ class VenusExample {
 		const totalTime = performance.now() - totalStartTime
 		console.log( `\n----- Performance Summary for ${modelName} -----` )
 		console.log( `Total rings: ${this.numRings}` )
-		console.log( `Samples per ring: ${this.samplesPerRing}` )
 		console.log( `Total rays cast: ${totalRayCount}` )
 		console.log( `Early exits (skipped): ${earlyExitCount}` )
 		console.log( `Total hits: ${totalHitCount}` )
