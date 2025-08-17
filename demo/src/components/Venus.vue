@@ -53,9 +53,9 @@ export default {
 	bottom 10px
 	left auto 
 	right auto
+	max-width: 260px;
 	display flex
 	flex-direction column
-	max-width 200px
 	margin auto
 	gap 20px
 	padding 20px
@@ -103,7 +103,8 @@ export default {
 		justify-content center
 		// min-width 80px
 		border-radius 50px
-		font-size 14px
+		font-size 16px
+		width 150px
 		
 		&::before
 			content ''
