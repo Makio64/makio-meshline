@@ -2,10 +2,8 @@
 	<div class="morph-ui">
 		<div class="select-gender">Select your gender</div>
 		<div class="buttons">
-			<button :class="{ active: isMan }" @click="onMan">man</button>
-			<button :class="{ active: isWoman }" @click="onWoman">woman</button>
-			<button class="next" title="Continue">&gt;</button>
-
+			<button :class="{ active: selectedGender === 'man', man: true }" @click="onMan">Man</button>
+			<button :class="{ active: selectedGender === 'woman', woman: true }" @click="onWoman">Woman</button>
 		</div>
 	</div>
 </template>
@@ -18,90 +16,125 @@ export default {
 	},
 	data() {
 		return {
-			isMan: true,
-			isWoman: false,
+			selectedGender: 'man',
 		}
 	},
 	mounted() {
-		this.syncState()
-		this._raf = requestAnimationFrame( this.tick )
-	},
-	beforeUnmount() {
-		cancelAnimationFrame( this._raf )
+		// Set initial state based on morph value
+		const m = this.api?.morph?.value ?? 0
+		this.selectedGender = m >= 0.5 ? 'woman' : 'man'
 	},
 	methods: {
 		onMan() {
+			this.selectedGender = 'man'
 			this.api?.david?.()
-			this.isMan = true
-			this.isWoman = false
 		},
 		onWoman() {
+			this.selectedGender = 'woman'
 			this.api?.venus?.()
-			this.isMan = false
-			this.isWoman = true
-		},
-		syncState() {
-			const m = this.api?.morph?.value ?? 0
-			this.isWoman = m >= 0.5
-			this.isMan = !this.isWoman
 		},
 	},
-	created() {
-		this.tick = () => {
-			this.syncState()
-			this._raf = requestAnimationFrame( this.tick )
-		}
-	}
 }
 </script>
 
 <style lang="stylus" scoped>
 .morph-ui
 	position fixed
-	bottom 20px
+	bottom 40px
 	display flex
 	flex-direction column
-	max-width 180px
+	max-width 320px
 	margin auto
-	gap 12px
-	padding 10px 12px
-	border-radius 12px
-	background rgba(20, 20, 24, .6)
-	border 1px solid rgba(255, 255, 255, .12)
-	backdrop-filter blur(8px)
-	-webkit-backdrop-filter blur(8px)
+	gap 20px
+	padding 24px 28px
+	border-radius 24px
+	// background linear-gradient(135deg, rgba(30, 30, 40, 0.95) 0%, rgba(20, 20, 30, 0.85) 100%)
+	border 1px solid transparent
+	background-clip padding-box
+	position relative
+	backdrop-filter blur(4px)
 	z-index 1000
 	align-items center
-	font 500 12px/1.2 system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, sans-serif
-	letter-spacing .2px
+	font-family 'SF Pro Display', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif
+	letter-spacing 0.4px
+	
+	&::before
+		content ''
+		position absolute
+		inset -2px
+		border-radius 16px
+		padding 2px
+		background linear-gradient(135deg, rgba(255, 100, 255, 0.15), rgba(100, 150, 255, 0.15))
+		-webkit-mask linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)
+		-webkit-mask-composite xor
+		mask-composite exclude
+		pointer-events none
 
 	.buttons
 		display flex
-		gap 8px
+		gap 16px
+		width 100%
 
 	.select-gender
-		color #999
+		color rgba(255, 255, 255, 0.7)
+		font-size 16px
+		font-weight 500
+		text-transform uppercase
+		letter-spacing 1.2px
+		margin-bottom 4px
+		
 	button
 		appearance none
-		border 0
 		margin 0
-		padding 8px 14px
-		border-radius 10px
-		background rgba(255, 255, 255, .06)
-		color #fff
+		padding 16px 32px
+		border-radius 16px
+		background linear-gradient(135deg, rgba(255, 255, 0, 0.08), rgba(0, 255, 255, 0.04))
+		color rgba(255, 255, 255, 0.85)
 		cursor pointer
-		transition all .2s ease
-		
+		transition all 0.3s cubic-bezier(0.4, 0, 0.2, 1)
+		font-size 18px
+		font-weight 600
+		letter-spacing 0.5px
+		text-transform capitalize
+		flex 1
+		position relative
+		overflow hidden
+		border 1px solid rgba(255, 255, 255, 0.1)
+		backdrop-filter blur(10px)
+				
 		&:hover
-			background rgba(255, 255, 255, .12)
+			background linear-gradient(135deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.06))
+			box-shadow 0 8px 24px rgba(0, 0, 0, 0.2)
+			
+		&:active
+			transform translateY(0)
+			transition-duration 0.1s
 		
-		&.active
-			background linear-gradient(180deg, #b9e6ff 0%, #c7d2fe 100%)
-			color #0b1020
-	
-	.next
-		padding 8px 12px
-		min-width 38px
+		&.man.active
+			background linear-gradient(135deg, rgba(255, 50, 50, 0.9) 0%, rgba(255, 200, 50, 0.9) 100%)
+			color rgba(10, 10, 30, 1)
+			font-weight 700
+			box-shadow 0 12px 32px rgba(255, 100, 50, 0.3), inset 0 0 20px rgba(255, 255, 100, 0.2)
+			
+		&.woman.active
+			background linear-gradient(135deg, rgba(255, 150, 200, 0.9) 0%, rgba(255, 255, 255, 0.95) 100%)
+			color rgba(10, 10, 30, 1)
+			font-weight 700
+			box-shadow 0 12px 32px rgba(255, 150, 200, 0.3), inset 0 0 20px rgba(255, 255, 255, 0.3)
+
+@media (max-width: 480px)
+	.morph-ui
+		bottom 30px
+		max-width 90%
+		padding 20px 24px
+		gap 16px
+		
+		.select-gender
+			font-size 14px
+			
+		button
+			padding 14px 24px
+			font-size 16px
 </style>
 
 
