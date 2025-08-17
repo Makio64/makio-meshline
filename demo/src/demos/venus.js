@@ -34,6 +34,7 @@ class VenusExample {
 		this.linesA = null
 		this.linesB = null
 		this.morph = uniform( 0 )
+		this.opacity = uniform( 0 )
 		this.gui = null
 		this.texA = null
 		this.texB = null
@@ -55,12 +56,16 @@ class VenusExample {
 		this.postProcessing = new PostProcessing( stage3d.renderer )
 		const scenePass = pass( stage3d.scene, stage3d.camera )
 		const scenePassColor = scenePass.getTextureNode( 'output' )
-		const bloomIntensity = isMobile ? 0.5 : 1
-		const bloomRadius = 0.02 //isMobile ? 0.05 : 0.1
+		const bloomIntensity = isMobile ? 0.25 : 0.5
+		const bloomRadius = 0.01 //isMobile ? 0.05 : 0.1
 		const bloomPass = bloom( scenePassColor, bloomIntensity, bloomRadius, 0.1 )
 		this.postProcessing.outputNode = scenePassColor.add( bloomPass )
 
 		stage3d.postProcessing = this.postProcessing
+		nextTick( () => {
+			animate( this.opacity, { value: 1, duration: 1.8, delay: 0.01, ease: 'outExpo' } )
+
+		} )
 
 		window.addEventListener( 'resize', this.onResize )
 	}
@@ -223,6 +228,11 @@ class VenusExample {
 				const alphaB = texB.sample( vec2( 0, v ) ).w
 				const alpha = mix( alphaA, alphaB, percent )
 				return vec3( 1, y.smoothstep( 0, 1 ), percent.smoothstep( 0, .5 ) ).mul( alpha )
+			} ) )
+			.opacityFn( Fn( ( [opacity] ) => {
+				let y = float( instanceIndex ).div( float( numRings ) ).toVar()
+				const v = y.add( float( 0.5 ).div( float( numRings ) ) ).oneMinus()
+				return v.smoothstep( this.opacity.oneMinus().sub( 0.1 ), this.opacity.oneMinus() )
 			} ) )
 			.widthFn( Fn( ( [width] ) => {
 				let y = float( instanceIndex ).div( float( numRings ) ).toVar()
