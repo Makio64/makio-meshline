@@ -16,7 +16,6 @@ class BasicExample {
 		this.checkerTexture = null
 		this.mapTexture = null
 		this.alphaTexture = null
-		this.backgroundPlane = null
 		this.backgroundPlanes = []
 	}
 
@@ -54,16 +53,17 @@ class BasicExample {
 		this.labels.forEach( label => {
 			stage3d.remove( label )
 		} )
-		if ( this.backgroundPlane ) {
-			stage3d.remove( this.backgroundPlane )
-		}
-		// Clear additional background planes
+		// Clear background planes
 		if ( this.backgroundPlanes ) {
 			this.backgroundPlanes.forEach( plane => {
 				stage3d.remove( plane )
+				plane.geometry.dispose()
+				plane.material.dispose()
 			} )
 			this.backgroundPlanes = []
 		}
+		// Extra safety: purge any leftover demo background planes from the scene
+		this.purgeBackgroundPlanes()
 		this.lines = []
 		this.labels = []
 
@@ -139,32 +139,12 @@ class BasicExample {
 
 			// Create background plane for Alpha Map example
 			if ( config.title === "Alpha Map" ) {
-				const planeGeometry = new PlaneGeometry( 2.2, 2.2 )
-				const planeMaterial = new MeshBasicMaterial( {
-					map: this.checkerTexture,
-					transparent: false
-				} )
-				const alphaBackgroundPlane = new Mesh( planeGeometry, planeMaterial )
-				alphaBackgroundPlane.position.copy( line.position )
-				alphaBackgroundPlane.position.z = -0.3 // Behind the line
-
-				// Store reference for cleanup
-				if ( !this.backgroundPlanes ) this.backgroundPlanes = []
-				this.backgroundPlanes.push( alphaBackgroundPlane )
-				stage3d.add( alphaBackgroundPlane )
+				this.addBackgroundPlaneAt( line.position )
 			}
 
 			// Create background plane for opacity example
 			if ( config.title === "Opacity" ) {
-				const planeGeometry = new PlaneGeometry( 2.2, 2.2 )
-				const planeMaterial = new MeshBasicMaterial( {
-					map: this.checkerTexture,
-					transparent: false
-				} )
-				this.backgroundPlane = new Mesh( planeGeometry, planeMaterial )
-				this.backgroundPlane.position.copy( line.position )
-				this.backgroundPlane.position.z = -0.3 // Further behind the line
-				stage3d.add( this.backgroundPlane )
+				this.addBackgroundPlaneAt( line.position )
 			}
 
 			// Create label
@@ -230,12 +210,6 @@ class BasicExample {
 		this.labels.forEach( label => {
 			stage3d.remove( label )
 		} )
-		if ( this.backgroundPlane ) {
-			stage3d.remove( this.backgroundPlane )
-			this.backgroundPlane.geometry.dispose()
-			this.backgroundPlane.material.dispose()
-			this.backgroundPlane = null
-		}
 		// Dispose additional background planes
 		if ( this.backgroundPlanes ) {
 			this.backgroundPlanes.forEach( plane => {
@@ -245,6 +219,8 @@ class BasicExample {
 			} )
 			this.backgroundPlanes = []
 		}
+		// Extra safety: purge any leftover demo background planes from the scene
+		this.purgeBackgroundPlanes()
 		this.lines = []
 		this.labels = []
 
@@ -321,6 +297,35 @@ class BasicExample {
 		texture.wrapS = texture.wrapT = 1000 // RepeatWrapping
 		texture.repeat.set( 6, 1 ) // Repeat pattern along the line
 		return texture
+	}
+
+	// Helper: add a checker background plane behind a given position
+	addBackgroundPlaneAt( position ) {
+		const planeGeometry = new PlaneGeometry( 2.2, 2.2 )
+		const planeMaterial = new MeshBasicMaterial( {
+			map: this.checkerTexture,
+			transparent: false
+		} )
+		const plane = new Mesh( planeGeometry, planeMaterial )
+		plane.position.copy( position )
+		plane.position.z = -0.3
+		plane.userData.isMeshlineDemoBg = true
+		if ( !this.backgroundPlanes ) this.backgroundPlanes = []
+		this.backgroundPlanes.push( plane )
+		stage3d.add( plane )
+		return plane
+	}
+
+	// Remove any plane we created that might still be attached to the scene
+	purgeBackgroundPlanes() {
+		const children = [...stage3d.scene.children]
+		for ( const child of children ) {
+			if ( child?.userData?.isMeshlineDemoBg ) {
+				stage3d.remove( child )
+				child.geometry?.dispose?.()
+				child.material?.dispose?.()
+			}
+		}
 	}
 }
 
