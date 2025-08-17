@@ -1,17 +1,18 @@
 import OrbitControl from '@/makio/three/controls/OrbitControl'
 import stage3d from '@/makio/three/stage3d'
 import { MeshLine } from 'meshline'
-import { Vector3, PostProcessing, Raycaster, MeshBasicNodeMaterial, DataTexture, RGBAFormat, FloatType, RepeatWrapping } from 'three/webgpu'
+import { Vector3, PostProcessing, MeshBasicNodeMaterial, DataTexture, RGBAFormat, FloatType, RepeatWrapping, Ray, FrontSide, Matrix4 } from 'three/webgpu'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js'
-import { computeBoundsTree, disposeBoundsTree, acceleratedRaycast } from 'three-mesh-bvh'
-import { Fn, vec2, vec3, uv, pass, time, positionWorld, uniform, texture, mix, instanceIndex, float, fract } from 'three/tsl'
+import { MeshBVH } from 'three-mesh-bvh'
+import { Fn, vec2, vec3, uv, pass, uniform, texture, mix, instanceIndex, float, fract } from 'three/tsl'
 import GUI from 'lil-gui'
 import { centerAndScaleModel } from '@/utils/modelUtils'
 import { animate } from 'animejs'
 import { backInOut } from '@/makio/tsl/easing'
 import { bloom } from 'three/addons/tsl/display/BloomNode.js'
-import { AdditiveBlending, TextureLoader } from 'three'
+import { markRaw } from 'vue'
+import Venus from '@/components/Venus.vue'
 
 
 class VenusExample {
@@ -19,10 +20,13 @@ class VenusExample {
 		this.line = null
 		this.modelA = null // David
 		this.modelB = null // Venus
+		this.meshesA = [] // All meshes for David
+		this.meshesB = [] // All meshes for Venus
 		this.boundsA = null
 		this.boundsB = null
 		this.outerRadius = 100
-		this.raycaster = new Raycaster()
+		this.ray = new Ray()
+		this.invMat = new Matrix4()
 		this.samplesPerRing = 128
 		this.numRings = 64
 		this.center = new Vector3()
@@ -32,13 +36,17 @@ class VenusExample {
 		this.gui = null
 		this.texA = null
 		this.texB = null
+		this.activeA = null
+		this.activeB = null
+		this.uiComponent = markRaw( Venus )
 	}
 
 	async init() {
 		await stage3d.initRender()
-		stage3d.control = new OrbitControl( stage3d.camera, 12 )
+		stage3d.control = new OrbitControl( stage3d.camera, 16 )
 		stage3d.control.maxRadius = 30
 		stage3d.control.minRadius = 6
+		// BVH raycasting setup is done in loadModels()
 		await this.loadModels()
 		await this.initScene()
 
@@ -70,20 +78,28 @@ class VenusExample {
 		this.modelA = gltfA.scene
 		this.modelB = gltfB.scene
 
-		for ( const model of [this.modelA, this.modelB] ) {
-			model.traverse( obj => {
-				if ( obj.isMesh ) {
-					if ( !obj.geometry.computeBoundsTree ) {
-						obj.geometry.computeBoundsTree = computeBoundsTree
-						obj.geometry.disposeBoundsTree = disposeBoundsTree
-						obj.raycast = acceleratedRaycast
-					}
-					obj.geometry.computeBoundsTree()
-					obj.geometry.computeBoundingBox()
-					obj.material = new MeshBasicNodeMaterial()
-				}
-			} )
-		}
+		// Store all mesh references for complete raycasting
+		this.meshesA = []
+		this.modelA.traverse( obj => {
+			if ( obj.isMesh ) {
+				this.meshesA.push( obj )
+				obj.geometry.boundsTree = new MeshBVH( obj.geometry )
+				obj.geometry.computeBoundingBox()
+				obj.material = new MeshBasicNodeMaterial()
+				obj.updateMatrixWorld( true )
+			}
+		} )
+		
+		this.meshesB = []
+		this.modelB.traverse( obj => {
+			if ( obj.isMesh ) {
+				this.meshesB.push( obj )
+				obj.geometry.boundsTree = new MeshBVH( obj.geometry )
+				obj.geometry.computeBoundingBox()
+				obj.material = new MeshBasicNodeMaterial()
+				obj.updateMatrixWorld( true )
+			}
+		} )
 
 		const targetSize = 12
 		const { bounds: bA, outerRadius: rA } = centerAndScaleModel( this.modelA, targetSize )
@@ -150,10 +166,19 @@ class VenusExample {
 			} ) )
 			.colorFn( Fn( () => {
 				let y = float( instanceIndex ).div( float( numRings ) ).toVar()
-				return vec3( 1, y.smoothstep( 0, 1 ), percent.smoothstep( 0, .5 ) )
+				const v = y.add( float( 0.5 ).div( float( numRings ) ) )
+				const alphaA = texA.sample( vec2( 0, v ) ).w
+				const alphaB = texB.sample( vec2( 0, v ) ).w
+				const alpha = mix( alphaA, alphaB, percent )
+				return vec3( 1, y.smoothstep( 0, 1 ), percent.smoothstep( 0, .5 ) ).mul( alpha )
 			} ) )
 			.widthFn( Fn( ( [width] ) => {
-				return width.add( percent.sub( .5 ).abs().mul( 2 ).oneMinus().abs().mul( 0.1 ) )
+				let y = float( instanceIndex ).div( float( numRings ) ).toVar()
+				const v = y.add( float( 0.5 ).div( float( numRings ) ) )
+				const alphaA = texA.sample( vec2( 0, v ) ).w
+				const alphaB = texB.sample( vec2( 0, v ) ).w
+				const alpha = mix( alphaA, alphaB, percent )
+				return width.add( percent.sub( .5 ).abs().mul( 2 ).oneMinus().abs().mul( 0.1 ) ).mul( alpha )
 			} ) )
 
 		stage3d.add( this.line )
@@ -163,13 +188,13 @@ class VenusExample {
 		stage3d.remove( this.modelB )
 
 		// GUI slider like gpu circle demo
-		const urlParams = new URLSearchParams( window.location.search )
-		const hasNoMenu = urlParams.has( 'noMenu' )
-		this.gui = new GUI( { width: hasNoMenu ? 220 : 300 } )
-		this.gui.domElement.style.right = hasNoMenu ? '0' : '60px'
-		this.gui.add( this, 'venus' )
-		this.gui.add( this, 'david' )
-		this.gui.add( this.morph, 'value', 0, 1, 0.01 ).name( 'Morph David ⇆ Venus' ).listen()
+		// const urlParams = new URLSearchParams( window.location.search )
+		// const hasNoMenu = urlParams.has( 'noMenu' )
+		// this.gui = new GUI( { width: hasNoMenu ? 220 : 300 } )
+		// this.gui.domElement.style.right = hasNoMenu ? '0' : '60px'
+		// this.gui.add( this, 'venus' )
+		// this.gui.add( this, 'david' )
+		// this.gui.add( this.morph, 'value', 0, 1, 0.01 ).name( 'Morph David ⇆ Venus' ).listen()
 	}
 
 	venus() {
@@ -191,6 +216,8 @@ class VenusExample {
 		for ( let r = 0; r < height; r++ ) {
 			const ringA = this.linesA[r]
 			const ringB = this.linesB[r]
+			const alphaRowA = this.activeA ? ( this.activeA[r] ? 1 : 0 ) : 1
+			const alphaRowB = this.activeB ? ( this.activeB[r] ? 1 : 0 ) : 1
 			for ( let i = 0; i < width; i++ ) {
 				const idx = r * width + i
 				const doff = idx * 4
@@ -198,12 +225,12 @@ class VenusExample {
 				dataA[doff] = ringA[o]
 				dataA[doff + 1] = ringA[o + 1]
 				dataA[doff + 2] = ringA[o + 2]
-				dataA[doff + 3] = 1
+				dataA[doff + 3] = alphaRowA
 
 				dataB[doff] = ringB[o]
 				dataB[doff + 1] = ringB[o + 1]
 				dataB[doff + 2] = ringB[o + 2]
-				dataB[doff + 3] = 1
+				dataB[doff + 3] = alphaRowB
 			}
 		}
 
@@ -219,29 +246,76 @@ class VenusExample {
 
 	generateRingsForModel( model, minY, maxY ) {
 		const lines = []
+		const actives = []
 		const height = Math.max( 0.0001, maxY - minY )
+		// Determine horizontal center for this model to handle non-centered geometry
+		const bounds = model === this.modelA ? this.boundsA : this.boundsB
+		const boundsCenterX = ( bounds.min.x + bounds.max.x ) * 0.5
+		const boundsCenterZ = ( bounds.min.z + bounds.max.z ) * 0.5
+		
+		// Get all meshes for complete raycasting
+		const meshes = model === this.modelA ? this.meshesA : this.meshesB
+		
+		// Pre-allocate reusable vectors to reduce GC pressure
+		const dir = new Vector3()
+		const origin = new Vector3()
+		const target = new Vector3()
+		
 		for ( let r = 0; r < this.numRings; r++ ) {
 			const t = r / ( this.numRings - 1 )
 			const y = minY + t * height
 			const ring = new Float32Array( this.samplesPerRing * 3 )
-			const dir = new Vector3()
-			const origin = new Vector3()
-			const target = new Vector3( 0, y, 0 )
+			// Use pre-calculated center for all rings (much faster)
+			let cx = boundsCenterX, cz = boundsCenterZ
+			target.set( cx, y, cz )
 			let prevX = 0, prevY = y, prevZ = 0
 			let hasHit = false
+			let firstHitIndex = -1
+			let lastHitX = 0, lastHitY = y, lastHitZ = 0
 			for ( let i = 0; i < this.samplesPerRing; i++ ) {
-				const a = ( i / this.samplesPerRing ) * Math.PI * 2 + r * 0.01
-				dir.set( Math.cos( a ), 0, Math.sin( a ) ).normalize()
-				origin.copy( dir ).multiplyScalar( this.outerRadius ).add( target )
-				this.raycaster.set( origin, dir.clone().negate() )
-				const hits = this.raycaster.intersectObject( model, true )
+				const a = ( i / this.samplesPerRing ) * Math.PI * 2
+				dir.set( Math.cos( a ), 0, Math.sin( a ) )
+				origin.set( 
+					target.x + dir.x * this.outerRadius,
+					target.y,
+					target.z + dir.z * this.outerRadius
+				)
+				dir.negate()
+				
+				// Setup ray for BVH raycasting
+				this.ray.set( origin, dir )
+				let closestHit = null
+				let closestDistance = Infinity
+				
+				// Find closest hit across all meshes using BVH
+				for ( const mesh of meshes ) {
+					if ( !mesh.geometry.boundsTree ) continue
+					
+					// Transform ray to mesh's local space
+					const localRay = this.ray.clone()
+					this.invMat.copy( mesh.matrixWorld ).invert()
+					localRay.applyMatrix4( this.invMat )
+					
+					// Raycast using BVH
+					const hit = mesh.geometry.boundsTree.raycastFirst( localRay, FrontSide )
+					
+					if ( hit && hit.distance < closestDistance ) {
+						// Transform hit point back to world space
+						hit.point.applyMatrix4( mesh.matrixWorld )
+						closestHit = hit
+						closestDistance = hit.distance
+					}
+				}
+				
 				let px, py, pz
-				if ( hits && hits.length ) {
-					const hit = hits[0]
-					px = hit.point.x
-					py = hit.point.y
-					pz = hit.point.z
+				if ( closestHit ) {
+					// Use the closest hit point
+					px = closestHit.point.x
+					py = closestHit.point.y
+					pz = closestHit.point.z
 					hasHit = true
+					if ( firstHitIndex < 0 ) firstHitIndex = i
+					lastHitX = px; lastHitY = py; lastHitZ = pz
 				} else if ( hasHit ) {
 					px = prevX; py = prevY; pz = prevZ
 				} else {
@@ -255,8 +329,20 @@ class VenusExample {
 				ring[o + 1] = py
 				ring[o + 2] = pz
 			}
+			// If we had hits, ensure continuity at wrap: fill leading no-hit segment with last valid point
+			if ( firstHitIndex > 0 ) {
+				for ( let i = 0; i < firstHitIndex; i++ ) {
+					const o = i * 3
+					ring[o] = lastHitX
+					ring[o + 1] = lastHitY
+					ring[o + 2] = lastHitZ
+				}
+			}
 			lines.push( ring )
+			actives.push( hasHit )
 		}
+		if ( model === this.modelA ) this.activeA = actives
+		else if ( model === this.modelB ) this.activeB = actives
 		return lines
 	}
 
@@ -276,8 +362,9 @@ class VenusExample {
 		for ( const model of [this.modelA, this.modelB] ) {
 			if ( model ) {
 				model.traverse( obj => {
-					if ( obj.isMesh && obj.geometry.disposeBoundsTree ) {
-						obj.geometry.disposeBoundsTree()
+					if ( obj.isMesh && obj.geometry.boundsTree ) {
+						obj.geometry.boundsTree.dispose()
+						obj.geometry.boundsTree = null
 					}
 				} )
 				stage3d.remove( model )
@@ -291,6 +378,7 @@ class VenusExample {
 
 	show() {}
 	hide( cb ) { if ( cb ) cb() }
+
 }
 
 export default new VenusExample()

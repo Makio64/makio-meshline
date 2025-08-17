@@ -1,6 +1,7 @@
 <template>
 	<div class="ExampleView view">
 		<div v-if="text" class="instruction" v-html="text" />
+		<component :is="example && example.uiComponent" v-if="example && example.uiComponent" :api="example" class="bottom" />
 	</div></template>
 
 <script>
@@ -22,6 +23,7 @@ export default {
 	data: function() {
 		return {
 			text: '',
+			example: null,
 		}
 	},
 	async mounted() {

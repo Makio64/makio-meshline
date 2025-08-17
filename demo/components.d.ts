@@ -12,5 +12,6 @@ declare module 'vue' {
     MenuFullscreen: typeof import('./src/components/ui/MenuFullscreen.vue')['default']
     Spinner: typeof import('./src/components/ui/Spinner.vue')['default']
     SVGCircle: typeof import('./src/components/ui/SVGCircle.vue')['default']
+    Venus: typeof import('./src/components/Venus.vue')['default']
   }
 }
