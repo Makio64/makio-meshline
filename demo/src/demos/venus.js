@@ -13,6 +13,7 @@ import { backInOut } from '@/makio/tsl/easing'
 import { bloom } from 'three/addons/tsl/display/BloomNode.js'
 import { markRaw } from 'vue'
 import Venus from '@/components/Venus.vue'
+import { isMobile } from '@/makio/utils/detect'
 
 
 class VenusExample {
@@ -27,7 +28,7 @@ class VenusExample {
 		this.outerRadius = 100
 		this.ray = new Ray()
 		this.invMat = new Matrix4()
-		this.samplesPerRing = 128
+		this.samplesPerRing = isMobile ? 64 : 128
 		this.numRings = 64
 		this.center = new Vector3()
 		this.linesA = null
