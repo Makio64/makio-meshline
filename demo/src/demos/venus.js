@@ -7,7 +7,6 @@ import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js'
 import { MeshBVH, SAH } from 'three-mesh-bvh'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import { Fn, vec2, vec3, uv, pass, uniform, texture, mix, instanceIndex, float, fract } from 'three/tsl'
-import GUI from 'lil-gui'
 import { centerAndScaleModel } from '@/utils/modelUtils'
 import { animate } from 'animejs'
 import { backInOut } from '@/makio/tsl/easing'
@@ -239,15 +238,6 @@ class VenusExample {
 		// remove meshes, keep only lines
 		stage3d.remove( this.modelA )
 		stage3d.remove( this.modelB )
-
-		// GUI slider like gpu circle demo
-		// const urlParams = new URLSearchParams( window.location.search )
-		// const hasNoMenu = urlParams.has( 'noMenu' )
-		// this.gui = new GUI( { width: hasNoMenu ? 220 : 300 } )
-		// this.gui.domElement.style.right = hasNoMenu ? '0' : '60px'
-		// this.gui.add( this, 'venus' )
-		// this.gui.add( this, 'david' )
-		// this.gui.add( this.morph, 'value', 0, 1, 0.01 ).name( 'Morph David ⇆ Venus' ).listen()
 	}
 
 	venus() {
@@ -491,7 +481,6 @@ class VenusExample {
 		this.texA?.dispose?.()
 		this.texB?.dispose?.()
 		stage3d.control?.dispose()
-		this.gui?.destroy(); this.gui = null
 	}
 
 	show() {}
