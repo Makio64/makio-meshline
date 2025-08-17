@@ -38,17 +38,31 @@ export default defineConfig( {
 		target: 'esnext',
 		emptyOutDir: true,
 		sourcemap: true,
+		rollupOptions: {
+			output: {
+				manualChunks: undefined
+			}
+		},
+		minify: 'terser',
+		terserOptions: {
+			mangle: {
+				keep_fnames: true,
+				reserved: ['p']
+			},
+			compress: {
+				keep_fnames: true
+			}
+		}
 	},
 	esbuild: {
 		keepNames: true,
 		legalComments: 'none',
 	},
-
-	optimizeDeps: {
-		esbuildOptions: {
-			target: 'esnext', // Ensure esbuild target is set to esnext for dependencies
-		},
-	},
+	// optimizeDeps: {
+	// 	esbuildOptions: {
+	// 		target: 'esnext', // Ensure esbuild target is set to esnext for dependencies
+	// 	},
+	// },
 	base: process.env.NODE_ENV === 'production' ? '/' : '/',
 	resolve: {
 		alias: {
