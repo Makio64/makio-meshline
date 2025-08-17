@@ -1,13 +1,18 @@
 import OrbitControl from '@/makio/three/controls/OrbitControl'
 import stage3d from '@/makio/three/stage3d'
 import { MeshLine } from 'meshline'
-import { Vector3, Raycaster, MeshBasicNodeMaterial, DataTexture, RGBAFormat, FloatType, RepeatWrapping } from 'three/webgpu'
+import { Vector3, PostProcessing, Raycaster, MeshBasicNodeMaterial, DataTexture, RGBAFormat, FloatType, RepeatWrapping } from 'three/webgpu'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js'
 import { computeBoundsTree, disposeBoundsTree, acceleratedRaycast } from 'three-mesh-bvh'
-import { Fn, vec2, vec3, uv, time, positionWorld, uniform, texture, mix, instanceIndex, float, fract } from 'three/tsl'
+import { Fn, vec2, vec3, uv, pass, time, positionWorld, uniform, texture, mix, instanceIndex, float, fract } from 'three/tsl'
 import GUI from 'lil-gui'
 import { centerAndScaleModel } from '@/utils/modelUtils'
+import { animate } from 'animejs'
+import { backInOut } from '@/makio/tsl/easing'
+import { bloom } from 'three/addons/tsl/display/BloomNode.js'
+import { AdditiveBlending, TextureLoader } from 'three'
+
 
 class VenusExample {
 	constructor() {
@@ -18,8 +23,8 @@ class VenusExample {
 		this.boundsB = null
 		this.outerRadius = 100
 		this.raycaster = new Raycaster()
-		this.samplesPerRing = 64
-		this.numRings = 128
+		this.samplesPerRing = 128
+		this.numRings = 64
 		this.center = new Vector3()
 		this.linesA = null
 		this.linesB = null
@@ -36,6 +41,15 @@ class VenusExample {
 		stage3d.control.minRadius = 6
 		await this.loadModels()
 		await this.initScene()
+
+		this.postProcessing = new PostProcessing( stage3d.renderer )
+		const scenePass = pass( stage3d.scene, stage3d.camera )
+		const scenePassColor = scenePass.getTextureNode( 'output' )
+		const bloomPass = bloom( scenePassColor, 1, .1, 0.1 )
+		this.postProcessing.outputNode = scenePassColor.add( bloomPass )
+
+		stage3d.postProcessing = this.postProcessing
+
 		window.addEventListener( 'resize', this.onResize )
 	}
 
@@ -104,38 +118,43 @@ class VenusExample {
 		// GPU position node: sample A and B rows by instance, blend by morph
 		const numRings = this.numRings
 		const texA = texture( this.texA )
-		const texB = texture( this.texB )
-		const morph = this.morph
+		const texB = texture( this.texB )		
 
-		let quadOut = Fn( ( [value] ) => {
-			return value.mul( value ).mul( value ).mul( value )
-		} )
+		// return the percent with a delay depending of y
+		let percent = Fn( () => {
+			let p =  this.morph // 0 -> 1
+			let y = float( instanceIndex ).div( float( numRings ) ) // 0 -> 1
+			return backInOut( p.mul( 2 ).sub( y ).clamp() ).toVar()
+		} )()
 
-		const positionNode = Fn( ( [counter] ) => {
-			let y = float( instanceIndex ).div( float( numRings ) ).toVar()
-			const v = y.add( float( 0.5 ).div( float( numRings ) ) )
-			const u = fract( counter )
-			const posA = texA.sample( vec2( u, v ) ).xyz
-			const posB = texB.sample( vec2( u, v ) ).xyz
-			const m = quadOut( morph ).mul( 8 ).sub( y.mul( 4 ) ).clamp()
-			return mix( posA, posB, m )
-		} )
 
 		this.line = new MeshLine()
 			.instances( this.numRings )
 			.segments( this.samplesPerRing )
 			.closed( true )
-			.gpuPositionNode( positionNode )
 			.needsUV( true )
 			.color( 0xffffff )
-			.colorFn( Fn( () => {
-				const y = float( instanceIndex ).div( float( numRings ) )
-				const m = quadOut( morph ).mul( 8 ).sub( y.mul( 4 ) ).clamp()
-				return vec3( 1, y.smoothstep( 0, 1 ), m.smoothstep( 0, .5 ) )
-			} ) )
 			.transparent( true )
-			.lineWidth( 0.015 )
+			.lineWidth( 0.02 )
 			.verbose( true )
+			.gpuPositionNode( Fn( ( [counter] ) => {
+				let y = float( instanceIndex ).div( float( numRings ) ).toVar()
+				const v = y.add( float( 0.5 ).div( float( numRings ) ) )
+				const u = fract( counter )
+				const posA = texA.sample( vec2( u, v ) ).xyz
+				const posB = texB.sample( vec2( u, v ) ).xyz
+				let extra = percent.clamp().sub( .5 ).abs().mul( 2 ).oneMinus().abs().toVar()
+				let pos = mix( posA, posB, percent )
+				pos.xz.mulAssign( extra.mul( 0.6 ).add( 1 ) )
+				return pos
+			} ) )
+			.colorFn( Fn( () => {
+				let y = float( instanceIndex ).div( float( numRings ) ).toVar()
+				return vec3( 1, y.smoothstep( 0, 1 ), percent.smoothstep( 0, .5 ) )
+			} ) )
+			.widthFn( Fn( ( [width] ) => {
+				return width.add( percent.sub( .5 ).abs().mul( 2 ).oneMinus().abs().mul( 0.1 ) )
+			} ) )
 
 		stage3d.add( this.line )
 
@@ -148,9 +167,17 @@ class VenusExample {
 		const hasNoMenu = urlParams.has( 'noMenu' )
 		this.gui = new GUI( { width: hasNoMenu ? 220 : 300 } )
 		this.gui.domElement.style.right = hasNoMenu ? '0' : '60px'
-		this.gui.add( { percent: 0 }, 'percent', 0, 1, 0.01 ).name( 'Morph David ⇆ Venus' ).onChange( v => {
-			this.morph.value = v
-		} )
+		this.gui.add( this, 'venus' )
+		this.gui.add( this, 'david' )
+		this.gui.add( this.morph, 'value', 0, 1, 0.01 ).name( 'Morph David ⇆ Venus' ).listen()
+	}
+
+	venus() {
+		animate( this.morph, { value: 1, duration: 2, ease: 'linear' } )
+	}
+	
+	david() {
+		animate( this.morph, { value: 0, duration: 2, ease: 'linear' } )
 	}
 
 	// Pack ring positions into 2D float textures (width=samples, height=numRings)
@@ -238,6 +265,8 @@ class VenusExample {
 	}
 
 	dispose() {
+		stage3d.postProcessing = null
+		this.postProcessing.dispose()
 		window.removeEventListener( 'resize', this.onResize )
 		if ( this.line ) {
 			stage3d.remove( this.line )

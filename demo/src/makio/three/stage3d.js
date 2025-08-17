@@ -64,8 +64,8 @@ class Stage3D {
 	}
 
 	render = async () => {
-		if ( this.composer ) {
-			this.composer.render()
+		if ( this.postProcessing ) {
+			this.postProcessing.render()
 		} else {
 			if ( this.stats ) {
 				await this.renderer.renderAsync( this.scene, this.camera ) // await necessary else negative value output
@@ -75,12 +75,6 @@ class Stage3D {
 				this.renderer.renderAsync( this.scene, this.camera )
 			}
 		}
-	}
-
-	initPostFX() {
-		this.postFX = new PostProcess( this.renderer )
-		this.composer = this.postFX.composer
-		this.postFX.init( this.scene, this.camera )
 	}
 
 	//---------------------------------------------------------- ADD / REMOVE OBJECT3D
