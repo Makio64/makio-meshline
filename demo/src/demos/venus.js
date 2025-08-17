@@ -88,7 +88,7 @@ class VenusExample {
 				this.meshesA.push( obj )
 				// Optimize BVH for raycast performance
 				obj.geometry.boundsTree = new MeshBVH( obj.geometry, {
-					maxLeafTris: 5,
+					maxLeafTris: 3,
 					strategy: SAH
 				} )
 				obj.geometry.computeBoundingBox()
@@ -103,7 +103,7 @@ class VenusExample {
 				this.meshesB.push( obj )
 				// Optimize BVH for raycast performance
 				obj.geometry.boundsTree = new MeshBVH( obj.geometry, {
-					maxLeafTris: 5,
+					maxLeafTris: 3,
 					strategy: SAH
 				} )
 				obj.geometry.computeBoundingBox()
