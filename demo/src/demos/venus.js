@@ -60,8 +60,8 @@ class VenusExample {
 		this.postProcessing = new PostProcessing( stage3d.renderer )
 		const scenePass = pass( stage3d.scene, stage3d.camera )
 		const scenePassColor = scenePass.getTextureNode( 'output' )
-		const bloomIntensity = isMobile ? 0.25 : 0.5
-		const bloomRadius = 0.01 //isMobile ? 0.05 : 0.1
+		const bloomIntensity = 0.5
+		const bloomRadius = 0.01
 		const bloomPass = bloom( scenePassColor, bloomIntensity, bloomRadius, 0.1 )
 		this.postProcessing.outputNode = scenePassColor.add( bloomPass )
 

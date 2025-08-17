@@ -2,6 +2,7 @@ import { Scene, PerspectiveCamera, WebGPURenderer, TimestampQuery } from 'three/
 import WebGPU from 'three/addons/capabilities/WebGPU'
 import stage from '../core/stage'
 import Stats from 'stats-gl'
+import { ACESFilmicToneMapping } from 'three'
 
 const showStats = window.location.search.includes( 'debug' )
 
@@ -23,6 +24,8 @@ class Stage3D {
 				reverseDepth: true,
 				alpha: false,
 			} )
+			this.renderer.toneMapping = ACESFilmicToneMapping
+
 			this.renderer.setPixelRatio( stage.devicePixelRatio )
 			this.renderer.setSize( stage.width, stage.height )
 			this.renderer.setClearColor( options.background || 0x000000, options.clearAlpha || 1 )
