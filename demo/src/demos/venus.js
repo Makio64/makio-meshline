@@ -45,8 +45,12 @@ class VenusExample {
 
 	async init() {
 		await stage3d.initRender()
+		// if in the url there is cleopatra then display aurelius and nefertiti, else david and venus
+		const urlParams = new URLSearchParams( window.location.search )
+		this.isCleopatra = urlParams.has( 'cleopatra' )
+
 		stage3d.control = new OrbitControl( stage3d.camera, 16 )
-		stage3d.control._theta = 1.8 + Math.PI * 2
+		stage3d.control._theta = this.isCleopatra ? 1.8 + Math.PI * 2 : 2.3 + Math.PI * 2
 		stage3d.control.maxRadius = 30
 		stage3d.control.minRadius = 6
 		// BVH raycasting setup is done in loadModels()
@@ -80,8 +84,8 @@ class VenusExample {
 		loader.setDRACOLoader( draco )
 
 		const [gltfA, gltfB] = await Promise.all( [
-			loader.loadAsync( '/models/david.glb' ),
-			loader.loadAsync( '/models/venus.glb' )
+			loader.loadAsync( this.isCleopatra ? '/models/aurelius.glb' : '/models/david.glb' ),
+			loader.loadAsync( this.isCleopatra ? '/models/nefertiti.glb' : '/models/venus.glb' )
 		] )
 
 		this.modelA = gltfA.scene
@@ -252,12 +256,12 @@ class VenusExample {
 
 	venus() {
 		animate( this.morph, { value: 1, duration: 2, ease: 'linear' } )
-		animate( stage3d.control, { duration: 1.5, _theta: 2.6, ease: 'inOutQuad'  } )
+		animate( stage3d.control, { duration: 1.5, _theta: 2.6 + ( this.isCleopatra ? Math.PI : -0.3 ), ease: 'inOutQuad'  } )
 	}
 	
 	david() {
 		animate( this.morph, { value: 0, duration: 2, ease: 'linear' } )
-		animate( stage3d.control, { duration: 1.5, _theta: 1.8 + Math.PI * 2, ease: 'inOutQuad' } )
+		animate( stage3d.control, { duration: 1.5, _theta: ( this.isCleopatra ? 1.8 : 2.3 ) + Math.PI * 2, ease: 'inOutQuad' } )
 	}
 
 	// Pack ring positions into 2D float textures (width=samples, height=numRings)
