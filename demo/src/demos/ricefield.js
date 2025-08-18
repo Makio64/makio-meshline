@@ -213,6 +213,9 @@ class RicefieldExample {
 				const startX = cell.x + totalPadding + ( availableWidth - riceCountX * spacing ) / 2
 				const startZ = cell.y + totalPadding + ( availableHeight - riceCountZ * spacing ) / 2
 				
+				// Per-parcel darkness factor, we keep half of the ricefield with the "basic color" the rest is multiply by 0.2 -> 1.2
+				const cellDarkness = Math.random() > .5 ? 0.2 + Math.random() : 1
+				
 				for ( let x = 0; x < riceCountX; x++ ) {
 					for ( let z = 0; z < riceCountZ; z++ ) {
 						// Constrain jitter to prevent rice from going outside boundaries
@@ -224,7 +227,8 @@ class RicefieldExample {
 						// Store instance data: position and scale
 						this.riceInstances.push( {
 							position: [baseX, 0, baseZ],
-							scale: height / 3 // Normalize to base height of 3
+							scale: height / 3, // Normalize to base height of 3
+							darkness: cellDarkness
 						} )
 					}
 				}
@@ -254,12 +258,14 @@ class RicefieldExample {
 			.colorFn( Fn( ( [color, counters, side] ) => {
 				const rand = fract( sin( float( instanceIndex ).mul( 12.9898 ) ).mul( 43758.5453 ) )
 				const colorScale = rand.mul( 1.1 ).add( .5 )
-				return vec4( color.rgb.mul( colorScale ), color.a )
+				const parcelDarkness = attribute( 'instanceDarkness', 'float' )
+				return vec4( color.rgb.mul( colorScale ).mul( parcelDarkness ), color.a )
 			} ) )
 			.gradientFn( Fn( ( [gradientFactor, side] ) => {
 				const rand = fract( sin( float( instanceIndex ).mul( 12.9898 ) ).mul( 43758.5453 ) )
 				const colorScale = rand.mul( 1.1 ).add( .5 )
-				return vec4( gradientFactor.rgb.mul( colorScale ), gradientFactor.a )
+				const parcelDarkness = attribute( 'instanceDarkness', 'float' )
+				return vec4( gradientFactor.rgb.mul( colorScale ).mul( parcelDarkness ), gradientFactor.a )
 			} ) )
 			// Add width function that varies with scale
 			.widthFn( Fn( ( [width, counters] ) => {
@@ -274,20 +280,19 @@ class RicefieldExample {
 				return width.mul( widthMultiplier )
 			} ) )
 			.positionFn( Fn( ( [position, counters] ) => {
-				// Get instance attributes
-				const instancePos = attribute( 'instancePosition', 'vec3' )
-				const instanceScl = attribute( 'instanceScale', 'float' )
+				// Get combined instance attributes: xyz = position, w = scale
+				const instanceTr = attribute( 'instanceTransform', 'vec4' )
 				
 				// Access storage buffer directly
 				const scaleStorage = storage( this.scaleStorageBuffer, 'float', this.riceInstances.length )
 				const storageScale = scaleStorage.element( instanceIndex )
 				
 				// Calculate world position
-				const worldX = position.x.add( instancePos.x )
-				const worldZ = position.z.add( instancePos.z )
+				const worldX = position.x.add( instanceTr.x )
+				const worldZ = position.z.add( instanceTr.z )
 				
 				// Combine instance scale with storage scale
-				const finalScale = instanceScl.mul( storageScale )
+				const finalScale = instanceTr.w.mul( storageScale )
 				
 				// Apply scale to height
 				const scaledY = position.y.mul( finalScale )
@@ -305,35 +310,33 @@ class RicefieldExample {
 				// Extract wind direction and strength from texture channels
 				const windDirX = windSample.r.toVar() // -1 to 1
 				const windDirZ = windSample.g.toVar() // -1 to 1
-				const windStrength = abs( sin( time.mul( 0.2 ) ) ).add( 0.5 ).toVar() // 0.5 to 1.5
+				const windStrength = sin( time.mul( 0.5 ) ).abs().add( 0.7 ).toVar() // 0.5 to 1.5
 				
 				// Apply wind displacement based on height (more at top) and scale (small rice less affected)
 				const heightFactor = position.y.div( 3 ) // 0 to 1 along height
 				// Scale the wind effect by the current scale (finalScale goes from 0.01 to 1.0)
 				const scaleInfluence = tslSmoothstep( 0.6, 1, finalScale ) // Smooth transition from no wind to full wind
 				const windDisplacement = heightFactor.mul( heightFactor ).mul( windStrength ).mul( scaleInfluence )
-				
-				// Add slight vertical sway (also affected by scale)
-				const swayAmount = 0//sin( time.mul( 2 ).add( instanceIndex.mul( 0.1 ) ) ).mul( 0.05 ).mul( heightFactor ).mul( scaleInfluence )
-				
+								
 				// Final position with wind
 				const finalX = worldX.add( windDirX.mul( windDisplacement ) )
 				const finalZ = worldZ.add( windDirZ.mul( windDisplacement ) )
-				const finalY = scaledY.add( swayAmount )
+				const finalY = scaledY
 				
 				// Return transformed position
 				return vec3( finalX, finalY, finalZ )
 			} ) )
 			.usage( DynamicDrawUsage ) // Use dynamic usage for instancing
 		
-		// Add instance attributes for position and scale
-		this.lines.addInstanceAttribute( 'instancePosition', 3 )
-		this.lines.addInstanceAttribute( 'instanceScale', 1 )
+		// Add instance attributes for transform (xyz position + w scale) and parcel darkness
+		this.lines.addInstanceAttribute( 'instanceTransform', 4 )
+		this.lines.addInstanceAttribute( 'instanceDarkness', 1 )
 		
 		// Set instance data
 		this.riceInstances.forEach( ( instance, i ) => {
-			this.lines.setInstanceValue( 'instancePosition', i, instance.position )
-			this.lines.setInstanceValue( 'instanceScale', i, instance.scale )
+			const transform = [instance.position[0], instance.position[1], instance.position[2], instance.scale]
+			this.lines.setInstanceValue( 'instanceTransform', i, transform )
+			this.lines.setInstanceValue( 'instanceDarkness', i, instance.darkness )
 		} )
 
 		stage3d.add( this.lines )
