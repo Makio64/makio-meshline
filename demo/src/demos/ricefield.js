@@ -12,6 +12,7 @@ import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment
 import { animate } from 'animejs'
 import { mouse, onMove, onClick } from '@/makio/utils/input/mouse'
 import { isMobile } from '@/makio/utils/detect'
+import random from '@/makio/utils/random'
 
 const FIELD_WIDTH = 64 // Total width of the rice field
 const FIELD_HEIGHT = 64 // Total height of the rice field
@@ -213,8 +214,8 @@ class RicefieldExample {
 				const startX = cell.x + totalPadding + ( availableWidth - riceCountX * spacing ) / 2
 				const startZ = cell.y + totalPadding + ( availableHeight - riceCountZ * spacing ) / 2
 				
-				// Per-parcel darkness factor, we keep half of the ricefield with the "basic color" the rest is multiply by 0.2 -> 1.2
-				const cellDarkness = Math.random() > .5 ? 0.2 + Math.random() : 1
+				// Per-parcel darkness : We keep ~half of the ricefield with the "basic color" the rest is multiply by 0.4 -> 1.2
+				const cellDarkness = Math.random() > .5 ? random( 0.4, 1.2 ) : 1
 				
 				for ( let x = 0; x < riceCountX; x++ ) {
 					for ( let z = 0; z < riceCountZ; z++ ) {
