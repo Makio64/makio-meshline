@@ -70,4 +70,7 @@ export default {
 	.bottom
 		position absolute
 		bottom 10px
+	.instruction 
+		user-select none
+		pointer-events none
 </style>
