@@ -24,7 +24,6 @@ class Stage3D {
 				reverseDepth: true,
 				alpha: false,
 			} )
-			this.renderer.toneMapping = ACESFilmicToneMapping
 
 			this.renderer.setPixelRatio( stage.devicePixelRatio )
 			this.renderer.setSize( stage.width, stage.height )

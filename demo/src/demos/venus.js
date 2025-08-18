@@ -14,6 +14,7 @@ import { bloom } from 'three/addons/tsl/display/BloomNode.js'
 import { markRaw } from 'vue'
 import Venus from '@/components/Venus.vue'
 import { isMobile } from '@/makio/utils/detect'
+import { ACESFilmicToneMapping } from 'three'
 
 
 class VenusExample {
@@ -174,6 +175,8 @@ class VenusExample {
 	}
 
 	async initScene() {
+		stage3d.renderer.toneMapping = ACESFilmicToneMapping
+
 		if ( this.line ) {
 			stage3d.remove( this.line )
 			this.line.dispose()
@@ -475,6 +478,7 @@ class VenusExample {
 
 	dispose() {
 		stage3d.postProcessing = null
+		stage3d.renderer.toneMapping = null
 		this.postProcessing.dispose()
 		window.removeEventListener( 'resize', this.onResize )
 		if ( this.line ) {
