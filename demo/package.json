@@ -19,7 +19,7 @@
 		"stats-gl": "^3.6.0",
 		"three": "^0.179.1",
 		"three-mesh-bvh": "^0.9.1",
-		"vue": "^3.5.18",
+		"vue": "^3.5.19",
 		"vue-tiny-router": "^1.4.0",
 		"vue-tiny-translation": "^1.0.0"
 	},
