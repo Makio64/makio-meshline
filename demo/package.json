@@ -20,7 +20,7 @@
 		"three": "^0.179.1",
 		"three-mesh-bvh": "^0.9.1",
 		"vue": "^3.5.18",
-		"vue-tiny-router": "^1.4.0",
+		"vue-tiny-router": "^1.5.0",
 		"vue-tiny-translation": "^1.0.0"
 	},
 	"devDependencies": {
