@@ -7,7 +7,7 @@ pageClass: example-page
 
 A demo inspired by my trip in japan and the beauty of ricefields.
 
-<iframe src="https://meshlines.netlify.app/examples/ricefield?noMenu" width="100%" height="600" style="border: 1px solid #ddd; border-radius: 8px;"></iframe>
+<iframe src="https://meshlines.netlify.app/examples/ricefield?noUI" width="100%" height="600" style="border: 1px solid #ddd; border-radius: 8px;"></iframe>
 
 
 ## How it works

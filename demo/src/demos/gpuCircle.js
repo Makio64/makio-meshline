@@ -58,7 +58,7 @@ class GpuCircleExample {
 
 		// GUI slider
 		const urlParams = new URLSearchParams( window.location.search )
-		const hasNoMenu = urlParams.has( 'noMenu' )
+		const hasNoMenu = urlParams.has( 'noUI' )
 		
 		this.gui = new GUI( { width: hasNoMenu ? 220 : 300 } )
 		this.gui.domElement.style.right = hasNoMenu ? '0' : '60px'

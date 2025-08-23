@@ -7,7 +7,7 @@ pageClass: example-page
 
 Demonstrates GPU-based position calculation using Three.js TSL (Three Shading Language) nodes, enabling complex animations with minimal CPU overhead.
 
-<iframe src="https://meshlines.netlify.app/examples/gpu-circle?noMenu" width="100%" height="600" style="border: 1px solid #ddd; border-radius: 8px;"></iframe>
+<iframe src="https://meshlines.netlify.app/examples/gpu-circle?noUI" width="100%" height="600" style="border: 1px solid #ddd; border-radius: 8px;"></iframe>
 
 ## Key Concepts
 

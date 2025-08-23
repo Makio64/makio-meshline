@@ -2,6 +2,7 @@
 	<div class="ExampleView view">
 		<div v-if="text" class="instruction" v-html="text" />
 		<component :is="example && example.uiComponent" v-if="example && example.uiComponent" :api="example" class="bottom" />
+		<CodeButton v-if="codeUrl" :href="codeUrl" />
 	</div></template>
 
 <script>
@@ -24,6 +25,7 @@ export default {
 		return {
 			text: '',
 			example: null,
+			codeUrl: ''
 		}
 	},
 	async mounted() {
@@ -41,6 +43,23 @@ export default {
 			'venus-and-david': venus,
 		}
 		this.example = mapping[id] || basic
+
+		// map route id to source filename for GitHub link
+		const fileMap = {
+			waves: 'waves.js',
+			follow: 'follow.js',
+			drawlines: 'drawlines.js',
+			'gpu-circle': 'gpuCircle.js',
+			'gpu-instance': 'gpuInstance.js',
+			stress: 'stress.js',
+			ricefield: 'ricefield.js',
+			sandbox: 'sandbox.js',
+			ghost: 'ghost.js',
+			'venus-and-david': 'venus.js',
+			basic: 'basic.js'
+		}
+		const file = fileMap[id] || 'basic.js'
+		this.codeUrl = `https://github.com/Makio64/Meshline/tree/main/demo/src/demos/${file}`
 		await this.example.init()
 		this.text = this.example.text || ''
 		contentLoaded.value = true
@@ -73,4 +92,6 @@ export default {
 	.instruction 
 		user-select none
 		pointer-events none
+
+
 </style>

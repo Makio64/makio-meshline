@@ -26,7 +26,7 @@ export default {
 	},
 	computed: {
 		hideMenu() {
-			return new URL( location.href ).searchParams.has( 'noMenu' )
+			return new URL( location.href ).searchParams.has( 'noUI' )
 		},
 		routes() {
 			return [

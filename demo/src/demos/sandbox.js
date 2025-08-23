@@ -57,9 +57,9 @@ class SandboxExample {
 	}
 
 	async init() {
-		// Check for noMenu parameter
+		// Check for noUI parameter
 		const urlParams = new URLSearchParams( window.location.search )
-		this.hasNoMenu = urlParams.has( 'noMenu' )
+		this.hasNoMenu = urlParams.has( 'noUI' )
 		
 		// Initialize 3D scene
 		await stage3d.initRender()
