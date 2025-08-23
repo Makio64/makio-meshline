@@ -6,9 +6,8 @@ export default defineConfig({
   themeConfig: {
     nav: [
       { text: 'Guide', link: '/guide' },
+      { text: 'Examples', link: '/examples/sandbox' },
       { text: 'API', link: '/api' },
-      { text: 'Patterns', link: '/common-patterns' },
-      { text: 'Helpers', link: '/helpers' },
       { text: 'Demos', link: 'https://meshlines.netlify.app/' },
     ],
 
