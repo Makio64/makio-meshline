@@ -10,10 +10,10 @@ import { Fn, vec2, vec3, uv, pass, uniform, texture, mix, instanceIndex, float, 
 import { centerAndScaleModel } from '@/utils/modelUtils'
 import { animate } from 'animejs'
 import { backInOut } from '@/makio/tsl/easing'
-import { bloom } from 'three/addons/tsl/display/BloomNode.js'
 import { markRaw } from 'vue'
 import Venus from '@/components/Venus.vue'
 import { isMobile } from '@/makio/utils/detect'
+import { bloom } from 'three/addons/tsl/display/BloomNode.js'
 import { ACESFilmicToneMapping } from 'three'
 
 
@@ -57,7 +57,17 @@ class VenusExample {
 		// BVH raycasting setup is done in loadModels()
 		await this.loadModels()
 		await this.initScene()
+		await this.initPostProcessing()
 
+		nextTick( () => {
+			animate( this.opacity, { value: 1, duration: 1.8, delay: 0.01, ease: 'outExpo' } )
+
+		} )
+
+		window.addEventListener( 'resize', this.onResize )
+	}
+
+	async initPostProcessing() {
 		this.postProcessing = new PostProcessing( stage3d.renderer )
 		const scenePass = pass( stage3d.scene, stage3d.camera )
 		const scenePassColor = scenePass.getTextureNode( 'output' )
@@ -65,14 +75,7 @@ class VenusExample {
 		const bloomRadius = 0.01
 		const bloomPass = bloom( scenePassColor, bloomIntensity, bloomRadius, 0.1 )
 		this.postProcessing.outputNode = scenePassColor.add( bloomPass )
-
 		stage3d.postProcessing = this.postProcessing
-		nextTick( () => {
-			animate( this.opacity, { value: 1, duration: 1.8, delay: 0.01, ease: 'outExpo' } )
-
-		} )
-
-		window.addEventListener( 'resize', this.onResize )
 	}
 
 	async loadModels() {
