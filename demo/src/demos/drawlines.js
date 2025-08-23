@@ -30,8 +30,8 @@ class DrawLinesExample {
 
 		// Generate lines with circular offsets and varied physics
 		for ( let i = 0; i < NUM_LINES; i++ ) {
-			const angle = ( i / NUM_LINES ) * Math.PI * 2
-			const radius = 0.2 + random( -0.1, 0.1 ) * .5
+			const angle = random() * Math.PI * 2
+			const radius = 0.2 + random( -.3, .3 )
 			const offset = new Vector3( 
 				Math.cos( angle ) * radius,
 				Math.sin( angle ) * radius,
