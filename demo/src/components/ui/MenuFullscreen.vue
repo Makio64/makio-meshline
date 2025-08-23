@@ -6,8 +6,9 @@
 </template>
 
 <script>
+import { animate, stagger, utils } from 'animejs'
+
 import { menuOpen } from '@/store'
-import { stagger, animate, utils } from 'animejs'
 
 export default {
 	name: 'MenuFullscreen',

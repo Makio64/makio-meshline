@@ -1,6 +1,6 @@
 import Signal from '../../core/Signal'
-import mouse, { onDown, onLeave, onMove, onUp } from './mouse'
 import keyboard from './keyboard'
+import mouse, { onDown, onLeave, onMove, onUp } from './mouse'
 
 /**
  * Swipe gestures manager

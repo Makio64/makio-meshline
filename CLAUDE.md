@@ -5,8 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Project Structure
 
 This is **makio-meshline**, a modern TSL-powered meshline solution for Three.js WebGPU/WebGL2. The project is structured as a monorepo with three packages:
-
-- `src/` - Core MeshLine library (published as "meshline" package)
+- `src/` - Core MeshLine library (published as "makio-meshline" package)
 - `demo/` - Vue.js demo application showcasing features  
 - `docs/` - VitePress documentation site
 

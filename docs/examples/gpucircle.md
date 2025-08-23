@@ -34,7 +34,7 @@ Instead of providing vertex positions as a buffer, you define a TSL function tha
 ## Code Implementation
 
 ```javascript
-import { MeshLine } from 'meshline'
+import { MeshLine } from 'makio-meshline'
 import { Fn, vec3, cos, sin, time, mix } from 'three/tsl'
 
 // TSL function for circle positions

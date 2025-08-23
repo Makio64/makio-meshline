@@ -1,21 +1,21 @@
+import { animate } from 'animejs'
+import { MeshLine } from 'makio-meshline'
+import { ACESFilmicToneMapping } from 'three'
+import { bloom } from 'three/addons/tsl/display/BloomNode.js'
+import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js'
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
+import { float, Fn, fract, instanceIndex, mix, pass, texture, uniform, vec2, vec3 } from 'three/tsl'
+import { DataTexture, FloatType, FrontSide, Matrix4, MeshBasicNodeMaterial, PostProcessing, Ray, RepeatWrapping, RGBAFormat, Vector3 } from 'three/webgpu'
+import { MeshBVH, SAH } from 'three-mesh-bvh'
+import { markRaw } from 'vue'
+
+import Venus from '@/components/Venus.vue'
 import OrbitControl from '@/makio/three/controls/OrbitControl'
 import stage3d from '@/makio/three/stage3d'
-import { MeshLine } from 'meshline'
-import { Vector3, PostProcessing, MeshBasicNodeMaterial, DataTexture, RGBAFormat, FloatType, RepeatWrapping, Ray, FrontSide, Matrix4 } from 'three/webgpu'
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
-import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js'
-import { MeshBVH, SAH } from 'three-mesh-bvh'
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
-import { Fn, vec2, vec3, uv, pass, uniform, texture, mix, instanceIndex, float, fract } from 'three/tsl'
-import { centerAndScaleModel } from '@/utils/modelUtils'
-import { animate } from 'animejs'
 import { backInOut } from '@/makio/tsl/easing'
-import { markRaw } from 'vue'
-import Venus from '@/components/Venus.vue'
 import { isMobile } from '@/makio/utils/detect'
-import { bloom } from 'three/addons/tsl/display/BloomNode.js'
-import { ACESFilmicToneMapping } from 'three'
-
+import { centerAndScaleModel } from '@/utils/modelUtils'
 
 class VenusExample {
 	constructor() {
@@ -209,7 +209,6 @@ class VenusExample {
 			let y = float( instanceIndex ).div( float( numRings ) ) // 0 -> 1
 			return backInOut( p.mul( 2 ).sub( y ).clamp() ).toVar()
 		} )()
-
 
 		this.line = new MeshLine()
 			.instances( this.numRings )
@@ -510,5 +509,3 @@ class VenusExample {
 }
 
 export default new VenusExample()
-
-

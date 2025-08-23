@@ -1,8 +1,9 @@
+import GUI from 'lil-gui'
+import { MeshLine } from 'makio-meshline'
+import { cos, Fn, mix, sin, time, uniform, vec3 } from 'three/tsl'
+
 import OrbitControl from '@/makio/three/controls/OrbitControl'
 import stage3d from '@/makio/three/stage3d'
-import { MeshLine } from 'meshline'
-import { Fn, vec3, cos, sin, float, uniform, time, mix } from 'three/tsl'
-import GUI from 'lil-gui'
 
 const segments = 128
 

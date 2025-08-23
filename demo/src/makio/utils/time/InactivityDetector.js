@@ -1,6 +1,6 @@
-import stage from '../../core/stage'
 import Signal from '../../core/Signal'
-import { mouse, onMove, onClick } from '../input/mouse'
+import stage from '../../core/stage'
+import { mouse, onClick, onMove } from '../input/mouse'
 
 /**
  * Inativity detector - detects inactivity of the user

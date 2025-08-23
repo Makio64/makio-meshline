@@ -1,7 +1,8 @@
+import { MeshLine } from 'makio-meshline'
+import { attribute, cos, float, Fn, instanceIndex, sin, time, vec3 } from 'three/tsl'
+
 import OrbitControl from '@/makio/three/controls/OrbitControl'
 import stage3d from '@/makio/three/stage3d'
-import { MeshLine } from 'meshline'
-import { Fn, vec3, cos, sin, float, time, attribute, abs, instanceIndex } from 'three/tsl'
 
 class InstancedGpuExample {
 	constructor() {

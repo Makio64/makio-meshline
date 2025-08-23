@@ -6,8 +6,9 @@
 </template>
 
 <script>
-import DrawSVGPlugin from '@/lib/gsap-bonus/DrawSVGPlugin'
 import gsap, { Quad } from 'gsap'
+
+import DrawSVGPlugin from '@/lib/gsap-bonus/DrawSVGPlugin'
 gsap.registerPlugin( DrawSVGPlugin )
 
 export default {

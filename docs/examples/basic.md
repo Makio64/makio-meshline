@@ -19,7 +19,7 @@ This effect is managed using discardFn to discard the value before/after two per
 ```javascript
 import { animate } from 'animejs'
 import { uniform, Fn, step, uv } from 'three/tsl'
-import { MeshLine } from 'meshline'
+import { MeshLine } from 'makio-meshline'
 
 // Create uniforms for animation control
 const line = new MeshLine()

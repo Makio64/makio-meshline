@@ -1,4 +1,4 @@
-import { dot, float, Fn, int, screenSize, time, uint, uv, vec2, vec3, vec4, viewportResolution } from "three/webgpu"
+import { dot, float, Fn, screenSize, uint, uv, vec2 } from "three/webgpu"
 
 const squares16 = Fn( ( [ctr] ) => {
 	const key = uint( 0x7a1a912f )

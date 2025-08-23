@@ -5,17 +5,17 @@
 	</div></template>
 
 <script>
-import waves from '@/demos/waves'
 import basic from '@/demos/basic'
-import follow from '@/demos/follow'
 import drawlines from '@/demos/drawlines'
-import stress from '@/demos/stress'
-import ricefield from '@/demos/ricefield'
+import follow from '@/demos/follow'
+import ghost from '@/demos/ghost'
 import gpuCircle from '@/demos/gpuCircle'
 import gpuInstance from '@/demos/gpuInstance'
+import ricefield from '@/demos/ricefield'
 import sandbox from '@/demos/sandbox'
-import ghost from '@/demos/ghost'
+import stress from '@/demos/stress'
 import venus from '@/demos/venus'
+import waves from '@/demos/waves'
 import { contentLoaded } from '@/store'
 
 export default {

@@ -1,6 +1,7 @@
+import { circlePositions, MeshLine } from 'makio-meshline'
+
 import OrbitControl from '@/makio/three/controls/OrbitControl'
 import stage3d from '@/makio/three/stage3d'
-import { MeshLine, circlePositions } from 'meshline'
 
 class GhostExample {
 	constructor() {

@@ -1,6 +1,8 @@
 import stylistic from '@stylistic/eslint-plugin'
 import pluginVue from 'eslint-plugin-vue'
 import { FlatCompat } from "@eslint/eslintrc"
+import simpleImportSort from 'eslint-plugin-simple-import-sort'
+import unusedImports from 'eslint-plugin-unused-imports'
 
 const compat = new FlatCompat()
 
@@ -10,7 +12,9 @@ export default [
 		files: ["src/**/*.js", "src/**/*.mjs"],
 		ignores: ['node_modules', 'dist', 'out', 'docs/.vitepress/dist'],
 		plugins: {
-			'@stylistic': stylistic
+			'@stylistic': stylistic,
+			'simple-import-sort': simpleImportSort,
+			'unused-imports': unusedImports
 		},
 		rules: {
 			'@stylistic/indent': ['error', 'tab'],
@@ -28,6 +32,8 @@ export default [
 			"array-bracket-newline": ["error", { multiline: true, minItems: null }],
 			"array-element-newline": ["error", 'consistent'],
 			"keyword-spacing": "error",
+			"simple-import-sort/imports": "error",
+			"unused-imports/no-unused-imports": "error",
 		}
 	},
 	// Configuration for demo directory (Vue files and JavaScript)
@@ -37,7 +43,9 @@ export default [
 		files: ["demo/**/*.js", "demo/**/*.mjs", "demo/**/*.vue"],
 		ignores: ['node_modules', 'dist', 'out', 'docs/.vitepress/dist'],
 		plugins: {
-			'@stylistic': stylistic
+			'@stylistic': stylistic,
+			'simple-import-sort': simpleImportSort,
+			'unused-imports': unusedImports
 		},
 		rules: {
 			'vue/require-default-prop': 'off',
@@ -66,6 +74,8 @@ export default [
 			"array-bracket-newline": ["error", { multiline: true, minItems: null }],
 			"array-element-newline": ["error", 'consistent'],
 			"keyword-spacing": "error",
+			"simple-import-sort/imports": "error",
+			"unused-imports/no-unused-imports": "error",
 		}
 	}
 ]

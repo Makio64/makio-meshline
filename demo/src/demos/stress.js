@@ -1,7 +1,8 @@
+import { MeshLine } from 'makio-meshline'
+import { cos, Fn, sin, time, uniform, vec3 } from 'three/tsl'
+
 import OrbitControl from '@/makio/three/controls/OrbitControl'
 import stage3d from '@/makio/three/stage3d'
-import { MeshLine } from 'meshline'
-import { Fn, vec3, cos, sin, uniform, time } from 'three/tsl'
 
 const segments = 1000000 // 1 million points
 

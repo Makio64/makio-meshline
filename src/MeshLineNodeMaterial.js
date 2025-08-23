@@ -1,5 +1,5 @@
-import { Color, Vector2, MeshBasicNodeMaterial } from 'three/webgpu'
-import { float, vec4, vec2, Fn, uniform, uv, modelViewMatrix, normalize, positionGeometry, cameraProjectionMatrix, attribute, varyingProperty, Discard, step, mix, texture, mod, abs, max, min, dot, clamp, smoothstep, sin, cos, acos } from 'three/tsl'
+import { abs, attribute, cameraProjectionMatrix, Discard, dot, float, Fn, max, min, mix, mod, modelViewMatrix, normalize, positionGeometry, smoothstep, step, texture, uniform, uv, varyingProperty, vec2, vec4 } from 'three/tsl'
+import { Color, MeshBasicNodeMaterial, Vector2 } from 'three/webgpu'
 
 const fix = Fn( ( [i_immutable, aspect_immutable] ) => {
 	const aspect = float( aspect_immutable ).toVar()

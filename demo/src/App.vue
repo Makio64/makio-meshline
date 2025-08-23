@@ -7,13 +7,13 @@
 </template>
 
 <script>
-import { detectLang } from './makio/utils/detect'
-import { loadTranslations } from 'vue-tiny-translation'
-import injectFonts from '@/makio/utils/injectFonts'
-import { contentLoaded } from '@/store'
-import { TinyRouter } from 'vue-tiny-router'
-import BurgerButton from './components/ui/BurgerButton.vue'
 import { engine } from 'animejs'
+import { TinyRouter } from 'vue-tiny-router'
+import { loadTranslations } from 'vue-tiny-translation'
+
+import { contentLoaded } from '@/store'
+
+import { detectLang } from './makio/utils/detect'
 engine.timeUnit = 's'
 
 export default {

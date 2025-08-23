@@ -30,7 +30,7 @@ Instead of creating separate mesh / geometries / material for each line, instanc
 ## Basic Implementation
 
 ```javascript
-import { MeshLine, circlePositions } from 'meshline'
+import { MeshLine, circlePositions } from 'makio-meshline'
 
 // Create instanced MeshLine
 const instanceCount = 1000

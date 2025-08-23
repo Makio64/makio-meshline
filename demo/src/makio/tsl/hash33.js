@@ -1,4 +1,4 @@
-import { Fn, uint, vec3, float, int, uvec3, div } from "three/webgpu"
+import { div, float, Fn, int, uint, uvec3, vec3 } from "three/webgpu"
 
 // TSL Port of hash33 https://www.shadertoy.com/view/XlXcW4 by Inigo Quilez
 const k = uint( 1103515245 )

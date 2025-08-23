@@ -3,8 +3,8 @@
  * @author David Ronai / @Makio64
  */
 
-import stage from '../../core/stage'
 import Signal from '../../core/Signal'
+import stage from '../../core/stage'
 import { isIOS } from '../detect'
 
 const mouse = {

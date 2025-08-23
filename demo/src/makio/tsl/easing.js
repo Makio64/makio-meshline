@@ -1,4 +1,4 @@
-import { float, sub, pow, sin, cos, sqrt, Fn, mul, select } from 'three/tsl'
+import { cos, float, Fn, mul, pow, select, sin, sqrt, sub } from 'three/tsl'
 
 const PI = float( 3.141592653589793 )//.toConst()
 

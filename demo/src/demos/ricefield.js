@@ -1,17 +1,17 @@
+import { animate } from 'animejs'
+import { MeshLine, rectanglePositions } from 'makio-meshline'
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
+import { add, attribute, clamp, cos, float, Fn, fract, If, instanceIndex, length, mix, mul, reflector, sin, smoothstep as tslSmoothstep, storage, sub, texture, textureBicubic, time, uniform, uv, vec2, vec3, vec4 } from 'three/tsl'
+import { Group, MathUtils, Mesh, MeshBasicMaterial, Plane, PlaneGeometry, Raycaster, RepeatWrapping, SRGBColorSpace, StaticDrawUsage, StorageBufferAttribute, TextureLoader, Vector2, Vector3 } from 'three/webgpu'
+import { DynamicDrawUsage, MeshStandardNodeMaterial, PMREMGenerator } from 'three/webgpu'
+
+import { stage } from '@/makio/core/stage'
+import QuadTree from '@/makio/generative/QuadTree'
 import OrbitControl from '@/makio/three/controls/OrbitControl'
 import stage3d from '@/makio/three/stage3d'
-import { stage } from '@/makio/core/stage'
-import { MeshLine, rectanglePositions } from 'meshline'
-import { smoothstep } from '@/makio/utils/math'
-import { Mesh, MeshBasicMaterial, PlaneGeometry, StaticDrawUsage, Group, Color, Raycaster, Vector2, Vector3, Plane, StorageBufferAttribute, TextureLoader, RepeatWrapping, SRGBColorSpace, MathUtils } from 'three/webgpu'
-import { reflector, abs, sin, cos, time, uv, Fn, float, attribute, vec3, uniform, length, clamp, smoothstep as tslSmoothstep, storage, instanceIndex, If, sub, mul, add, vec4, mix, fract, vec2, texture, textureBicubic } from 'three/tsl'
-import QuadTree from '@/makio/generative/QuadTree'
-
-import { PMREMGenerator, DynamicDrawUsage, MeshStandardNodeMaterial } from 'three/webgpu'
-import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
-import { animate } from 'animejs'
-import { mouse, onMove, onClick } from '@/makio/utils/input/mouse'
 import { isMobile } from '@/makio/utils/detect'
+import { mouse, onClick, onMove } from '@/makio/utils/input/mouse'
+import { smoothstep } from '@/makio/utils/math'
 import random from '@/makio/utils/random'
 
 const FIELD_WIDTH = 64 // Total width of the rice field

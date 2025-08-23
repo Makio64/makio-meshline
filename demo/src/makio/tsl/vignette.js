@@ -1,4 +1,4 @@
-import { dot, float, Fn, pow, screenUV, distance, smoothstep, vec2, sqrt, add, mul, sub } from "three/webgpu"
+import { add, distance, dot, float, Fn, mul, pow, screenUV, smoothstep, sqrt, sub, vec2 } from "three/webgpu"
 
 const vignette = Fn( ( [Falloff] ) => {
 	let uv2 = screenUV.sub( .5 ).mul( 2 )

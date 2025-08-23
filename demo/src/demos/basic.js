@@ -1,12 +1,12 @@
 import { animate, utils } from 'animejs'
-import { CanvasTexture, PlaneGeometry, MeshBasicMaterial, Mesh } from 'three/webgpu'
-import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js'
+import { circlePositions, MeshLine } from 'makio-meshline'
+import { CSS2DObject, CSS2DRenderer } from 'three/addons/renderers/CSS2DRenderer.js'
+import { Fn, step, uniform, uv } from 'three/tsl'
+import { CanvasTexture, Mesh, MeshBasicMaterial, PlaneGeometry } from 'three/webgpu'
 
+import { stage } from '@/makio/core/stage'
 import OrbitControl from '@/makio/three/controls/OrbitControl'
 import stage3d from '@/makio/three/stage3d'
-import { stage } from '@/makio/core/stage'
-import { MeshLine, circlePositions } from 'meshline'
-import { step, uv, uniform, Fn } from 'three/tsl'
 
 class BasicExample {
 	constructor() {

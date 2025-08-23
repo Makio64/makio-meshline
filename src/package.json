@@ -1,11 +1,46 @@
 {
-  "name": "meshline",
+  "name": "makio-meshline",
   "version": "1.0.0",
   "type": "module",
   "main": "index.js",
   "module": "index.js",
+  "types": "index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "import": "./index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "MeshLine.js",
+    "MeshLineGeometry.js",
+    "MeshLineNodeMaterial.js",
+    "positions/*.js",
+    "package.json"
+  ],
   "sideEffects": false,
   "peerDependencies": {
-    "three": "^0.179.1"
-  }
-} 
+    "three": ">=0.178.0"
+  },
+  "keywords": [
+    "three.js",
+    "three",
+    "webgpu",
+    "tsl",
+    "line",
+    "meshline",
+    "nodeMaterial"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Makio64/Meshline.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Makio64/Meshline/issues"
+  },
+  "homepage": "https://meshlines-docs.netlify.app"
+}

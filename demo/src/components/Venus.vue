@@ -169,5 +169,3 @@ export default {
 					box-shadow 0 2px 8px rgba(240, 147, 251, 0.15), 0 1px 3px rgba(240, 147, 251, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.25), inset 0 -2px 4px rgba(215, 67, 87, 0.4)
 					transform scale(0.95)
 </style>
-
-

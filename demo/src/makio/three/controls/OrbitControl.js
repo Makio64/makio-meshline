@@ -1,10 +1,12 @@
 import { Vector3 } from 'three/webgpu'
-import stage from '../../core/stage'
-import wheel from '@/makio/utils/input/wheel'
-import pinch from '@/makio/utils/input/pinch'
-import mouse from '@/makio/utils/input/mouse'
+
 import keyboard from '@/makio/utils/input/keyboard'
+import mouse from '@/makio/utils/input/mouse'
+import pinch from '@/makio/utils/input/pinch'
+import wheel from '@/makio/utils/input/wheel'
 import { clamp } from '@/makio/utils/math'
+
+import stage from '../../core/stage'
 
 export default class OrbitControl {
 	constructor( camera, radius, target = null, interactionTarget = window ) {

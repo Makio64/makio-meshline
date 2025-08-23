@@ -1,5 +1,5 @@
 
-import { vec3, mod, Fn, vec2, floor, step, float, sub, int, dot, max, fract, abs, pow, mul } from 'three/webgpu'
+import { abs, dot, float, floor, Fn, fract, int, max, mod, mul, pow, step, sub, vec2, vec3 } from 'three/webgpu'
 
 const permute = /*#__PURE__*/ Fn( ( [x_immutable] ) => {
 

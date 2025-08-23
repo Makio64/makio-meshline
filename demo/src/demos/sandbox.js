@@ -1,11 +1,12 @@
+import GUI from 'lil-gui'
+import { circlePositions, MeshLine, sineWavePositions, squarePositions, straightLine } from 'makio-meshline'
+import { DoubleSide, Mesh, MeshBasicMaterial, PlaneGeometry } from 'three/webgpu'
 import { createApp, h, reactive, watch } from 'vue'
+
+import stage from '@/makio/core/stage'
 import OrbitControl from '@/makio/three/controls/OrbitControl'
 import stage3d from '@/makio/three/stage3d'
-import stage from '@/makio/core/stage'
-import { MeshLine, circlePositions, sineWavePositions, squarePositions, straightLine } from 'meshline'
-import GUI from 'lil-gui'
 import SandboxView from '@/views/SandboxView.vue'
-import { PlaneGeometry, MeshBasicMaterial, Mesh, DoubleSide } from 'three/webgpu'
 
 class SandboxExample {
 	constructor() {
@@ -266,7 +267,7 @@ class SandboxExample {
 		} else {
 			code += `, ${this.config.lineType}Positions`
 		}
-		code += ` } from 'meshline'\n\n`
+		code += ` } from 'makio-meshline'\n\n`
 		
 		// Position generation
 		if ( this.config.lineType === 'straight' ) {

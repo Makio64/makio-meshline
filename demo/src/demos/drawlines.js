@@ -1,13 +1,13 @@
-import { Vector3, MathUtils, Raycaster, Color } from 'three/webgpu'
-import stage3d from '@/makio/three/stage3d'
+import { MeshLine } from 'makio-meshline'
+import { attribute, Fn, vec4 } from 'three/tsl'
+import { Color, MathUtils, Raycaster, Vector3 } from 'three/webgpu'
+
 import { stage } from '@/makio/core/stage'
 import OrbitControl from '@/makio/three/controls/OrbitControl'
-import { MeshLine } from 'meshline'
+import stage3d from '@/makio/three/stage3d'
 import { mouse, onDown, onMove, onUp } from '@/makio/utils/input/mouse'
-import { Fn, vec4, attribute } from 'three/tsl'
-import random from '@/makio/utils/random'
-// import simplify from 'simplify-js'
 import { smoothstep } from '@/makio/utils/math'
+import random from '@/makio/utils/random'
 
 const NUM_POINTS = 20
 const NUM_LINES = 1000

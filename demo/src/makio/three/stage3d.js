@@ -1,8 +1,8 @@
-import { Scene, PerspectiveCamera, WebGPURenderer, TimestampQuery } from 'three/webgpu'
-import WebGPU from 'three/addons/capabilities/WebGPU'
-import stage from '../core/stage'
 import Stats from 'stats-gl'
-import { ACESFilmicToneMapping } from 'three'
+import WebGPU from 'three/addons/capabilities/WebGPU'
+import { PerspectiveCamera, Scene, TimestampQuery, WebGPURenderer } from 'three/webgpu'
+
+import stage from '../core/stage'
 
 const showStats = window.location.search.includes( 'debug' )
 

@@ -1,7 +1,8 @@
-import { Fn, step, uniform, uv } from "three/tsl"
+import { uniform } from "three/tsl"
+import { InstancedBufferAttribute, Mesh, StaticDrawUsage, StreamDrawUsage } from "three/webgpu"
+
 import { MeshLineGeometry } from "./MeshLineGeometry"
 import { MeshLineNodeMaterial } from "./MeshLineNodeMaterial"
-import { Mesh, InstancedBufferAttribute, StreamDrawUsage, StaticDrawUsage } from "three/webgpu"
 import { straightLine } from "./positions/straightLine"
 
 const defaultPositions = straightLine( 2 )

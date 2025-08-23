@@ -5,7 +5,7 @@
 
 import Signal from '../../core/Signal'
 import stage from '../../core/stage'
-import { isSafari, isFirefox, isMac } from '../detect'
+import { isMac, isSafari } from '../detect'
 
 // const FIREFOX_DELTA_MULTIPLIER = 0.9
 const SAFARI_DELTA_MULTIPLIER = 0.9

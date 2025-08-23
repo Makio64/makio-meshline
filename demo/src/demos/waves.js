@@ -1,7 +1,8 @@
+import { MeshLine } from 'makio-meshline'
+
+import { stage } from '@/makio/core/stage'
 import OrbitControl from '@/makio/three/controls/OrbitControl'
 import stage3d from '@/makio/three/stage3d'
-import { stage } from '@/makio/core/stage'
-import { MeshLine } from 'meshline'
 
 const numLines = 29 // Number of lines along Z axis
 const lineLength = 21
