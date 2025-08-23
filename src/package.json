@@ -34,6 +34,10 @@
     "meshline",
     "nodeMaterial"
   ],
+  "author": {
+    "name": "David Ronai",
+    "url": "https://github.com/Makio64"
+  },
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -43,4 +47,8 @@
     "url": "https://github.com/Makio64/Meshline/issues"
   },
   "homepage": "https://meshlines-docs.netlify.app"
+  ,
+  "scripts": {
+    "prepublishOnly": "pnpm -w run lint"
+  }
 }

@@ -45,7 +45,7 @@ import * as THREE from 'three/webgpu'
 import { MeshLine, circlePositions } from 'makio-meshline'
 
 // 1. Basic Three.js scaffolding ------------------------------------------------
-const renderer = new THREE.WebGLRenderer()
+const renderer = new THREE.WebGPURenderer()
 document.body.appendChild(renderer.domElement)
 const scene = new THREE.Scene()
 const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 100)
