@@ -459,14 +459,38 @@ export default class MeshLine extends Mesh {
 
 	setInstanceValue( name, index, value ) {
 		const attribute = this.geometry.getAttribute( name )
-		if ( ! attribute ) return
+		if ( ! attribute ) {
+			console.warn( `MeshLine: Attribute ${name} not found. Make sure to add it first using addInstanceAttribute().` )
+			return
+		} 
 
-		if ( typeof value === 'number' ) value = [value]
+		// Validate index bounds
+		if ( index < 0 || index >= this.count ) {
+			console.warn( `MeshLine: Instance index ${index} out of bounds [0, ${this.count})` )
+			return
+		}
 
 		const offset = index * attribute.itemSize
-		for ( let j = 0; j < Math.min( attribute.itemSize, value.length ); j++ ) {
-			attribute.array[ offset + j ] = value[ j ]
+		const array = attribute.array
+
+		// Handle different value types efficiently without creating arrays
+		if ( typeof value === 'number' ) {
+			// Single number - set first component only
+			array[ offset ] = value
+		} else if ( Array.isArray( value ) ) {
+			// Array - copy values up to itemSize
+			const len = Math.min( attribute.itemSize, value.length )
+			for ( let j = 0; j < len; j++ ) {
+				array[ offset + j ] = value[ j ]
+			}
+		} else if ( value && typeof value === 'object' ) {
+			// Object with x, y, z properties (Vector3-like)
+			if ( 'x' in value ) array[ offset ] = value.x
+			if ( 'y' in value && attribute.itemSize > 1 ) array[ offset + 1 ] = value.y
+			if ( 'z' in value && attribute.itemSize > 2 ) array[ offset + 2 ] = value.z
+			if ( 'w' in value && attribute.itemSize > 3 ) array[ offset + 3 ] = value.w
 		}
+		
 		attribute.needsUpdate = true
 	}
 
