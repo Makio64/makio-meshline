@@ -323,7 +323,6 @@ class VenusExample {
 		
 		// Get all meshes for complete raycasting
 		const meshes = model === this.modelA ? this.meshesA : this.meshesB
-		console.log( `Total meshes: ${meshes.length}` )
 		
 		// Pre-compute inverse matrices for all meshes (batch optimization)
 		const matrixStartTime = performance.now()
@@ -334,7 +333,6 @@ class VenusExample {
 				meshData.push( { mesh, invMat } )
 			}
 		}
-		console.log( `Matrix inversion time: ${( performance.now() - matrixStartTime ).toFixed( 2 )}ms` )
 		
 		// Pre-allocate reusable vectors and ray to reduce GC pressure
 		const dir = new Vector3()

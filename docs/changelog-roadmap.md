@@ -4,11 +4,11 @@ A quick look at where Makio MeshLine has been and where it's headed. We're just 
 
 ## Roadmap
 
-- **Short-term**: 
-  - Improve the docs & finetune the examples
-  - Make a cool websites
-- **Mid-term**: Add compute examples
-- **Long-term**: Explore possibilities to leverage more the performance of WebGPU
+- **Mid-term**: 
+  - Make a cool tutorial website
+  - Add even more advanced examples
+- **Long-term**: 
+  - Explore possibilities to leverage more the performance of WebGPU
 
 ## Changelog
 
