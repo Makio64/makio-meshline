@@ -5,6 +5,12 @@ import MeshLineGeometry from "./MeshLineGeometry.js"
 import MeshLineNodeMaterial from "./MeshLineNodeMaterial.js"
 import { straightLine } from "./positions/straightLine.js"
 
+// SSR-safe helpers
+const isBrowser = typeof window !== 'undefined'
+const getDefaultDPR = () => isBrowser ? ( window.devicePixelRatio || 1 ) : 1
+const getDefaultWidth = () => isBrowser ? window.innerWidth : 1024
+const getDefaultHeight = () => isBrowser ? window.innerHeight : 768
+
 const defaultPositions = straightLine( 2 )
 export default class MeshLine extends Mesh {
 
@@ -36,15 +42,15 @@ export default class MeshLine extends Mesh {
 			dashOffset: 0,
 
 			// device pixel ratio scaling for screen-space width
-			dpr: ( window.devicePixelRatio || 1 ),
+			dpr: getDefaultDPR(),
 
 			frustumCulled: true,
 
 			// Debugging
 			verbose: false,
 
-			renderWidth: window.innerWidth,
-			renderHeight: window.innerHeight,
+			renderWidth: getDefaultWidth(),
+			renderHeight: getDefaultHeight(),
 
 			// GPU procedural positions (TSL node). If provided, positions will be calculated in shader.
 			gpuPositionNode: null,
@@ -494,14 +500,18 @@ export default class MeshLine extends Mesh {
 		attribute.needsUpdate = true
 	}
 
-	resize( width = window.innerWidth, height = window.innerHeight ) {
+	resize( width = getDefaultWidth(), height = getDefaultHeight() ) {
 		if ( this.material && this.material.resolution ) {
 			this.material.resolution.value.set( width, height )
 		}
 	}
 
 	// Auto-resize to window (or external handler)
-	autoResize( target = window ) {
+	autoResize( target = isBrowser ? window : null ) {
+		if ( !target ) {
+			console.warn( 'MeshLine: autoResize requires a valid target in SSR/Node environments' )
+			return this
+		}
 		if ( this._autoResizeHandler ) {
 			this._autoResizeTarget?.removeEventListener( 'resize', this._autoResizeHandler )
 			this._autoResizeHandler = null
