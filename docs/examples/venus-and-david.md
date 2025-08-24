@@ -9,4 +9,11 @@ Similar concept than GPU Circle Example - It's a morph between two classical scu
 
 <iframe src="https://meshlines.netlify.app/examples/venus-and-david?noUI" width="100%" height="600" style="border: 1px solid #ddd; border-radius: 8px;"></iframe>
 
-Both positions are stocked into textures 
+--- 
+
+## Behind the scene 
+
+- There is only one Meshline and the transition is done using one uniform `morph` 
+- Both model are raycasted using `three-mesh-bvh` to generate positions.
+- Line are instanced for performance
+- A Postprocessing with a bloom is applied for a ScienceFiction rendering

@@ -15,7 +15,7 @@ export default defineConfig({
       {
         text: 'Introduction',
         items: [
-          { text: 'Why Makio MeshLine ?', link: '/why-makio-meshline' },
+          { text: 'Makio MeshLine', link: '/why-makio-meshline' },
           { text: 'Getting Started', link: '/guide' }
         ]
       },

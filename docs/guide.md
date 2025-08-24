@@ -28,11 +28,11 @@ document.body.append(renderer.domElement)
 
 
 const line = new MeshLine()
-  .lines(circlePositions(32, 10))// 64-segment circle, radius 10
-  .closed(true)
-  .lineWidth(1)        // world units
-  .color(0xff8800)
-  .gradientColor(0xffffff)
+  .lines(circlePositions(64, 10))// 64-segment circle, radius 10
+  .closed(true) // we close the loop ( last 2 point are connected )
+  .lineWidth(1) // dimension in world units
+  .color(0xff8800) // color 
+  .gradientColor(0xffffff) // with a gradient to white
 
 scene.add(line)
 

@@ -10,7 +10,7 @@ This demo displays 16 different MeshLine configurations each demonstrating speci
 <iframe src="https://meshlines.netlify.app/examples/basic?noUI" width="100%" height="600" style="border: 1px solid #ddd; border-radius: 8px;"></iframe>
 
 
-## How to make a reveal animation
+<!-- ## How to make a reveal animation
 
 This example include an animated reveal effects where lines draw in and out sequentially.
 
@@ -54,5 +54,4 @@ animateReveal()
 This technique uses TSL's `discardFn` hook with UV coordinates to progressively reveal/hide the line, creating smooth draw-in and draw-out effects.
 
 **Note** the usage of `.needsUV( true )` to build the uv on the lines so we can access it in the discardFn we declared.
-
-**Note2** this examples is not optimized as each Meshline is independant, ideally it'll be better to use instancing.
+ -->
