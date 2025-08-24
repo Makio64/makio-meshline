@@ -59,7 +59,7 @@ export default {
 			basic: 'basic.js'
 		}
 		const file = fileMap[id] || 'basic.js'
-		this.codeUrl = `https://github.com/Makio64/Meshline/tree/main/demo/src/demos/${file}`
+		this.codeUrl = `https://github.com/Makio64/makio-meshline/tree/main/demo/src/demos/${file}`
 		await this.example.init()
 		this.text = this.example.text || ''
 		contentLoaded.value = true

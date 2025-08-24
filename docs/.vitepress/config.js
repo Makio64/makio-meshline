@@ -61,7 +61,7 @@ export default defineConfig({
     ],
 
     socialLinks: [
-      { icon: 'github', link: 'https://github.com/Makio64/Meshline' }
+      { icon: 'github', link: 'https://github.com/Makio64/makio-meshline' }
     ]
   }
 }) 

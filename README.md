@@ -8,7 +8,7 @@
 
 ## [Live Demo](https://meshlines.netlify.app)
 
-See it in action with examples on [https://meshlines.netlify.app](https://meshlines.netlify.app) and check out the code here : [demo/src/demos](https://github.com/Makio64/Meshline/tree/main/demo/src/demos)
+See it in action with examples on [https://meshlines.netlify.app](https://meshlines.netlify.app) and check out the code here : [demo/src/demos](https://github.com/Makio64/makio-meshline/tree/main/demo/src/demos)
 
 [
 ![demo](https://github.com/user-attachments/assets/4f1c7cee-0f8f-4c21-a720-531eb26bf485)

@@ -17,7 +17,7 @@ hero:
       link: /guide
     - theme: alt
       text: View on GitHub
-      link: https://github.com/Makio64/Meshline
+      link: https://github.com/Makio64/makio-meshline
 
 --- 
 

@@ -5,6 +5,7 @@
   "main": "index.js",
   "module": "index.js",
   "types": "index.d.ts",
+  "description": "TSL-powered MeshLine for Three.js WebGPURenderer with gradients, dashes, textures, variable width, and instancing.",
   "exports": {
     ".": {
       "types": "./index.d.ts",
@@ -19,6 +20,8 @@
     "MeshLineGeometry.js",
     "MeshLineNodeMaterial.js",
     "positions/*.js",
+    "README.md",
+    "LICENSE",
     "package.json"
   ],
   "sideEffects": false,
@@ -41,10 +44,10 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Makio64/Meshline.git"
+    "url": "git+https://github.com/Makio64/makio-meshline.git"
   },
   "bugs": {
-    "url": "https://github.com/Makio64/Meshline/issues"
+    "url": "https://github.com/Makio64/makio-meshline/issues"
   },
   "homepage": "https://meshlines-docs.netlify.app",
   "scripts": {
