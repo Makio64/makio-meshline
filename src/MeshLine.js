@@ -1,9 +1,9 @@
 import { uniform } from "three/tsl"
 import { InstancedBufferAttribute, Mesh, StaticDrawUsage, StreamDrawUsage } from "three/webgpu"
 
-import { MeshLineGeometry } from "./MeshLineGeometry"
-import { MeshLineNodeMaterial } from "./MeshLineNodeMaterial"
-import { straightLine } from "./positions/straightLine"
+import { MeshLineGeometry } from "./MeshLineGeometry.js"
+import { MeshLineNodeMaterial } from "./MeshLineNodeMaterial.js"
+import { straightLine } from "./positions/straightLine.js"
 
 const defaultPositions = straightLine( 2 )
 export default class MeshLine extends Mesh {
