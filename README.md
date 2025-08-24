@@ -1,7 +1,7 @@
 # Makio MeshLine
 *A modern, performant TSL-powered meshline solution for Three.js*
 
-**Support matr
+**Support matrix**
 - **Three.js**: r178+
 - **Renderer**: WebGPURenderer only
 - **Backends**: WebGPU / WebGL2
@@ -21,7 +21,7 @@ See it in action with examples on [https://meshlines.netlify.app](https://meshli
 ## [Documentation](https://meshlines-docs.netlify.app)
 Check out the [documentation site](https://meshlines-docs.netlify.app/) for detailed instructions, API reference, and examples.
 - [Why Makio MeshLine](https://meshlines-docs.netlify.app/why-makio-meshline.html)
-- [Getting started](https://meshlines-docs.netlify.app/why-makio-meshline.html)
+- [Getting started](https://meshlines-docs.netlify.app/guide.html)
 - [API overview](https://meshlines-docs.netlify.app/api.html)
 - [Common Patterns](https://meshlines-docs.netlify.app/common-patterns.html)
 - [Advanced Patterns](https://meshlines-docs.netlify.app/advanced-patterns.html)

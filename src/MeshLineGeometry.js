@@ -36,6 +36,8 @@ export class MeshLineGeometry extends BufferGeometry {
 
 	// set multiple lines from an array of points arrays
 	setLines( lines ) {
+		
+		if ( !lines ) throw new Error( '[MeshLine] Lines data required' )
 
 		// If lines is not an array, convert it to an array
 		if ( !Array.isArray( lines ) ) {
@@ -624,3 +626,5 @@ const toFloat32 = pts => {
 	// If we skipped some points, return a correctly sized array
 	return offset === result.length ? result : result.slice( 0, offset )
 }
+
+export default MeshLineGeometry

@@ -1,8 +1,8 @@
 import { uniform } from "three/tsl"
 import { InstancedBufferAttribute, Mesh, StaticDrawUsage, StreamDrawUsage } from "three/webgpu"
 
-import { MeshLineGeometry } from "./MeshLineGeometry.js"
-import { MeshLineNodeMaterial } from "./MeshLineNodeMaterial.js"
+import MeshLineGeometry from "./MeshLineGeometry.js"
+import MeshLineNodeMaterial from "./MeshLineNodeMaterial.js"
 import { straightLine } from "./positions/straightLine.js"
 
 const defaultPositions = straightLine( 2 )
@@ -298,14 +298,14 @@ export default class MeshLine extends Mesh {
 	needsNext( needsNext ) {
 		this._options.needsNext = needsNext
 		if ( this._built ) {
-			console.warn( "MeshLine: Changing previous needs after build is not supported yet." )
+			console.warn( "MeshLine: Changing next needs after build is not supported yet." )
 		}
 		return this
 	}
 	needsSide( needsSide ) {
 		this._options.needsSide = needsSide
 		if ( this._built ) {
-			console.warn( "MeshLine: Changing previous needs after build is not supported yet." )
+			console.warn( "MeshLine: Changing side needs after build is not supported yet." )
 		}
 		return this
 	}
@@ -398,7 +398,7 @@ export default class MeshLine extends Mesh {
 	}
 
 	build() {
-		let options = { ...this._options }
+		const options = this._options
 
 		let lines = options.lines ?? ( options.segments ? straightLine( 1, options.segments ) : defaultPositions )
 
@@ -479,13 +479,14 @@ export default class MeshLine extends Mesh {
 	// Auto-resize to window (or external handler)
 	autoResize( target = window ) {
 		if ( this._autoResizeHandler ) {
-			window.removeEventListener( 'resize', this._autoResizeHandler )
+			this._autoResizeTarget?.removeEventListener( 'resize', this._autoResizeHandler )
 			this._autoResizeHandler = null
 		}
 		this._autoResizeHandler = () => {
-			this.resize( window.innerWidth, window.innerHeight )
+			this.resize( target.innerWidth, target.innerHeight )
 		}
-		window.addEventListener( 'resize', this._autoResizeHandler )
+		target.addEventListener( 'resize', this._autoResizeHandler )
+		this._autoResizeTarget = target
 		return this
 	}
 
@@ -493,9 +494,10 @@ export default class MeshLine extends Mesh {
 		this.parent?.remove( this )
 		this.geometry?.dispose()
 		this.material?.dispose()
-		if ( this._autoResizeHandler ) {
-			window.removeEventListener( 'resize', this._autoResizeHandler )
+		if ( this._autoResizeHandler && this._autoResizeTarget ) {
+			this._autoResizeTarget.removeEventListener( 'resize', this._autoResizeHandler )
 			this._autoResizeHandler = null
+			this._autoResizeTarget = null
 		}
 		if ( this.instanceMatrix ) this.instanceMatrix.dispose()
 		if ( this.instanceColor ) this.instanceColor.dispose()

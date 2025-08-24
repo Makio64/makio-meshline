@@ -18,3 +18,5 @@ export {
 	straightLine,
 	straightLineBetween
 } 
+
+export default MeshLine
