@@ -46,8 +46,7 @@
   "bugs": {
     "url": "https://github.com/Makio64/Meshline/issues"
   },
-  "homepage": "https://meshlines-docs.netlify.app"
-  ,
+  "homepage": "https://meshlines-docs.netlify.app",
   "scripts": {
     "prepublishOnly": "pnpm -w run lint"
   }
