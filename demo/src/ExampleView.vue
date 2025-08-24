@@ -93,5 +93,4 @@ export default {
 		user-select none
 		pointer-events none
 
-
 </style>
