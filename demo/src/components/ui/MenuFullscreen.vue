@@ -367,6 +367,7 @@ export default {
 		align-items center
 		padding 5rem 1rem 6rem
 		overflow auto
+		backdrop-filter none
 		.header
 			// display none
 			position static
