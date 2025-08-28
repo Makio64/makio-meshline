@@ -24,12 +24,12 @@ export default defineConfig({
         items: [
           { text: 'Interactive Sandbox', link: '/examples/sandbox' },
           { text: 'Basic Examples', link: '/examples/basic' },
-          { text: 'Demo : Follow', link: '/examples/follow' },
-          { text: 'Demo : Draw Lines', link: '/examples/drawlines' },
-          { text: 'Demo : Rice Field', link: '/examples/ricefield' },
-          { text: 'Demo : Venus & David', link: '/examples/venus-and-david' },
-          { text: 'Tutorial : GPU position', link: '/examples/gpucircle' },
-          { text: 'Tutorial : Instancing', link: '/examples/instancing' },
+          { text: 'Follow', link: '/examples/follow' },
+          { text: 'GPU position', link: '/examples/gpucircle' },
+          { text: 'Instancing', link: '/examples/instancing' },
+          { text: 'Advanced : Draw Lines', link: '/examples/drawlines' },
+          { text: 'Advanced : Rice Field', link: '/examples/ricefield' },
+          { text: 'Advanced : Venus & David', link: '/examples/venus-and-david' },
           { text: 'Demos page', link: 'https://meshlines.netlify.app/' },
         ]
       },
@@ -40,7 +40,7 @@ export default defineConfig({
           { text: 'MeshLine', link: '/meshline' },
           { text: 'MeshLineGeometry', link: '/meshline-geometry' },
           { text: 'MeshLineNodeMaterial', link: '/meshline-material' },
-          { text: 'Helper Functions', link: '/helpers' },
+          { text: 'Helpers', link: '/helpers' },
         ]
       },
       {
