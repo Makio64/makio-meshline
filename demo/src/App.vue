@@ -95,6 +95,7 @@ html
 	-moz-osx-font-smoothing grayscale
 	text-align center
 	background #000
+	font-family 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif
 
 	.view
 		color #fff
