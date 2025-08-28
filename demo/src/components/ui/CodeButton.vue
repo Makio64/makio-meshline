@@ -38,4 +38,8 @@ export default {
 	svg
 		width 24px
 		height 24px
+		transition transform .15s ease
+	&:hover 
+		svg
+			transform scale(1.1)
 </style>
