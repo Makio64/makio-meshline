@@ -7,6 +7,7 @@ import wheel from '@/makio/utils/input/wheel'
 import { clamp } from '@/makio/utils/math'
 
 import stage from '../../core/stage'
+import { menuOpen } from '@/store'
 
 export default class OrbitControl {
 	constructor( camera, radius, target = null, interactionTarget = window ) {
@@ -88,6 +89,10 @@ export default class OrbitControl {
 	}
 
 	update = ( dt = 16 ) => {
+		if ( menuOpen.value ) {
+			return
+		}
+
 		this.extraTheta += ( this.extraThetaTarget - this.extraTheta ) * 0.03 * ( dt / 16 )
 		this.extraPhi += ( this.extraPhiTarget - this.extraPhi ) * 0.03 * ( dt / 16 )
 
