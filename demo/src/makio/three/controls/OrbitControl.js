@@ -5,9 +5,9 @@ import mouse from '@/makio/utils/input/mouse'
 import pinch from '@/makio/utils/input/pinch'
 import wheel from '@/makio/utils/input/wheel'
 import { clamp } from '@/makio/utils/math'
+import { menuOpen } from '@/store'
 
 import stage from '../../core/stage'
-import { menuOpen } from '@/store'
 
 export default class OrbitControl {
 	constructor( camera, radius, target = null, interactionTarget = window ) {

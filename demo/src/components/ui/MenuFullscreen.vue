@@ -5,19 +5,17 @@
 			<h1>Makio MeshLine</h1>
 			<div class="header-info">
 				<p class="subdesc">{{ subtext }}</p>
-				<p class="credit">Open‑source (MIT) & made with ❤️ by <a class="u-link" href="https://github.com/Makio64" target="_blank" rel="noopener">Makio64</a>. 
+				<p class="credit">{{ isMobile ? 'Made with ❤️ by' : 'Open‑source (MIT) & made with ❤️ by' }} <a class="u-link" href="https://github.com/Makio64" target="_blank" rel="noopener">Makio64</a>. 
 					<!-- Contribute on <a class="u-link" href="https://github.com/Makio64/makio-meshline" target="_blank" rel="noopener">GitHub</a>. -->
 				</p>
 			</div>
 		</div>
 		<div class="content">
 			<div class="column">
-				<!-- <h2 ref="heading">Basic</h2> -->
 				<p ref="desc" class="desc basic-desc">Simple example</p>
 				<a v-for="link in basicLinks" :key="link.text" ref="link" :href="link.href" class="basic-link" @click="close">{{ link.text }}</a>
 			</div>
 			<div class="column">
-				<!-- <h2 ref="heading">Advanced</h2> -->
 				<p ref="desc" class="desc advanced-desc">Advanced demo</p>
 				<a v-for="link in advancedLinks" :key="link.text" ref="link" :href="link.href" :class="{ primary: link.primary, 'advanced-link': !link.primary }" @click="close">{{ link.text }}</a>
 			</div>
@@ -65,16 +63,18 @@ export default {
 		subtext() {
 			return isMobile ? 'Performant TSL Meshline for Three.js.' : 'A modern, performant TSL‑powered meshline for Three.js.'
 		},
+		isMobile() {
+			return isMobile
+		}
 	},
 	methods: {
 		close() {
 			menuOpen.value = false
 		},
 		show() {
-			const { root, link, heading, desc, footer } = this.$refs
+			const { root, link, desc, footer } = this.$refs
 			utils.remove( root )
 			utils.remove( link )
-			utils.remove( heading )
 			utils.remove( desc )
 			utils.remove( footer )
 			animate( root, { opacity: [0, 1], duration: 0.3, ease: 'outExpo',
@@ -83,20 +83,13 @@ export default {
 					root.style.visibility = 'visible'
 				},
 			} )
-			utils.set( heading, { opacity: 0 } )
 			utils.set( desc, { opacity: 0 } )
 			utils.set( link, { opacity: 0, width: 0 } )
 			utils.set( footer, { opacity: 0 } )
-			animate( heading, {
-				opacity: [0, 1],
-				delay: stagger( 0.04, { start: 0.06 } ),
-				duration: 0.45,
-				ease: 'outExpo',
-			} )
 			animate( desc, {
 				opacity: [0, 1],
-				delay: stagger( 0.04, { start: 0.12 } ),
-				duration: 0.45,
+				delay: stagger( 0.04, { start: 0.1 } ),
+				duration: 0.8,
 				ease: 'outExpo',
 			} )
 			animate( link, {
@@ -115,19 +108,12 @@ export default {
 			} )
 		},
 		hide() {
-			const { root, link, heading, desc, footer } = this.$refs
+			const { root, link, desc, footer } = this.$refs
 			utils.remove( root )
 			utils.remove( link )
-			utils.remove( heading )
 			utils.remove( desc )
 			utils.remove( footer )
 			animate( root, { opacity: 0, duration: 0.3, delay: .1, ease: 'inQuad', } )
-			animate( heading, {
-				opacity: 0,
-				delay: stagger( 0.02 ),
-				duration: 0.2,
-				ease: 'inQuad',
-			} )
 			animate( desc, {
 				opacity: 0,
 				delay: stagger( 0.02 ),
@@ -151,8 +137,12 @@ export default {
 			} )
 		},
 		onKeyDown( e ) {
+			console.log( e )
 			if ( e === 'Escape' && this.isOpen ) {
-				this.close()
+				menuOpen.value = false
+			}
+			if ( e === 'm' ) {
+				menuOpen.value = true
 			}
 		}
 	},
