@@ -62,8 +62,8 @@ importers:
         specifier: ^3.5.19
         version: 3.5.19(typescript@5.9.2)
       vue-tiny-router:
-        specifier: ^1.5.0
-        version: 1.5.0(vue@3.5.19(typescript@5.9.2))
+        specifier: ^1.6.0
+        version: 1.6.0(eslint@9.34.0)(vue@3.5.19(typescript@5.9.2))
       vue-tiny-translation:
         specifier: ^1.0.0
         version: 1.0.0(vue@3.5.19(typescript@5.9.2))
@@ -1873,8 +1873,8 @@ packages:
     peerDependencies:
       eslint: ^8.57.0 || ^9.0.0
 
-  vue-tiny-router@1.5.0:
-    resolution: {integrity: sha512-hUvhLpYMN1qKBUBfwl8W+HpwOMjkjgHOgDd+1wtiCsbnu23flb6E6ZAavtZhpZI3pbXJhEHPeUDs3yUhfckpOQ==}
+  vue-tiny-router@1.6.0:
+    resolution: {integrity: sha512-8BynRlCTEmdb7NeeAP84GIDL0nuKQL5vqQWgpoWsUsyVu2mekzjcDMqevuMpIvktvrDzdZ1J3oZPpPJp1lzEhA==}
     peerDependencies:
       vue: ^3.0.0
 
@@ -3708,9 +3708,12 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  vue-tiny-router@1.5.0(vue@3.5.19(typescript@5.9.2)):
+  vue-tiny-router@1.6.0(eslint@9.34.0)(vue@3.5.19(typescript@5.9.2)):
     dependencies:
+      '@stylistic/eslint-plugin': 5.2.3(eslint@9.34.0)
       vue: 3.5.19(typescript@5.9.2)
+    transitivePeerDependencies:
+      - eslint
 
   vue-tiny-translation@1.0.0(vue@3.5.19(typescript@5.9.2)):
     dependencies:
