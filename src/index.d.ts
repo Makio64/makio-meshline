@@ -59,7 +59,7 @@ export interface MeshLineConfigureOptions {
   // optional attributes
   needsUV?: boolean
   needsWidth?: boolean
-  needsCounter?: boolean
+  needsProgress?: boolean
   needsPrevious?: boolean
   needsNext?: boolean
   needsSide?: boolean
@@ -103,7 +103,7 @@ export class MeshLine extends ThreeMesh {
   // optional attributes toggles
   needsUV(enabled: boolean): this
   needsWidth(enabled: boolean): this
-  needsCounter(enabled: boolean): this
+  needsProgress(enabled: boolean): this
   needsPrevious(enabled: boolean): this
   needsNext(enabled: boolean): this
   needsSide(enabled: boolean): this

@@ -93,7 +93,7 @@ These controls give you control on which attributes are added to the geometry.
 
 - `needsUV(enable: boolean)` - Control UV attribute generation
 - `needsWidth(enable: boolean)` - Control width attribute generation
-- `needsCounter(enable: boolean)` - Control counter attribute generation
+- `needsProgress(enable: boolean)` - Control progress attribute generation
 - `needsPrevious(enable: boolean)` - Control previous position attribute generation
 - `needsNext(enable: boolean)` - Control next position attribute generation
 - `needsSide(enable: boolean)` - Control side attribute generation
@@ -146,7 +146,7 @@ interface MeshLineOptions {
   // ***Advanced / internal***
   needsWidth?: boolean                        // generate attributes width
   needsUV?: boolean
-  needsCounter?: boolean
+  needsProgress?: boolean
   needsPrevious?: boolean
   needsNext?: boolean
   needsSide?: boolean
@@ -183,7 +183,7 @@ interface MeshLineOptions {
 
 - **`lines`** (`Float32Array | number[][]`) — **Required.** The line points data. Can be an array of `[x, y, z]` coordinate arrays, or a `Float32Array` with XYZ values. Default: `new Float32Array([0,0,0,1,0,0])`.
 
-> **Procedural alternative:** instead of supplying a `lines` array you can provide a **`gpuPositionNode`** function (TSL `Fn`).  The node receives the per-vertex `counter` (0→1) and must return a `vec3` position.  When set, the geometry sent to the GPU can be minimal – only its length matters so that the `counter` attribute is generated.
+> **Procedural alternative:** instead of supplying a `lines` array you can provide a **`gpuPositionNode`** function (TSL `Fn`).  The node receives the per-vertex `progress` (0→1) and must return a `vec3` position.  When set, the geometry sent to the GPU can be minimal – only its length matters so that the `progress` attribute is generated.
 
 - **`closed`** (`boolean | boolean[]`) — Whether to close the line loop(s). If `true`, connects the last point back to the first. For multiple lines, can be an array of booleans. Default: `false`.
 
@@ -237,7 +237,7 @@ interface MeshLineOptions {
 
 - **`needsUV`** (`boolean`) — Whether the line needs UV coordinates. Default: `true`.
 
-- **`needsCounter`** (`boolean`) — Whether the line needs a counter attribute. Default: `true`.
+- **`needsProgress`** (`boolean`) — Whether the line needs a progress attribute. Default: `true`.
 
 - **`needsPrevious`** (`boolean`) — Whether the line needs previous point information. Default: `true`.
 
@@ -261,17 +261,17 @@ interface MeshLineOptions {
 
 Hook functions allow custom TSL (Three.js Shading Language) code to modify various aspects of line rendering. All hooks are optional and receive relevant parameters for their processing stage:
 
-- **`positionFn`** (`Fn | null`) — Modify vertex positions. Receives `(position, counters)`.
-- **`widthFn`** (`Fn | null`) — Modify line width. Receives `(width, counters, side)`.
-- **`colorFn`** (`Fn | null`) — Modify vertex colors. Receives `(color, counters, side)`.
+- **`positionFn`** (`Fn | null`) — Modify vertex positions. Receives `(position, progress)`.
+- **`widthFn`** (`Fn | null`) — Modify line width. Receives `(width, progress, side)`.
+- **`colorFn`** (`Fn | null`) — Modify vertex colors. Receives `(color, progress, side)`.
 - **`gradientFn`** (`Fn | null`) — Modify gradient factor. Receives `(gradientFactor, side)`.
-- **`opacityFn`** (`Fn | null`) — Modify opacity in fragment shader. Receives `(alpha, counters, side)`.
-- **`dashFn`** (`Fn | null`) — Modify dash pattern. Receives `(cyclePosition, counters, side)`.
-- **`uvFn`** (`Fn | null`) — Modify UV coordinates. Receives `(uvCoords, counters, side)`.
-- **`vertexFn`** (`Fn | null`) — Final vertex position modification. Receives `(finalPosition, normal, counters, side)`.
-- **`fragmentColorFn`** (`Fn | null`) — Final fragment color modification. Receives `(color, uvCoords, counters, side)`.
-- **`fragmentAlphaFn`** (`Fn | null`) — Final fragment alpha modification. Receives `(alpha, uvCoords, counters, side)`.
-- **`discardFn`** (`Fn | null`) — Custom discard condition. Receives `(counters, side, uvCoords)`. Return truthy to discard fragment.
+- **`opacityFn`** (`Fn | null`) — Modify opacity in fragment shader. Receives `(alpha, progress, side)`.
+- **`dashFn`** (`Fn | null`) — Modify dash pattern. Receives `(cyclePosition, progress, side)`.
+- **`uvFn`** (`Fn | null`) — Modify UV coordinates. Receives `(uvCoords, progress, side)`.
+- **`vertexFn`** (`Fn | null`) — Final vertex position modification. Receives `(finalPosition, normal, progress, side)`.
+- **`fragmentColorFn`** (`Fn | null`) — Final fragment color modification. Receives `(color, uvCoords, progress, side)`.
+- **`fragmentAlphaFn`** (`Fn | null`) — Final fragment alpha modification. Receives `(alpha, uvCoords, progress, side)`.
+- **`discardFn`** (`Fn | null`) — Custom discard condition. Receives `(progress, side, uvCoords)`. Return truthy to discard fragment.
 
 > **TSL Functions:** Hook functions must be created using `Fn()` from `three/tsl`. They run on the GPU for maximum performance and can access uniform values, attributes, and built-in variables like `time` and `instanceIndex`.
 

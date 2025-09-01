@@ -33,9 +33,9 @@
 <script>
 import { animate, stagger, utils } from 'animejs'
 
-import { menuOpen } from '@/store'
-import keyboard from '@/makio/utils/input/keyboard'
 import { isMobile } from '@/makio/utils/detect'
+import keyboard from '@/makio/utils/input/keyboard'
+import { menuOpen } from '@/store'
 
 export default {
 	name: 'MenuFullscreen',

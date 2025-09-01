@@ -82,9 +82,9 @@ class FollowExample {
 				return 1
 			} )
 			.verbose( true )
-			.colorFn( Fn( ( [, counters] ) => {
+			.colorFn( Fn( ( [, progress] ) => {
 				const vertexColor = attribute( 'lineColor', 'vec3' )
-				return vec4( vertexColor.add( counters.smoothstep( 0.5, 1 ).mul( .2 ) ), 1 )
+				return vec4( vertexColor.add( progress.smoothstep( 0.5, 1 ).mul( .2 ) ), 1 )
 			} ) )
 		
 		this.line.build()

@@ -27,11 +27,11 @@ class InstancedGpuExample {
 		const instanceCount = 100
 		const segments = 64
 
-		const gpuPositionNode = Fn( ( [counters] ) => {
+		const gpuPositionNode = Fn( ( [progress] ) => {
 			const offset = attribute( 'instanceOffset', 'vec3' )
 			let radius = float( 1 )// attribute( 'instanceRadius', 'float' )
 			radius = radius.mul( sin( time.add( float( instanceIndex ).div( 3 ) ) ) )
-			const angle = counters.mul( Math.PI * 2 ).add( time.negate() )
+			const angle = progress.mul( Math.PI * 2 ).add( time.negate() )
 			return vec3( cos( angle ), sin( angle ), 0 ).mul( radius ).add( offset ) 
 		} )
 
@@ -42,7 +42,7 @@ class InstancedGpuExample {
 			.color( 0xffffff )
 			.verbose( true )
 			.gpuPositionNode( gpuPositionNode )
-			.colorFn( Fn( ( [counters] ) => {
+			.colorFn( Fn( ( [progress] ) => {
 				const col = float( instanceIndex ).mod( 10 )
 				const row = float( instanceIndex ).div( 10 )
 				return vec3( col.div( 9 ), row.div( 9 ), ( col.add( row ) ).div( 18 ).oneMinus() )

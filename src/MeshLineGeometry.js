@@ -15,7 +15,7 @@ export class MeshLineGeometry extends BufferGeometry {
 			needsNext: true,
 			needsUV: false,
 			needsSide: true,
-			needsCounter: true,
+			needsProgress: true,
 			needsWidth: false,
 			verbose: false,
 			...options
@@ -183,7 +183,7 @@ export class MeshLineGeometry extends BufferGeometry {
 		if ( totalVertices === 0 ) return
 
 		// Initialize arrays
-		let positions, previous, next, sides, widths, uvs, counters
+		let positions, previous, next, sides, widths, uvs, progress
 		if ( this.options.needsPositions ) {
 			positions = new Float32Array( totalVertices * 3 )
 		}
@@ -202,8 +202,8 @@ export class MeshLineGeometry extends BufferGeometry {
 		if ( this.options.needsUV ) {
 			uvs = new Float32Array( totalVertices * 2 )
 		}
-		if ( this.options.needsCounter ) {
-			counters = new Float32Array( totalVertices )
+		if ( this.options.needsProgress ) {
+			progress = new Float32Array( totalVertices )
 		}
 
 		// Use 32-bit indices if we exceed the 16-bit limit (65 535)
@@ -261,10 +261,10 @@ export class MeshLineGeometry extends BufferGeometry {
 					uvs[vertexOffset * 2 + 3] = 1
 				}
 
-				// counters 
-				if ( counters ) {
-					counters[vertexOffset] = t
-					counters[vertexOffset + 1] = t
+				// progress 
+				if ( progress ) {
+					progress[vertexOffset] = t
+					progress[vertexOffset + 1] = t
 				}
 
 				// previous
@@ -382,8 +382,8 @@ export class MeshLineGeometry extends BufferGeometry {
 		if ( uvs ) {
 			this.setOrUpdateAttribute( 'uv', uvs, 2 )
 		}
-		if ( counters ) {
-			this.setOrUpdateAttribute( 'counters', counters, 1 )
+		if ( progress ) {
+			this.setOrUpdateAttribute( 'progress', progress, 1 )
 		}
 
 		// Set indices

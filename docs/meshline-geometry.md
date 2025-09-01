@@ -29,7 +29,7 @@ interface MeshLineGeometryOptions {
   needsNext?: boolean
   needsUV?: boolean
   needsSide?: boolean
-  needsCounter?: boolean
+  needsProgress?: boolean
   needsWidth?: boolean
 }
 ```
@@ -119,6 +119,6 @@ The geometry generates these vertex attributes:
 - `side` - Side indicator (-1 or 1) for line thickness
 - `width` - Width multiplier per vertex
 - `uv` - Texture coordinates
-- `counters` - Position along line (0-1) for effects
+- `progress` - Position along line (0-1) for effects
 
 These attributes work together with the MeshLineNodeMaterial to create smooth, thick lines. 

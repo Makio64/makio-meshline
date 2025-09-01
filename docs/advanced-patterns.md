@@ -8,8 +8,8 @@ These snippets showcase features that go beyond basic styling.
 import { MeshLine } from 'makio-meshline'
 import { Fn, vec3, cos, sin, time } from 'three/tsl'
 
-const circleNode = Fn(( [counter] ) => {
-  const angle = counter.mul( Math.PI * 2 ).add( time.negate() )
+const circleNode = Fn(( [progress] ) => {
+  const angle = progress.mul( Math.PI * 2 ).add( time.negate() )
   return vec3( cos(angle), sin(angle), 0 )
 })
 
@@ -127,10 +127,10 @@ Combine GPU position nodes with instancing for animated effects:
 ```js
 import { Fn, vec3, cos, sin, time, attribute, instanceIndex } from 'three/tsl'
 
-const gpuPositionNode = Fn( ( [counters] ) => {
+const gpuPositionNode = Fn( ( [progress] ) => {
 	const offset = attribute( 'instanceOffset', 'vec3' )
 	const radius = attribute( 'instanceRadius', 'float' )
-	const angle = counters.mul( Math.PI * 2 ).add( time.negate() )
+	const angle = progress.mul( Math.PI * 2 ).add( time.negate() )
 	return vec3( cos( angle ), sin( angle ), 0 ).mul( radius ).add( offset )
 } )
 
@@ -139,7 +139,7 @@ const instancedCircles = new MeshLine()
 	.segments(64)
 	.gpuPositionNode(gpuPositionNode)
 	.lineWidth(0.2)
-	.colorFn(Fn( ( [color, counters] ) => {
+	.colorFn(Fn( ( [color, progress] ) => {
 		const col = float( instanceIndex ).mod( 10 )
 		const row = float( instanceIndex ).div( 10 )
 		return vec3( col.div( 9 ), row.div( 9 ), 0.8 )
@@ -172,8 +172,8 @@ import { Fn, sin, time } from 'three/tsl'
 const pulsatingLine = new MeshLine()
 	.lines(circlePositions( 64 ))
 	.lineWidth(0.3)
-	.widthFn(Fn( ( [width, counters] ) => {
-		return width.mul( sin( time.add( counters.mul( 10 ) ) ).mul( 0.5 ).add( 1 ) )
+	.widthFn(Fn( ( [width, progress] ) => {
+		return width.mul( sin( time.add( progress.mul( 10 ) ) ).mul( 0.5 ).add( 1 ) )
 	} ))
 	.build()
 ```
@@ -182,8 +182,8 @@ const pulsatingLine = new MeshLine()
 ```js
 const rainbowLine = new MeshLine()
 	.lines(sineWavePositions())
-	.colorFn(Fn( ( [color, counters] ) => {
-		const hue = counters.mul( 6.28 ).add( time )
+	.colorFn(Fn( ( [color, progress] ) => {
+		const hue = progress.mul( 6.28 ).add( time )
 		return vec3(
 			sin( hue ).mul( 0.5 ).add( 0.5 ),
 			sin( hue.add( 2.09 ) ).mul( 0.5 ).add( 0.5 ),
@@ -198,8 +198,8 @@ const rainbowLine = new MeshLine()
 const fadingLine = new MeshLine()
 	.lines(straightLine( 100 ))
 	.transparent(true)
-	.opacityFn(Fn( ( [alpha, counters] ) => {
-		return alpha.mul( smoothstep( 0, 0.1, counters ) ).mul( smoothstep( 1, 0.9, counters ) )
+	.opacityFn(Fn( ( [alpha, progress] ) => {
+		return alpha.mul( smoothstep( 0, 0.1, progress ) ).mul( smoothstep( 1, 0.9, progress ) )
 	} ))
 	.build()
 ```
@@ -209,9 +209,9 @@ const fadingLine = new MeshLine()
 const customDashes = new MeshLine()
 	.lines(circlePositions( 128 ))
 	.dash({ count: 10, ratio: 0.3 })
-	.dashFn(Fn( ( [cyclePos, counters] ) => {
+	.dashFn(Fn( ( [cyclePos, progress] ) => {
 		// Create variable dash lengths
-		const variation = sin( counters.mul( 20 ) ).mul( 0.2 ).add( 1 )
+		const variation = sin( progress.mul( 20 ) ).mul( 0.2 ).add( 1 )
 		return mod( cyclePos.mul( variation ), float( 1 ) )
 	} ))
 	.build()

@@ -59,10 +59,10 @@ class VenusExample {
 		await this.initScene()
 		await this.initPostProcessing()
 
-		nextTick( () => {
+		setTimeout( () => {
 			animate( this.opacity, { value: 1, duration: 1.8, delay: 0.01, ease: 'outExpo' } )
 
-		} )
+		}, 10 )
 
 		window.addEventListener( 'resize', this.onResize )
 	}

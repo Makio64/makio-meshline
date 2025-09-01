@@ -256,7 +256,7 @@ class RicefieldExample {
 			.lineWidth( 0.08 )
 			.widthCallback( ( t ) => ( 1 - smoothstep( 0.4, 1, t ) ) )
 			// Add colorFn to apply random color variation
-			.colorFn( Fn( ( [color, counters, side] ) => {
+			.colorFn( Fn( ( [color, progress, side] ) => {
 				const rand = fract( sin( float( instanceIndex ).mul( 12.9898 ) ).mul( 43758.5453 ) )
 				const colorScale = rand.mul( 1.1 ).add( .5 )
 				const parcelDarkness = attribute( 'instanceDarkness', 'float' )
@@ -269,7 +269,7 @@ class RicefieldExample {
 				return vec4( gradientFactor.rgb.mul( colorScale ).mul( parcelDarkness ), gradientFactor.a )
 			} ) )
 			// Add width function that varies with scale
-			.widthFn( Fn( ( [width, counters] ) => {
+			.widthFn( Fn( ( [width, progress] ) => {
 				// Access storage buffer to get current scale
 				const scaleStorage = storage( this.scaleStorageBuffer, 'float', this.riceInstances.length )
 				const storageScale = scaleStorage.element( instanceIndex )
@@ -280,7 +280,7 @@ class RicefieldExample {
 				
 				return width.mul( widthMultiplier )
 			} ) )
-			.positionFn( Fn( ( [position, counters] ) => {
+			.positionFn( Fn( ( [position, progress] ) => {
 				// Get combined instance attributes: xyz = position, w = scale
 				const instanceTr = attribute( 'instanceTransform', 'vec4' )
 				
