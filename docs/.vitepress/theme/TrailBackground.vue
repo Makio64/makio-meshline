@@ -71,10 +71,10 @@ onMounted( async () => {
 			{ start: 0x66bbff, end: 0xffffff }, // Light cyan to white
 			{ start: 0x8866ff, end: 0xffffff }, // Light purple to white
 		] : [
-			// Light mode: lighter/gray gradients
-			{ start: 0x444444, end: 0x999999 }, // Dark gray to light gray
-			{ start: 0x666666, end: 0x444444 }, // Medium gray to dark gray
-			{ start: 0x444444, end: 0x666699 }, // Dark gray to blue-gray
+			// Light mode: bright, cheerful green/teal gradients
+			{ start: 0x00ff00, end: 0x8888ff }, // Bright mint to light mint
+			{ start: 0x0000ff, end: 0x8888ff }, // Bright teal to light teal
+			{ start: 0xff0000, end: 0x8888ff }, // Bright cyan to light sky blue
 		]
 		
 		for ( let i = 0; i < NUM_LINES; i++ ) {
@@ -224,9 +224,9 @@ onMounted( async () => {
 				{ start: 0x66bbff, end: 0xffffff },
 				{ start: 0x8866ff, end: 0xffffff },
 			] : [
-				{ start: 0x444444, end: 0x999999 },
-				{ start: 0x666666, end: 0x444444 },
-				{ start: 0x444444, end: 0x666699 },
+				{ start: 0x00cc88, end: 0x66ffcc },
+				{ start: 0x00bbaa, end: 0x44ddcc },
+				{ start: 0x00aacc, end: 0x66ddff },
 			]
 			
 			// Update line colors
