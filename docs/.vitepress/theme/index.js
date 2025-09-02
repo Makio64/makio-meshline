@@ -1,12 +1,18 @@
 import DefaultTheme from 'vitepress/theme'
-import { onMounted, watch, nextTick } from 'vue'
+import { onMounted, watch, nextTick, h } from 'vue'
 import { useRoute } from 'vitepress'
+import TrailBackground from './TrailBackground.vue'
 import './custom.css'
 
 export default {
   extends: DefaultTheme,
   enhanceApp({ app }) {
     // Optional: Add any app-level enhancements here
+  },
+  Layout() {
+    return h(DefaultTheme.Layout, null, {
+      'layout-top': () => h(TrailBackground)
+    })
   },
   setup() {
     const route = useRoute()

@@ -121,6 +121,13 @@ importers:
         version: 10.2.0(eslint@9.34.0)
 
   docs:
+    dependencies:
+      makio-meshline:
+        specifier: ^1.0.1
+        version: 1.0.1(three@0.179.1)
+      three:
+        specifier: ^0.179.1
+        version: 0.179.1
     devDependencies:
       vitepress:
         specifier: ^1.6.4
@@ -1343,6 +1350,11 @@ packages:
 
   magic-string@0.30.18:
     resolution: {integrity: sha512-yi8swmWbO17qHhwIBNeeZxTceJMeBvWJaId6dyvTSOwTipqeHhMhOrz6513r1sOKnpvQ7zkhlG8tPrpilwTxHQ==}
+
+  makio-meshline@1.0.1:
+    resolution: {integrity: sha512-0rBdECpvMW1E+BeLgCcoH4CFAl3VspndJO8nB3o7BKAhrrRG8p3p+eBAY9qhfA39i1wAcTO7wsq0+ai+QUJp9A==}
+    peerDependencies:
+      three: '>=0.178.0'
 
   mark.js@8.11.1:
     resolution: {integrity: sha512-1I+1qpDt4idfgLQG+BNWmrqku+7/2bi5nLf4YwF8y8zXvmfiTBY3PV3ZibfrjBueCByROpuBjLLFCajqkgYoLQ==}
@@ -3130,6 +3142,10 @@ snapshots:
   magic-string@0.30.18:
     dependencies:
       '@jridgewell/sourcemap-codec': 1.5.5
+
+  makio-meshline@1.0.1(three@0.179.1):
+    dependencies:
+      three: 0.179.1
 
   mark.js@8.11.1: {}
 

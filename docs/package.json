@@ -9,5 +9,9 @@
   },
   "devDependencies": {
     "vitepress": "^1.6.4"
+  },
+  "dependencies": {
+    "makio-meshline": "^1.0.1",
+    "three": "^0.179.1"
   }
 }

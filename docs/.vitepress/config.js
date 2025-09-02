@@ -5,7 +5,7 @@ export default defineConfig({
   description: "A performant and customizable line solution for Three.js.",
   themeConfig: {
     nav: [
-      { text: 'Guide', link: '/guide' },
+      { text: 'Guides', link: '/guide' },
       { text: 'Examples', link: '/examples/sandbox' },
       { text: 'API', link: '/api' },
       { text: 'Demos', link: 'https://meshlines.netlify.app/' },
