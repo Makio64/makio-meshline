@@ -3,6 +3,7 @@ import { defineConfig } from 'vitepress'
 export default defineConfig({
   title: "Makio MeshLine",
   description: "A performant and customizable line solution for Three.js.",
+  appearance: 'dark', // Set dark mode as default
   themeConfig: {
     nav: [
       { text: 'Guides', link: '/guide' },
