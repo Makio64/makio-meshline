@@ -1,6 +1,6 @@
 # **Makio MeshLine**
 
-Makio MeshLine is a **TSL‑powered line library for Three.js** that delivers fast, easy to customizable thick lines with modern features.
+Makio MeshLine is a **TSL‑powered line library for Three.js** that delivers fast, easy to customizable thick lines with modern features made by [Makio64](https://x.com/makio64).
 
 It's built for WebGPURenderer and both Backends (WebGPU & WebGL) 
 
@@ -12,7 +12,7 @@ With Three.js evolving, there was a need for a modern Meshline version that leve
 
 `Makio MeshLine` is my vision of it : built to be performant, simple but flexible. It allows creators to focus on ideas rather than implementation details.
 
-If you enjoy it or need special feature consider sponsoring me [Makio64](https://x.com/makio64) 
+[Makio64](https://x.com/makio64) 
 
 ## Improvements 
 
