@@ -5,5 +5,5 @@
 - ESM-only package with exports map and TypeScript types
 - WebGPU-first MeshLine with TSL hooks, instancing, dashes, gradients, textures
 - Helpers: circlePositions, squarePositions, rectanglePositions, sineWavePositions, straightLine, straightLineBetween
-- Docs: meshlines-docs.netlify.app
-- Demo: meshlines.netlify.app
+- Docs: meshline.makio.io
+- Demo: meshline-demo.makio.io

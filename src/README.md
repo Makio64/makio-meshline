@@ -34,8 +34,8 @@ renderer.setAnimationLoop(() => renderer.render(scene, camera))
 
 ## Documentation & Demos
 
-- Docs: https://meshlines-docs.netlify.app
-- Live demos: https://meshlines.netlify.app
+- Docs: https://meshline.makio.io
+- Live demos: https://meshline-demo.makio.io
 
 ## License
 

@@ -6,27 +6,27 @@
 - **Renderer**: WebGPURenderer only
 - **Backends**: WebGPU / WebGL2
 
-## [Live Demo](https://meshlines.netlify.app)
+## [Live Demo](https://meshline-demo.makio.io)
 
-See it in action with examples on [https://meshlines.netlify.app](https://meshlines.netlify.app) and check out the code here : [demo/src/demos](https://github.com/Makio64/makio-meshline/tree/main/demo/src/demos)
+See it in action with examples on [https://meshline-demo.makio.io](https://meshline-demo.makio.io) and check out the code here : [demo/src/demos](https://github.com/Makio64/makio-meshline/tree/main/demo/src/demos)
 
 [
 ![demo](https://github.com/user-attachments/assets/4f1c7cee-0f8f-4c21-a720-531eb26bf485)
-](https://meshlines.netlify.app)
+](https://meshline-demo.makio.io)
 
-<a href="https://meshlines.netlify.app">
+<a href="https://meshline-demo.makio.io">
 <img width="1661" alt="Screenshot" src="https://github.com/user-attachments/assets/deb1ccd7-46a9-4be0-8f07-280c21aafe81" />
 </a>
 
-## [Documentation](https://meshlines-docs.netlify.app)
-Check out the [documentation site](https://meshlines-docs.netlify.app/) for detailed instructions, API reference, and examples.
-- [Why Makio MeshLine](https://meshlines-docs.netlify.app/why-makio-meshline.html)
-- [Getting started](https://meshlines-docs.netlify.app/guide.html)
-- [API overview](https://meshlines-docs.netlify.app/api.html)
-- [Common Patterns](https://meshlines-docs.netlify.app/common-patterns.html)
-- [Advanced Patterns](https://meshlines-docs.netlify.app/advanced-patterns.html)
-- [Performance tips](https://meshlines-docs.netlify.app/performance.html)
-- [Helpers functions](https://meshlines-docs.netlify.app/helpers.html)
+## [Documentation](https://meshline.makio.io)
+Check out the [documentation site](https://meshline.makio.io/) for detailed instructions, API reference, and examples.
+- [Why Makio MeshLine](https://meshline.makio.io/why-makio-meshline.html)
+- [Getting started](https://meshline.makio.io/guide.html)
+- [API overview](https://meshline.makio.io/api.html)
+- [Common Patterns](https://meshline.makio.io/common-patterns.html)
+- [Advanced Patterns](https://meshline.makio.io/advanced-patterns.html)
+- [Performance tips](https://meshline.makio.io/performance.html)
+- [Helpers functions](https://meshline.makio.io/helpers.html)
 
 <img width="1709" height="970" alt="Screenshot 2025-07-14 at 19 45 01" src="https://github.com/user-attachments/assets/0cbe4a1f-b84e-462a-aeeb-3cb190097bf8" />
 
@@ -70,7 +70,7 @@ animate()
 
 ## About
 
-The concept was to build a performant but easily customizable MeshLine with TSL for WebGPURenderer, allowing the devs to focus on creativity instead of implementation.  ([read more about it](https://meshlines-docs.netlify.app/why-makio-meshline.html))
+The concept was to build a performant but easily customizable MeshLine with TSL for WebGPURenderer, allowing the devs to focus on creativity instead of implementation.  ([read more about it](https://meshline.makio.io/why-makio-meshline.html))
 
 Features includes : gradients, dashes, textures, variable width, instancing, gpu control or cpu batching, advanced mitter, tsl Hook, etc..
 

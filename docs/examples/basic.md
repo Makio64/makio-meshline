@@ -7,7 +7,7 @@ pageClass: example-page
 
 This demo displays 16 different MeshLine configurations each demonstrating specific features or combinaison
 
-<iframe src="https://meshlines.netlify.app/examples/basic?noUI" width="100%" height="600" style="border: 1px solid #ddd; border-radius: 8px;"></iframe>
+<iframe src="https://meshline-demo.makio.io/examples/basic?noUI" width="100%" height="600" style="border: 1px solid #ddd; border-radius: 8px;"></iframe>
 
 
 <!-- ## How to make a reveal animation

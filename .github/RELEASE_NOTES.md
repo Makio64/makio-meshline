@@ -7,5 +7,5 @@ Highlights
 - Position helpers and GPU-position node support
 
 Links
-- Demo: https://meshlines.netlify.app
-- Docs: https://meshlines-docs.netlify.app
+- Demo: https://meshline-demo.makio.io
+- Docs: https://meshline.makio.io

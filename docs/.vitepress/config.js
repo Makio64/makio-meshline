@@ -9,7 +9,7 @@ export default defineConfig({
       { text: 'Guides', link: '/guide' },
       { text: 'Examples', link: '/examples/sandbox' },
       { text: 'API', link: '/api' },
-      { text: 'Demos', link: 'https://meshlines.netlify.app/' },
+      { text: 'Demos', link: 'https://meshline-demo.makio.io/' },
     ],
 
     sidebar: [
@@ -31,7 +31,7 @@ export default defineConfig({
           { text: 'Advanced : Draw Lines', link: '/examples/drawlines' },
           { text: 'Advanced : Rice Field', link: '/examples/ricefield' },
           { text: 'Advanced : Venus & David', link: '/examples/venus-and-david' },
-          { text: 'Demos page', link: 'https://meshlines.netlify.app/' },
+          { text: 'Demos page', link: 'https://meshline-demo.makio.io/' },
         ]
       },
       {

@@ -49,5 +49,5 @@ That's it! You should now see a vibrant orange circle in your scene.
 ## Next Steps
 
 - Use the [Sandbox](./examples/sandbox.md) example to test the options and generate the code for your line 
-- Check other examples [Live Demos](https://meshlines.netlify.app) to see various implementations in action
+- Check other examples [Live Demos](https://meshline-demo.makio.io) to see various implementations in action
 - Check out the [API Reference](./api.md) to explore all the available customization options.

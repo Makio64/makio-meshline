@@ -21,7 +21,7 @@
 			</div>
 		</div>
 		<div ref="footer" class="footer">
-			<a class="u-link" href="https://meshlines-docs.netlify.app" target="_blank" rel="noopener">Full documentation & API</a>
+			<a class="u-link" href="https://meshline.makio.io" target="_blank" rel="noopener">Full documentation & API</a>
 			<span>·</span>
 			<a class="u-link" href="https://github.com/Makio64/makio-meshline" target="_blank" rel="noopener">makio-meshline GitHub</a>
 			<span>·</span>
