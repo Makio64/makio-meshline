@@ -72,17 +72,17 @@ for ( let i = 0; i < instanceCount; i++ ) {
 
 ```javascript
 // Use instance attributes in shader hooks
-line.positionFn( Fn( ( [ pos, counter, offset ] ) => {
+line.positionFn( Fn( ( [ pos, progress, offset ] ) => {
   // Apply instance offset to vertex positions
   return pos.add( offset )
 } ) )
 
-line.colorFn( Fn( ( [ baseColor, counter, instanceColor ] ) => {
+line.colorFn( Fn( ( [ baseColor, progress, instanceColor ] ) => {
   // Use instance color
   return vec4( instanceColor, 1.0 )
 } ) )
 
-line.widthFn( Fn( ( [ width, counter, side, scale ] ) => {
+line.widthFn( Fn( ( [ width, progress, side, scale ] ) => {
   // Apply instance scale to line width
   return width.mul( scale )
 } ) )

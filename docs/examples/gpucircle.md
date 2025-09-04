@@ -12,7 +12,7 @@ Demonstrates GPU-based position calculation using Three.js TSL (Three Shading La
 ## Key Concepts
 
 Instead of providing vertex positions as a buffer, you define a TSL function that computes positions based on:
-- `counter` - Normalized position along the line (0 to 1)
+- `progress` - Normalized position along the line (0 to 1)
 - `time` - Global time uniform for animations
 - Any custom uniforms you define
 
@@ -38,15 +38,15 @@ import { MeshLine } from 'makio-meshline'
 import { Fn, vec3, cos, sin, time, mix } from 'three/tsl'
 
 // TSL function for circle positions
-const circlePosition = Fn( ( [counter] ) => {
-  const angle = counter.add( time.negate() ).mul( Math.PI * 2 )
+const circlePosition = Fn( ( [progress] ) => {
+  const angle = progress.add( time.negate() ).mul( Math.PI * 2 )
   return vec3( cos( angle ), sin( angle ), 0 )
 } )
 
 // TSL function for wave positions  
-const wavePosition = Fn( ( [counter] ) => {
-  const y = sin( counter.mul( Math.PI * 4 ).add( time.negate().mul( 4 ) ) )
-  return vec3( counter.oneMinus().mul( 2 ).sub( 1 ), y.mul( 0.5 ), 0 )
+const wavePosition = Fn( ( [progress] ) => {
+  const y = sin( progress.mul( Math.PI * 4 ).add( time.negate().mul( 4 ) ) )
+  return vec3( progress.oneMinus().mul( 2 ).sub( 1 ), y.mul( 0.5 ), 0 )
 } )
 
 // Create line with GPU position node

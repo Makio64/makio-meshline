@@ -27,14 +27,14 @@ class StressExample {
 		}
 
 		// Procedural position function for a animated 3D spiral
-		const positionNode = Fn( ( [counter] ) => {
+		const positionNode = Fn( ( [progress] ) => {
 			const turns = uniform( 200 ) // Many turns for long line
 			const height = uniform( 1000 ) // Tall spiral
 			const radius = uniform( 5 )
-			const angle = counter.mul( Math.PI * 2 ).mul( turns ).add( time.negate() )
+			const angle = progress.mul( Math.PI * 2 ).mul( turns ).add( time.negate() )
 			const x = cos( angle ).mul( radius )
 			const y = sin( angle ).mul( radius )
-			const z = counter.mul( height ).sub( height.div( 2 ) )
+			const z = progress.mul( height ).sub( height.div( 2 ) )
 			return vec3( x, y, z )
 		} )
 

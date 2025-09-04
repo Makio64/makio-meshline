@@ -287,10 +287,10 @@ export default class MeshLine extends Mesh {
 		}
 		return this
 	}
-	needsCounter( needsCounter ) {
-		this._options.needsCounter = needsCounter
+	needsProgress( needsProgress ) {
+		this._options.needsProgress = needsProgress
 		if ( this._built ) {
-			console.warn( "MeshLine: Changing counter needs after build is not supported yet." )
+			console.warn( "MeshLine: Changing progress needs after build is not supported yet." )
 		}
 		return this
 	}
@@ -412,7 +412,7 @@ export default class MeshLine extends Mesh {
 
 		// Computed needs
 		options.needsWidth = options.widthCallback ?? true
-		options.needsCounter = options.needsCounter ?? true
+		options.needsProgress = options.needsProgress ?? true
 		options.needsSide = options.needsSide ?? true
 		options.needsUV = options.needsUV ?? ( options.map || options.alphaMap )
 

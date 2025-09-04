@@ -7,17 +7,17 @@ import stage3d from '@/makio/three/stage3d'
 
 const segments = 128
 
-// TSL function generating a circle in the XZ plane from the per-vertex counter (0-1)
-const circlePosition = Fn( ( [counter] ) => {
-	const angle = counter.add( time.negate() ).mul( Math.PI )
+// TSL function generating a circle in the XZ plane from the per-vertex progress (0-1)
+const circlePosition = Fn( ( [progress] ) => {
+	const angle = progress.add( time.negate() ).mul( Math.PI )
 	return vec3( cos( angle ), sin( angle ), 0  )
 } )
 
-// TSL function generating a wavy line in the XZ plane from the per-vertex counter (0-1)
-const wavePosition = Fn( ( [counter] ) => {
+// TSL function generating a wavy line in the XZ plane from the per-vertex progress (0-1)
+const wavePosition = Fn( ( [progress] ) => {
 	// make a wavy line
-	const y = sin( counter.mul( Math.PI * 4  ).add( time.negate().mul( 4 ) ) )
-	return vec3( counter.oneMinus().mul( 2 ).sub( 1 ), y.mul( 0.5 ), 0 )
+	const y = sin( progress.mul( Math.PI * 4  ).add( time.negate().mul( 4 ) ) )
+	return vec3( progress.oneMinus().mul( 2 ).sub( 1 ), y.mul( 0.5 ), 0 )
 } )
 
 class GpuCircleExample {
@@ -42,8 +42,8 @@ class GpuCircleExample {
 		}
 
 		const useWave = uniform( 0 )
-		const positionNode = Fn( ( [counter] ) => {
-			return mix( circlePosition( counter ), wavePosition( counter ), useWave )
+		const positionNode = Fn( ( [progress] ) => {
+			return mix( circlePosition( progress ), wavePosition( progress ), useWave )
 		} )
 		
 		this.line = new MeshLine()

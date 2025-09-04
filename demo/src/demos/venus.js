@@ -219,10 +219,10 @@ class VenusExample {
 			.transparent( true )
 			.lineWidth( 0.02 )
 			.verbose( true )
-			.gpuPositionNode( Fn( ( [counter] ) => {
+			.gpuPositionNode( Fn( ( [progress] ) => {
 				let y = float( instanceIndex ).div( float( numRings ) ).toVar()
 				const v = y.add( float( 0.5 ).div( float( numRings ) ) )
-				const u = fract( counter )
+				const u = fract( progress )
 				const posA = texA.sample( vec2( u, v ) ).xyz
 				const posB = texB.sample( vec2( u, v ) ).xyz
 				let extra = percent.clamp().sub( .5 ).abs().mul( 2 ).oneMinus().abs().toVar()

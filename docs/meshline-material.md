@@ -228,30 +228,30 @@ All hook functions receive relevant parameters and should return appropriate val
 
 ```typescript
 // Position hooks
-positionFn: (position: Node, counter: Node) => Node<vec3>
-previousFn: (position: Node, counter: Node) => Node<vec3>
-nextFn: (position: Node, counter: Node) => Node<vec3>
+positionFn: (position: Node, progress: Node) => Node<vec3>
+previousFn: (position: Node, progress: Node) => Node<vec3>
+nextFn: (position: Node, progress: Node) => Node<vec3>
 
 // Width/Normal hooks
-widthFn: (width: Node, counter: Node, side: Node) => Node<float>
-normalFn: (normal: Node, dir: Node, dir1: Node, dir2: Node, counter: Node, side: Node) => Node<vec3>
+widthFn: (width: Node, progress: Node, side: Node) => Node<float>
+normalFn: (normal: Node, dir: Node, dir1: Node, dir2: Node, progress: Node, side: Node) => Node<vec3>
 
 // Color hooks
-colorFn: (color: Node, counter: Node, side: Node) => Node<vec4>
+colorFn: (color: Node, progress: Node, side: Node) => Node<vec4>
 gradientFn: (gradientFactor: Node, side: Node) => Node<float>
-fragmentColorFn: (color: Node, uv: Node, counter: Node, side: Node) => Node<vec4>
+fragmentColorFn: (color: Node, uv: Node, progress: Node, side: Node) => Node<vec4>
 
 // Alpha hooks
-opacityFn: (alpha: Node, counter: Node, side: Node) => Node<float>
-fragmentAlphaFn: (alpha: Node, uv: Node, counter: Node, side: Node) => Node<float>
+opacityFn: (alpha: Node, progress: Node, side: Node) => Node<float>
+fragmentAlphaFn: (alpha: Node, uv: Node, progress: Node, side: Node) => Node<float>
 
 // UV/Dash hooks
-uvFn: (uv: Node, counter: Node, side: Node) => Node<vec2>
-dashFn: (cyclePosition: Node, counter: Node, side: Node) => Node<float>
+uvFn: (uv: Node, progress: Node, side: Node) => Node<vec2>
+dashFn: (cyclePosition: Node, progress: Node, side: Node) => Node<float>
 
 // Control hooks
-vertexFn: (finalPosition: Node, normal: Node, counter: Node, side: Node) => Node<vec3>
-discardFn: (counter: Node, side: Node, uv: Node) => Node<bool>
+vertexFn: (finalPosition: Node, normal: Node, progress: Node, side: Node) => Node<vec3>
+discardFn: (progress: Node, side: Node, uv: Node) => Node<bool>
 ```
 
 ### Performance Considerations
@@ -264,7 +264,7 @@ discardFn: (counter: Node, side: Node, uv: Node) => Node<bool>
 ## Dynamic GPU-Driven Positions (gpuPositionNode)
 
 When you don't want to upload an explicit polyline to the GPU you can let the shader compute each vertex position.  
-Provide a **gpuPositionNode** function that receives the per-vertex counter (ranging from 0→1 along the line) and returns a `vec3` position.
+Provide a **gpuPositionNode** function that receives the per-vertex progress (ranging from 0→1 along the line) and returns a `vec3` position.
 
 ```javascript
 import { MeshLine, MeshLineNodeMaterial } from 'makio-meshline';
@@ -293,7 +293,7 @@ const material = new MeshLineNodeMaterial({
   lineWidth: 4,
   resolution: new THREE.Vector2( window.innerWidth, window.innerHeight ),
   gpuPositionNode: circlePosition, // <- inject node here
-  needsCounter: true               // ensure the `counter` attribute is generated
+  needsProgress: true               // ensure the `progress` attribute is generated
 });
 
 // 4. Create the line and add to the scene
@@ -303,5 +303,5 @@ line.material = material;
 scene.add( line );
 ```
 
-`counter` is automatically incremented for every segment so **index** travels smoothly from 0 to 1.  
+`progress` is automatically incremented for every segment so **index** travels smoothly from 0 to 1.  
 Combine this technique with uniforms (time, mouse, etc.) to build fully procedural, animated lines on the GPU.
