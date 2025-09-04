@@ -52,6 +52,7 @@ export default {
 				{ text: 'Sandbox', href: '/examples/sandbox', primary: true },
 				{ text: 'Rice Field', href: '/examples/ricefield' },
 				{ text: 'Draw Lines', href: '/examples/drawlines' },
+				{ text: 'Flying Baguettes', href: '/examples/baguettes' },
 				{ text: 'Venus & David', href: '/examples/venus-and-david' },
 			],
 		}

@@ -6,6 +6,7 @@
 	</div></template>
 
 <script>
+import baguettes from '@/demos/baguettes'
 import basic from '@/demos/basic'
 import drawlines from '@/demos/drawlines'
 import follow from '@/demos/follow'
@@ -41,6 +42,7 @@ export default {
 			sandbox,
 			ghost,
 			'venus-and-david': venus,
+			baguettes,
 		}
 		this.example = mapping[id] || basic
 
@@ -56,6 +58,7 @@ export default {
 			sandbox: 'sandbox.js',
 			ghost: 'ghost.js',
 			'venus-and-david': 'venus.js',
+			baguettes: 'baguettes.js',
 			basic: 'basic.js'
 		}
 		const file = fileMap[id] || 'basic.js'

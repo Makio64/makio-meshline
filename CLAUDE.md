@@ -123,3 +123,4 @@ The MeshLine class supports efficient instanced rendering:
 - Supports both CPU and GPU position calculation modes
 - Instancing allows rendering thousands of lines with single draw call
 - Hook functions run in GPU for maximum performance
+- use random(min, max) for random
