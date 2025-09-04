@@ -51,13 +51,13 @@ importers:
         version: 1.2.4
       stats-gl:
         specifier: ^3.6.0
-        version: 3.6.0(three@0.179.1)
+        version: 3.6.0(three@0.180.0)
       three:
-        specifier: ^0.179.1
-        version: 0.179.1
+        specifier: ^0.180.0
+        version: 0.180.0
       three-mesh-bvh:
         specifier: ^0.9.1
-        version: 0.9.1(three@0.179.1)
+        version: 0.9.1(three@0.180.0)
       vue:
         specifier: ^3.5.19
         version: 3.5.19(typescript@5.9.2)
@@ -124,10 +124,10 @@ importers:
     dependencies:
       makio-meshline:
         specifier: ^1.0.1
-        version: 1.0.1(three@0.179.1)
+        version: 1.0.1(three@0.180.0)
       three:
-        specifier: ^0.179.1
-        version: 0.179.1
+        specifier: ^0.180.0
+        version: 0.180.0
     devDependencies:
       vitepress:
         specifier: ^1.6.4
@@ -1688,6 +1688,9 @@ packages:
   three@0.179.1:
     resolution: {integrity: sha512-5y/elSIQbrvKOISxpwXCR4sQqHtGiOI+MKLc3SsBdDXA2hz3Mdp3X59aUp8DyybMa34aeBwbFTpdoLJaUDEWSw==}
 
+  three@0.180.0:
+    resolution: {integrity: sha512-o+qycAMZrh+TsE01GqWUxUIKR1AL0S8pq7zDkYOQw8GqfX8b8VoCKYUoHbhiX5j+7hr8XsuHDVU6+gkQJQKg9w==}
+
   tinyglobby@0.2.14:
     resolution: {integrity: sha512-tX5e7OM1HnYr2+a2C/4V0htOcSQcoSTH9KgJnVvNm5zm/cyEWKJ7j7YutsH9CxMdtOkkLFy2AHrMci9IM8IPZQ==}
     engines: {node: '>=12.0.0'}
@@ -3143,9 +3146,9 @@ snapshots:
     dependencies:
       '@jridgewell/sourcemap-codec': 1.5.5
 
-  makio-meshline@1.0.1(three@0.179.1):
+  makio-meshline@1.0.1(three@0.180.0):
     dependencies:
-      three: 0.179.1
+      three: 0.180.0
 
   mark.js@8.11.1: {}
 
@@ -3428,9 +3431,9 @@ snapshots:
 
   speakingurl@14.0.1: {}
 
-  stats-gl@3.6.0(three@0.179.1):
+  stats-gl@3.6.0(three@0.180.0):
     optionalDependencies:
-      three: 0.179.1
+      three: 0.180.0
 
   string-width@4.2.3:
     dependencies:
@@ -3490,11 +3493,13 @@ snapshots:
       commander: 2.20.3
       source-map-support: 0.5.21
 
-  three-mesh-bvh@0.9.1(three@0.179.1):
+  three-mesh-bvh@0.9.1(three@0.180.0):
     dependencies:
-      three: 0.179.1
+      three: 0.180.0
 
   three@0.179.1: {}
+
+  three@0.180.0: {}
 
   tinyglobby@0.2.14:
     dependencies:
