@@ -1,5 +1,7 @@
+import { BufferAttribute, CatmullRomCurve3, Fog, SRGBColorSpace, TextureLoader, Vector3 } from 'three'
+import { attribute, Fn } from 'three/tsl'
+
 import { MeshLine } from 'makio-meshline'
-import { CatmullRomCurve3, Fog, SRGBColorSpace, TextureLoader, Vector3 } from 'three'
 
 import { stage } from '@/makio/core/stage'
 import OrbitControl from '@/makio/three/controls/OrbitControl'
@@ -37,17 +39,28 @@ class FlyingBaguettes {
 			// Store the curve's total length for absolute distance calculations
 			const curveLength = curve.getLength()
 			
-			// Initialize baguette data
+			// Initialize baguette data with brightness variation
 			this.baguettes.push( {
 				positions: new Float32Array( SEGMENTS * 3 ),
 				progress: random( 0, 1 ),
 				speed: BAGUETTE_SPEED,
-				curveLength: curveLength
+				curveLength: curveLength,
+				brightness: random( 0.3, 1.0 ) // Darkness variation
 			} )
 		}
 		
 		// Prepare line arrays
 		this.lineArrays = this.baguettes.map( b => b.positions )
+		
+		// Create lineIndex attribute data for identifying each baguette
+		const totalVertices = SEGMENTS * 2 * BAGUETTE_COUNT // 2 vertices per segment point
+		this.lineIndices = new Float32Array( totalVertices )
+		let vertexOffset = 0
+		for ( let i = 0; i < BAGUETTE_COUNT; i++ ) {
+			for ( let j = 0; j < SEGMENTS * 2; j++ ) {
+				this.lineIndices[ vertexOffset++ ] = i
+			}
+		}
 	}
 
 	// -------------------------------------------------- INIT
@@ -66,9 +79,21 @@ class FlyingBaguettes {
 		this.line = new MeshLine()
 			.lines( this.lineArrays, false )
 			.lineWidth( 1.4 )
-			// .color( 0xffd700 )
 			.map( txt )
 			.alphaTest( 0.1 )
+		
+		// Add custom attribute for line identification
+		this.line.geometry.setAttribute( 'lineIndex', 
+			new BufferAttribute( this.lineIndices, 1 ) )
+		
+		// Apply color function to vary darkness per baguette
+		this.line.colorFn( Fn( ( [color] ) => {
+			const lineIdx = attribute( 'lineIndex', 'float' )
+			// Simple approach: use line index to calculate brightness
+			// Each baguette gets progressively darker
+			const brightness = lineIdx.div( BAGUETTE_COUNT ).mul( 0.7 ).add( 0.3 )
+			return color.mul( brightness )
+		} ) )
 
 		stage3d.add( this.line )
 		
