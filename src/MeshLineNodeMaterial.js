@@ -16,7 +16,6 @@ const fix = Fn( ( [i_immutable, aspect_immutable] ) => {
 const aSide = attribute( 'side', 'float' )
 const aProgress = attribute( 'progress', 'float' )
 const aWidth = attribute( 'width', 'float' )
-const vSide = varyingProperty( 'float', 'vSide' )
 const vWidth = varyingProperty( 'float', 'vWidth' )
 const vProgress = varyingProperty( 'float', 'vProgress' )
 const vColor = varyingProperty( 'vec4', 'vColor' )
@@ -54,9 +53,9 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 			this.gradient = uniform( new Color( options.gradientColor ) )
 		}
 
-		const hasAlphaFeatures = options.alphaMap != null || ( options.opacity ?? 1 ) < 1 || this.alphaTest > 0
+		const hasAlphaFeatures = options.alphaMap != null || ( options.opacity ?? 1 ) < 1
 		this.transparent = hasAlphaFeatures || options.transparent
-		if ( this.transparent || this.alphaTest > 0 ) {
+		if ( this.transparent ) {
 			this.opacity = uniform( options.opacity ?? 1 )
 		}
 
@@ -138,8 +137,6 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 		
 		if ( this.previousFn ) { previous = this.previousFn( previous, aProgress ) }
 		if ( this.nextFn ) { next = this.nextFn( next, aProgress ) }
-
-		vSide.assign( aSide )
 
 		this.vertexNode = Fn( () => {
 
@@ -263,7 +260,7 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 			
 			// Apply UV modifier if provided
 			if ( this.uvFn ) {
-				uvCoords.assign( this.uvFn( uvCoords, vProgress, vSide ) )
+				uvCoords.assign( this.uvFn( uvCoords, vProgress, aSide ) )
 			}
 		}
 		// Color node
@@ -274,7 +271,7 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 
 				// Apply gradient modifier if provided
 				if ( this.gradientFn ) {
-					gradientFactor.assign( this.gradientFn( gradientFactor, vSide ) )
+					gradientFactor.assign( this.gradientFn( gradientFactor, aSide ) )
 				}
 				
 				color.rgb.assign( mix( color.rgb, this.gradient, gradientFactor ) )
@@ -286,7 +283,7 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 			
 			// Apply fragment color modifier if provided
 			if ( this.fragmentColorFn ) {
-				color.assign( this.fragmentColorFn( color, uvCoords, vProgress, varyingProperty( 'float', 'vSide' ) ) )
+				color.assign( this.fragmentColorFn( color, uvCoords, vProgress, aSide ) )
 			}
 
 			return color
@@ -306,7 +303,7 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 			
 			// Apply opacity modifier if provided
 			if ( this.opacityFn ) {
-				alpha.assign( this.opacityFn( alpha, vProgress, vSide ) )
+				alpha.assign( this.opacityFn( alpha, vProgress, aSide ) )
 			}
 
 			Discard( alpha.lessThan( this.alphaTest ) )
@@ -316,7 +313,7 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 				
 				// Apply dash modifier if provided
 				if ( this.dashFn ) {
-					cyclePosition.assign( this.dashFn( cyclePosition, vProgress, vSide ) )
+					cyclePosition.assign( this.dashFn( cyclePosition, vProgress, aSide ) )
 				}
 				
 				// dashRatio represents a dash portion: 0.1 = 10% dash, 90% gap
@@ -325,12 +322,12 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 			}
 
 			if ( this.discardFn ) {
-				Discard( this.discardFn( vProgress, vSide, uvCoords ) )
+				Discard( this.discardFn( vProgress, aSide, uvCoords ) )
 			}
 			
 			// Apply fragment alpha modifier if provided
 			if ( this.fragmentAlphaFn ) {
-				alpha.assign( this.fragmentAlphaFn( alpha, uvCoords, vProgress, vSide ) )
+				alpha.assign( this.fragmentAlphaFn( alpha, uvCoords, vProgress, aSide ) )
 			}
 
 			return alpha
