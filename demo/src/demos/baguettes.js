@@ -1,7 +1,6 @@
+import { MeshLine } from 'makio-meshline'
 import { BufferAttribute, CatmullRomCurve3, Fog, SRGBColorSpace, TextureLoader, Vector3 } from 'three'
 import { attribute, Fn } from 'three/tsl'
-
-import { MeshLine } from 'makio-meshline'
 
 import { stage } from '@/makio/core/stage'
 import OrbitControl from '@/makio/three/controls/OrbitControl'
