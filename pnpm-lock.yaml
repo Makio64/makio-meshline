@@ -14,8 +14,8 @@ importers:
   .:
     devDependencies:
       '@stylistic/eslint-plugin':
-        specifier: ^5.2.3
-        version: 5.2.3(eslint@9.34.0)
+        specifier: ^5.3.1
+        version: 5.3.1(eslint@9.34.0)
       eslint:
         specifier: ^9.34.0
         version: 9.34.0
@@ -682,12 +682,6 @@ packages:
   '@shikijs/vscode-textmate@10.0.2':
     resolution: {integrity: sha512-83yeghZ2xxin3Nj8z1NMd/NCuca+gsYXswywDy5bHvwlWL8tpTQmzGeUuHd9FC3E/SBEMvzJRwWEOz5gGes9Qg==}
 
-  '@stylistic/eslint-plugin@5.2.3':
-    resolution: {integrity: sha512-oY7GVkJGVMI5benlBDCaRrSC1qPasafyv5dOBLLv5MTilMGnErKhO6ziEfodDDIZbo5QxPUNW360VudJOFODMw==}
-    engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
-    peerDependencies:
-      eslint: '>=9.0.0'
-
   '@stylistic/eslint-plugin@5.3.1':
     resolution: {integrity: sha512-Ykums1VYonM0TgkD0VteVq9mrlO2FhF48MDJnPyv3MktIB2ydtuhlO0AfWm7xnW1kyf5bjOqA6xc7JjviuVTxg==}
     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
@@ -723,10 +717,6 @@ packages:
 
   '@types/web-bluetooth@0.0.21':
     resolution: {integrity: sha512-oIQLCGWtcFZy2JW77j9k8nHzAOpqMHLQejDA48XXMWH6tjCQHz5RCFz1bzsmROyL6PUm+LLnUiI4BCn221inxA==}
-
-  '@typescript-eslint/types@8.40.0':
-    resolution: {integrity: sha512-ETdbFlgbAmXHyFPwqUIYrfc12ArvpBhEVgGAxVYSwli26dn8Ko+lIo4Su9vI9ykTZdJn+vJprs/0eZU0YMAEQg==}
-    engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
 
   '@typescript-eslint/types@8.42.0':
     resolution: {integrity: sha512-LdtAWMiFmbRLNP7JNeY0SqEtJvGMYSzfiWBSmx+VSZ1CH+1zyl8Mmw1TT39OrtsRvIYShjJWzTDMPWZJCpwBlw==}
@@ -2262,6 +2252,11 @@ snapshots:
       eslint: 9.35.0
       eslint-visitor-keys: 3.4.3
 
+  '@eslint-community/eslint-utils@4.9.0(eslint@9.34.0)':
+    dependencies:
+      eslint: 9.34.0
+      eslint-visitor-keys: 3.4.3
+
   '@eslint-community/eslint-utils@4.9.0(eslint@9.35.0)':
     dependencies:
       eslint: 9.35.0
@@ -2496,10 +2491,10 @@ snapshots:
 
   '@shikijs/vscode-textmate@10.0.2': {}
 
-  '@stylistic/eslint-plugin@5.2.3(eslint@9.34.0)':
+  '@stylistic/eslint-plugin@5.3.1(eslint@9.34.0)':
     dependencies:
-      '@eslint-community/eslint-utils': 4.7.0(eslint@9.34.0)
-      '@typescript-eslint/types': 8.40.0
+      '@eslint-community/eslint-utils': 4.9.0(eslint@9.34.0)
+      '@typescript-eslint/types': 8.42.0
       eslint: 9.34.0
       eslint-visitor-keys: 4.2.1
       espree: 10.4.0
@@ -2508,7 +2503,7 @@ snapshots:
 
   '@stylistic/eslint-plugin@5.3.1(eslint@9.35.0)':
     dependencies:
-      '@eslint-community/eslint-utils': 4.7.0(eslint@9.35.0)
+      '@eslint-community/eslint-utils': 4.9.0(eslint@9.35.0)
       '@typescript-eslint/types': 8.42.0
       eslint: 9.35.0
       eslint-visitor-keys: 4.2.1
@@ -2545,8 +2540,6 @@ snapshots:
   '@types/unist@3.0.3': {}
 
   '@types/web-bluetooth@0.0.21': {}
-
-  '@typescript-eslint/types@8.40.0': {}
 
   '@typescript-eslint/types@8.42.0': {}
 
