@@ -29,7 +29,7 @@
 		"@vitejs/plugin-vue": "^6.0.1",
 		"eslint": "^9.35.0",
 		"eslint-plugin-simple-import-sort": "^12.1.1",
-		"eslint-plugin-vue": "^10.4.0",
+		"eslint-plugin-vue": "^10.5.0",
 		"rollup-plugin-visualizer": "^6.0.3",
 		"stylus": "^0.64.0",
 		"terser": "^5.44.0",
