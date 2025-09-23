@@ -17,6 +17,7 @@ import ricefield from '@/demos/ricefield'
 import sandbox from '@/demos/sandbox'
 import stress from '@/demos/stress'
 import venus from '@/demos/venus'
+import vertexColors from '@/demos/vertexColors'
 import waves from '@/demos/waves'
 import { contentLoaded } from '@/store'
 
@@ -43,6 +44,7 @@ export default {
 			ghost,
 			'venus-and-david': venus,
 			baguettes,
+			'vertex-colors': vertexColors,
 		}
 		this.example = mapping[id] || basic
 
@@ -59,6 +61,7 @@ export default {
 			ghost: 'ghost.js',
 			'venus-and-david': 'venus.js',
 			baguettes: 'baguettes.js',
+			'vertex-colors': 'vertexColors.js',
 			basic: 'basic.js'
 		}
 		const file = fileMap[id] || 'basic.js'

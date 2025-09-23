@@ -17,6 +17,7 @@ export class MeshLineGeometry extends BufferGeometry {
 			needsSide: true,
 			needsProgress: true,
 			needsWidth: false,
+			needsVertexColor: false,
 			verbose: false,
 			...options
 		}
@@ -36,7 +37,7 @@ export class MeshLineGeometry extends BufferGeometry {
 
 	// set multiple lines from an array of points arrays
 	setLines( lines ) {
-		
+
 		if ( !lines ) throw new Error( '[MeshLine] Lines data required' )
 
 		// If lines is not an array, convert it to an array
@@ -183,7 +184,7 @@ export class MeshLineGeometry extends BufferGeometry {
 		if ( totalVertices === 0 ) return
 
 		// Initialize arrays
-		let positions, previous, next, sides, widths, uvs, progress
+		let positions, previous, next, sides, widths, uvs, progress, colors
 		if ( this.options.needsPositions ) {
 			positions = new Float32Array( totalVertices * 3 )
 		}
@@ -204,6 +205,9 @@ export class MeshLineGeometry extends BufferGeometry {
 		}
 		if ( this.options.needsProgress ) {
 			progress = new Float32Array( totalVertices )
+		}
+		if ( this.options.needsVertexColor && this.options.vertexColors ) {
+			colors = new Float32Array( totalVertices * 3 )
 		}
 
 		// Use 32-bit indices if we exceed the 16-bit limit (65 535)
@@ -261,10 +265,23 @@ export class MeshLineGeometry extends BufferGeometry {
 					uvs[vertexOffset * 2 + 3] = 1
 				}
 
-				// progress 
+				// progress
 				if ( progress ) {
 					progress[vertexOffset] = t
 					progress[vertexOffset + 1] = t
+				}
+
+				// colors - expects Float32Array or flat array of RGB values
+				if ( colors && this.options.vertexColors ) {
+					const vc = this.options.vertexColors
+					if ( vc instanceof Float32Array || ( Array.isArray( vc ) && typeof vc[0] === 'number' ) ) {
+						if ( vc.length > i * 3 ) {
+							const o = i * 3, vo = vertexOffset * 3
+							colors[vo] = colors[vo + 3] = vc[o]
+							colors[vo + 1] = colors[vo + 4] = vc[o + 1]
+							colors[vo + 2] = colors[vo + 5] = vc[o + 2]
+						}
+					}
 				}
 
 				// previous
@@ -384,6 +401,9 @@ export class MeshLineGeometry extends BufferGeometry {
 		}
 		if ( progress ) {
 			this.setOrUpdateAttribute( 'progress', progress, 1 )
+		}
+		if ( colors ) {
+			this.setOrUpdateAttribute( 'vertexColor', colors, 3 )
 		}
 
 		// Set indices

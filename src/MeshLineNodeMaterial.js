@@ -15,6 +15,7 @@ const fix = Fn( ( [i_immutable, aspect_immutable] ) => {
 // build these nodes once for all instances
 const aSide = attribute( 'side', 'float' )
 const aProgress = attribute( 'progress', 'float' )
+const aColor = attribute( 'vertexColor', 'vec3' )
 const aWidth = attribute( 'width', 'float' )
 const vWidth = varyingProperty( 'float', 'vWidth' )
 const vProgress = varyingProperty( 'float', 'vProgress' )
@@ -141,7 +142,11 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 		this.vertexNode = Fn( () => {
 
 			let color = vec4( this.color, 1 ).toVar( 'color' )
-			
+
+			if ( this.options.needsVertexColor ) {
+				color.rgb.mulAssign( aColor )
+			}
+
 			if ( this.colorFn ) {
 				color.assign( this.colorFn( color, aProgress, aSide ) )
 			}

@@ -15,7 +15,7 @@ const defaultPositions = straightLine( 2 )
 export default class MeshLine extends Mesh {
 
 	constructor() {
-		
+
 		super( new MeshLineGeometry(), new MeshLineNodeMaterial() )
 
 		this._options = {
@@ -36,6 +36,7 @@ export default class MeshLine extends Mesh {
 			map: null,
 			mapOffset: null,
 			alphaMap: null,
+			vertexColors: null,
 			
 			dashCount: null,
 			dashRatio: null,
@@ -70,6 +71,7 @@ export default class MeshLine extends Mesh {
 			const closed = options.closed ?? this._options.closed
 			this.lines( lines, closed )
 		}
+		if ( options.vertexColors !== undefined ) this.vertexColors( options.vertexColors )
 		if ( options.color !== undefined ) this.color( options.color )
 		if ( options.lineWidth !== undefined ) this.lineWidth( options.lineWidth )
 		if ( options.widthCallback !== undefined ) this.widthCallback( options.widthCallback )
@@ -266,62 +268,51 @@ export default class MeshLine extends Mesh {
 
 	instances( instanceCount ) {
 		this._options.instanceCount = instanceCount
-		if ( this._built ) {
-			console.warn( "MeshLine: Changing instance count after build is not supported yet." )
-		}
+		this._warnIfBuilt( 'instance count' )
 		return this
 	}
 
 	// Optional attribute toggles
 	needsUV( needsUV ) {
 		this._options.needsUV = needsUV
-		if ( this._built ) {
-			console.warn( "MeshLine: Changing UV needs after build is not supported yet." )
-		}
+		this._warnIfBuilt( 'UV needs' )
 		return this
 	}
 	needsWidth( needsWidth ) {
 		this._options.needsWidth = needsWidth
-		if ( this._built ) {
-			console.warn( "MeshLine: Changing width needs after build is not supported yet." )
-		}
+		this._warnIfBuilt( 'width needs' )
 		return this
 	}
 	needsProgress( needsProgress ) {
 		this._options.needsProgress = needsProgress
-		if ( this._built ) {
-			console.warn( "MeshLine: Changing progress needs after build is not supported yet." )
-		}
+		this._warnIfBuilt( 'progress needs' )
 		return this
 	}
 	needsPrevious( needsPrevious ) {
 		this._options.needsPrevious = needsPrevious
-		if ( this._built ) {
-			console.warn( "MeshLine: Changing previous needs after build is not supported yet." )
-		}
+		this._warnIfBuilt( 'previous needs' )
 		return this
 	}
 	needsNext( needsNext ) {
 		this._options.needsNext = needsNext
-		if ( this._built ) {
-			console.warn( "MeshLine: Changing next needs after build is not supported yet." )
-		}
+		this._warnIfBuilt( 'next needs' )
 		return this
 	}
 	needsSide( needsSide ) {
 		this._options.needsSide = needsSide
-		if ( this._built ) {
-			console.warn( "MeshLine: Changing side needs after build is not supported yet." )
-		}
+		this._warnIfBuilt( 'side needs' )
+		return this
+	}
+	needsVertexColor( needsVertexColor ) {
+		this._options.needsVertexColor = needsVertexColor
+		this._warnIfBuilt( 'color needs' )
 		return this
 	}
 
 	// Chainable methods for node hooks
 	positionFn( fn ) {
 		this._options.positionFn = fn
-		if ( this._built ) {
-			console.warn( "MeshLine: Changing position function after build is not supported yet." )
-		}
+		this._warnIfBuilt( 'position function' )
 		return this
 	}
 
@@ -403,6 +394,11 @@ export default class MeshLine extends Mesh {
 		return this
 	}
 
+	vertexColors( colors ) {
+		this._options.vertexColors = colors
+		return this
+	}
+
 	build() {
 		const options = this._options
 
@@ -415,6 +411,7 @@ export default class MeshLine extends Mesh {
 		options.needsProgress = options.needsProgress ?? true
 		options.needsSide = options.needsSide ?? true
 		options.needsUV = options.needsUV ?? ( options.map || options.alphaMap )
+		options.needsVertexColor = options.needsVertexColor ?? !!options.vertexColors
 
 		// If using GPU position node, we don't need previous/next positions
 		options.needsPrevious = options.needsPrevious ?? options.gpuPositionNode ? false : true
@@ -522,6 +519,10 @@ export default class MeshLine extends Mesh {
 		target.addEventListener( 'resize', this._autoResizeHandler )
 		this._autoResizeTarget = target
 		return this
+	}
+
+	_warnIfBuilt = ( feature ) => {
+		if ( this._built ) console.warn( `MeshLine: Changing ${feature} after build is not supported yet.` )
 	}
 
 	dispose = () => {
