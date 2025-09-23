@@ -25,6 +25,7 @@ export default defineConfig({
         items: [
           { text: 'Interactive Sandbox', link: '/examples/sandbox' },
           { text: 'Basic Examples', link: '/examples/basic' },
+          { text: 'Vertex Colors', link: '/examples/vertex-colors' },
           { text: 'Follow', link: '/examples/follow' },
           { text: 'GPU position', link: '/examples/gpucircle' },
           { text: 'Instancing', link: '/examples/instancing' },

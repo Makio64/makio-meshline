@@ -40,6 +40,7 @@ See [Common Patterns](./common-patterns.md) for more examples.
 - `widthCallback(callback: (t: number) => number)` - Set variable width function
 - `sizeAttenuation(enable: boolean)` - Enable/disable size attenuation
 - `gradientColor(color: number | THREE.Color)` - Set gradient end color
+- `vertexColors(colors: Float32Array | number[])` - Set per-vertex RGB colors
 - `opacity(opacity: number)` - Set opacity level
 
 **Material Properties:**
@@ -97,6 +98,7 @@ These controls give you control on which attributes are added to the geometry.
 - `needsPrevious(enable: boolean)` - Control previous position attribute generation
 - `needsNext(enable: boolean)` - Control next position attribute generation
 - `needsSide(enable: boolean)` - Control side attribute generation
+- `needsVertexColor(enable: boolean)` - Control vertex color attribute generation
 
 **Building:**
 - `build()` - Finalize configuration and build the line (returns the instance).
@@ -121,6 +123,7 @@ interface MeshLineOptions {
   widthCallback?: (t: number) => number      // variable width modifier
   sizeAttenuation?: boolean
   gradientColor?: number | null              // End-gradient colour
+  vertexColors?: Float32Array | number[]     // Per-vertex RGB colors
 
   // ***Textures***
   map?: THREE.Texture | null
@@ -150,6 +153,7 @@ interface MeshLineOptions {
   needsPrevious?: boolean
   needsNext?: boolean
   needsSide?: boolean
+  needsVertexColor?: boolean                    // generate vertex color attribute
   renderWidth?: number
   renderHeight?: number
 
@@ -198,6 +202,8 @@ interface MeshLineOptions {
 - **`sizeAttenuation`** (`boolean`) — Whether line width should scale with camera distance. When `false`, lines maintain constant pixel width regardless of distance. Default: `true`.
 
 - **`gradientColor`** (`number | null`) — Optional gradient end color. When set, the line will smoothly transition from `color` to `gradientColor` along its length. Default: `null` (no gradient).
+
+- **`vertexColors`** (`Float32Array | number[]`) — Per-vertex RGB colors for individual point coloring. Should be a flat array of RGB values (0-1 range) with 3 values per vertex. When set, each point along the line can have its own color, multiplied with the base `color`. Best used with `Float32Array` for performance. Default: `null` (no vertex colors).
 
 ### Textures
 
