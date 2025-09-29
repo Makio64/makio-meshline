@@ -11,7 +11,7 @@
 		"lint": "eslint src --fix"
 	},
 	"dependencies": {
-		"animejs": "^4.1.4",
+		"animejs": "^4.2.0",
 		"lil-gui": "^0.20.0",
 		"makio-meshline": "workspace:*",
 		"shiki": "^3.13.0",
