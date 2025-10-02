@@ -89,8 +89,8 @@ importers:
         specifier: ^10.5.0
         version: 10.5.0(@stylistic/eslint-plugin@5.4.0(eslint@9.36.0))(eslint@9.36.0)(vue-eslint-parser@10.2.0(eslint@9.36.0))
       rollup-plugin-visualizer:
-        specifier: ^6.0.3
-        version: 6.0.3(rollup@4.48.0)
+        specifier: ^6.0.4
+        version: 6.0.4(rollup@4.48.0)
       stylus:
         specifier: ^0.64.0
         version: 0.64.0
@@ -1570,8 +1570,8 @@ packages:
   rfdc@1.4.1:
     resolution: {integrity: sha512-q1b3N5QkRUWUl7iyylaaj3kOpIT0N2i9MqIEQXP73GVsN9cw3fdx8X63cEmWhJGi2PPCF23Ijp7ktmd39rawIA==}
 
-  rollup-plugin-visualizer@6.0.3:
-    resolution: {integrity: sha512-ZU41GwrkDcCpVoffviuM9Clwjy5fcUxlz0oMoTXTYsK+tcIFzbdacnrr2n8TXcHxbGKKXtOdjxM2HUS4HjkwIw==}
+  rollup-plugin-visualizer@6.0.4:
+    resolution: {integrity: sha512-q8Q7J/6YofkmaGW1sH/fPRAz37x/+pd7VBuaUU7lwvOS/YikuiiEU9jeb9PH8XHiq50XFrUsBbOxeAMYQ7KZkg==}
     engines: {node: '>=18'}
     hasBin: true
     peerDependencies:
@@ -3351,7 +3351,7 @@ snapshots:
 
   rfdc@1.4.1: {}
 
-  rollup-plugin-visualizer@6.0.3(rollup@4.48.0):
+  rollup-plugin-visualizer@6.0.4(rollup@4.48.0):
     dependencies:
       open: 8.4.2
       picomatch: 4.0.3
