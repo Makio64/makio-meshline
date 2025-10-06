@@ -37,8 +37,8 @@ importers:
   demo:
     dependencies:
       animejs:
-        specifier: ^4.1.4
-        version: 4.1.4
+        specifier: ^4.2.1
+        version: 4.2.1
       lil-gui:
         specifier: ^0.20.0
         version: 0.20.0
@@ -839,8 +839,8 @@ packages:
     resolution: {integrity: sha512-Y+moNhsqgLmvJdgTsO4GZNgsaDWv8AOGAaPeIeHKlDn/XunoAqYbA+XNpBd1dW8GOXAUDyxC9Rxc7AV4kpFcIg==}
     engines: {node: '>= 14.0.0'}
 
-  animejs@4.1.4:
-    resolution: {integrity: sha512-BdnlkOx959ehvD56Gog6qafRIn6U1gOS5ZNNGK/QHbCv3Ha09IDarplQJbujavki0uT4moeP5RagtoPplhvPAQ==}
+  animejs@4.2.1:
+    resolution: {integrity: sha512-KHtQ1fC89wc9Lsaos9hmadyr8FUenxUnaOfpK8Lr8oAVtu2KUzTwBcaHtfwNOnNdZbgQVQCEdy3KKqawerDutQ==}
 
   ansi-regex@5.0.1:
     resolution: {integrity: sha512-quJQXlTSUGL2LH9SUXo8VwsY4soanhgo6LNSm84E1LBcE8s3O0wpdiRzyR9z/ZZJMlMWv37qOOb9pdJlMUEKFQ==}
@@ -2631,7 +2631,7 @@ snapshots:
       '@algolia/requester-fetch': 5.35.0
       '@algolia/requester-node-http': 5.35.0
 
-  animejs@4.1.4: {}
+  animejs@4.2.1: {}
 
   ansi-regex@5.0.1: {}
 
