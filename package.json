@@ -13,11 +13,11 @@
   },
   "devDependencies": {
     "@stylistic/eslint-plugin": "^5.4.0",
-    "eslint": "^9.36.0",
+    "eslint": "^9.37.0",
     "eslint-plugin-simple-import-sort": "^12.1.1",
     "eslint-plugin-unused-imports": "^4.2.0",
     "eslint-plugin-vue": "^10.5.0",
-    "typescript": "^5.9.2"
+    "typescript": "^5.9.3"
   },
-  "packageManager": "pnpm@10.17.1"
+  "packageManager": "pnpm@10.18.1"
 }

@@ -11,7 +11,7 @@
     "vitepress": "^1.6.4"
   },
   "dependencies": {
-    "makio-meshline": "^1.0.3",
+    "makio-meshline": "^1.0.4",
     "three": "^0.180.0"
   }
 }
