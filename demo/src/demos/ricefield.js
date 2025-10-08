@@ -121,7 +121,7 @@ class RicefieldExample {
 
 	initWater() {
 		// water - size based on quadtree + padding
-		const reflection = reflector( { resolution: isMobile ? 0.5 : 1, bounces: false, generateMipmaps: true } ) // 0.5 is half of the rendering view
+		const reflection = reflector( { resolutionScale: isMobile ? 0.5 : 1, bounces: false, generateMipmaps: true } ) // 0.5 is half of the rendering view
 		this.reflectionTarget = reflection.target
 		this.reflectionTarget.rotateX( - Math.PI / 2 )
 		stage3d.add( this.reflectionTarget )
