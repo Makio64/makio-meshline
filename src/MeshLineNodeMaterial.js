@@ -265,7 +265,7 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 			
 			// Apply UV modifier if provided
 			if ( this.uvFn ) {
-				uvCoords.assign( this.uvFn( uvCoords, vProgress, aSide ) )
+				uvCoords = this.uvFn( uvCoords, vProgress, aSide )
 			}
 		}
 		// Color node
