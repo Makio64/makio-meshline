@@ -12,7 +12,7 @@
 	},
 	"dependencies": {
 		"animejs": "^4.2.2",
-		"lil-gui": "^0.20.0",
+		"lil-gui": "^0.21.0",
 		"makio-meshline": "workspace:*",
 		"shiki": "^3.13.0",
 		"simplify-js": "^1.2.4",
