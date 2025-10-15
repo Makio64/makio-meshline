@@ -16,7 +16,7 @@
     "eslint": "^9.37.0",
     "eslint-plugin-simple-import-sort": "^12.1.1",
     "eslint-plugin-unused-imports": "^4.2.0",
-    "eslint-plugin-vue": "^10.5.0",
+    "eslint-plugin-vue": "^10.5.1",
     "typescript": "^5.9.3"
   },
   "packageManager": "pnpm@10.18.1"
