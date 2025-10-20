@@ -16,8 +16,8 @@ importers:
   .:
     devDependencies:
       '@stylistic/eslint-plugin':
-        specifier: ^5.4.0
-        version: 5.4.0(eslint@9.37.0)
+        specifier: ^5.5.0
+        version: 5.5.0(eslint@9.37.0)
       eslint:
         specifier: ^9.37.0
         version: 9.37.0
@@ -29,7 +29,7 @@ importers:
         version: 4.2.0(eslint@9.37.0)
       eslint-plugin-vue:
         specifier: ^10.5.0
-        version: 10.5.0(@stylistic/eslint-plugin@5.4.0(eslint@9.37.0))(eslint@9.37.0)(vue-eslint-parser@10.2.0(eslint@9.37.0))
+        version: 10.5.0(@stylistic/eslint-plugin@5.5.0(eslint@9.37.0))(eslint@9.37.0)(vue-eslint-parser@10.2.0(eslint@9.37.0))
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
@@ -74,8 +74,8 @@ importers:
         specifier: ^3.3.1
         version: 3.3.1
       '@stylistic/eslint-plugin':
-        specifier: ^5.4.0
-        version: 5.4.0(eslint@9.37.0)
+        specifier: ^5.5.0
+        version: 5.5.0(eslint@9.37.0)
       '@vitejs/plugin-vue':
         specifier: ^6.0.1
         version: 6.0.1(vite@7.1.9(@types/node@20.19.9)(stylus@0.64.0)(terser@5.44.0))(vue@3.5.22(typescript@5.9.3))
@@ -87,7 +87,7 @@ importers:
         version: 12.1.1(eslint@9.37.0)
       eslint-plugin-vue:
         specifier: ^10.5.0
-        version: 10.5.0(@stylistic/eslint-plugin@5.4.0(eslint@9.37.0))(eslint@9.37.0)(vue-eslint-parser@10.2.0(eslint@9.37.0))
+        version: 10.5.0(@stylistic/eslint-plugin@5.5.0(eslint@9.37.0))(eslint@9.37.0)(vue-eslint-parser@10.2.0(eslint@9.37.0))
       rollup-plugin-visualizer:
         specifier: ^6.0.4
         version: 6.0.4(rollup@4.48.0)
@@ -683,8 +683,8 @@ packages:
   '@shikijs/vscode-textmate@10.0.2':
     resolution: {integrity: sha512-83yeghZ2xxin3Nj8z1NMd/NCuca+gsYXswywDy5bHvwlWL8tpTQmzGeUuHd9FC3E/SBEMvzJRwWEOz5gGes9Qg==}
 
-  '@stylistic/eslint-plugin@5.4.0':
-    resolution: {integrity: sha512-UG8hdElzuBDzIbjG1QDwnYH0MQ73YLXDFHgZzB4Zh/YJfnw8XNsloVtytqzx0I2Qky9THSdpTmi8Vjn/pf/Lew==}
+  '@stylistic/eslint-plugin@5.5.0':
+    resolution: {integrity: sha512-IeZF+8H0ns6prg4VrkhgL+yrvDXWDH2cKchrbh80ejG9dQgZWp10epHMbgRuQvgchLII/lfh6Xn3lu6+6L86Hw==}
     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
     peerDependencies:
       eslint: '>=9.0.0'
@@ -719,8 +719,8 @@ packages:
   '@types/web-bluetooth@0.0.21':
     resolution: {integrity: sha512-oIQLCGWtcFZy2JW77j9k8nHzAOpqMHLQejDA48XXMWH6tjCQHz5RCFz1bzsmROyL6PUm+LLnUiI4BCn221inxA==}
 
-  '@typescript-eslint/types@8.44.1':
-    resolution: {integrity: sha512-Lk7uj7y9uQUOEguiDIDLYLJOrYHQa7oBiURYVFqIpGxclAFQ78f6VUOM8lI2XEuNOKNB7XuvM2+2cMXAoq4ALQ==}
+  '@typescript-eslint/types@8.46.1':
+    resolution: {integrity: sha512-C+soprGBHwWBdkDpbaRC4paGBrkIXxVlNohadL5o0kfhsXqOC6GYH2S/Obmig+I0HTDl8wMaRySwrfrXVP8/pQ==}
     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
 
   '@ungap/structured-clone@1.3.0':
@@ -2449,10 +2449,10 @@ snapshots:
 
   '@shikijs/vscode-textmate@10.0.2': {}
 
-  '@stylistic/eslint-plugin@5.4.0(eslint@9.37.0)':
+  '@stylistic/eslint-plugin@5.5.0(eslint@9.37.0)':
     dependencies:
       '@eslint-community/eslint-utils': 4.9.0(eslint@9.37.0)
-      '@typescript-eslint/types': 8.44.1
+      '@typescript-eslint/types': 8.46.1
       eslint: 9.37.0
       eslint-visitor-keys: 4.2.1
       espree: 10.4.0
@@ -2489,7 +2489,7 @@ snapshots:
 
   '@types/web-bluetooth@0.0.21': {}
 
-  '@typescript-eslint/types@8.44.1': {}
+  '@typescript-eslint/types@8.46.1': {}
 
   '@ungap/structured-clone@1.3.0': {}
 
@@ -2854,7 +2854,7 @@ snapshots:
     dependencies:
       eslint: 9.37.0
 
-  eslint-plugin-vue@10.5.0(@stylistic/eslint-plugin@5.4.0(eslint@9.37.0))(eslint@9.37.0)(vue-eslint-parser@10.2.0(eslint@9.37.0)):
+  eslint-plugin-vue@10.5.0(@stylistic/eslint-plugin@5.5.0(eslint@9.37.0))(eslint@9.37.0)(vue-eslint-parser@10.2.0(eslint@9.37.0)):
     dependencies:
       '@eslint-community/eslint-utils': 4.9.0(eslint@9.37.0)
       eslint: 9.37.0
@@ -2865,7 +2865,7 @@ snapshots:
       vue-eslint-parser: 10.2.0(eslint@9.37.0)
       xml-name-validator: 4.0.0
     optionalDependencies:
-      '@stylistic/eslint-plugin': 5.4.0(eslint@9.37.0)
+      '@stylistic/eslint-plugin': 5.5.0(eslint@9.37.0)
 
   eslint-scope@8.4.0:
     dependencies:
@@ -3732,7 +3732,7 @@ snapshots:
 
   vue-tiny-router@1.6.0(eslint@9.37.0)(vue@3.5.22(typescript@5.9.3)):
     dependencies:
-      '@stylistic/eslint-plugin': 5.4.0(eslint@9.37.0)
+      '@stylistic/eslint-plugin': 5.5.0(eslint@9.37.0)
       vue: 3.5.22(typescript@5.9.3)
     transitivePeerDependencies:
       - eslint
