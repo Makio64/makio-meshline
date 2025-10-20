@@ -64,8 +64,8 @@ importers:
         specifier: ^3.5.22
         version: 3.5.22(typescript@5.9.3)
       vue-tiny-router:
-        specifier: ^1.6.0
-        version: 1.6.0(eslint@9.37.0)(vue@3.5.22(typescript@5.9.3))
+        specifier: ^1.7.0
+        version: 1.7.0(eslint@9.37.0)(vue@3.5.22(typescript@5.9.3))
       vue-tiny-translation:
         specifier: ^1.0.0
         version: 1.0.0(vue@3.5.22(typescript@5.9.3))
@@ -689,6 +689,12 @@ packages:
     peerDependencies:
       eslint: '>=9.0.0'
 
+  '@stylistic/eslint-plugin@5.5.0':
+    resolution: {integrity: sha512-IeZF+8H0ns6prg4VrkhgL+yrvDXWDH2cKchrbh80ejG9dQgZWp10epHMbgRuQvgchLII/lfh6Xn3lu6+6L86Hw==}
+    engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
+    peerDependencies:
+      eslint: '>=9.0.0'
+
   '@types/estree@1.0.8':
     resolution: {integrity: sha512-dWHzHa2WqEXI/O1E9OjrocMTKJl2mSrEolh1Iomrv6U+JuNwaHXsXx9bLu5gG7BUWFIN0skIQJQ/L1rIex4X6w==}
 
@@ -721,6 +727,10 @@ packages:
 
   '@typescript-eslint/types@8.44.1':
     resolution: {integrity: sha512-Lk7uj7y9uQUOEguiDIDLYLJOrYHQa7oBiURYVFqIpGxclAFQ78f6VUOM8lI2XEuNOKNB7XuvM2+2cMXAoq4ALQ==}
+    engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
+
+  '@typescript-eslint/types@8.46.1':
+    resolution: {integrity: sha512-C+soprGBHwWBdkDpbaRC4paGBrkIXxVlNohadL5o0kfhsXqOC6GYH2S/Obmig+I0HTDl8wMaRySwrfrXVP8/pQ==}
     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
 
   '@ungap/structured-clone@1.3.0':
@@ -1880,8 +1890,8 @@ packages:
     peerDependencies:
       eslint: ^8.57.0 || ^9.0.0
 
-  vue-tiny-router@1.6.0:
-    resolution: {integrity: sha512-8BynRlCTEmdb7NeeAP84GIDL0nuKQL5vqQWgpoWsUsyVu2mekzjcDMqevuMpIvktvrDzdZ1J3oZPpPJp1lzEhA==}
+  vue-tiny-router@1.7.0:
+    resolution: {integrity: sha512-im4o/I0ErSvFJU346atFmRrOiK4M7DoQySfpaxlfwr5OSluw+N+i8gsGAfrUfZXOxk7l0vpxOTaD82mcifi2Iw==}
     peerDependencies:
       vue: ^3.0.0
 
@@ -2459,6 +2469,16 @@ snapshots:
       estraverse: 5.3.0
       picomatch: 4.0.3
 
+  '@stylistic/eslint-plugin@5.5.0(eslint@9.37.0)':
+    dependencies:
+      '@eslint-community/eslint-utils': 4.9.0(eslint@9.37.0)
+      '@typescript-eslint/types': 8.46.1
+      eslint: 9.37.0
+      eslint-visitor-keys: 4.2.1
+      espree: 10.4.0
+      estraverse: 5.3.0
+      picomatch: 4.0.3
+
   '@types/estree@1.0.8': {}
 
   '@types/hast@3.0.4':
@@ -2490,6 +2510,8 @@ snapshots:
   '@types/web-bluetooth@0.0.21': {}
 
   '@typescript-eslint/types@8.44.1': {}
+
+  '@typescript-eslint/types@8.46.1': {}
 
   '@ungap/structured-clone@1.3.0': {}
 
@@ -3730,9 +3752,9 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  vue-tiny-router@1.6.0(eslint@9.37.0)(vue@3.5.22(typescript@5.9.3)):
+  vue-tiny-router@1.7.0(eslint@9.37.0)(vue@3.5.22(typescript@5.9.3)):
     dependencies:
-      '@stylistic/eslint-plugin': 5.4.0(eslint@9.37.0)
+      '@stylistic/eslint-plugin': 5.5.0(eslint@9.37.0)
       vue: 3.5.22(typescript@5.9.3)
     transitivePeerDependencies:
       - eslint
