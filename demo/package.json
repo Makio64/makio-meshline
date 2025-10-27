@@ -14,7 +14,7 @@
 		"animejs": "^4.2.2",
 		"lil-gui": "^0.20.0",
 		"makio-meshline": "workspace:*",
-		"shiki": "^3.13.0",
+		"shiki": "^3.14.0",
 		"simplify-js": "^1.2.4",
 		"stats-gl": "^3.6.0",
 		"three": "^0.180.0",
