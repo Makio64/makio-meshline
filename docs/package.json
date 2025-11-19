@@ -12,6 +12,6 @@
   },
   "dependencies": {
     "makio-meshline": "^1.0.5",
-    "three": "^0.180.0"
+    "three": "^0.181.2"
   }
 }
