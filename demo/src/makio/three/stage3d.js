@@ -70,11 +70,11 @@ class Stage3D {
 			this.postProcessing.render()
 		} else {
 			if ( this.stats ) {
-				await this.renderer.renderAsync( this.scene, this.camera ) // await necessary else negative value output
-				this.renderer.resolveTimestampsAsync( TimestampQuery.RENDER )
+				this.renderer.render( this.scene, this.camera )
+				await this.renderer.resolveTimestampsAsync( TimestampQuery.RENDER )
 				this.stats.update()
 			} else {
-				this.renderer.renderAsync( this.scene, this.camera )
+				this.renderer.render( this.scene, this.camera )
 			}
 		}
 	}

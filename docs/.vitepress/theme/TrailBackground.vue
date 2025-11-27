@@ -52,12 +52,12 @@ onMounted( async () => {
 		renderer.setClearColor( 0x000000, 0 )
 		await renderer.init()
 		canvasContainer.value.appendChild( renderer.domElement )
-		
+
 		// Setup scene and camera
 		scene = new THREE.Scene()
 		camera = new THREE.PerspectiveCamera( 50, window.innerWidth / window.innerHeight, 0.1, 100 )
 		camera.position.z = 5
-		await renderer.renderAsync(scene, camera)
+		renderer.render( scene, camera )
 
 		// Check if dark mode
 		const isDarkMode = document.documentElement.classList.contains( 'dark' )
