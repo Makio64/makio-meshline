@@ -117,27 +117,36 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 
 	setupShaders( {  } ) {
 
-		let segments = this.options.lines?.length / 3 || 1
-		
+		// Calculate segments properly for both single and multi-line setups
+		let segments = this.options.segments || (
+			Array.isArray( this.options.lines?.[ 0 ] ) || this.options.lines?.[ 0 ] instanceof Float32Array
+				? this.options.lines[ 0 ].length / 3
+				: this.options.lines?.length / 3
+		) || 1
+
+		// Cache frequently-used attributes to prevent duplicate GPU computation
+		const progress = aProgress.toVar( 'varProgress' )
+		const side = aSide.toVar( 'varSide' )
+
 		// Get base positions first
-		let basePos = this.gpuPositionNode ? this.gpuPositionNode( aProgress, 0 ) : positionGeometry
-		let basePrevious = this.gpuPositionNode ? this.gpuPositionNode( aProgress.sub( 1 / segments ) ) : attribute( 'previous', 'vec3' ).toVar( 'aPrevious' )
-		let baseNext = this.gpuPositionNode ? this.gpuPositionNode( aProgress.add( 1 / segments ) ) : attribute( 'next', 'vec3' ).toVar( 'aNext' )
-		
+		let basePos = this.gpuPositionNode ? this.gpuPositionNode( progress, 0 ) : positionGeometry
+		let basePrevious = this.gpuPositionNode ? this.gpuPositionNode( progress.sub( 1 / segments ) ) : attribute( 'previous', 'vec3' ).toVar( 'aPrevious' )
+		let baseNext = this.gpuPositionNode ? this.gpuPositionNode( progress.add( 1 / segments ) ) : attribute( 'next', 'vec3' ).toVar( 'aNext' )
+
 		// Apply position modifiers consistently
 		let pos = basePos
 		let previous = basePrevious
 		let next = baseNext
-		
+
 		if ( this.positionFn ) {
-			pos = this.positionFn( pos, aProgress )
+			pos = this.positionFn( pos, progress )
 			// For instanced lines, the positionFn should be applied consistently to all positions
-			previous = this.positionFn( previous, aProgress )
-			next = this.positionFn( next, aProgress )
+			previous = this.positionFn( previous, progress )
+			next = this.positionFn( next, progress )
 		}
-		
-		if ( this.previousFn ) { previous = this.previousFn( previous, aProgress ) }
-		if ( this.nextFn ) { next = this.nextFn( next, aProgress ) }
+
+		if ( this.previousFn ) { previous = this.previousFn( previous, progress ) }
+		if ( this.nextFn ) { next = this.nextFn( next, progress ) }
 
 		this.vertexNode = Fn( () => {
 
@@ -148,14 +157,14 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 			}
 
 			if ( this.colorFn ) {
-				color.assign( this.colorFn( color, aProgress, aSide ) )
+				color.assign( this.colorFn( color, progress, side ) )
 			}
 
 			vColor.assign( color )
 
 			// Only assign vProgress if needed to reduce varying bandwidth
 			if ( this.gradient || this.dashCount || this.gradientFn || this.dashFn ) {
-				vProgress.assign( aProgress )
+				vProgress.assign( progress )
 			}
 
 			const aspect = this.resolution.x.div( this.resolution.y ).toVar( 'aspect' )
@@ -174,10 +183,10 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 			if ( this.options.needsWidth || this.widthFn ) {
 				w.mulAssign( aWidth )
 			}
-			
+
 			// Apply width modifier if provided
 			if ( this.widthFn ) {
-				w.assign( this.widthFn( w, aProgress, aSide ) )
+				w.assign( this.widthFn( w, progress, side ) )
 			}
 
 			vWidth.assign( w )
@@ -236,7 +245,7 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 
 			// Apply normal modifier if provided
 			if ( this.normalFn ) {
-				normal.assign( this.normalFn( normal, dir, dir1, dir2, aProgress, aSide ) )
+				normal.assign( this.normalFn( normal, dir, dir1, dir2, progress, side ) )
 			}
 
 			// un-stretch X
@@ -250,11 +259,11 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 				normal.xy.divAssign( this.resolution.y )
 			}
 
-			finalPosition.xy.addAssign( normal.xy.mul( aSide ) )
+			finalPosition.xy.addAssign( normal.xy.mul( side ) )
 
 			// Apply vertex modifier if provided
 			if ( this.vertexFn ) {
-				finalPosition.assign( this.vertexFn( finalPosition, normal, aProgress, aSide ) )
+				finalPosition.assign( this.vertexFn( finalPosition, normal, progress, side ) )
 			}
 			
 			return finalPosition
@@ -265,7 +274,7 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 			
 			// Apply UV modifier if provided
 			if ( this.uvFn ) {
-				uvCoords = this.uvFn( uvCoords, vProgress, aSide )
+				uvCoords = this.uvFn( uvCoords, vProgress, side )
 			}
 		}
 		// Color node
@@ -276,7 +285,7 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 
 				// Apply gradient modifier if provided
 				if ( this.gradientFn ) {
-					gradientFactor.assign( this.gradientFn( gradientFactor, aSide ) )
+					gradientFactor.assign( this.gradientFn( gradientFactor, side ) )
 				}
 				
 				color.rgb.assign( mix( color.rgb, this.gradient, gradientFactor ) )
@@ -288,7 +297,7 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 			
 			// Apply fragment color modifier if provided
 			if ( this.fragmentColorFn ) {
-				color.assign( this.fragmentColorFn( color, uvCoords, vProgress, aSide ) )
+				color.assign( this.fragmentColorFn( color, uvCoords, vProgress, side ) )
 			}
 
 			return color
@@ -308,7 +317,7 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 			
 			// Apply opacity modifier if provided
 			if ( this.opacityFn ) {
-				alpha.assign( this.opacityFn( alpha, vProgress, aSide ) )
+				alpha.assign( this.opacityFn( alpha, vProgress, side ) )
 			}
 
 			Discard( alpha.lessThan( this.alphaTest ) )
@@ -318,7 +327,7 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 				
 				// Apply dash modifier if provided
 				if ( this.dashFn ) {
-					cyclePosition.assign( this.dashFn( cyclePosition, vProgress, aSide ) )
+					cyclePosition.assign( this.dashFn( cyclePosition, vProgress, side ) )
 				}
 				
 				// dashRatio represents a dash portion: 0.1 = 10% dash, 90% gap
@@ -327,12 +336,12 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 			}
 
 			if ( this.discardFn ) {
-				Discard( this.discardFn( vProgress, aSide, uvCoords ) )
+				Discard( this.discardFn( vProgress, side, uvCoords ) )
 			}
-			
+
 			// Apply fragment alpha modifier if provided
 			if ( this.fragmentAlphaFn ) {
-				alpha.assign( this.fragmentAlphaFn( alpha, uvCoords, vProgress, aSide ) )
+				alpha.assign( this.fragmentAlphaFn( alpha, uvCoords, vProgress, side ) )
 			}
 
 			return alpha
@@ -353,6 +362,7 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 		this.alphaTest = source.alphaTest
 		this.sizeAttenuation = source.sizeAttenuation
 		this.useMiterLimit = source.useMiterLimit
+		this.highQualityMiter = source.highQualityMiter
 
 		// Copy uniform values
 		this.lineWidth.value = source.lineWidth.value
@@ -370,6 +380,8 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 		source.resolution?.value && this.resolution.value.copy( source.resolution.value )
 		source.repeat?.value && this.repeat.value.copy( source.repeat.value )
 		source.mapOffset?.value && this.mapOffset.value.copy( source.mapOffset.value )
+		source.dpr?.value && this.dpr.value.copy( source.dpr.value )
+		if ( source.dpr ) this.dpr.value = source.dpr.value
 
 		// Copy node hooks
 		this.positionFn = source.positionFn
@@ -386,6 +398,7 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 		this.fragmentColorFn = source.fragmentColorFn
 		this.fragmentAlphaFn = source.fragmentAlphaFn
 		this.discardFn = source.discardFn
+		this.gpuPositionNode = source.gpuPositionNode
 
 		return this
 	}
