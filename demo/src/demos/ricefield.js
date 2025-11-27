@@ -33,12 +33,12 @@ class RicefieldExample {
 		this.mouse = new Vector2()
 		this.mouseWorldPos = new Vector3()
 		this.groundPlane = new Plane( new Vector3( 0, 1, 0 ), 0 ) // Y-up plane at Y=0
-		this.mouseUniform = uniform( vec3( 1000, 0, 1000 ) ) // Initialize far away
-		this.cutDistMin = uniform( float( 0 ) ) // Inner radius of shockwave
-		this.cutDistMax = uniform( float( 0 ) ) // Outer radius of shockwave
-		this.shockwaveOrigin = uniform( vec3( 0, 0, 0 ) ) // Fixed origin for shockwave
-		this.mouseSpeedUniform = uniform( float( 1 ) ) // Mouse speed multiplier for interaction radius
-		this.areaOfEffectUniform = uniform( float( 1 ) ) // Area of effect multiplier (0-1)
+		this.mouseUniform = uniform( new Vector3( 1000, 0, 1000 ) ) // Initialize far away
+		this.cutDistMin = uniform( 0 ) // Inner radius of shockwave
+		this.cutDistMax = uniform( 0 ) // Outer radius of shockwave
+		this.shockwaveOrigin = uniform( new Vector3( 0, 0, 0 ) ) // Fixed origin for shockwave
+		this.mouseSpeedUniform = uniform( 1 ) // Mouse speed multiplier for interaction radius
+		this.areaOfEffectUniform = uniform( 1 ) // Area of effect multiplier (0-1)
 		this.cells = []
 		this.riceInstances = []
 		this.centerOffsetX = FIELD_WIDTH / 2
@@ -237,7 +237,15 @@ class RicefieldExample {
 		} )
 		
 		console.log( 'Total rice stalks:', this.riceInstances.length )
-		
+
+		// Create storage buffer BEFORE MeshLine (moved from initCompute)
+		// Three.js r181+ requires storage buffers to exist when shader hooks reference them
+		this.scaleStorageBuffer = new StorageBufferAttribute( this.riceInstances.length, 1 )
+		for ( let i = 0; i < this.riceInstances.length; i++ ) {
+			this.scaleStorageBuffer.setX( i, 1.0 )
+		}
+		this.scaleStorageBuffer.needsUpdate = true
+
 		// Create a single rice stalk template (vertical line)
 		const templatePositions = new Float32Array( lineSegments * 3 )
 		for ( let i = 0; i < lineSegments; i++ ) {
@@ -407,15 +415,7 @@ class RicefieldExample {
 	}
 	
 	initCompute() {
-		// Create storage buffer for dynamic scale only (not as attribute)
-		this.scaleStorageBuffer = new StorageBufferAttribute( this.riceInstances.length, 1 )
-		
-		// Initialize storage buffer scales
-		for ( let i = 0; i < this.riceInstances.length; i++ ) {
-			this.scaleStorageBuffer.setX( i, 1.0 ) // Start at full scale
-		}
-		this.scaleStorageBuffer.needsUpdate = true
-		
+		// Storage buffer already created in initRicefield() before MeshLine hooks
 		// Create compute shader for scale animation
 		this.createComputeShader()
 	}
