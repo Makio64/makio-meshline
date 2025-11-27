@@ -11,11 +11,9 @@ class WavesExample {
 	constructor() {
 		this.lines = null
 		this.time = 0
-		this.waveLines = []
 	}
 
 	async init() {
-		console.log( 'waves init' )
 		await stage3d.initRender()
 		stage3d.control = new OrbitControl( stage3d.camera, 35 )
 		stage3d.control.maxRadius = 45
@@ -37,7 +35,6 @@ class WavesExample {
 			.lines( this.createWaveLines(), false )
 			.lineWidth( 0.5 )
 			.gradientColor( 0xff0000 )
-			.verbose( true )
 
 		stage3d.add( this.lines )
 
@@ -95,10 +92,7 @@ class WavesExample {
 		}
 		stage.onUpdate.remove( this.update )
 		window.removeEventListener( 'resize', this.onResize )
-		this.waveLines = null
-		this.basePositions = null
 		stage3d.control.dispose()
-		console.log( 'wave dispose' )
 	}
 
 	show() {}

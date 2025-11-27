@@ -52,7 +52,6 @@ class GpuCircleExample {
 			.lineWidth( 0.1 )
 			.gradientColor( 0x0000ff )
 			.color( 0xffffff )
-			.verbose( true )
 
 		stage3d.add( this.line )
 

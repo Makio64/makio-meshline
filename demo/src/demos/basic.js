@@ -111,8 +111,6 @@ class BasicExample {
 				.color( config.color )
 				.lineWidth( config.lineWidth ?? 0.3 )
 				.wireframe( config.wireframe ?? false )
-				.verbose( true )
-				.needsUV( true )
 
 			// options setters 
 			if ( config.useDash ) { line.dash( { count: config.dashCount, ratio: config.dashRatio } ) }
