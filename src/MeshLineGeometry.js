@@ -23,8 +23,6 @@ export class MeshLineGeometry extends BufferGeometry {
 		}
 
 		this.widthCallback = options.widthCallback || null
-		this.closeLoop = false
-		this._points = null
 		this._attrs = {}
 		this._lineCount = 0
 		this._lines = [] // Store individual line arrays for multi-line mode
@@ -84,8 +82,6 @@ export class MeshLineGeometry extends BufferGeometry {
 		this._lineLoops = isSingleLoop ? lineLoops : actualLoops
 		this._isSingleLoopValue = isSingleLoop
 		this._lineCount = convertedLines.length
-		this._points = new Float32Array() // Clear single line data
-		this.closeLoop = false // Multi-lines handle their own loops individually
 
 		this.build()
 	}
@@ -103,36 +99,6 @@ export class MeshLineGeometry extends BufferGeometry {
 			2 * a[1] - b[1],
 			2 * a[2] - b[2]
 		]
-	}
-
-	// Build initial "previous" points for first segment
-	buildInitialPrevious( pts, numPoints ) {
-		if ( this.closeLoop ) {
-			// Use second-to-last point (before the duplicate closing point)
-			const [x, y, z] = this.getPoint( pts, numPoints - 2 )
-			return new Float32Array( [x, y, z, x, y, z] )
-		} else {
-			// Extrapolate backwards from first two points
-			const firstPoint = this.getPoint( pts, 0 )
-			const secondPoint = this.getPoint( pts, 1 )
-			const [x, y, z] = this.reflect( firstPoint, secondPoint )
-			return new Float32Array( [x, y, z, x, y, z] )
-		}
-	}
-
-	// Build final "next" points for last segment
-	buildFinalNext( pts, numPoints ) {
-		if ( this.closeLoop ) {
-			// Use second point (the first real point after the closing duplicate)
-			const [x, y, z] = this.getPoint( pts, 1 )
-			return new Float32Array( [x, y, z, x, y, z] )
-		} else {
-			// Extrapolate forwards from last two points
-			const lastPoint = this.getPoint( pts, numPoints - 1 )
-			const secondLastPoint = this.getPoint( pts, numPoints - 2 )
-			const [x, y, z] = this.reflect( lastPoint, secondLastPoint )
-			return new Float32Array( [x, y, z, x, y, z] )
-		}
 	}
 
 	// Helper to set or update buffer attribute efficiently
