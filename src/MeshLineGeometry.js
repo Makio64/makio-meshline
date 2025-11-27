@@ -44,9 +44,10 @@ export class MeshLineGeometry extends BufferGeometry {
 		}
 
 		// Handle `closed` as boolean or array
-		// If it's a single boolean, we don't create an array to save bandwidth
+		// If it's a single boolean, we use it for all lines
+		// If it's an array, we use it per-line
 		const isSingleLoop = typeof this.options.closed === 'boolean'
-		const lineLoops = isSingleLoop ? this.options.closed : this.options.closed
+		const lineLoops = this.options.closed
 		const actualLoops = isSingleLoop ? null : []
 
 		// Convert each line to Float32Array and store separately
