@@ -86,21 +86,6 @@ export class MeshLineGeometry extends BufferGeometry {
 		this.build()
 	}
 
-	// get xyz triplet from flat array at index i
-	getPoint( pts, i ) {
-		const o = i * 3
-		return [pts[o], pts[o + 1], pts[o + 2]]
-	}
-
-	// compute reflection of point a over b: 2a - b
-	reflect( a, b ) {
-		return [
-			2 * a[0] - b[0],
-			2 * a[1] - b[1],
-			2 * a[2] - b[2]
-		]
-	}
-
 	// Helper to set or update buffer attribute efficiently
 	setOrUpdateAttribute( name, array, itemSize, usage = StaticDrawUsage ) {
 		const existing = this._attrs[name]
@@ -197,7 +182,10 @@ export class MeshLineGeometry extends BufferGeometry {
 
 			// Build this line's vertices
 			for ( let i = 0; i < numPoints; i++ ) {
-				const [x, y, z] = this.getPoint( line, i )
+				const o = i * 3
+				const x = line[o]
+				const y = line[o + 1]
+				const z = line[o + 2]
 				const t = tStep * i
 
 				// positions (2 vertices per point)
@@ -256,18 +244,17 @@ export class MeshLineGeometry extends BufferGeometry {
 					// First point
 					if ( isLooped ) {
 						// Use second-to-last point (before the duplicate closing point)
-						const [px, py, pz] = this.getPoint( line, numPoints - 2 )
-						prevX = px
-						prevY = py
-						prevZ = pz
+						const po = ( numPoints - 2 ) * 3
+						prevX = line[po]
+						prevY = line[po + 1]
+						prevZ = line[po + 2]
 					} else {
 						// Extrapolate backwards
 						if ( numPoints > 1 ) {
-							const [x1, y1, z1] = this.getPoint( line, 1 )
-							const reflected = this.reflect( [x, y, z], [x1, y1, z1] )
-							prevX = reflected[0]
-							prevY = reflected[1]
-							prevZ = reflected[2]
+							const x1 = line[3], y1 = line[4], z1 = line[5]
+							prevX = 2 * x - x1
+							prevY = 2 * y - y1
+							prevZ = 2 * z - z1
 						} else {
 							prevX = x
 							prevY = y
@@ -275,10 +262,10 @@ export class MeshLineGeometry extends BufferGeometry {
 						}
 					}
 				} else {
-					const [px, py, pz] = this.getPoint( line, i - 1 )
-					prevX = px
-					prevY = py
-					prevZ = pz
+					const po = ( i - 1 ) * 3
+					prevX = line[po]
+					prevY = line[po + 1]
+					prevZ = line[po + 2]
 				}
 
 				if ( previous ) {
@@ -297,18 +284,17 @@ export class MeshLineGeometry extends BufferGeometry {
 						// Last point
 						if ( isLooped ) {
 							// Use second point (the first real point after the closing duplicate)
-							const [nx, ny, nz] = this.getPoint( line, 1 )
-							nextX = nx
-							nextY = ny
-							nextZ = nz
+							nextX = line[3]
+							nextY = line[4]
+							nextZ = line[5]
 						} else {
 							// Extrapolate forwards
 							if ( numPoints > 1 ) {
-								const [x1, y1, z1] = this.getPoint( line, numPoints - 2 )
-								const reflected = this.reflect( [x, y, z], [x1, y1, z1] )
-								nextX = reflected[0]
-								nextY = reflected[1]
-								nextZ = reflected[2]
+								const po = ( numPoints - 2 ) * 3
+								const x1 = line[po], y1 = line[po + 1], z1 = line[po + 2]
+								nextX = 2 * x - x1
+								nextY = 2 * y - y1
+								nextZ = 2 * z - z1
 							} else {
 								nextX = x
 								nextY = y
@@ -316,10 +302,10 @@ export class MeshLineGeometry extends BufferGeometry {
 							}
 						}
 					} else {
-						const [nx, ny, nz] = this.getPoint( line, i + 1 )
-						nextX = nx
-						nextY = ny
-						nextZ = nz
+						const po = ( i + 1 ) * 3
+						nextX = line[po]
+						nextY = line[po + 1]
+						nextZ = line[po + 2]
 					}
 
 					next[vertexOffset * 3] = nextX
@@ -399,7 +385,7 @@ export class MeshLineGeometry extends BufferGeometry {
 			( this.boundingBoxes[idx] || new Box3() ).setFromArray( line )
 		)
 	}
-	
+
 	computeBoundingBox() {
 		if ( !this.boundingBoxes || this.boundingBoxes.length === 0 ) return
 		if ( !this.boundingBox ) this.boundingBox = new Box3()
@@ -448,7 +434,7 @@ export class MeshLineGeometry extends BufferGeometry {
 		// Validate each line has the same number of points
 		for ( let i = 0; i < newLines.length; i++ ) {
 			if ( newLines[i].length !== this._lines[i].length ) {
-			// Fallback to full rebuild if any line changes size
+				// Fallback to full rebuild if any line changes size
 				this.setLines( newLines )
 				return
 			}
@@ -489,25 +475,27 @@ export class MeshLineGeometry extends BufferGeometry {
 					let px, py, pz
 					if ( i === 0 ) {
 						if ( isLooped ) {
-						// Use second-to-last point (before the duplicate closing point)
+							// Use second-to-last point (before the duplicate closing point)
 							const po = ( numPoints - 2 ) * 3
 							px = line[po]
 							py = line[po + 1]
 							pz = line[po + 2]
 						} else {
-						// Extrapolate backwards
+							// Extrapolate backwards
 							if ( numPoints > 1 ) {
 								const x1 = line[3], y1 = line[4], z1 = line[5]
-								const refl = this.reflect( [x, y, z], [x1, y1, z1] )
-								px = refl[0]; py = refl[1]; pz = refl[2]
+								px = 2 * x - x1
+								py = 2 * y - y1
+								pz = 2 * z - z1
 							} else {
 								px = x; py = y; pz = z
 							}
 						}
 					} else {
-						px = line[o - 3]
-						py = line[o - 2]
-						pz = line[o - 1]
+						const po = ( i - 1 ) * 3
+						px = line[po]
+						py = line[po + 1]
+						pz = line[po + 2]
 					}
 					this.writePair( prevArray, globalVertexIndex, px, py, pz )
 				}
@@ -517,24 +505,27 @@ export class MeshLineGeometry extends BufferGeometry {
 					let nx, ny, nz
 					if ( i === numPoints - 1 ) {
 						if ( isLooped ) {
-						// Use second point (the first real point after the closing duplicate)
+							// Use second point (the first real point after the closing duplicate)
 							nx = line[3]
 							ny = line[4]
 							nz = line[5]
 						} else {
-						// Extrapolate forwards
+							// Extrapolate forwards
 							if ( numPoints > 1 ) {
-								const x1 = line[o - 3], y1 = line[o - 2], z1 = line[o - 1]
-								const refl = this.reflect( [x, y, z], [x1, y1, z1] )
-								nx = refl[0]; ny = refl[1]; nz = refl[2]
+								const po = ( numPoints - 2 ) * 3
+								const x1 = line[po], y1 = line[po + 1], z1 = line[po + 2]
+								nx = 2 * x - x1
+								ny = 2 * y - y1
+								nz = 2 * z - z1
 							} else {
 								nx = x; ny = y; nz = z
 							}
 						}
 					} else {
-						nx = line[o + 3]
-						ny = line[o + 4]
-						nz = line[o + 5]
+						const po = ( i + 1 ) * 3
+						nx = line[po]
+						ny = line[po + 1]
+						nz = line[po + 2]
 					}
 					this.writePair( nextArray, globalVertexIndex, nx, ny, nz )
 				}
@@ -604,7 +595,7 @@ const toFloat32 = pts => {
 			result[offset++] = p[1] ?? 0
 			result[offset++] = p[2] ?? 0
 		} else {
-		// Invalid points are skipped but warning for the user
+			// Invalid points are skipped but warning for the user
 			console.warn( `[MeshLine] Invalid point: ${p}` )
 		}
 	}
