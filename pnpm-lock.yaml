@@ -51,9 +51,6 @@ importers:
       simplify-js:
         specifier: ^1.2.4
         version: 1.2.4
-      stats-gl:
-        specifier: ^3.7.0
-        version: 3.7.0(three@0.181.2)
       three:
         specifier: ^0.181.2
         version: 0.181.2
@@ -1621,14 +1618,6 @@ packages:
   speakingurl@14.0.1:
     resolution: {integrity: sha512-1POYv7uv2gXoyGFpBCmpDVSNV74IfsWlDW216UPjbWufNf+bSU6GdbDsxdcxtfwb4xlI3yxzOTKClUosxARYrQ==}
     engines: {node: '>=0.10.0'}
-
-  stats-gl@3.7.0:
-    resolution: {integrity: sha512-GSHb8n6RDNGJ2zhXa98fzaeieNt8NECOWPL3Ui0b7SsgkadNGP1ALg3kKvbjGWyzylhlSphYyA4qwSEp/Raq0w==}
-    peerDependencies:
-      three: '*'
-    peerDependenciesMeta:
-      three:
-        optional: true
 
   string-width@4.2.3:
     resolution: {integrity: sha512-wKyQRQpjJ0sIp62ErSZdGsjMJWsap5oRNihHhu6G7JVO/9jIB6UyevL+tXuOqrng8j/cxKTWyWUwvSTriiZz/g==}
@@ -3381,10 +3370,6 @@ snapshots:
   space-separated-tokens@2.0.2: {}
 
   speakingurl@14.0.1: {}
-
-  stats-gl@3.7.0(three@0.181.2):
-    optionalDependencies:
-      three: 0.181.2
 
   string-width@4.2.3:
     dependencies:

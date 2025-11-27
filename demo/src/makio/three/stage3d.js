@@ -1,10 +1,7 @@
-import Stats from 'stats-gl'
 import WebGPU from 'three/addons/capabilities/WebGPU'
-import { PerspectiveCamera, Scene, TimestampQuery, WebGPURenderer } from 'three/webgpu'
+import { PerspectiveCamera, Scene, WebGPURenderer } from 'three/webgpu'
 
 import stage from '../core/stage'
-
-const showStats = window.location.search.includes( 'debug' )
 
 class Stage3D {
 	constructor() {
@@ -35,14 +32,6 @@ class Stage3D {
 			await this.renderer.init()
 			document.body.appendChild( this.renderer.domElement )
 
-			if ( showStats ) {
-				this.stats = new Stats( {
-					trackGPU: true,
-				} )
-				document.body.appendChild( this.stats.dom )
-				this.stats.init( this.renderer )
-			}
-
 		}
 
 		this.forceRatio = options.forceRatio ?? 1
@@ -65,17 +54,11 @@ class Stage3D {
 		this.render()
 	}
 
-	render = async () => {
+	render = () => {
 		if ( this.postProcessing ) {
 			this.postProcessing.render()
 		} else {
-			if ( this.stats ) {
-				this.renderer.render( this.scene, this.camera )
-				await this.renderer.resolveTimestampsAsync( TimestampQuery.RENDER )
-				this.stats.update()
-			} else {
-				this.renderer.render( this.scene, this.camera )
-			}
+			this.renderer.render( this.scene, this.camera )
 		}
 	}
 
