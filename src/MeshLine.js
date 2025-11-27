@@ -406,16 +406,16 @@ export default class MeshLine extends Mesh {
 
 		options.lines = lines
 
-		// Computed needs
-		options.needsWidth = options.widthCallback ?? true
+		// Computed needs - auto-detect from configuration
+		options.needsWidth = options.needsWidth ?? !!( options.widthCallback || options.widthFn )
 		options.needsProgress = options.needsProgress ?? true
 		options.needsSide = options.needsSide ?? true
-		options.needsUV = options.needsUV ?? ( options.map || options.alphaMap )
+		options.needsUV = options.needsUV ?? !!( options.map || options.alphaMap || options.uvFn || options.discardFn )
 		options.needsVertexColor = options.needsVertexColor ?? !!options.vertexColors
 
 		// If using GPU position node, we don't need previous/next positions
-		options.needsPrevious = options.needsPrevious ?? options.gpuPositionNode ? false : true
-		options.needsNext = options.needsNext ?? options.gpuPositionNode ? false : true
+		options.needsPrevious = options.needsPrevious ?? !options.gpuPositionNode
+		options.needsNext = options.needsNext ?? !options.gpuPositionNode
 
 		this.geometry.buildLine( options )
 		this.material.buildLine( options )
@@ -444,16 +444,25 @@ export default class MeshLine extends Mesh {
 	}
 
 	_onBeforeRender() {
-		if ( !this._built ) this.build()
+		this.ensureBuilt()
 	}
 
 	setPositions( positions ) {
-		if ( !this._built ) this.build()
+		this.ensureBuilt()
 		this.geometry.setPositions( positions )
 	}
 
+	// Add a per-vertex attribute with the given name and component count
+	addVertexAttribute( name, components = 1 ) {
+		this.ensureBuilt()
+		const totalVertices = this.geometry.getAttribute( 'position' ).count
+		const array = new Float32Array( totalVertices * components )
+		this.geometry.setOrUpdateAttribute( name, array, components )
+		return this.geometry.getAttribute( name )
+	}
+
 	addInstanceAttribute( name, components = 1 ) {
-		if ( !this._built ) this.build()
+		this.ensureBuilt()
 		const array = new Float32Array( this.count * components )
 		const attribute = new InstancedBufferAttribute( array, components )
 		this.geometry.setAttribute( name, attribute )
@@ -523,6 +532,11 @@ export default class MeshLine extends Mesh {
 
 	_warnIfBuilt = ( feature ) => {
 		if ( this._built ) console.warn( `MeshLine: Changing ${feature} after build is not supported yet.` )
+	}
+
+	ensureBuilt() {
+		if ( !this._built ) this.build()
+		return this
 	}
 
 	dispose = () => {

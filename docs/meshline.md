@@ -88,22 +88,23 @@ The hook are used in the TSL Nodes in MeshLineNodeMaterial
 - `fragmentAlphaFn(fn: Fn)` - Set fragment alpha modification hook
 - `discardFn(fn: Fn)` - Set fragment discard condition hook
 
-**Attribute Control:**
+**Attribute Control (Advanced):**
 
-These controls give you control on which attributes are added to the geometry.
+These controls are auto-detected from your configuration and rarely need manual override:
 
-- `needsUV(enable: boolean)` - Control UV attribute generation
-- `needsWidth(enable: boolean)` - Control width attribute generation
-- `needsProgress(enable: boolean)` - Control progress attribute generation
-- `needsPrevious(enable: boolean)` - Control previous position attribute generation
-- `needsNext(enable: boolean)` - Control next position attribute generation
-- `needsSide(enable: boolean)` - Control side attribute generation
-- `needsVertexColor(enable: boolean)` - Control vertex color attribute generation
+- `needsUV(enable: boolean)` - Auto-detected from `map`, `alphaMap`, `uvFn`, `discardFn`
+- `needsWidth(enable: boolean)` - Auto-detected from `widthCallback`, `widthFn`
+- `needsProgress(enable: boolean)` - Always enabled
+- `needsSide(enable: boolean)` - Always enabled
+- `needsPrevious(enable: boolean)` - Auto-detected (disabled when using `gpuPositionNode`)
+- `needsNext(enable: boolean)` - Auto-detected (disabled when using `gpuPositionNode`)
+- `needsVertexColor(enable: boolean)` - Auto-detected from `vertexColors`
 
 **Building:**
-- `build()` - Finalize configuration and build the line (returns the instance).
+- `build()` - Finalize configuration and build the line (returns the instance)
+- `ensureBuilt()` - Ensures the line is built if not already, useful for accessing geometry before first render (returns the instance)
 
-> **Note:** Call `build()` to finalize the configuration & build the geometry and tsl nodes, or the line will auto-build on first render ( during `onBeforeRender`).
+> **Note:** Call `build()` to finalize the configuration & build the geometry and tsl nodes, or the line will auto-build on first render (during `onBeforeRender`). Use `ensureBuilt()` when you need to access geometry attributes before the first render.
 
 ## Options Object Configuration
 
@@ -291,6 +292,41 @@ For efficient position updates, see [Dynamic Updates](./common-patterns.md#9-dyn
 When verbose mode is enabled you'll see `[MeshLine] positions updated via setPositions` in the console.
 
 ## Methods
+
+### Building & Lifecycle
+
+**`ensureBuilt(): MeshLine`**
+
+Ensures the line is built before accessing geometry-dependent properties. Automatically called by methods that require built geometry. Returns the instance for chaining.
+
+```js
+// Ensure geometry is built before accessing attributes
+line.ensureBuilt()
+const positions = line.geometry.getAttribute('position')
+```
+
+### Vertex Attributes
+
+**`addVertexAttribute(name: string, components: number): BufferAttribute`**
+
+Creates a new per-vertex buffer attribute with the specified name and component count. Returns the created `BufferAttribute` for direct manipulation. Useful for custom per-vertex data like colors, IDs, or other metadata.
+
+```js
+// Create a 3-component attribute for custom vertex colors
+const colorAttr = line.addVertexAttribute('lineColor', 3)
+
+// Create a 1-component attribute for vertex IDs
+const idAttr = line.addVertexAttribute('vertexId', 1)
+
+// Access and modify the attribute data
+const colors = colorAttr.array
+for (let i = 0; i < colors.length; i += 3) {
+  colors[i] = Math.random()     // R
+  colors[i + 1] = Math.random() // G
+  colors[i + 2] = Math.random() // B
+}
+colorAttr.needsUpdate = true
+```
 
 ### Instance Management
 
