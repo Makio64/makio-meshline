@@ -1,4 +1,5 @@
 import WebGPU from 'three/addons/capabilities/WebGPU'
+import { Inspector } from 'three/addons/inspector/Inspector.js'
 import { PerspectiveCamera, Scene, WebGPURenderer } from 'three/webgpu'
 
 import stage from '../core/stage'
@@ -31,6 +32,12 @@ class Stage3D {
 
 			await this.renderer.init()
 			document.body.appendChild( this.renderer.domElement )
+
+			// Initialize Inspector in development mode
+			if ( import.meta.env.DEV ) {
+				this.renderer.inspector = new Inspector()
+				this.renderer.inspector.init()
+			}
 
 		}
 
