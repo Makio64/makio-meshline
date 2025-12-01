@@ -1,4 +1,4 @@
-import { abs, attribute, cameraProjectionMatrix, Discard, dot, float, Fn, max, min, mix, mod, modelViewMatrix, normalize, positionGeometry, smoothstep, step, texture, uniform, uv, varyingProperty, vec2, vec4 } from 'three/tsl'
+import { abs, attribute, cameraProjectionMatrix, cross, Discard, dot, float, Fn, max, min, mix, mod, modelViewMatrix, normalize, positionGeometry, smoothstep, step, texture, uniform, uv, varyingProperty, vec2, vec4 } from 'three/tsl'
 import { Color, MeshBasicNodeMaterial, Vector2 } from 'three/webgpu'
 
 const fix = Fn( ( [i_immutable, aspect_immutable] ) => {
@@ -32,7 +32,9 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 	buildLine( options = {} ) {
 
 		this.options = options
-		
+		this._segments = options.segments ?? 100
+		this._needsWidth = options.needsWidth ?? false
+
 		// classic properties
 		this.depthWrite = options.depthWrite ?? true
 		this.depthTest = options.depthTest ?? true
@@ -108,6 +110,69 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 
 	dispose() {
 		super.dispose()
+	}
+
+	setShadowMode( mode ) {
+		if ( mode === this.shadowMode ) return
+		this.shadowMode = mode
+		if ( mode ) {
+			this.buildShadowPositionNode()
+		} else {
+			this.castShadowPositionNode = null
+		}
+		this.needsUpdate = true
+	}
+
+	buildShadowPositionNode() {
+		const material = this
+
+		this.castShadowPositionNode = Fn( () => {
+			const progress = aProgress
+			const side = aSide
+
+			// Get base positions in LOCAL space
+			let pos = material.gpuPositionNode
+				? material.gpuPositionNode( progress, float( 0 ) )
+				: positionGeometry
+			let previous = material.gpuPositionNode
+				? material.gpuPositionNode( progress.sub( 1 / material._segments ), float( 0 ) )
+				: attribute( 'previous', 'vec3' )
+			let next = material.gpuPositionNode
+				? material.gpuPositionNode( progress.add( 1 / material._segments ), float( 0 ) )
+				: attribute( 'next', 'vec3' )
+
+			// Apply positionFn if defined
+			if ( material.positionFn ) {
+				pos = material.positionFn( pos, progress )
+				previous = material.positionFn( previous, progress )
+				next = material.positionFn( next, progress )
+			}
+
+			// Calculate line direction in LOCAL space
+			const dir1 = normalize( pos.sub( previous ) )
+			const dir2 = normalize( next.sub( pos ) )
+			const dir = normalize( dir1.add( dir2 ) )
+
+			// Calculate perpendicular in local space using world-up transformed to local
+			// Use Y-up, fall back to X if line is vertical
+			const worldUp = vec4( 0, 1, 0, 0 ).xyz
+			const worldRight = vec4( 1, 0, 0, 0 ).xyz
+			const dotUp = abs( dot( dir, worldUp ) )
+			const refDir = mix( worldUp, worldRight, step( 0.9, dotUp ) )
+			const perp = normalize( cross( dir, refDir ) )
+
+			// Use lineWidth directly as local/world units
+			let w = material.lineWidth.mul( 0.5 )
+			if ( material._needsWidth || material.widthFn ) {
+				w = w.mul( aWidth )
+			}
+			if ( material.widthFn ) {
+				w = material.widthFn( w.mul( 2 ), progress, side ).mul( 0.5 )
+			}
+
+			// Apply offset in LOCAL space - Three.js will transform to world/clip
+			return pos.add( perp.mul( side.mul( w ) ) )
+		} )()
 	}
 
 	setup( builder ) {

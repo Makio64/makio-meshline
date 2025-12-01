@@ -33,26 +33,24 @@ class Stage3D {
 			await this.renderer.init()
 			document.body.appendChild( this.renderer.domElement )
 
-			// Initialize Inspector in development mode
 			if ( import.meta.env.DEV ) {
 				this.renderer.inspector = new Inspector()
-				this.renderer.inspector.init()
 			}
+
+			this.renderer.setAnimationLoop( this.update )
 
 		}
 
 		this.forceRatio = options.forceRatio ?? 1
-		this.isPaused = false
 
 		stage.onResize.add( this.resize )
-		stage.onRender.add( this.update )
 
 		this.resize()
 	}
 
 	//---------------------------------------------------------- RENDER
 	update = ( dt ) => {
-		if ( this.isPaused || !this.renderer ) {
+		if ( !this.renderer ) {
 			return
 		}
 		if ( this.control && this.control.enabled ) {
@@ -81,14 +79,12 @@ class Stage3D {
 
 	//---------------------------------------------------------- PAUSE / RESUME
 	pause = () => {
-		if ( this.isPaused ) return
-		this.isPaused = true
+		this.renderer?.setAnimationLoop( null )
 		this.control && ( this.control.isActive = false )
 	}
 
 	resume = () => {
-		if ( !this.isPaused ) return
-		this.isPaused = false
+		this.renderer?.setAnimationLoop( this.update )
 		this.control && ( this.control.isActive = true )
 	}
 
@@ -124,10 +120,10 @@ class Stage3D {
 
 	//---------------------------------------------------------- DISPOSE
 	dispose() {
+		this.renderer?.setAnimationLoop( null )
 		this.removeAll()
 		this.control?.disable()
 		stage.onResize.remove( this.resize )
-		stage.onUpdate.remove( this.render )
 		this.renderer?.clear()
 		this.renderer?.dispose()
 	}

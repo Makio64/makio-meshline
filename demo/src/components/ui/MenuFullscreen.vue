@@ -48,6 +48,7 @@ export default {
 				{ text: 'Vertex Colors', href: '/examples/vertex-colors' },
 				{ text: 'GPU Circle', href: '/examples/gpu-circle' },
 				{ text: 'GPU Instancing', href: '/examples/gpu-instance' },
+				{ text: 'Eiffel Tower', href: '/examples/eiffel-tower' },
 			],
 			advancedLinks: [
 				{ text: 'Sandbox', href: '/examples/sandbox', primary: true },

@@ -9,6 +9,7 @@
 import baguettes from '@/demos/baguettes'
 import basic from '@/demos/basic'
 import drawlines from '@/demos/drawlines'
+import eiffelTower from '@/demos/eiffelTower'
 import follow from '@/demos/follow'
 import ghost from '@/demos/ghost'
 import gpuCircle from '@/demos/gpuCircle'
@@ -38,6 +39,7 @@ export default {
 			drawlines,
 			'gpu-circle': gpuCircle,
 			'gpu-instance': gpuInstance,
+			'eiffel-tower': eiffelTower,
 			stress,
 			ricefield,
 			sandbox,
@@ -55,6 +57,7 @@ export default {
 			drawlines: 'drawlines.js',
 			'gpu-circle': 'gpuCircle.js',
 			'gpu-instance': 'gpuInstance.js',
+			'eiffel-tower': 'eiffelTower.js',
 			stress: 'stress.js',
 			ricefield: 'ricefield.js',
 			sandbox: 'sandbox.js',

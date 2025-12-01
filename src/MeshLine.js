@@ -59,6 +59,8 @@ export default class MeshLine extends Mesh {
 
 			// Instancing options
 			instanceCount: -1,
+
+			shadowMode: null,
 		}
 		this._built = false
 		this.onBeforeRender = this._onBeforeRender
@@ -84,6 +86,7 @@ export default class MeshLine extends Mesh {
 		if ( options.alphaTest !== undefined ) this.alphaTest( options.alphaTest )
 		if ( options.transparent !== undefined ) this.transparent( options.transparent )
 		if ( options.wireframe !== undefined ) this.wireframe( options.wireframe )
+		if ( options.shadowMode !== undefined ) this.shadowMode( options.shadowMode )
 		if ( options.dpr !== undefined ) this.dpr( options.dpr )
 		if ( options.frustumCulled !== undefined ) this.frustumCulled( options.frustumCulled )
 		if ( options.verbose !== undefined ) this.verbose( options.verbose )
@@ -133,6 +136,21 @@ export default class MeshLine extends Mesh {
 
 	sizeAttenuation( sizeAttenuation ) {
 		this._options.sizeAttenuation = sizeAttenuation
+		return this
+	}
+
+	worldUnits( worldUnits ) {
+		this._options.worldUnits = worldUnits
+		this._warnIfBuilt( 'worldUnits' )
+		return this
+	}
+
+	shadowMode( mode ) {
+		this._options.shadowMode = mode
+		if ( this._built && this.material ) {
+			this.material.setShadowMode( mode )
+		}
+		this.castShadow = mode != null
 		return this
 	}
 
@@ -419,6 +437,12 @@ export default class MeshLine extends Mesh {
 
 		this.geometry.buildLine( options )
 		this.material.buildLine( options )
+
+		// Apply shadow mode if set
+		if ( options.shadowMode ) {
+			this.material.setShadowMode( options.shadowMode )
+			this.castShadow = true
+		}
 
 		if ( options.instanceCount != -1 ) {
 			this.count = options.instanceCount
