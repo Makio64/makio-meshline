@@ -112,10 +112,10 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 		super.dispose()
 	}
 
-	setShadowMode( mode ) {
-		if ( mode === this.shadowMode ) return
-		this.shadowMode = mode
-		if ( mode ) {
+	setShadow( enabled ) {
+		if ( enabled === this._shadowEnabled ) return
+		this._shadowEnabled = enabled
+		if ( enabled ) {
 			this.buildShadowPositionNode()
 		} else {
 			this.castShadowPositionNode = null

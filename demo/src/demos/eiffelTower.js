@@ -6,7 +6,7 @@ import {
 	MeshStandardMaterial,
 	PlaneGeometry
 } from 'three'
-import { texture, textureLoad, vec2, textureSize, uv, vec3 } from 'three/tsl'
+import { texture, textureLoad, textureSize, uv, vec3 } from 'three/tsl'
 import { MeshBasicNodeMaterial, OrthographicCamera, Scene } from 'three/webgpu'
 
 import stage from '@/makio/core/stage'
@@ -20,8 +20,6 @@ class EiffelTowerExample {
 		this.ground = null
 		this.ambientLight = null
 		this.time = 0
-		this.shadowMode = 'world'
-		this.updateInstructionText()
 		// Debug shadow map view
 		this.debugScene = null
 		this.debugCamera = null
@@ -42,13 +40,10 @@ class EiffelTowerExample {
 		this.initLights()
 		this.initGround()
 		this.initTower()
-		this.applyShadowMode( this.shadowMode )
 
 		stage.onUpdate.add( this.update )
 		stage.onRender.add( this.renderDebug )
 		window.addEventListener( 'resize', this.onResize )
-		window.addEventListener( 'keydown', this.onKeyDown )
-		this.updateInstructionText()
 	}
 
 	initLights() {
@@ -184,13 +179,8 @@ class EiffelTowerExample {
 			.lines( positions, closed )
 			.color( color )
 			.lineWidth( width )
-			.worldUnits( true )
-			.shadowMode( this.shadowMode )
-			
-		// Enable world-space width for shadow support
-		// MeshLine now shares its thick-line vertex transform with the shadow pass,
-		// so enabling castShadow projects accurate ribbon shadows on the ground plane.
-		line.castShadow = true
+			.shadow( true )
+
 		stage3d.add( line )
 		this.lines.push( line )
 	}
@@ -558,43 +548,10 @@ class EiffelTowerExample {
 		this.lines.forEach( line => line.resize() )
 	}
 
-	updateInstructionText() {
-		this.text = `Shadow casting: [1] clip space / [2] world space — Current: ${this.shadowMode?.toUpperCase?.() || 'CLIP'}`
-	}
-
-	applyShadowMode = ( mode ) => {
-		const normalized = mode === 'world' ? 'world' : 'clip'
-		if ( this.shadowMode === normalized ) {
-			return
-		}
-		this.shadowMode = normalized
-		this.lines.forEach( line => {
-			if ( typeof line.shadowMode === 'function' ) {
-				line.shadowMode( normalized )
-			} else if ( line.material?.setShadowMode ) {
-				line.material.setShadowMode( normalized )
-			}
-		} )
-		if ( this.light?.shadow ) {
-			this.light.shadow.needsUpdate = true
-		}
-		this.updateInstructionText()
-		console.log( `[MeshLine] Shadow mode switched to ${normalized}` )
-	}
-
-	onKeyDown = ( event ) => {
-		if ( event.key === '1' ) {
-			this.applyShadowMode( 'clip' )
-		} else if ( event.key === '2' ) {
-			this.applyShadowMode( 'world' )
-		}
-	}
-
 	dispose() {
 		stage.onUpdate.remove( this.update )
 		stage.onRender.remove( this.renderDebug )
 		window.removeEventListener( 'resize', this.onResize )
-		window.removeEventListener( 'keydown', this.onKeyDown )
 
 		this.lines.forEach( line => {
 			stage3d.remove( line )
