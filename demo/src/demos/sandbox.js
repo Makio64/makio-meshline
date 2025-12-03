@@ -407,11 +407,9 @@ class SandboxExample {
 
 	dispose() {
 		window.removeEventListener( 'resize', this.onResize )
-		
-		if ( this.animationHandler ) {
-			stage.onUpdate.delete( this.animationHandler )
-		}
-		
+
+		stage.onUpdate.remove( this.updateDashes )
+
 		if ( this.line ) {
 			stage3d.remove( this.line )
 			this.line.dispose()

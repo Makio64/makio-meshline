@@ -619,10 +619,9 @@ class RicefieldExample {
 			stage3d.control.dispose()
 		}
 		
-		// Clear background node
-		if ( stage3d.scene.backgroundNode ) {
-			stage3d.scene.backgroundNode = null
-		}
+		// Clear environment and background
+		stage3d.scene.environment = null
+		stage3d.scene.backgroundNode = null
 		
 		// Dispose noise texture
 		if ( this.noiseTexture ) {

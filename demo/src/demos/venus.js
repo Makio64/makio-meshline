@@ -1,6 +1,6 @@
 import { animate } from 'animejs'
 import { MeshLine } from 'makio-meshline'
-import { ACESFilmicToneMapping } from 'three'
+import { ACESFilmicToneMapping, NoToneMapping } from 'three'
 import { bloom } from 'three/addons/tsl/display/BloomNode.js'
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
@@ -478,7 +478,7 @@ class VenusExample {
 
 	dispose() {
 		stage3d.postProcessing = null
-		stage3d.renderer.toneMapping = null
+		stage3d.renderer.toneMapping = NoToneMapping
 		this.postProcessing.dispose()
 		window.removeEventListener( 'resize', this.onResize )
 		if ( this.line ) {
