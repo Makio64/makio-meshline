@@ -48,7 +48,7 @@ export default {
 				{ text: 'Vertex Colors', href: '/examples/vertex-colors' },
 				{ text: 'GPU Circle', href: '/examples/gpu-circle' },
 				{ text: 'GPU Instancing', href: '/examples/gpu-instance' },
-				{ text: 'Sculpture Shadow', href: '/examples/wire-sculpture' },
+				{ text: 'Sculpture Shadow', href: '/examples/shadow' },
 			],
 			advancedLinks: [
 				{ text: 'Sandbox', href: '/examples/sandbox', primary: true },

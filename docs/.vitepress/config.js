@@ -29,6 +29,8 @@ export default defineConfig({
           { text: 'Follow', link: '/examples/follow' },
           { text: 'GPU position', link: '/examples/gpucircle' },
           { text: 'Instancing', link: '/examples/instancing' },
+          { text: 'Shadow', link: '/examples/shadow' },
+          { text: 'Bamboo Grove', link: '/examples/bamboo' },
           { text: 'Advanced : Draw Lines', link: '/examples/drawlines' },
           { text: 'Advanced : Rice Field', link: '/examples/ricefield' },
           { text: 'Advanced : Venus & David', link: '/examples/venus-and-david' },

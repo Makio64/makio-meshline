@@ -20,7 +20,7 @@ import stress from '@/demos/stress'
 import venus from '@/demos/venus'
 import vertexColors from '@/demos/vertexColors'
 import waves from '@/demos/waves'
-import wireSculpture from '@/demos/wireSculpture'
+import shadow from '@/demos/shadow'
 import { contentLoaded } from '@/store'
 
 export default {
@@ -41,7 +41,7 @@ export default {
 			'gpu-circle': gpuCircle,
 			'gpu-instance': gpuInstance,
 			'bamboo-grove': bambooGrove,
-			'wire-sculpture': wireSculpture,
+			shadow,
 			stress,
 			ricefield,
 			sandbox,
@@ -60,7 +60,7 @@ export default {
 			'gpu-circle': 'gpuCircle.js',
 			'gpu-instance': 'gpuInstance.js',
 			'bamboo-grove': 'bambooGrove.js',
-			'wire-sculpture': 'wireSculpture.js',
+			shadow: 'shadow.js',
 			stress: 'stress.js',
 			ricefield: 'ricefield.js',
 			sandbox: 'sandbox.js',
