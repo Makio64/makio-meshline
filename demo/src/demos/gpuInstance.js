@@ -74,11 +74,8 @@ class InstancedGpuExample {
 
 	dispose() {
 		window.removeEventListener( 'resize', this.onResize )
-		if ( this.line ) {
-			stage3d.remove( this.line )
-			this.line.dispose()
-			this.line = null
-		}
+		stage3d.remove( this.line )
+		this.line.dispose()
 		stage3d.control.dispose()
 	}
 

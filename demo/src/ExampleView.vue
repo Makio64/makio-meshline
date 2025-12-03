@@ -11,13 +11,11 @@ import bambooGrove from '@/demos/bambooGrove'
 import basic from '@/demos/basic'
 import drawlines from '@/demos/drawlines'
 import follow from '@/demos/follow'
-import ghost from '@/demos/ghost'
 import gpuCircle from '@/demos/gpuCircle'
 import gpuInstance from '@/demos/gpuInstance'
 import ricefield from '@/demos/ricefield'
 import sandbox from '@/demos/sandbox'
 import shadow from '@/demos/shadow'
-import stress from '@/demos/stress'
 import venus from '@/demos/venus'
 import vertexColors from '@/demos/vertexColors'
 import waves from '@/demos/waves'
@@ -42,10 +40,8 @@ export default {
 			'gpu-instance': gpuInstance,
 			'bamboooo': bambooGrove,
 			shadow,
-			stress,
 			ricefield,
 			sandbox,
-			ghost,
 			'venus-and-david': venus,
 			baguettes,
 			'vertex-colors': vertexColors,
@@ -61,10 +57,8 @@ export default {
 			'gpu-instance': 'gpuInstance.js',
 			'bamboooo': 'bambooGrove.js',
 			shadow: 'shadow.js',
-			stress: 'stress.js',
 			ricefield: 'ricefield.js',
 			sandbox: 'sandbox.js',
-			ghost: 'ghost.js',
 			'venus-and-david': 'venus.js',
 			baguettes: 'baguettes.js',
 			'vertex-colors': 'vertexColors.js',

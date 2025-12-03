@@ -85,11 +85,8 @@ class WavesExample {
 	}
 
 	dispose() {
-		if ( this.lines ) {
-			stage3d.remove( this.lines )
-			this.lines.dispose()
-			this.lines = null
-		}
+		stage3d.remove( this.lines )
+		this.lines.dispose()
 		stage.onUpdate.remove( this.update )
 		window.removeEventListener( 'resize', this.onResize )
 		stage3d.control.dispose()

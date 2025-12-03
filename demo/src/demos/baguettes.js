@@ -147,13 +147,11 @@ class FlyingBaguettes {
 		window.removeEventListener( 'resize', this.onResize )
 		stage3d.remove( this.line )
 		stage3d.control.dispose()
-		this.line?.dispose()
-		this.line = null
+		this.line.dispose()
 
 		stage3d.scene.fog = null
 
-		this.texture?.dispose()
-		this.texture = null
+		this.texture.dispose()
 	}
 
 	show() {}

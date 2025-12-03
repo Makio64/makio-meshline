@@ -254,39 +254,22 @@ class BambooGroveExample {
 	dispose() {
 		stage.onUpdate.remove( this.update )
 
-		// Clear atmosphere
 		stage3d.scene.backgroundNode = null
 		stage3d.scene.fog = null
 
-		if ( this.ground ) {
-			stage3d.remove( this.ground )
-			this.ground.geometry.dispose()
-			this.ground.material.dispose()
-			this.ground = null
-		}
+		stage3d.remove( this.ground )
+		this.ground.geometry.dispose()
+		this.ground.material.dispose()
 
-		if ( this.stalksMesh ) {
-			stage3d.remove( this.stalksMesh )
-			this.stalksMesh.dispose()
-			this.stalksMesh = null
-		}
+		stage3d.remove( this.stalksMesh )
+		this.stalksMesh.dispose()
 
-		if ( this.nodesMesh ) {
-			stage3d.remove( this.nodesMesh )
-			this.nodesMesh.dispose()
-			this.nodesMesh = null
-		}
+		stage3d.remove( this.nodesMesh )
+		this.nodesMesh.dispose()
 
-		if ( this.light ) {
-			stage3d.remove( this.light.target )
-			stage3d.remove( this.light )
-			this.light = null
-		}
-
-		if ( this.ambientLight ) {
-			stage3d.remove( this.ambientLight )
-			this.ambientLight = null
-		}
+		stage3d.remove( this.light.target )
+		stage3d.remove( this.light )
+		stage3d.remove( this.ambientLight )
 
 		stage3d.renderer.shadowMap.enabled = false
 		stage3d.control?.dispose()
