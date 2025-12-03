@@ -26,7 +26,7 @@
   ],
   "sideEffects": false,
   "peerDependencies": {
-    "three": "^0.180.0"
+    "three": ">=0.180.0"
   },
   "keywords": [
     "three.js",
