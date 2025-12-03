@@ -325,13 +325,6 @@ class SandboxExample {
 		
 		if ( this.config.useMiterLimit ) {
 			code += `\t.join({ type: 'miter', limit: ${this.config.miterLimit}, quality: ${this.config.highQualityMiter ? `'high'` : `'standard'`} })\n`
-			if ( this.config.miterLimit !== 4 || this.config.highQualityMiter ) {
-				code += `, ${this.config.miterLimit}`
-			}
-			if ( this.config.highQualityMiter ) {
-				code += `, true`
-			}
-			code += ` )\n`
 		}
 		
 		code += `\t.build()\n\n`

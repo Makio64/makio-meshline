@@ -138,14 +138,6 @@ class RicefieldExample {
 		material.colorNode = Fn( () => {
 			// Blur reflection based on roughness
 			const dirtyReflection = textureBicubic( reflection, roughness )
-			
-			// Darken and tint the reflection for murky water
-			// const waterTint = vec3( 0.05, 0.1, 0.08 ) // Dark greenish-brown
-			// const tintedReflection = dirtyReflection.rgb.mul( 0.3 ).add( waterTint )
-			
-			// Falloff opacity by distance
-			// const opacity = rangeFogFactor( 10, 40 ).oneMinus().mul( 0.9 )
-			
 			return vec4( dirtyReflection.rgb, 1 )
 		} )()
 
@@ -188,14 +180,12 @@ class RicefieldExample {
 			
 			const plane = new Mesh( geometry, material )
 			plane.rotation.x = -Math.PI / 2
-			plane.position.set( 
+			plane.position.set(
 				cell.x + cell.width / 2 - this.centerOffsetX,
 				0,
 				cell.y + cell.height / 2 - this.centerOffsetZ
 			)
-			
-			// this.quadTreeGroup.add( plane )
-			
+
 			// Generate rice positions within this cell
 			const cellPadding = cell.padding || 0.3 // Use cell's padding or default
 			const borderOffset = 0.5 // Same as border offset

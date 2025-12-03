@@ -1,6 +1,6 @@
 import { MeshLine } from 'makio-meshline'
 import { Fog } from 'three'
-import { attribute, color, Fn, mix, positionWorld, smoothstep, vec3 } from 'three/tsl'
+import { attribute, color, Fn, mix, smoothstep, vec3 } from 'three/tsl'
 import { AmbientLight, DirectionalLight, Mesh, MeshStandardMaterial, PCFSoftShadowMap, PlaneGeometry } from 'three/webgpu'
 
 import stage from '@/makio/core/stage'
@@ -38,12 +38,7 @@ class BambooGroveExample {
 	}
 
 	initAtmosphere() {
-		// Misty forest background gradient - soft green to pale sky
-		const fogColor = color( 0xc8d4c0 ) // Fresh mist
-
-		// Vertical gradient for sky
-		const t = positionWorld.y.div( 20 ).clamp( 0, 1 )
-		stage3d.scene.backgroundNode = fogColor
+		stage3d.scene.backgroundNode = color( 0xc8d4c0 )
 		stage3d.scene.fog = new Fog( 0xc8d4c0, 15, 25 )
 	}
 

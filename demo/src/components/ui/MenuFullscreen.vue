@@ -141,7 +141,6 @@ export default {
 			} )
 		},
 		onKeyDown( e ) {
-			console.log( e )
 			if ( e === 'Escape' && this.isOpen ) {
 				menuOpen.value = false
 			}
