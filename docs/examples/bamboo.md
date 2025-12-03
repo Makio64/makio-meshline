@@ -7,7 +7,7 @@ pageClass: example-page
 
 A nature simulation showcasing advanced instancing combined with shadow casting to render a procedural bamboo forest.
 
-<iframe src="https://meshline-demo.makio.io/examples/bamboo-grove?noUI" width="100%" height="600" style="border: 1px solid #ddd; border-radius: 8px;"></iframe>
+<iframe src="https://meshline-demo.makio.io/examples/bamboooo?noUI" width="100%" height="600" style="border: 1px solid #ddd; border-radius: 8px;"></iframe>
 
 ## Overview
 
