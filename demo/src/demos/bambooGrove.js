@@ -1,6 +1,6 @@
 import { MeshLine } from 'makio-meshline'
 import { Fog } from 'three'
-import { color, Fn, positionWorld, vec3 } from 'three/tsl'
+import { attribute, mix, color, Fn, positionWorld, smoothstep, vec3 } from 'three/tsl'
 import { AmbientLight, DirectionalLight, Mesh, MeshStandardMaterial, PCFSoftShadowMap, PlaneGeometry } from 'three/webgpu'
 
 import stage from '@/makio/core/stage'
@@ -10,8 +10,8 @@ import { random } from '@/makio/utils/random'
 
 class BambooGroveExample {
 	constructor() {
-		this.lines = []
-		this.stalks = []
+		this.stalksMesh = null
+		this.nodesMesh = null
 		this.light = null
 		this.ground = null
 		this.ambientLight = null
@@ -25,7 +25,7 @@ class BambooGroveExample {
 		stage3d.renderer.shadowMap.type = PCFSoftShadowMap
 
 		stage3d.control = new OrbitControl( stage3d.camera, 12 )
-		stage3d.control.maxRadius = 25
+		stage3d.control.maxRadius = 20
 		stage3d.control.minRadius = 5
 		stage3d.control.offset.set( 0, 2, 0 )
 
@@ -39,7 +39,7 @@ class BambooGroveExample {
 
 	initAtmosphere() {
 		// Misty forest background gradient - soft green to pale sky
-		const fogColor = color( 0xc8d4c0 ) // Pale misty green
+		const fogColor = color( 0xc8d4c0 ) // Fresh mist
 
 		// Vertical gradient for sky
 		const t = positionWorld.y.div( 20 ).clamp( 0, 1 )
@@ -51,8 +51,8 @@ class BambooGroveExample {
 		this.ambientLight = new AmbientLight( 0x606050, 0.8 ) // Warmer ambient for forest
 		stage3d.add( this.ambientLight )
 
-		this.light = new DirectionalLight( 0xffffff, 2 )
-		this.light.position.set( 8, 12, 8 )
+		this.light = new DirectionalLight( 0xfff0dd, 4 ) // Warm sun
+		this.light.position.set( 8, 8, 8 )
 		this.light.castShadow = true
 
 		this.light.shadow.mapSize.set( 2048, 2048 )
@@ -74,7 +74,7 @@ class BambooGroveExample {
 
 	initGround() {
 		const geometry = new PlaneGeometry( 50, 50 )
-		const material = new MeshStandardMaterial( { color: 0xd4c4a8 } ) // Sandy/earthy color
+		const material = new MeshStandardMaterial( { color: 0xffffff } )
 		this.ground = new Mesh( geometry, material )
 		this.ground.rotation.x = -Math.PI / 2
 		this.ground.position.y = 0
@@ -84,6 +84,11 @@ class BambooGroveExample {
 
 	createBamboo() {
 		const stalkCount = 20
+		const nodeSpacing = 1.2
+
+		// Pre-calculate all stalk and node data
+		const stalksData = []
+		const nodesData = []
 
 		for ( let i = 0; i < stalkCount; i++ ) {
 			// Random position in a circular area
@@ -95,90 +100,143 @@ class BambooGroveExample {
 			// Random properties
 			const height = random( 4, 8 )
 			const width = random( 0.06, 0.12 )
-			const lean = random( -0.3, 0.3 ) // Slight lean
+			const lean = random( -0.3, 0.3 )
 			const leanDir = random( 0, Math.PI * 2 )
-			const phase = random( 0, Math.PI * 2 ) // For sway animation
 
-			this.stalks.push( { x, z, height, width, lean, leanDir, phase } )
+			stalksData.push( {
+				x, z, height,
+				widthMult: width / 0.1, // Store as multiplier (0.6-1.2) relative to base 0.1
+				lean,
+				leanDirX: Math.cos( leanDir ),
+				leanDirZ: Math.sin( leanDir )
+			} )
 
-			// Create main stalk
-			this.createStalk( x, z, height, width, lean, leanDir )
+			// Calculate node rings for this stalk
+			const nodeCount = Math.floor( height / nodeSpacing )
+			for ( let n = 1; n < nodeCount; n++ ) {
+				const t = ( n * nodeSpacing ) / height
+				const y = n * nodeSpacing
 
-			// Create node rings
-			this.createNodes( x, z, height, width * 1.3, lean, leanDir )
+				// Match position on stalk with lean
+				const leanAmount = lean * t * t
+				const px = x + Math.cos( leanDir ) * leanAmount
+				const pz = z + Math.sin( leanDir ) * leanAmount
+				const ringRadius = width * 1.3 * 0.6
+
+				nodesData.push( { x: px, y, z: pz, size: ringRadius, widthMult: ( width * 1.3 * 0.4 ) / 0.05 } )
+			}
 		}
+
+		this.createStalksMesh( stalksData )
+		this.createNodesMesh( nodesData )
 	}
 
-	createStalk( x, z, height, width, lean, leanDir ) {
+	createStalksMesh( stalksData ) {
+		// Template: vertical line from 0 to 1
 		const segments = 30
-		const points = new Float32Array( segments * 3 )
-
+		const templatePoints = new Float32Array( segments * 3 )
 		for ( let i = 0; i < segments; i++ ) {
 			const t = i / ( segments - 1 )
-			const y = t * height
-
-			// Apply lean with slight curve
-			const leanAmount = lean * t * t // Quadratic lean
-			const px = x + Math.cos( leanDir ) * leanAmount
-			const pz = z + Math.sin( leanDir ) * leanAmount
-
-			points[ i * 3 ] = px
-			points[ i * 3 + 1 ] = y
-			points[ i * 3 + 2 ] = pz
+			templatePoints[ i * 3 ] = 0
+			templatePoints[ i * 3 + 1 ] = t
+			templatePoints[ i * 3 + 2 ] = 0
 		}
 
-		const line = new MeshLine()
-			.lines( points, false )
-			.color( 0x3d5c3d ) // Dark bamboo green
-			.lineWidth( width )
+		this.stalksMesh = new MeshLine()
+			.lines( templatePoints, false )
+			.instances( stalksData.length )
+			.color( 0x497849 )
+			.lineWidth( 0.1 ) // Base width, overridden by widthFn
 			.shadow( true )
-			.colorFn( Fn( ( [color, progress, side] ) => {
-				const shade = side.mul( 0.3 ).add( 0.7 ) // 0.7 on left, 1.0 on right
-				return color.mul( vec3( shade ) )
-			} ) )
-			.wireframe( false )
-		line.material.castShadowNode = vec3( 0.2 )
+			.positionFn( Fn( ( [position, progress] ) => {
+				const transform = attribute( 'instanceTransform', 'vec4' )
+				const lean = attribute( 'instanceLean', 'vec3' )
 
-		stage3d.add( line )
-		this.lines.push( { line, x, z, height, lean, leanDir, isStalk: true } )
+				// Scale Y by height
+				const y = position.y.mul( transform.z )
+
+				// Apply quadratic lean based on progress (t²)
+				const leanAmount = lean.x.mul( progress.mul( progress ) )
+				const px = transform.x.add( lean.y.mul( leanAmount ) )
+				const pz = transform.y.add( lean.z.mul( leanAmount ) )
+
+				return vec3( px, y, pz )
+			} ) )
+			.widthFn( Fn( ( [width] ) => {
+				const transform = attribute( 'instanceTransform', 'vec4' )
+				return width.mul( transform.w ) // transform.w is width multiplier
+			} ) )
+			.colorFn( Fn( ( [col, progress, side] ) => {
+				const shade = side.mul( 0.35 ).add( 0.65 )
+				return mix( col.mul( vec3( shade ) ), color( 0xb6ac9d ), smoothstep( 0.05, 0.15, progress ).oneMinus().mul( 0.3 ) )
+			} ) )
+
+		this.stalksMesh.material.castShadowNode = vec3( 0.7 )
+
+		// Add instance attributes
+		this.stalksMesh.addInstanceAttribute( 'instanceTransform', 4 )
+		this.stalksMesh.addInstanceAttribute( 'instanceLean', 3 )
+
+		// Populate instance data
+		for ( let i = 0; i < stalksData.length; i++ ) {
+			const s = stalksData[ i ]
+			this.stalksMesh.setInstanceValue( 'instanceTransform', i, [s.x, s.z, s.height, s.widthMult] )
+			this.stalksMesh.setInstanceValue( 'instanceLean', i, [s.lean, s.leanDirX, s.leanDirZ] )
+		}
+
+		stage3d.add( this.stalksMesh )
 	}
 
-	createNodes( x, z, height, width, lean, leanDir ) {
-		const nodeSpacing = 1.2
-		const nodeCount = Math.floor( height / nodeSpacing )
+	createNodesMesh( nodesData ) {
+		if ( nodesData.length === 0 ) return
 
-		for ( let n = 1; n < nodeCount; n++ ) {
-			const t = ( n * nodeSpacing ) / height
-			const y = n * nodeSpacing
-
-			// Match position on stalk
-			const leanAmount = lean * t * t
-			const px = x + Math.cos( leanDir ) * leanAmount
-			const pz = z + Math.sin( leanDir ) * leanAmount
-
-			// Small horizontal ring
-			const ringSegments = 8
-			const ringRadius = width * 0.6
-			const points = new Float32Array( ringSegments * 3 )
-
-			for ( let i = 0; i < ringSegments; i++ ) {
-				const angle = ( i / ringSegments ) * Math.PI * 2
-				points[ i * 3 ] = px + Math.cos( angle ) * ringRadius
-				points[ i * 3 + 1 ] = y
-				points[ i * 3 + 2 ] = pz + Math.sin( angle ) * ringRadius
-			}
-
-			const line = new MeshLine()
-			line.lines( points, true )
-				.color( 0x2d4a2d ) // Slightly darker for nodes
-				.lineWidth( width * 0.4 )
-				.shadow( true )
-				.wireframe( false )
-			line.material.castShadowNode = vec3( 0.15 )
-
-			stage3d.add( line )
-			this.lines.push( { line, isStalk: false } )
+		// Template: horizontal ring at origin with radius 1
+		const ringSegments = 8
+		const templatePoints = new Float32Array( ringSegments * 3 )
+		for ( let i = 0; i < ringSegments; i++ ) {
+			const angle = ( i / ringSegments ) * Math.PI * 2
+			templatePoints[ i * 3 ] = Math.cos( angle )
+			templatePoints[ i * 3 + 1 ] = 0
+			templatePoints[ i * 3 + 2 ] = Math.sin( angle )
 		}
+
+		this.nodesMesh = new MeshLine()
+			.lines( templatePoints, true )
+			.instances( nodesData.length )
+			.color( 0x2d4a2d )
+			.lineWidth( 0.05 ) // Base width, overridden by widthFn
+			.shadow( true )
+			.positionFn( Fn( ( [position, progress] ) => {
+				const pos = attribute( 'instancePosition', 'vec3' )
+				const size = attribute( 'instanceSize', 'float' )
+
+				return vec3(
+					position.x.mul( size ).add( pos.x ),
+					pos.y,
+					position.z.mul( size ).add( pos.z )
+				)
+			} ) )
+			.widthFn( Fn( ( [width] ) => {
+				const w = attribute( 'instanceWidth', 'float' )
+				return width.mul( w ) // w is width multiplier
+			} ) )
+
+		this.nodesMesh.material.castShadowNode = vec3( 0.7 )
+
+		// Add instance attributes
+		this.nodesMesh.addInstanceAttribute( 'instancePosition', 3 )
+		this.nodesMesh.addInstanceAttribute( 'instanceSize', 1 )
+		this.nodesMesh.addInstanceAttribute( 'instanceWidth', 1 )
+
+		// Populate instance data
+		for ( let i = 0; i < nodesData.length; i++ ) {
+			const n = nodesData[ i ]
+			this.nodesMesh.setInstanceValue( 'instancePosition', i, [n.x, n.y, n.z] )
+			this.nodesMesh.setInstanceValue( 'instanceSize', i, n.size )
+			this.nodesMesh.setInstanceValue( 'instanceWidth', i, n.widthMult )
+		}
+
+		stage3d.add( this.nodesMesh )
 	}
 
 	update = ( dt ) => {
@@ -186,9 +244,9 @@ class BambooGroveExample {
 
 		// Orbit the light slowly
 		const radius = 12
-		this.light.position.x = Math.cos( this.time * 0.3 ) * radius
-		this.light.position.z = Math.sin( this.time * 0.3 ) * radius
-		this.light.position.y = 10
+		this.light.position.x = Math.cos( this.time * 0.2 ) * radius
+		this.light.position.z = Math.sin( this.time * 0.2 ) * radius
+		this.light.position.y = 9
 
 		this.light.shadow.needsUpdate = true
 	}
@@ -198,7 +256,7 @@ class BambooGroveExample {
 
 		// Clear atmosphere
 		stage3d.scene.backgroundNode = null
-		stage3d.scene.fogNode = null
+		stage3d.scene.fog = null
 
 		if ( this.ground ) {
 			stage3d.remove( this.ground )
@@ -207,12 +265,17 @@ class BambooGroveExample {
 			this.ground = null
 		}
 
-		this.lines.forEach( ( { line } ) => {
-			stage3d.remove( line )
-			line.dispose()
-		} )
-		this.lines = []
-		this.stalks = []
+		if ( this.stalksMesh ) {
+			stage3d.remove( this.stalksMesh )
+			this.stalksMesh.dispose()
+			this.stalksMesh = null
+		}
+
+		if ( this.nodesMesh ) {
+			stage3d.remove( this.nodesMesh )
+			this.nodesMesh.dispose()
+			this.nodesMesh = null
+		}
 
 		if ( this.light ) {
 			stage3d.remove( this.light.target )
@@ -225,6 +288,7 @@ class BambooGroveExample {
 			this.ambientLight = null
 		}
 
+		stage3d.renderer.shadowMap.enabled = false
 		stage3d.control?.dispose()
 	}
 
