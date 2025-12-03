@@ -41,6 +41,7 @@ export interface MeshLineConfigureOptions {
   alphaTest?: number
   transparent?: boolean
   wireframe?: boolean
+  shadowMode?: 'clip' | 'world'
 
   // advanced
   dash?: MeshLineDashOptions
@@ -78,6 +79,7 @@ export class MeshLine extends ThreeMesh {
   lineWidth(width: number): this
   widthCallback(fn: (t: number) => number): this
   sizeAttenuation(enabled: boolean): this
+  shadowMode(mode: 'clip' | 'world'): this
 
   opacity(opacity: number): this
   alphaTest(value: number): this
@@ -144,6 +146,7 @@ export class MeshLineGeometry extends BufferGeometry {
 export class MeshLineNodeMaterial {
   constructor()
   buildLine(options?: Partial<MeshLineConfigureOptions>): void
+  setShadowMode(mode: 'clip' | 'world'): void
   dispose(): void
 }
 

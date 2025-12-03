@@ -226,6 +226,15 @@ class BasicExample {
 		if ( this.cssRenderer && this.cssRenderer.domElement.parentNode ) {
 			this.cssRenderer.domElement.parentNode.removeChild( this.cssRenderer.domElement )
 		}
+
+		// Dispose textures
+		this.checkerTexture?.dispose()
+		this.checkerTexture = null
+		this.mapTexture?.dispose()
+		this.mapTexture = null
+		this.alphaTexture?.dispose()
+		this.alphaTexture = null
+
 		stage.onUpdate.remove( this.update )
 		stage3d.control.dispose()
 	}

@@ -71,14 +71,14 @@ class FlyingBaguettes {
 		
 		// Add fog to fade to black
 		stage3d.scene.fog = new Fog( 0x000000, 20, 60 )
-		
-		let txt = new TextureLoader().load( '/textures/baguette.png' )
-		txt.colorSpace = SRGBColorSpace
+
+		this.texture = new TextureLoader().load( '/textures/baguette.png' )
+		this.texture.colorSpace = SRGBColorSpace
 		// Create meshline with multiple baguettes
 		this.line = new MeshLine()
 			.lines( this.lineArrays, false )
 			.lineWidth( 1.4 )
-			.map( txt )
+			.map( this.texture )
 			.alphaTest( 0.1 )
 		
 		// Add custom attribute for line identification
@@ -149,6 +149,11 @@ class FlyingBaguettes {
 		stage3d.control.dispose()
 		this.line?.dispose()
 		this.line = null
+
+		stage3d.scene.fog = null
+
+		this.texture?.dispose()
+		this.texture = null
 	}
 
 	show() {}

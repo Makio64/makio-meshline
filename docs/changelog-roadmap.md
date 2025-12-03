@@ -4,14 +4,15 @@ A quick look at where Makio MeshLine has been and where it's headed. We're just 
 
 ## Roadmap
 
-- **Mid-term**: 
+- **Mid-term**:
   - Make a cool tutorial website
-  - Add even more advanced examples
+  - Add receiveShadow support
 - **Long-term**: 
-  - Explore possibilities to leverage more the performance of WebGPU
+  - Explore possibilities to leverage more the performance of WebGPU ( Compute shader for processing the line )
 
 ## Changelog
 
+- **v1.2.0**: Shadow casting support (`.shadow()` method, custom `castShadowNode`), internal refactoring for line position and width calculations, new demos (Shadow, Bamboo Grove)
 - **v1.1.0**: Three.js r181 compatibility, geometry performance improvements, `ensureBuilt()` method
 - **v1.0.5**: Fix TSL assign operation error
 - **v1.0.4**: Per-vertex RGB colors, Three.js ^0.180.0 peer dependency

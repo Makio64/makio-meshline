@@ -48,6 +48,7 @@ export default {
 				{ text: 'Vertex Colors', href: '/examples/vertex-colors' },
 				{ text: 'GPU Circle', href: '/examples/gpu-circle' },
 				{ text: 'GPU Instancing', href: '/examples/gpu-instance' },
+				{ text: 'Sculpture Shadow', href: '/examples/shadow' },
 			],
 			advancedLinks: [
 				{ text: 'Sandbox', href: '/examples/sandbox', primary: true },
@@ -55,6 +56,7 @@ export default {
 				{ text: 'Draw Lines', href: '/examples/drawlines' },
 				{ text: 'Flying Baguettes', href: '/examples/baguettes' },
 				{ text: 'Venus & David', href: '/examples/venus-and-david' },
+				{ text: 'Bamboo Grove', href: '/examples/bamboo-grove' },
 			],
 		}
 	},

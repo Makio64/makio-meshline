@@ -7,6 +7,7 @@
 
 <script>
 import baguettes from '@/demos/baguettes'
+import bambooGrove from '@/demos/bambooGrove'
 import basic from '@/demos/basic'
 import drawlines from '@/demos/drawlines'
 import follow from '@/demos/follow'
@@ -19,6 +20,7 @@ import stress from '@/demos/stress'
 import venus from '@/demos/venus'
 import vertexColors from '@/demos/vertexColors'
 import waves from '@/demos/waves'
+import shadow from '@/demos/shadow'
 import { contentLoaded } from '@/store'
 
 export default {
@@ -38,6 +40,8 @@ export default {
 			drawlines,
 			'gpu-circle': gpuCircle,
 			'gpu-instance': gpuInstance,
+			'bamboo-grove': bambooGrove,
+			shadow,
 			stress,
 			ricefield,
 			sandbox,
@@ -55,6 +59,8 @@ export default {
 			drawlines: 'drawlines.js',
 			'gpu-circle': 'gpuCircle.js',
 			'gpu-instance': 'gpuInstance.js',
+			'bamboo-grove': 'bambooGrove.js',
+			shadow: 'shadow.js',
 			stress: 'stress.js',
 			ricefield: 'ricefield.js',
 			sandbox: 'sandbox.js',

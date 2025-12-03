@@ -56,6 +56,9 @@ See [Common Patterns](./common-patterns.md) for more examples.
 **Dashes:**
 - `dash({ count: number, ratio?: number, offset?: number })` - Configure dash pattern
 
+**Shadow:**
+- `shadow(enabled: boolean)` - Enable shadow casting
+
 **Advanced:**
 
 - `join({ type: 'miter'|'bevel'|'round', limit?: number, quality?: 'standard'|'high' })` - Control line joins; when `type: 'miter'`, `limit` and `quality` apply
@@ -136,6 +139,8 @@ interface MeshLineOptions {
   dashRatio?: number | null
   dashOffset?: number
 
+  // ***Shadow***
+  shadow?: boolean
 
   // ***Rendering flags***
   opacity?: number
@@ -221,6 +226,12 @@ interface MeshLineOptions {
 - **`dashRatio`** (`number | null`) — Ratio of dash length to gap length (0 to 1). For example, `0.5` creates equal dash and gap lengths, `0.7` creates longer dashes with shorter gaps. Only works when `dashCount` is set. Default: `null`.
 
 - **`dashOffset`** (`number`) — Offset into the dash cycle pattern. Animate this value to create moving dash effects. Default: `0`.
+
+### Shadow
+
+- **`shadow`** (`boolean`) — Enable shadow casting for the line. When enabled, the line will cast shadows in your scene. Requires proper Three.js shadow setup (renderer shadowMap enabled, lights with castShadow, and receiving meshes with receiveShadow). Default: `false`.
+
+> **Custom Shadow Color:** After building the line, access `material.castShadowNode` to customize shadow appearance. For example, `material.castShadowNode = vec3(0.7)` creates lighter, softer shadows.
 
 ### Rendering Flags
 
