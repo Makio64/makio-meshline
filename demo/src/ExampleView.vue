@@ -16,11 +16,11 @@ import gpuCircle from '@/demos/gpuCircle'
 import gpuInstance from '@/demos/gpuInstance'
 import ricefield from '@/demos/ricefield'
 import sandbox from '@/demos/sandbox'
+import shadow from '@/demos/shadow'
 import stress from '@/demos/stress'
 import venus from '@/demos/venus'
 import vertexColors from '@/demos/vertexColors'
 import waves from '@/demos/waves'
-import shadow from '@/demos/shadow'
 import { contentLoaded } from '@/store'
 
 export default {

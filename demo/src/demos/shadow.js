@@ -9,7 +9,6 @@ import {
 	SpotLight,
 	SpotLightHelper,
 } from 'three'
-import { color, mix, uv } from 'three/tsl'
 import { MeshStandardNodeMaterial } from 'three/webgpu'
 
 import stage from '@/makio/core/stage'

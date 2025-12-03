@@ -1,6 +1,6 @@
 import { MeshLine } from 'makio-meshline'
 import { Fog } from 'three'
-import { attribute, mix, color, Fn, positionWorld, smoothstep, vec3 } from 'three/tsl'
+import { attribute, color, Fn, mix, positionWorld, smoothstep, vec3 } from 'three/tsl'
 import { AmbientLight, DirectionalLight, Mesh, MeshStandardMaterial, PCFSoftShadowMap, PlaneGeometry } from 'three/webgpu'
 
 import stage from '@/makio/core/stage'
