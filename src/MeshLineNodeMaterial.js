@@ -125,30 +125,42 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 		this.needsUpdate = true
 	}
 
+	getLinePositions( progress ) {
+		// Get base positions
+		let pos = this.gpuPositionNode ? this.gpuPositionNode( progress, float( 0 ) ) : positionGeometry
+		let previous = this.gpuPositionNode ? this.gpuPositionNode( progress.sub( 1 / this._segments ), float( 0 ) ) : attribute( 'previous', 'vec3' )
+		let next = this.gpuPositionNode ? this.gpuPositionNode( progress.add( 1 / this._segments ), float( 0 ) ) : attribute( 'next', 'vec3' )
+		// Apply position modifiers
+		if ( this.positionFn ) {
+			pos = this.positionFn( pos, progress )
+			previous = this.positionFn( previous, progress )
+			next = this.positionFn( next, progress )
+		}
+
+		if ( this.previousFn ) { previous = this.previousFn( previous, progress ) }
+		if ( this.nextFn ) { next = this.nextFn( next, progress ) }
+
+		return { pos, previous, next }
+	}
+
+	getLineWidth( width, progress, side ) {
+		if ( this._needsWidth || this.widthFn ) {
+			width = width.mul( aWidth )
+		}
+		if ( this.widthFn ) {
+			width = this.widthFn( width, progress, side )
+		}
+		return width
+	}
+
 	buildShadowPositionNode() {
-		const material = this
 
 		this.castShadowPositionNode = Fn( () => {
 			const progress = aProgress
 			const side = aSide
 
 			// Get base positions in LOCAL space
-			let pos = material.gpuPositionNode
-				? material.gpuPositionNode( progress, float( 0 ) )
-				: positionGeometry
-			let previous = material.gpuPositionNode
-				? material.gpuPositionNode( progress.sub( 1 / material._segments ), float( 0 ) )
-				: attribute( 'previous', 'vec3' )
-			let next = material.gpuPositionNode
-				? material.gpuPositionNode( progress.add( 1 / material._segments ), float( 0 ) )
-				: attribute( 'next', 'vec3' )
-
-			// Apply positionFn if defined
-			if ( material.positionFn ) {
-				pos = material.positionFn( pos, progress )
-				previous = material.positionFn( previous, progress )
-				next = material.positionFn( next, progress )
-			}
+			const { pos, previous, next } = this.getLinePositions( progress )
 
 			// Transform to VIEW space
 			const posView = modelViewMatrix.mul( vec4( pos, 1.0 ) ).xyz
@@ -166,14 +178,7 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 			// This is effectively the 2D normal in the XY plane
 			const perp = normalize( vec3( dir.y.negate(), dir.x, 0 ) )
 
-			// Use lineWidth directly
-			let w = material.lineWidth.mul( 0.5 )
-			if ( material._needsWidth || material.widthFn ) {
-				w = w.mul( aWidth )
-			}
-			if ( material.widthFn ) {
-				w = material.widthFn( w.mul( 2 ), progress, side ).mul( 0.5 )
-			}
+			const w = this.getLineWidth( this.lineWidth.mul( 0.5 ), progress, side )
 
 			// Apply offset in VIEW space
 			const posViewNew = posView.add( perp.mul( side.mul( w ) ) )
@@ -191,36 +196,12 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 
 	setupShaders( { } ) {
 
-		// Calculate segments properly for both single and multi-line setups
-		let segments = this.options.segments || (
-			Array.isArray( this.options.lines?.[0] ) || this.options.lines?.[0] instanceof Float32Array
-				? this.options.lines[0].length / 3
-				: this.options.lines?.length / 3
-		) || 1
-
 		// Cache frequently-used attributes to prevent duplicate GPU computation
 		const progress = aProgress.toVar( 'varProgress' )
 		const side = aSide.toVar( 'varSide' )
 
 		// Get base positions first
-		let basePos = this.gpuPositionNode ? this.gpuPositionNode( progress, 0 ) : positionGeometry
-		let basePrevious = this.gpuPositionNode ? this.gpuPositionNode( progress.sub( 1 / segments ) ) : attribute( 'previous', 'vec3' ).toVar( 'aPrevious' )
-		let baseNext = this.gpuPositionNode ? this.gpuPositionNode( progress.add( 1 / segments ) ) : attribute( 'next', 'vec3' ).toVar( 'aNext' )
-
-		// Apply position modifiers consistently
-		let pos = basePos
-		let previous = basePrevious
-		let next = baseNext
-
-		if ( this.positionFn ) {
-			pos = this.positionFn( pos, progress )
-			// For instanced lines, the positionFn should be applied consistently to all positions
-			previous = this.positionFn( previous, progress )
-			next = this.positionFn( next, progress )
-		}
-
-		if ( this.previousFn ) { previous = this.previousFn( previous, progress ) }
-		if ( this.nextFn ) { next = this.nextFn( next, progress ) }
+		const { pos, previous, next } = this.getLinePositions( progress )
 
 		this.vertexNode = Fn( () => {
 
@@ -252,16 +233,7 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 			const prevP = fix( prevPos, aspect ).toVar( 'prevP' )
 			const nextP = fix( nextPos, aspect ).toVar( 'nextP' )
 
-			let w = this.lineWidth.mul( this.dpr ).toVar( 'w' )
-
-			if ( this.options.needsWidth || this.widthFn ) {
-				w.mulAssign( aWidth )
-			}
-
-			// Apply width modifier if provided
-			if ( this.widthFn ) {
-				w.assign( this.widthFn( w, progress, side ) )
-			}
+			const w = this.getLineWidth( this.lineWidth.mul( this.dpr ), progress, side ).toVar( 'w' )
 
 			vWidth.assign( w )
 
