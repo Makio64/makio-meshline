@@ -1,4 +1,4 @@
-import { abs, attribute, cameraProjectionMatrix, cross, Discard, dot, float, Fn, max, min, mix, mod, modelViewMatrix, normalize, positionGeometry, smoothstep, step, texture, uniform, uv, varyingProperty, vec2, vec4 } from 'three/tsl'
+import { abs, attribute, cameraProjectionMatrix, cameraWorldMatrix, Discard, dot, float, Fn, max, min, mix, mod, modelViewMatrix, modelWorldMatrixInverse, normalize, positionGeometry, smoothstep, step, texture, uniform, uv, varyingProperty, vec2, vec3, vec4 } from 'three/tsl'
 import { Color, MeshBasicNodeMaterial, Vector2 } from 'three/webgpu'
 
 const fix = Fn( ( [i_immutable, aspect_immutable] ) => {
@@ -7,10 +7,12 @@ const fix = Fn( ( [i_immutable, aspect_immutable] ) => {
 	const ndc = vec2( i.xy.div( i.w ) ).toVar( 'ndc' )
 	const res = vec2( ndc.x.mul( aspect ), ndc.y ).toVar( 'res' )
 	return res
-} ).setLayout( { name: 'fix', type: 'vec2', inputs: [
-	{ name: 'i', type: 'vec4' },
-	{ name: 'aspect', type: 'float' }
-] } )
+} ).setLayout( {
+	name: 'fix', type: 'vec2', inputs: [
+		{ name: 'i', type: 'vec4' },
+		{ name: 'aspect', type: 'float' }
+	]
+} )
 
 // build these nodes once for all instances
 const aSide = attribute( 'side', 'float' )
@@ -148,20 +150,23 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 				next = material.positionFn( next, progress )
 			}
 
-			// Calculate line direction in LOCAL space
-			const dir1 = normalize( pos.sub( previous ) )
-			const dir2 = normalize( next.sub( pos ) )
+			// Transform to VIEW space
+			const posView = modelViewMatrix.mul( vec4( pos, 1.0 ) ).xyz
+			const prevView = modelViewMatrix.mul( vec4( previous, 1.0 ) ).xyz
+			const nextView = modelViewMatrix.mul( vec4( next, 1.0 ) ).xyz
+
+			// Calculate line direction in VIEW space
+			const dir1 = normalize( posView.sub( prevView ) )
+			const dir2 = normalize( nextView.sub( posView ) )
 			const dir = normalize( dir1.add( dir2 ) )
 
-			// Calculate perpendicular in local space using world-up transformed to local
-			// Use Y-up, fall back to X if line is vertical
-			const worldUp = vec4( 0, 1, 0, 0 ).xyz
-			const worldRight = vec4( 1, 0, 0, 0 ).xyz
-			const dotUp = abs( dot( dir, worldUp ) )
-			const refDir = mix( worldUp, worldRight, step( 0.9, dotUp ) )
-			const perp = normalize( cross( dir, refDir ) )
+			// Calculate perpendicular in VIEW space (billboard to camera)
+			// In View space, camera is at (0,0,0) looking down -Z
+			// We want the vector perpendicular to the line and the view direction (Z axis)
+			// This is effectively the 2D normal in the XY plane
+			const perp = normalize( vec3( dir.y.negate(), dir.x, 0 ) )
 
-			// Use lineWidth directly as local/world units
+			// Use lineWidth directly
 			let w = material.lineWidth.mul( 0.5 )
 			if ( material._needsWidth || material.widthFn ) {
 				w = w.mul( aWidth )
@@ -170,8 +175,12 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 				w = material.widthFn( w.mul( 2 ), progress, side ).mul( 0.5 )
 			}
 
-			// Apply offset in LOCAL space - Three.js will transform to world/clip
-			return pos.add( perp.mul( side.mul( w ) ) )
+			// Apply offset in VIEW space
+			const posViewNew = posView.add( perp.mul( side.mul( w ) ) )
+
+			// Transform back to LOCAL space
+			const worldPos = cameraWorldMatrix.mul( vec4( posViewNew, 1.0 ) )
+			return modelWorldMatrixInverse.mul( worldPos ).xyz
 		} )()
 	}
 
@@ -180,12 +189,12 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 		super.setup( builder )
 	}
 
-	setupShaders( {  } ) {
+	setupShaders( { } ) {
 
 		// Calculate segments properly for both single and multi-line setups
 		let segments = this.options.segments || (
-			Array.isArray( this.options.lines?.[ 0 ] ) || this.options.lines?.[ 0 ] instanceof Float32Array
-				? this.options.lines[ 0 ].length / 3
+			Array.isArray( this.options.lines?.[0] ) || this.options.lines?.[0] instanceof Float32Array
+				? this.options.lines[0].length / 3
 				: this.options.lines?.length / 3
 		) || 1
 
@@ -255,7 +264,7 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 			}
 
 			vWidth.assign( w )
-			
+
 			// Calculate the miter direction
 			const dir1 = normalize( currentP.sub( prevP ) ).toVar( 'dir1' )
 			const dir2 = normalize( nextP.sub( currentP ) ).toVar( 'dir2' )
@@ -271,26 +280,26 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 
 				// Advanced normal (perp to bisector, scaled by limited miter length)
 				const advancedNormal = vec2( dir.y.negate(), dir.x ).mul( limitedMiterLength ).toVar( 'advancedNormal' )
-				
+
 				if ( this.highQualityMiter ) {
 					// High quality miter with screen center spike fix
 					const basicNormal = vec2( dir.y.negate(), dir.x ).toVar( 'basicNormal' )
-					
+
 					// Check proximity to screen center axes
 					const ndcPos = finalPosition.xy.div( finalPosition.w ).toVar( 'ndcPos' )
 					const distToHorizontal = abs( ndcPos.y ).toVar( 'distToHorizontal' )
 					const distToVertical = abs( ndcPos.x ).toVar( 'distToVertical' )
 					const minDistToAxis = min( distToHorizontal, distToVertical ).toVar( 'minDistToAxis' )
-					
+
 					// Check angle between segments - smooth transition based on sharpness
 					const segmentDot = dot( dir1, dir2 ).toVar( 'segmentDot' )
 					// Smooth transition: 1 when very sharp (< -0.8), 0 when moderate (> -0.3)
 					const sharpnessFactor = float( 1 ).sub( smoothstep( float( -0.8 ), float( -0.3 ), segmentDot ) ).toVar( 'sharpnessFactor' )
-					
+
 					// Smooth blend based on distance to center axes
 					// 1 when very close to axis (< 0.25), 0 when far (> 0.5)
 					const centerProximity = float( 1 ).sub( smoothstep( 0.25, 0.5, minDistToAxis ) ).toVar( 'centerProximity' )
-					
+
 					// Combine both factors smoothly - use minimum to ensure both conditions contribute
 					const isCentered = centerProximity.mul( sharpnessFactor ).toVar( 'isCentered' )
 
@@ -300,7 +309,7 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 					// Standard miter approach
 					normal.xy.assign( advancedNormal )
 				}
-				
+
 				normal.xy.mulAssign( w.mul( 0.5 ) )
 			} else {
 				// Simple approach only
@@ -330,13 +339,13 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 			if ( this.vertexFn ) {
 				finalPosition.assign( this.vertexFn( finalPosition, normal, progress, side ) )
 			}
-			
+
 			return finalPosition
 		} )()
 		let uvCoords
 		if ( ( this.map && this.map.value ) || ( this.alphaMap && this.alphaMap.value ) || this.uvFn ) {
 			uvCoords = uv().mul( this.repeat || vec2( 1, 1 ) ).add( this.mapOffset || vec2( 0, 0 ) ).toVar( 'uvCoords' )
-			
+
 			// Apply UV modifier if provided
 			if ( this.uvFn ) {
 				uvCoords = this.uvFn( uvCoords, vProgress, side )
@@ -352,14 +361,14 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 				if ( this.gradientFn ) {
 					gradientFactor.assign( this.gradientFn( gradientFactor, side ) )
 				}
-				
+
 				color.rgb.assign( mix( color.rgb, this.gradient, gradientFactor ) )
 			}
 
 			if ( this.map && this.map.value ) {
 				color.mulAssign( this.map.sample( uvCoords ) )
 			}
-			
+
 			// Apply fragment color modifier if provided
 			if ( this.fragmentColorFn ) {
 				color.assign( this.fragmentColorFn( color, uvCoords, vProgress, side ) )
@@ -371,7 +380,7 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 		// Opacity node
 		this.opacityNode = Fn( () => {
 			let alpha = float( 1 ).toVar( 'alpha' )
-			
+
 			if ( this.alphaMap && this.alphaMap.value ) {
 				alpha.mulAssign( this.alphaMap.sample( uvCoords ).r )
 			}
@@ -379,7 +388,7 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 			if ( this.opacity ) {
 				alpha.mulAssign( this.opacity )
 			}
-			
+
 			// Apply opacity modifier if provided
 			if ( this.opacityFn ) {
 				alpha.assign( this.opacityFn( alpha, vProgress, side ) )
@@ -389,12 +398,12 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 
 			if ( this.dashCount ) {
 				let cyclePosition = mod( vProgress.mul( this.dashCount ).add( this.dashOffset ), float( 1 ) ).toVar( 'cyclePosition' )
-				
+
 				// Apply dash modifier if provided
 				if ( this.dashFn ) {
 					cyclePosition.assign( this.dashFn( cyclePosition, vProgress, side ) )
 				}
-				
+
 				// dashRatio represents a dash portion: 0.1 = 10% dash, 90% gap
 				const dashMask = step( cyclePosition, this.dashRatio )
 				Discard( dashMask.lessThan( 0.001 ) )
