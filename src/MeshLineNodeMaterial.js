@@ -1,4 +1,4 @@
-import { abs, attribute, cameraProjectionMatrix, cameraWorldMatrix, Discard, dot, float, Fn, max, min, mix, mod, modelViewMatrix, modelWorldMatrixInverse, normalize, positionGeometry, smoothstep, step, texture, uniform, uv, varyingProperty, vec2, vec3, vec4 } from 'three/tsl'
+import { abs, attribute, cameraProjectionMatrix, cameraWorldMatrix, Discard, dot, float, Fn, max, min, mix, mod, modelViewMatrix, modelWorldMatrixInverse, normalize, positionGeometry, smoothstep, step, texture, uniform, uv, varying, varyingProperty, vec2, vec3, vec4 } from 'three/tsl'
 import { Color, MeshBasicNodeMaterial, Vector2 } from 'three/webgpu'
 
 const fix = Fn( ( [i_immutable, aspect_immutable] ) => {
@@ -121,6 +121,8 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 			this.buildShadowPositionNode()
 		} else {
 			this.castShadowPositionNode = null
+			this.castShadowNode = null
+			this.shadowNode = null
 		}
 		this.needsUpdate = true
 	}
@@ -187,6 +189,23 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 			const worldPos = cameraWorldMatrix.mul( vec4( posViewNew, 1.0 ) )
 			return modelWorldMatrixInverse.mul( worldPos ).xyz
 		} )()
+
+		// Add shadowNode for dash discard during shadow pass
+		if ( this.dashCount ) {
+			this.castShadowNode = Fn( () => {
+				const vProg = varying( aProgress )
+				let cyclePosition = mod( vProg.mul( this.dashCount ).add( this.dashOffset ), float( 1 ) ).toVar( 'cyclePosition' )
+
+				if ( this.dashFn ) {
+					cyclePosition.assign( this.dashFn( cyclePosition, vProg, varying( aSide ) ) )
+				}
+
+				const dashMask = step( cyclePosition, this.dashRatio )
+				Discard( dashMask.lessThan( 0.001 ) )
+
+				return vec3( 0 )
+			} )()
+		}
 	}
 
 	setup( builder ) {

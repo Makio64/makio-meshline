@@ -7,9 +7,9 @@
 
 <script>
 import baguettes from '@/demos/baguettes'
+import bambooGrove from '@/demos/bambooGrove'
 import basic from '@/demos/basic'
 import drawlines from '@/demos/drawlines'
-import eiffelTower from '@/demos/eiffelTower'
 import follow from '@/demos/follow'
 import ghost from '@/demos/ghost'
 import gpuCircle from '@/demos/gpuCircle'
@@ -20,6 +20,7 @@ import stress from '@/demos/stress'
 import venus from '@/demos/venus'
 import vertexColors from '@/demos/vertexColors'
 import waves from '@/demos/waves'
+import wireSculpture from '@/demos/wireSculpture'
 import { contentLoaded } from '@/store'
 
 export default {
@@ -39,7 +40,8 @@ export default {
 			drawlines,
 			'gpu-circle': gpuCircle,
 			'gpu-instance': gpuInstance,
-			'eiffel-tower': eiffelTower,
+			'bamboo-grove': bambooGrove,
+			'wire-sculpture': wireSculpture,
 			stress,
 			ricefield,
 			sandbox,
@@ -57,7 +59,8 @@ export default {
 			drawlines: 'drawlines.js',
 			'gpu-circle': 'gpuCircle.js',
 			'gpu-instance': 'gpuInstance.js',
-			'eiffel-tower': 'eiffelTower.js',
+			'bamboo-grove': 'bambooGrove.js',
+			'wire-sculpture': 'wireSculpture.js',
 			stress: 'stress.js',
 			ricefield: 'ricefield.js',
 			sandbox: 'sandbox.js',
