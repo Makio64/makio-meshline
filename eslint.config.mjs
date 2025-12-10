@@ -1,10 +1,8 @@
 import stylistic from '@stylistic/eslint-plugin'
 import pluginVue from 'eslint-plugin-vue'
-import { FlatCompat } from "@eslint/eslintrc"
 import simpleImportSort from 'eslint-plugin-simple-import-sort'
 import unusedImports from 'eslint-plugin-unused-imports'
-
-const compat = new FlatCompat()
+import autoImportGlobals from './demo/.eslintrc-auto-import.json' with { type: 'json' }
 
 export default [
 	// Configuration for src directory (plain JavaScript)
@@ -38,9 +36,11 @@ export default [
 	},
 	// Configuration for demo directory (Vue files and JavaScript)
 	...pluginVue.configs['flat/recommended'],
-	...compat.extends('./demo/.eslintrc-auto-import.json'),
 	{
 		files: ["demo/**/*.js", "demo/**/*.mjs", "demo/**/*.vue"],
+		languageOptions: {
+			globals: autoImportGlobals.globals
+		},
 		ignores: ['node_modules', 'dist', 'out', 'docs/.vitepress/dist'],
 		plugins: {
 			'@stylistic': stylistic,
