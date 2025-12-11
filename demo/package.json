@@ -16,7 +16,7 @@
 		"makio-meshline": "workspace:*",
 		"shiki": "^3.19.0",
 		"simplify-js": "^1.2.4",
-		"three": "^0.181.2",
+		"three": "^0.182.0",
 		"three-mesh-bvh": "^0.9.3",
 		"vue": "^3.5.25",
 		"vue-tiny-router": "^1.7.1",

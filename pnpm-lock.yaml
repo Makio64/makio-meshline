@@ -52,11 +52,11 @@ importers:
         specifier: ^1.2.4
         version: 1.2.4
       three:
-        specifier: ^0.181.2
-        version: 0.181.2
+        specifier: ^0.182.0
+        version: 0.182.0
       three-mesh-bvh:
         specifier: ^0.9.3
-        version: 0.9.3(three@0.181.2)
+        version: 0.9.3(three@0.182.0)
       vue:
         specifier: ^3.5.25
         version: 3.5.25(typescript@5.9.3)
@@ -123,10 +123,10 @@ importers:
     dependencies:
       makio-meshline:
         specifier: '>=1.2.0'
-        version: 1.2.0(three@0.181.2)
+        version: 1.2.0(three@0.182.0)
       three:
-        specifier: '>=0.181.2'
-        version: 0.181.2
+        specifier: '>=0.182.0'
+        version: 0.182.0
     devDependencies:
       vitepress:
         specifier: ^1.6.4
@@ -1674,6 +1674,9 @@ packages:
   three@0.181.2:
     resolution: {integrity: sha512-k/CjiZ80bYss6Qs7/ex1TBlPD11whT9oKfT8oTGiHa34W4JRd1NiH/Tr1DbHWQ2/vMUypxksLnF2CfmlmM5XFQ==}
 
+  three@0.182.0:
+    resolution: {integrity: sha512-GbHabT+Irv+ihI1/f5kIIsZ+Ef9Sl5A1Y7imvS5RQjWgtTPfPnZ43JmlYI7NtCRDK9zir20lQpfg8/9Yd02OvQ==}
+
   tinyglobby@0.2.15:
     resolution: {integrity: sha512-j2Zq4NyQYG5XMST4cbs02Ak8iJUdxRM0XI5QyxXuZOzKOINmWurp3smXu3y5wDcJrptwpSjgXHzIQxR0omXljQ==}
     engines: {node: '>=12.0.0'}
@@ -3089,9 +3092,9 @@ snapshots:
     dependencies:
       '@jridgewell/sourcemap-codec': 1.5.5
 
-  makio-meshline@1.2.0(three@0.181.2):
+  makio-meshline@1.2.0(three@0.182.0):
     dependencies:
-      three: 0.181.2
+      three: 0.182.0
 
   mark.js@8.11.1: {}
 
@@ -3426,11 +3429,13 @@ snapshots:
       commander: 2.20.3
       source-map-support: 0.5.21
 
-  three-mesh-bvh@0.9.3(three@0.181.2):
+  three-mesh-bvh@0.9.3(three@0.182.0):
     dependencies:
-      three: 0.181.2
+      three: 0.182.0
 
   three@0.181.2: {}
+
+  three@0.182.0: {}
 
   tinyglobby@0.2.15:
     dependencies:
