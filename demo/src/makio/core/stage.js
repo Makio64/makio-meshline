@@ -38,14 +38,16 @@ class Stage {
 		this.lastTime = now
 		this.dtOffset += dt
 
-		let steps = 0
-		while ( this.dtOffset >= TIME_STEP && steps < MAX_STEPS ) {
-			this.onUpdate.dispatch( TIME_STEP )
-			this.dtOffset -= TIME_STEP
-			steps++
-		}
+		// let steps = 0
+		// while ( this.dtOffset >= TIME_STEP && steps < MAX_STEPS ) {
+		// 	this.onUpdate.dispatch( TIME_STEP )
+		// 	this.dtOffset -= TIME_STEP
+		// 	steps++
+		// }
+		// this.onRender.dispatch( this.dtOffset / TIME_STEP )
 
-		this.onRender.dispatch( this.dtOffset / TIME_STEP )
+		this.onUpdate.dispatch( dt )
+		this.onRender.dispatch( dt )
 		requestAnimationFrame( this.update )
 	}
 }
