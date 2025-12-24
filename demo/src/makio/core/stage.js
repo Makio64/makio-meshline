@@ -10,7 +10,7 @@ class Stage {
 	dtOffset = 0
 	width = window.innerWidth
 	height = window.innerHeight
-	pixelRatio = window.devicePixelRatio//Math.min( 1.5, window.devicePixelRatio )
+	devicePixelRatio = window.devicePixelRatio//Math.min( 1.5, window.devicePixelRatio )
 	onResize = new Signal()
 	onUpdate = new Signal()
 	onRender = new Signal()

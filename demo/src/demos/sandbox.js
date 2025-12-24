@@ -232,7 +232,7 @@ class SandboxExample {
 			.sizeAttenuation( this.config.sizeAttenuation )
 			.wireframe( this.config.wireframe )
 			.renderSize( stage.width, stage.height )
-			.dpr( stage.pixelRatio )
+			.dpr( stage.devicePixelRatio )
 		
 		if ( this.config.useGradient ) {
 			this.line.gradientColor( this.config.gradientColor )
