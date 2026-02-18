@@ -11,16 +11,16 @@
 		"lint": "eslint src --fix"
 	},
 	"dependencies": {
-		"animejs": "^4.2.2",
+		"animejs": "^4.3.6",
 		"lil-gui": "^0.21.0",
 		"makio-meshline": "workspace:*",
-		"shiki": "^3.20.0",
+		"shiki": "^3.22.0",
 		"simplify-js": "^1.2.4",
-		"three": "^0.182.0",
-		"three-mesh-bvh": "^0.9.4",
-		"vue": "^3.5.26",
+		"three": "^0.183.0",
+		"three-mesh-bvh": "^0.9.8",
+		"vue": "^3.5.28",
 		"vue-tiny-router": "^1.7.1",
-		"vue-tiny-translation": "^1.0.0"
+		"vue-tiny-translation": "^1.1.0"
 	},
 	"devDependencies": {
 		"@eslint/eslintrc": "^3.3.3",
