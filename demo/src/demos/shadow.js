@@ -34,6 +34,7 @@ class WireSculptureExample {
 
 		stage3d.renderer.shadowMap.enabled = true
 		stage3d.renderer.shadowMap.type = PCFSoftShadowMap
+		stage3d.renderer.shadowMap.transmitted = true
 
 		stage3d.control = new OrbitControl( stage3d.camera, 10 )
 		stage3d.control.maxRadius = 20
