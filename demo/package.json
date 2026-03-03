@@ -29,7 +29,7 @@
 		"eslint": "^10.0.2",
 		"eslint-plugin-simple-import-sort": "^12.1.1",
 		"eslint-plugin-vue": "^10.8.0",
-		"rollup-plugin-visualizer": "^7.0.0",
+		"rollup-plugin-visualizer": "^7.0.1",
 		"stylus": "^0.64.0",
 		"terser": "^5.46.0",
 		"unplugin-auto-import": "^21.0.0",
