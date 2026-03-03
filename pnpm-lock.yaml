@@ -55,8 +55,8 @@ importers:
         specifier: ^0.183.2
         version: 0.183.2
       three-mesh-bvh:
-        specifier: ^0.9.8
-        version: 0.9.8(three@0.183.2)
+        specifier: ^0.9.9
+        version: 0.9.9(three@0.183.2)
       vue:
         specifier: ^3.5.29
         version: 3.5.29(typescript@5.9.3)
@@ -1267,6 +1267,7 @@ packages:
 
   glob@10.4.5:
     resolution: {integrity: sha512-7Bv8RF0k6xjo7d4A/PxYLbUCfb6c+Vpd2/mB2yRDlew7Jb5hEXiCD9ibfO7wpk8i4sevK6DFny9h7EYbM3/sHg==}
+    deprecated: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
     hasBin: true
 
   globals@14.0.0:
@@ -1726,8 +1727,8 @@ packages:
     engines: {node: '>=10'}
     hasBin: true
 
-  three-mesh-bvh@0.9.8:
-    resolution: {integrity: sha512-YphYvdXEZSXdz6iNdWJo1RB6qvSCRyiXPEVSvNU6xVWbLDOdSrfEIsJOpgFOnefdmVEvZ6M+sY0cjh9gl7MvdA==}
+  three-mesh-bvh@0.9.9:
+    resolution: {integrity: sha512-FJKitcjvbALmeQRK+Sc+nLGorCpkrZBrbgJZFzhdyWboak37DZikn46hvQkNqSbJPm227ahYmS6k3N/GXaAyXw==}
     peerDependencies:
       three: '>= 0.159.0'
 
@@ -3530,7 +3531,7 @@ snapshots:
       commander: 2.20.3
       source-map-support: 0.5.21
 
-  three-mesh-bvh@0.9.8(three@0.183.2):
+  three-mesh-bvh@0.9.9(three@0.183.2):
     dependencies:
       three: 0.183.2
 

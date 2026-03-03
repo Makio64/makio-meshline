@@ -17,7 +17,7 @@
 		"shiki": "^4.0.1",
 		"simplify-js": "^1.2.4",
 		"three": "^0.183.2",
-		"three-mesh-bvh": "^0.9.8",
+		"three-mesh-bvh": "^0.9.9",
 		"vue": "^3.5.29",
 		"vue-tiny-router": "^1.7.1",
 		"vue-tiny-translation": "^1.1.0"
