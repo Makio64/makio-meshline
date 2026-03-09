@@ -14,22 +14,22 @@
 		"animejs": "^4.3.6",
 		"lil-gui": "^0.21.0",
 		"makio-meshline": "workspace:*",
-		"shiki": "^4.0.1",
+		"shiki": "^4.0.2",
 		"simplify-js": "^1.2.4",
 		"three": "^0.183.2",
-		"three-mesh-bvh": "^0.9.8",
-		"vue": "^3.5.29",
+		"three-mesh-bvh": "^0.9.9",
+		"vue": "^3.5.30",
 		"vue-tiny-router": "^1.7.1",
 		"vue-tiny-translation": "^1.1.0"
 	},
 	"devDependencies": {
-		"@eslint/eslintrc": "^3.3.4",
-		"@stylistic/eslint-plugin": "^5.9.0",
+		"@eslint/eslintrc": "^3.3.5",
+		"@stylistic/eslint-plugin": "^5.10.0",
 		"@vitejs/plugin-vue": "^6.0.4",
-		"eslint": "^10.0.2",
+		"eslint": "^10.0.3",
 		"eslint-plugin-simple-import-sort": "^12.1.1",
 		"eslint-plugin-vue": "^10.8.0",
-		"rollup-plugin-visualizer": "^7.0.0",
+		"rollup-plugin-visualizer": "^7.0.1",
 		"stylus": "^0.64.0",
 		"terser": "^5.46.0",
 		"unplugin-auto-import": "^21.0.0",
@@ -41,5 +41,5 @@
 		"vite-plugin-tsl-operator": "^1.8.2",
 		"vue-eslint-parser": "^10.4.0"
 	},
-	"packageManager": "pnpm@10.30.3"
+	"packageManager": "pnpm@10.31.0"
 }

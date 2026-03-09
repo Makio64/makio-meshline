@@ -12,12 +12,12 @@
     "lint:fix": "eslint src/ demo/src/ --fix"
   },
   "devDependencies": {
-    "@stylistic/eslint-plugin": "^5.9.0",
-    "eslint": "^10.0.2",
+    "@stylistic/eslint-plugin": "^5.10.0",
+    "eslint": "^10.0.3",
     "eslint-plugin-simple-import-sort": "^12.1.1",
     "eslint-plugin-unused-imports": "^4.4.1",
     "eslint-plugin-vue": "^10.8.0",
     "typescript": "^5.9.3"
   },
-  "packageManager": "pnpm@10.30.3"
+  "packageManager": "pnpm@10.31.0"
 }
