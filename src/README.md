@@ -2,7 +2,7 @@
 
 A modern, performant TSL-powered meshline solution for Three.js.
 
-- Supports: Three.js r178+, WebGPURenderer (WebGPU/WebGL2 backends)
+- Supports: Three.js r180+, WebGPURenderer (WebGPU and WebGL2 backend)
 - Features: gradients, dashes, textures, variable width, instancing, TSL hooks
 
 ## Install

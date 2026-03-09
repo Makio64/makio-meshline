@@ -2,9 +2,9 @@
 *A modern, performant TSL-powered meshline solution for Three.js*
 
 **Support matrix**
-- **Three.js**: r178+
-- **Renderer**: WebGPURenderer only
-- **Backends**: WebGPU / WebGL2
+- **Three.js**: r180+
+- **Renderer**: `WebGPURenderer` only
+- **Backends**: WebGPU & WebGL2 backend used by `WebGPURenderer`
 
 ## [Live Demo](https://meshline-demo.makio.io)
 

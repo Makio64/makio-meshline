@@ -61,16 +61,16 @@ See [Common Patterns](./common-patterns.md) for more examples.
 
 **Advanced:**
 
-- `join({ type: 'miter'|'bevel'|'round', limit?: number, quality?: 'standard'|'high' })` - Control line joins; when `type: 'miter'`, `limit` and `quality` apply
+- `join({ type: 'miter'|'simple', limit?: number, quality?: 'standard'|'high' })` - Choose the high-quality miter join or the default simple join; `limit` and `quality` apply only to `miter`
 - `dpr(ratio: number)` - Set device pixel ratio
-- `frustumCulled(enable: boolean)` - Enable/disable frustum culling & geometry BoundingBox/boundingSphere creation
+- `frustumCulled(enable: boolean)` - Enable/disable frustum culling; when disabled, build-time bounding volumes are skipped
 - `verbose(enable: boolean)` - Enable/disable verbose logging
 - `renderSize(width: number, height: number)` - Set render resolution
 - `gpuPositionNode(node: Fn)` - Set GPU position calculation node
 - `usage(usage: THREE.Usage)` - Set buffer usage hint for position/next/prev (if they exist)
 - `instances(count: number)` - Enable instancing with specified count
 - `dynamic(enable: boolean)` - Toggle dynamic geometry updates (usage hints)
-- `autoResize(target?: Window|HTMLElement)` - Automatically update resolution on resize
+- `autoResize(target?: Window)` - Automatically update resolution on resize
 
 **Hook Functions:**
 
@@ -181,6 +181,9 @@ interface MeshLineOptions {
   fragmentColorFn?: Fn | null
   fragmentAlphaFn?: Fn | null
   discardFn?: Fn | null
+
+  dynamic?: boolean
+  autoResize?: Window
 
   // Debugging
   verbose?: boolean

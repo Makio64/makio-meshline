@@ -9,9 +9,10 @@ import type {
 
 export type LinePoints = Float32Array | number[] | { x: number; y: number; z?: number }[]
 export type MultiLinePoints = Array<LinePoints> | LinePoints
+export type MeshLineResizeTarget = Pick<Window, 'addEventListener' | 'removeEventListener' | 'innerWidth' | 'innerHeight'>
 
 export interface MeshLineJoinOptions {
-  type?: 'miter' | 'bevel' | 'round'
+  type?: 'miter' | 'simple'
   limit?: number
   quality?: 'standard' | 'high'
 }
@@ -41,7 +42,7 @@ export interface MeshLineConfigureOptions {
   alphaTest?: number
   transparent?: boolean
   wireframe?: boolean
-  shadowMode?: 'clip' | 'world'
+  shadow?: boolean
 
   // advanced
   dash?: MeshLineDashOptions
@@ -51,6 +52,8 @@ export interface MeshLineConfigureOptions {
   verbose?: boolean
   renderWidth?: number
   renderHeight?: number
+  dynamic?: boolean
+  autoResize?: MeshLineResizeTarget
 
   // gpu / instancing
   gpuPositionNode?: any
@@ -79,7 +82,7 @@ export class MeshLine extends ThreeMesh {
   lineWidth(width: number): this
   widthCallback(fn: (t: number) => number): this
   sizeAttenuation(enabled: boolean): this
-  shadowMode(mode: 'clip' | 'world'): this
+  shadow(enabled: boolean): this
 
   opacity(opacity: number): this
   alphaTest(value: number): this
@@ -109,6 +112,8 @@ export class MeshLine extends ThreeMesh {
   needsPrevious(enabled: boolean): this
   needsNext(enabled: boolean): this
   needsSide(enabled: boolean): this
+  needsVertexColor(enabled: boolean): this
+  vertexColors(colors: Float32Array | number[]): this
 
   // node hooks (TSL) — kept as any for flexibility
   positionFn(fn: any): this
@@ -127,12 +132,14 @@ export class MeshLine extends ThreeMesh {
   discardFn(fn: any): this
 
   build(): this
+  ensureBuilt(): this
   setPositions(points: MultiLinePoints, updateBounding?: boolean): void
+  addVertexAttribute(name: string, components?: number): any
 
   addInstanceAttribute(name: string, components?: number): InstancedBufferAttribute
-  setInstanceValue(name: string, index: number, value: number | number[] | { x: number; y: number; z?: number }): void
+  setInstanceValue(name: string, index: number, value: number | number[] | { x: number; y: number; z?: number; w?: number }): void
   resize(width?: number, height?: number): void
-  autoResize(target?: Window): this
+  autoResize(target?: MeshLineResizeTarget): this
   dispose(): void
 }
 
@@ -146,7 +153,7 @@ export class MeshLineGeometry extends BufferGeometry {
 export class MeshLineNodeMaterial {
   constructor()
   buildLine(options?: Partial<MeshLineConfigureOptions>): void
-  setShadowMode(mode: 'clip' | 'world'): void
+  setShadow(enabled: boolean): void
   dispose(): void
 }
 

@@ -121,6 +121,8 @@ export class MeshLineGeometry extends BufferGeometry {
 		const lineLoops = this._lineLoops
 		if ( !lines || lines.length === 0 ) return
 
+		const usage = this.options.usage ?? ( this.options.gpuPositionNode ? StaticDrawUsage : StreamDrawUsage )
+
 		// Calculate total vertices and indices needed
 		let totalVertices = 0
 		let totalIndices = 0
@@ -335,13 +337,13 @@ export class MeshLineGeometry extends BufferGeometry {
 
 		// Set attributes
 		if ( positions ) {
-			this.setOrUpdateAttribute( 'position', positions, 3, this.options.usage || this.options.gpuPositionNode ? StaticDrawUsage : StreamDrawUsage )
+			this.setOrUpdateAttribute( 'position', positions, 3, usage )
 		}
 		if ( previous ) {
-			this.setOrUpdateAttribute( 'previous', previous, 3, this.options.usage || this.options.gpuPositionNode ? StaticDrawUsage : StreamDrawUsage )
+			this.setOrUpdateAttribute( 'previous', previous, 3, usage )
 		}
 		if ( next ) {
-			this.setOrUpdateAttribute( 'next', next, 3, this.options.usage || this.options.gpuPositionNode ? StaticDrawUsage : StreamDrawUsage )
+			this.setOrUpdateAttribute( 'next', next, 3, usage )
 		}
 		if ( sides ) {
 			this.setOrUpdateAttribute( 'side', sides, 1 )
@@ -369,9 +371,15 @@ export class MeshLineGeometry extends BufferGeometry {
 			this.setIndex( indexAttr )
 		}
 
-		this.computeBoundingBoxes()
-		this.computeBoundingSphere()
-		this.computeBoundingBox()
+		if ( this.options.frustumCulled !== false ) {
+			this.computeBoundingBoxes()
+			this.computeBoundingBox()
+			this.computeBoundingSphere()
+		} else {
+			this.boundingBoxes = []
+			this.boundingBox = null
+			this.boundingSphere = null
+		}
 
 		// Verbose logging
 		if ( this.options.verbose ) {
