@@ -1,3 +1,11 @@
+/**
+ * Generate a rectangle loop of points in the XY plane.
+ * Use with `closed: true` to form a complete loop.
+ * @param {number} [width=1] - Rectangle width
+ * @param {number} [height=1] - Rectangle height
+ * @param {number} [segments=1] - Number of subdivisions per side
+ * @returns {Float32Array} Flat xyz array
+ */
 export const rectanglePositions = ( width = 1, height = 1, segments = 1 ) => {
 	const corners = [
 		[-width / 2, -height / 2],

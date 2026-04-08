@@ -1,3 +1,10 @@
+/**
+ * Generate a straight line from the origin along the X (or Y) axis.
+ * @param {number} [width=1] - Length of the line
+ * @param {number} [segments=2] - Number of subdivisions (points = segments + 1)
+ * @param {boolean} [isVertical=false] - When `true`, the line runs along Y instead of X
+ * @returns {Float32Array} Flat xyz array
+ */
 export function straightLine( width = 1, segments = 2, isVertical = false ) {
 	const positions = new Float32Array( ( segments + 1 ) * 3 )
 	
@@ -13,6 +20,13 @@ export function straightLine( width = 1, segments = 2, isVertical = false ) {
 	return positions
 }
 
+/**
+ * Generate a straight line between two 3D points.
+ * @param {{x?: number, y?: number, z?: number} | number[]} start - Start point
+ * @param {{x?: number, y?: number, z?: number} | number[]} end - End point
+ * @param {number} [segments=1] - Number of subdivisions (points = segments + 1)
+ * @returns {Float32Array} Flat xyz array
+ */
 export function straightLineBetween( start, end, segments = 1 ) {
 	const positions = new Float32Array( ( segments + 1 ) * 3 )
 
