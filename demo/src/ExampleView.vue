@@ -9,6 +9,7 @@
 import baguettes from '@/demos/baguettes'
 import bambooGrove from '@/demos/bambooGrove'
 import basic from '@/demos/basic'
+import bunker from '@/demos/bunker'
 import drawlines from '@/demos/drawlines'
 import follow from '@/demos/follow'
 import gpuCircle from '@/demos/gpuCircle'
@@ -45,6 +46,7 @@ export default {
 			'venus-and-david': venus,
 			baguettes,
 			'vertex-colors': vertexColors,
+			bunker,
 		}
 		this.example = mapping[id] || basic
 
@@ -62,7 +64,8 @@ export default {
 			'venus-and-david': 'venus.js',
 			baguettes: 'baguettes.js',
 			'vertex-colors': 'vertexColors.js',
-			basic: 'basic.js'
+			basic: 'basic.js',
+			bunker: 'bunker.js'
 		}
 		const file = fileMap[id] || 'basic.js'
 		this.codeUrl = `https://github.com/Makio64/makio-meshline/tree/main/demo/src/demos/${file}`

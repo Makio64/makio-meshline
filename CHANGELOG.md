@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.2.1
+- Fix dynamic buffer usage hints so `.dynamic()` and explicit `usage()` settings apply correctly on build
+- Skip build-time bounding volume computation when `frustumCulled` is disabled
+- Align TypeScript definitions and docs with the implemented shadow and join APIs
+- Update examples with latest threejs/meshBVH api
+- Fix on positionFn not triggering built
+- Fix typo in documentation
+- Fix safe bisector for near-180° angles preventing NaN in miter direction
+- Simplify miter normal calculation by removing highQualityMiter branch
+
 ## 1.1.0
 - Three.js r181 compatibility
 - Improved geometry performance and simplified closed loops handling

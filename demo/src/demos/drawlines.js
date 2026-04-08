@@ -1,6 +1,6 @@
 import { MeshLine } from 'makio-meshline'
 import { attribute, Fn, vec4 } from 'three/tsl'
-import { Color, MathUtils, Raycaster, Vector3 } from 'three/webgpu'
+import { Color, MathUtils, Plane, Raycaster, Vector2, Vector3 } from 'three/webgpu'
 
 import { stage } from '@/makio/core/stage'
 import OrbitControl from '@/makio/three/controls/OrbitControl'
@@ -14,6 +14,8 @@ const NUM_LINES = 1000
 const LINES_FOLLOWING_MOUSE = 5
 const LINES_BY_PATH = 10
 const force3 = new Vector3()
+const interactionPlane = new Plane( new Vector3( 0, 0, 1 ), 0 )
+const pointerNDC = new Vector2()
 
 class DrawLinesExample {
 	constructor() {
@@ -297,22 +299,12 @@ class DrawLinesExample {
 		this.points = null
 	}
 	updateTarget( mouseData ) {
-		// Set raycaster from mouse position
-		this.raycaster.setFromCamera(  new Vector3( mouseData.normalizedX, -mouseData.normalizedY, 0 ),  stage3d.camera  )
-		
-		// Calculate intersection with z=0 plane
-		const { origin, direction } = this.raycaster.ray
-		const t = -origin.z / direction.z
-		
-		// Set target based on intersection or default distance
-		if ( Math.abs( direction.z ) < 0.0001 || t < 0 ) {
+		pointerNDC.set( mouseData.normalizedX, -mouseData.normalizedY )
+		this.raycaster.setFromCamera( pointerNDC, stage3d.camera )
+
+		if ( this.raycaster.ray.intersectPlane( interactionPlane, this.target ) === null ) {
+			const { origin, direction } = this.raycaster.ray
 			this.target.copy( origin ).addScaledVector( direction, 10 )
-		} else {
-			this.target.set(
-				origin.x + t * direction.x,
-				origin.y + t * direction.y,
-				0
-			)
 		}
 	}
 

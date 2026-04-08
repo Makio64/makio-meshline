@@ -141,6 +141,7 @@ export default class OrbitControl {
 		)
 		this.camera.lookAt( this.targetLookAt )
 		this.camera.position.add( this.offset )
+		this.camera.updateMatrixWorld()
 	}
 	_isGuiEvent = e => {
 		const el = e?.target

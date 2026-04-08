@@ -63,7 +63,7 @@ See [Common Patterns](./common-patterns.md) for more examples.
 
 - `join({ type: 'miter'|'simple', limit?: number, quality?: 'standard'|'high' })` - Choose the high-quality miter join or the default simple join; `limit` and `quality` apply only to `miter`
 - `dpr(ratio: number)` - Set device pixel ratio
-- `frustumCulled(enable: boolean)` - Enable/disable frustum culling; when disabled, build-time bounding volumes are skipped
+- `setFrustumCulled(enable: boolean)` - Enable/disable frustum culling; when disabled, build-time bounding volumes are skipped
 - `verbose(enable: boolean)` - Enable/disable verbose logging
 - `renderSize(width: number, height: number)` - Set render resolution
 - `gpuPositionNode(node: Fn)` - Set GPU position calculation node
@@ -108,6 +108,30 @@ These controls are auto-detected from your configuration and rarely need manual 
 - `ensureBuilt()` - Ensures the line is built if not already, useful for accessing geometry before first render (returns the instance)
 
 > **Note:** Call `build()` to finalize the configuration & build the geometry and tsl nodes, or the line will auto-build on first render (during `onBeforeRender`). Use `ensureBuilt()` when you need to access geometry attributes before the first render.
+
+## Raycasting
+
+`MeshLine` works with the standard Three.js `Raycaster` API:
+
+```js
+const raycaster = new Raycaster()
+raycaster.params.Line.threshold = 0.2
+
+const hits = raycaster.intersectObject( line )
+```
+
+When you only need the closest hit, enable `firstHitOnly`:
+
+```js
+raycaster.params.Line.firstHitOnly = true
+
+const [hit] = raycaster.intersectObject( line )
+```
+
+- Instanced lines expose `hit.instanceId`
+- Batched CPU lines expose `hit.lineIndex`
+- `hit.point` contains the world-space hit position
+- Fully GPU-defined non-instanced positions created only with `gpuPositionNode()` cannot be raycasted on the CPU
 
 ## Options Object Configuration
 

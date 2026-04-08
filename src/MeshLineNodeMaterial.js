@@ -1,4 +1,4 @@
-import { abs, attribute, cameraProjectionMatrix, cameraWorldMatrix, Discard, dot, float, Fn, max, min, mix, mod, modelViewMatrix, modelWorldMatrixInverse, normalize, positionGeometry, smoothstep, step, texture, uniform, uv, varying, varyingProperty, vec2, vec3, vec4 } from 'three/tsl'
+import { attribute, cameraProjectionMatrix, cameraWorldMatrix, Discard, dot, float, Fn, max, mix, mod, modelViewMatrix, modelWorldMatrixInverse, normalize, positionGeometry, step, texture, uniform, uv, varying, varyingProperty, vec2, vec3, vec4 } from 'three/tsl'
 import { Color, MeshBasicNodeMaterial, Vector2 } from 'three/webgpu'
 
 const fix = Fn( ( [i_immutable, aspect_immutable] ) => {
@@ -23,6 +23,11 @@ const vWidth = varyingProperty( 'float', 'vWidth' )
 const vProgress = varyingProperty( 'float', 'vProgress' )
 const vColor = varyingProperty( 'vec4', 'vColor' )
 
+/**
+ * TSL-based NodeMaterial for GPU line rendering. Extends `MeshBasicNodeMaterial`
+ * and provides an extensive hook system for customizing every stage of the
+ * vertex and fragment shaders via TSL functions.
+ */
 class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 
 	constructor() {
@@ -31,6 +36,11 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 		this.isMeshLineNodeMaterial = true
 	}
 
+	/**
+	 * Initialize the material from configuration options. Creates uniforms,
+	 * configures hooks, and sets up the shader pipeline.
+	 * @param {import('./index.d.ts').MeshLineConfigureOptions} options
+	 */
 	buildLine( options = {} ) {
 
 		this.options = options
@@ -114,6 +124,11 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 		super.dispose()
 	}
 
+	/**
+	 * Enable or disable shadow casting. Builds the shadow position node
+	 * when enabled.
+	 * @param {boolean} enabled
+	 */
 	setShadow( enabled ) {
 		if ( enabled === this._shadowEnabled ) return
 		this._shadowEnabled = enabled
@@ -259,7 +274,12 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 			// Calculate the miter direction
 			const dir1 = normalize( currentP.sub( prevP ) ).toVar( 'dir1' )
 			const dir2 = normalize( nextP.sub( currentP ) ).toVar( 'dir2' )
-			const dir = normalize( dir1.add( dir2 ) ).toVar( 'dir' )
+			// Safe bisector: at near-180° angles dir1+dir2 ≈ 0, normalize() returns NaN
+			// Use perpendicular of dir1 as fallback (always well-defined)
+			const bisectorSum = dir1.add( dir2 ).toVar( 'bisectorSum' )
+			const bisectorLen = bisectorSum.length().toVar( 'bisectorLen' )
+			const bisectorFallback = vec2( dir1.y.negate(), dir1.x ).toVar( 'bisectorFallback' )
+			const dir = mix( bisectorFallback, bisectorSum.div( max( bisectorLen, float( 0.0001 ) ) ), step( float( 0.001 ), bisectorLen ) ).toVar( 'dir' )
 
 			// Calculate final normal based on whether miter limit is enabled
 			let normal = vec4( 0, 0, 0, 1 ).toVar( 'normal' )
@@ -269,37 +289,9 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 				const miterLength = float( 1 ).div( max( dot( dir1, dir ), float( 0.01 ) ) ).toVar( 'miterLength' )
 				const limitedMiterLength = miterLength.min( this.miterLimit ).toVar( 'limitedMiterLength' )
 
-				// Advanced normal (perp to bisector, scaled by limited miter length)
-				const advancedNormal = vec2( dir.y.negate(), dir.x ).mul( limitedMiterLength ).toVar( 'advancedNormal' )
-
-				if ( this.highQualityMiter ) {
-					// High quality miter with screen center spike fix
-					const basicNormal = vec2( dir.y.negate(), dir.x ).toVar( 'basicNormal' )
-
-					// Check proximity to screen center axes
-					const ndcPos = finalPosition.xy.div( finalPosition.w ).toVar( 'ndcPos' )
-					const distToHorizontal = abs( ndcPos.y ).toVar( 'distToHorizontal' )
-					const distToVertical = abs( ndcPos.x ).toVar( 'distToVertical' )
-					const minDistToAxis = min( distToHorizontal, distToVertical ).toVar( 'minDistToAxis' )
-
-					// Check angle between segments - smooth transition based on sharpness
-					const segmentDot = dot( dir1, dir2 ).toVar( 'segmentDot' )
-					// Smooth transition: 1 when very sharp (< -0.8), 0 when moderate (> -0.3)
-					const sharpnessFactor = float( 1 ).sub( smoothstep( float( -0.8 ), float( -0.3 ), segmentDot ) ).toVar( 'sharpnessFactor' )
-
-					// Smooth blend based on distance to center axes
-					// 1 when very close to axis (< 0.25), 0 when far (> 0.5)
-					const centerProximity = float( 1 ).sub( smoothstep( 0.25, 0.5, minDistToAxis ) ).toVar( 'centerProximity' )
-
-					// Combine both factors smoothly - use minimum to ensure both conditions contribute
-					const isCentered = centerProximity.mul( sharpnessFactor ).toVar( 'isCentered' )
-
-					// Use advanced normal for consistent thickness
-					normal.xy.assign( mix( advancedNormal, basicNormal, isCentered ) )
-				} else {
-					// Standard miter approach
-					normal.xy.assign( advancedNormal )
-				}
+				// Use uncapped miter length for consistent width at all angles.
+				// The safe bisector prevents NaN at 180°, so no cap needed.
+				normal.xy.assign( vec2( dir.y.negate(), dir.x ).mul( miterLength ) )
 
 				normal.xy.mulAssign( w.mul( 0.5 ) )
 			} else {

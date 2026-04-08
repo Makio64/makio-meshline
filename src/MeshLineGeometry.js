@@ -1,5 +1,10 @@
 import { Box3, BufferAttribute, BufferGeometry, Sphere, StaticDrawUsage, StreamDrawUsage, Vector2, Vector3 } from 'three/webgpu'
 
+/**
+ * Geometry builder that creates the vertex buffers (position, previous, next,
+ * side, progress, uv, width, vertex colors) needed for meshline rendering.
+ * Supports multi-line batching and efficient in-place position updates.
+ */
 export class MeshLineGeometry extends BufferGeometry {
 	constructor() {
 		super()
@@ -7,6 +12,11 @@ export class MeshLineGeometry extends BufferGeometry {
 		this.isMeshLine = true
 	}
 
+	/**
+	 * Initialize the geometry from configuration options. Creates all needed
+	 * buffer attributes based on the `needs*` flags.
+	 * @param {import('./index.d.ts').MeshLineConfigureOptions} options
+	 */
 	buildLine( options ) {
 
 		this.options = {
@@ -33,7 +43,10 @@ export class MeshLineGeometry extends BufferGeometry {
 		}
 	}
 
-	// set multiple lines from an array of points arrays
+	/**
+	 * Set one or more polylines and rebuild all geometry buffers.
+	 * @param {import('./index.d.ts').MultiLinePoints} lines
+	 */
 	setLines( lines ) {
 
 		if ( !lines ) throw new Error( '[MeshLine] Lines data required' )
@@ -414,14 +427,20 @@ export class MeshLineGeometry extends BufferGeometry {
 		this.boundingBox?.getBoundingSphere( this.boundingSphere )
 	}
 
-	// release GPU resources and attributes
+	/**
+	 * Release GPU resources and internal attribute references.
+	 */
 	dispose() {
 		this._attrs = {}
 		super.dispose()
 	}
 
-	// Update the positions of an existing line without rebuilding attributes
-	// Update the positions of existing lines without rebuilding attributes
+	/**
+	 * Fast in-place position update without rebuilding geometry structure.
+	 * Falls back to `setLines()` if the number of lines or points changes.
+	 * @param {import('./index.d.ts').MultiLinePoints} pts
+	 * @param {boolean} [updateBounding=false] - Whether to recompute bounding volumes
+	 */
 	setPositions( pts, updateBounding = false ) {
 		if ( !pts ) return
 

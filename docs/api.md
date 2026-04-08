@@ -1,8 +1,8 @@
 # API Reference
 
-Makio MeshLine is build with creative coding requierement in mind : **performance**, **customization**, **simplicity** so you can focus on your creativity. 
+Makio MeshLine is built with creative coding requirement in mind : **performance**, **customization**, **simplicity** so you can focus on your creativity.
 
-It's build for the futur, using `TSL` and is compatible only with the new `WebGPURenderer` (But both backend: `WebGPU`/`WebGL2`)
+It's built for the future, using `TSL` and is compatible only with the new `WebGPURenderer` (But both backend: `WebGPU`/`WebGL2`)
 
 ## [MeshLine](/meshline)
 

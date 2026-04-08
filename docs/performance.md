@@ -19,6 +19,7 @@ It also support `Instancing` & optimized `cpu Batching`
 - Reuse arrays in hot loops to reduce GC pressure.
 - Call `dispose()` on unused lines to free GPU memory.
 - For massive lines, use GPU positions via `gpuPositionNode` to skip CPU uploads & `instancing`.
+- For picking or hover, set `raycaster.params.Line.firstHitOnly = true` when you only need the nearest hit.
 - Test on target devices—WebGPU often yields 2x speedup over WebGL.
 
 Follow these for smooth 120FPS even with thousands of segments! 

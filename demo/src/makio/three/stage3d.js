@@ -30,11 +30,15 @@ class Stage3D {
 
 			console.log( `BackEnd ${this.isWebGPU ? 'WebGPU' : 'WebGL2'}` )
 
+			if ( import.meta.env.DEV ) {
+				this.renderer.inspector = new Inspector()
+			}
+
 			await this.renderer.init()
 			document.body.appendChild( this.renderer.domElement )
 
-			if ( import.meta.env.DEV ) {
-				this.renderer.inspector = new Inspector()
+			if ( this.renderer.inspector?.domElement ) {
+				document.body.appendChild( this.renderer.inspector.domElement )
 			}
 
 			this.renderer.setAnimationLoop( this.update )
@@ -60,8 +64,8 @@ class Stage3D {
 	}
 
 	render = () => {
-		if ( this.postProcessing ) {
-			this.postProcessing.render()
+		if ( this.renderPipeline ) {
+			this.renderPipeline.render()
 		} else {
 			this.renderer.render( this.scene, this.camera )
 		}

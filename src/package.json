@@ -1,6 +1,6 @@
 {
   "name": "makio-meshline",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "type": "module",
   "main": "index.js",
   "module": "index.js",
@@ -32,10 +32,21 @@
     "three.js",
     "three",
     "webgpu",
+    "webgl2",
     "tsl",
     "line",
     "meshline",
-    "nodeMaterial"
+    "polyline",
+    "thick-line",
+    "line-rendering",
+    "nodeMaterial",
+    "node-material",
+    "shader",
+    "instanced",
+    "dashed-line",
+    "gradient-line",
+    "creative-coding",
+    "webgpu-renderer"
   ],
   "author": {
     "name": "David Ronai",

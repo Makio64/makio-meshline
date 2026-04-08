@@ -6,7 +6,7 @@ import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import { float, Fn, fract, instanceIndex, mix, pass, texture, uniform, vec2, vec3 } from 'three/tsl'
-import { DataTexture, FloatType, FrontSide, Matrix4, MeshBasicNodeMaterial, PostProcessing, Ray, RepeatWrapping, RGBAFormat, Vector3 } from 'three/webgpu'
+import { DataTexture, FloatType, FrontSide, Matrix4, MeshBasicNodeMaterial, Ray, RenderPipeline, RepeatWrapping, RGBAFormat, Vector3 } from 'three/webgpu'
 import { MeshBVH, SAH } from 'three-mesh-bvh'
 import { markRaw } from 'vue'
 
@@ -57,7 +57,7 @@ class VenusExample {
 		// BVH raycasting setup is done in loadModels()
 		await this.loadModels()
 		await this.initScene()
-		await this.initPostProcessing()
+		await this.initRenderPipeline()
 
 		setTimeout( () => {
 			animate( this.opacity, { value: 1, duration: 1.8, delay: 0.01, ease: 'outExpo' } )
@@ -67,15 +67,15 @@ class VenusExample {
 		window.addEventListener( 'resize', this.onResize )
 	}
 
-	async initPostProcessing() {
-		this.postProcessing = new PostProcessing( stage3d.renderer )
+	async initRenderPipeline() {
+		this.renderPipeline = new RenderPipeline( stage3d.renderer )
 		const scenePass = pass( stage3d.scene, stage3d.camera )
 		const scenePassColor = scenePass.getTextureNode( 'output' )
 		const bloomIntensity = 0.5
 		const bloomRadius = 0.01
-		const bloomPass = bloom( scenePassColor, bloomIntensity, bloomRadius, 0.1 )
-		this.postProcessing.outputNode = scenePassColor.add( bloomPass )
-		stage3d.postProcessing = this.postProcessing
+		const bloomPass = bloom( scenePassColor, bloomIntensity, bloomRadius, 0.4 )
+		this.renderPipeline.outputNode = scenePassColor.add( bloomPass )
+		stage3d.renderPipeline = this.renderPipeline
 	}
 
 	async loadModels() {
@@ -137,7 +137,7 @@ class VenusExample {
 			
 			// Create BVH for merged geometry
 			mergedGeometry.boundsTree = new MeshBVH( mergedGeometry, {
-				maxLeafTris: 1,  // Lower for better ray performance
+				maxLeafSize: 1,  // Lower for better ray performance
 				strategy: SAH,
 				indirect: true   // Better memory layout for raycasting
 			} )
@@ -154,7 +154,7 @@ class VenusExample {
 			// Single mesh, just create BVH
 			const obj = this.meshesA[0]
 			obj.geometry.boundsTree = new MeshBVH( obj.geometry, {
-				maxLeafTris: 1,
+				maxLeafSize: 1,
 				strategy: SAH,
 				indirect: true
 			} )
@@ -165,7 +165,7 @@ class VenusExample {
 		// Create BVH for Venus meshes
 		for ( const obj of this.meshesB ) {
 			obj.geometry.boundsTree = new MeshBVH( obj.geometry, {
-				maxLeafTris: 1,
+				maxLeafSize: 1,
 				strategy: SAH,
 				indirect: true
 			} )
@@ -477,9 +477,9 @@ class VenusExample {
 	}
 
 	dispose() {
-		stage3d.postProcessing = null
+		stage3d.renderPipeline = null
 		stage3d.renderer.toneMapping = NoToneMapping
-		this.postProcessing.dispose()
+		this.renderPipeline.dispose()
 		window.removeEventListener( 'resize', this.onResize )
 		if ( this.line ) {
 			stage3d.remove( this.line )
