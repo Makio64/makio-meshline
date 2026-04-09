@@ -1,0 +1,116 @@
+name: Create release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to release, for example 1.2.2
+        required: true
+        type: string
+      npm_tag:
+        description: Optional npm dist-tag. Leave empty to auto-select latest or next
+        required: false
+        default: ''
+        type: string
+
+concurrency:
+  group: release-${{ inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: 'pnpm'
+      - name: Validate release request
+        id: plan
+        run: |
+          VERSION="$RELEASE_VERSION"
+
+          if [[ "$GITHUB_REF_NAME" != "main" ]]; then
+            echo "Run this workflow from the main branch."
+            exit 1
+          fi
+
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]; then
+            echo "Invalid semver version: $VERSION"
+            exit 1
+          fi
+
+          CURRENT_VERSION=$(node -p "JSON.parse(require('fs').readFileSync('src/package.json', 'utf8')).version")
+
+          if git rev-parse "refs/tags/v$VERSION" >/dev/null 2>&1; then
+            echo "Tag v$VERSION already exists."
+            exit 1
+          fi
+
+          if npm view "makio-meshline@$VERSION" version >/dev/null 2>&1; then
+            echo "makio-meshline@$VERSION is already published on npm."
+            exit 1
+          fi
+
+          if [[ -n "$NPM_TAG_INPUT" ]]; then
+            NPM_TAG="$NPM_TAG_INPUT"
+          elif [[ "$VERSION" == *-* ]]; then
+            NPM_TAG="next"
+          else
+            NPM_TAG="latest"
+          fi
+
+          if [[ "$CURRENT_VERSION" == "$VERSION" ]]; then
+            echo "version_changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "version_changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+          echo "npm_tag=$NPM_TAG" >> "$GITHUB_OUTPUT"
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+          NPM_TAG_INPUT: ${{ inputs.npm_tag }}
+      - run: pnpm i --frozen-lockfile
+      - run: pnpm -w run lint
+      - name: Update package version
+        if: steps.plan.outputs.version_changed == 'true'
+        run: npm version "$VERSION" --no-git-tag-version
+        working-directory: src
+        env:
+          VERSION: ${{ inputs.version }}
+      - name: Commit version bump
+        if: steps.plan.outputs.version_changed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/package.json
+          git commit -m "chore: release v$VERSION"
+          git push origin HEAD:main
+        env:
+          VERSION: ${{ inputs.version }}
+      - name: Tag release commit
+        run: |
+          git tag "v$VERSION"
+          git push origin "v$VERSION"
+        env:
+          VERSION: ${{ inputs.version }}
+      - name: Dispatch publish workflow
+        run: |
+          gh api \
+            --method POST \
+            -H "Accept: application/vnd.github+json" \
+            "/repos/$GITHUB_REPOSITORY/actions/workflows/publish.yml/dispatches" \
+            -f ref="v$VERSION" \
+            -f inputs[version]="$VERSION" \
+            -f inputs[npm_tag]="$NPM_TAG"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+          NPM_TAG: ${{ steps.plan.outputs.npm_tag }}

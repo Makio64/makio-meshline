@@ -22,7 +22,10 @@ Thanks for your interest in contributing!
 
 ### Commit & Release
 - Conventional commits are appreciated.
-- Changelog is maintained in `CHANGELOG.md`.
+- Releases are cut from the GitHub Actions `Create release` workflow.
+- The release workflow updates `src/package.json`, tags `main`, dispatches `publish.yml`, publishes to npm with trusted publishing, and creates GitHub release notes.
+- Stable releases should use the default npm tag `latest`. Pre-releases should use a version like `1.3.0-beta.1` and normally publish under the npm tag `next`.
+- `CHANGELOG.md` remains manual. Update it in the same PR when you want an in-repo changelog entry.
 
 ### License
 By contributing, you agree that your contributions will be licensed under the MIT License.
