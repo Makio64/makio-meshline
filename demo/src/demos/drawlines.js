@@ -13,61 +13,59 @@ const NUM_POINTS = 20
 const NUM_LINES = 1000
 const LINES_FOLLOWING_MOUSE = 5
 const LINES_BY_PATH = 10
+const GREEN_PALETTE = [0x00FF88, 0x88FF00, 0x00AA44, 0x44FF88]
 const force3 = new Vector3()
+const pathPoint3 = new Vector3()
 const interactionPlane = new Plane( new Vector3( 0, 0, 1 ), 0 )
 const pointerNDC = new Vector2()
 
 class DrawLinesExample {
 	constructor() {
 		this.text = 'Click & drag to draw lines'
-		this.linePath = []
+		this.paths = []
+		this.activeStroke = null
 		this.lines = []
 		this.lineArrays = []
 		this.meshline = null
 		this.target = new Vector3()
 		this.raycaster = new Raycaster()
 		this.mouseSpeed = 0
-		this.targetMouseSpeed = 0
 		this.timespeed = 1
 
-		// Generate lines with circular offsets and varied physics
 		for ( let i = 0; i < NUM_LINES; i++ ) {
 			const angle = random() * Math.PI * 2
 			const radius = 0.2 + random( -.3, .3 )
-			const offset = new Vector3( 
+			const offset = new Vector3(
 				Math.cos( angle ) * radius,
 				Math.sin( angle ) * radius,
-				0 
+				0
 			)
-			
-			// Initialize points and positions array
-			const points = Array( NUM_POINTS ).fill().map( () => offset.clone() )
-			const positionsF32 = new Float32Array( NUM_POINTS * 3 )
-						
+			const points = Array.from( { length: NUM_POINTS }, () => offset.clone() )
+			const positions = new Float32Array( NUM_POINTS * 3 )
+
+			writePointsToArray( points, positions )
+
 			this.lines.push( {
 				points,
-				positionsF32,
+				positions,
 				offset,
 				speed: 0.00000001,
 				target: new Vector3(),
 				velocity: new Vector3(),
 				spring: 0.06 + random( -0.02, 0.02 ),
 				friction: 0.85 + random( -0.05, 0.05 ),
-				pathTime: random( 0, 10000 ), // Track actual time for this line's path
-				justTeleported: false // Flag to skip physics after teleport
+				pathTime: random( 0, 10000 ),
+				justTeleported: false
 			} )
-			this.lineArrays.push( positionsF32 )
+			this.lineArrays.push( positions )
 		}
-		
 	}
 
-	// -------------------------------------------------- INIT
 	async init() {
 		await stage3d.initRender()
 		stage3d.control = new OrbitControl( stage3d.camera, 12 )
 		stage3d.control.disable()
-		
-		this.initLine()
+		this.createLine()
 
 		onDown.add( this.onDown )
 		onMove.add( this.onMouseMove )
@@ -77,115 +75,92 @@ class DrawLinesExample {
 		stage.onUpdate.add( this.update )
 	}
 
-	initLine() {
-		const greenPalette = [0x00FF88, 0x88FF00, 0x00AA44, 0x44FF88]
-		
-		// Create meshline with multiple segments
+	createLine() {
 		this.meshline = new MeshLine()
 			.lines( this.lineArrays, false )
 			.lineWidth( 1 )
-			.needsWidth( true ) // Enable per-vertex width
-			.widthCallback( this.widthFactor )
-			.verbose( true )
+			.needsWidth( true )
+			.widthCallback( getWidthFactor )
 			.colorFn( Fn( ( [, progress] ) => {
 				const vertexColor = attribute( 'lineColor', 'vec3' )
 				return vec4( vertexColor.add( progress.smoothstep( 0.5, 1 ).mul( .2 ) ), 1 )
 			} ) )
-		
+
 		this.meshline.build()
-		
-		// Create color attribute for each line
-		const totalVertices = NUM_LINES * NUM_POINTS * 2
-		const colorArray = new Float32Array( totalVertices * 3 )
-		
-		// Initialize width array (2 vertices per point)
+
 		this.widthArray = new Float32Array( NUM_LINES * NUM_POINTS * 2 )
-		
-		for ( let lineIdx = 0; lineIdx < NUM_LINES; lineIdx++ ) {
-			const color = new Color( greenPalette[lineIdx % greenPalette.length] )
-			const startVertex = lineIdx * NUM_POINTS * 2
-			
+		for ( let i = 0; i < this.widthArray.length; i++ ) {
+			this.widthArray[i] = 0.01
+		}
+
+		const colorArray = new Float32Array( NUM_LINES * NUM_POINTS * 2 * 3 )
+		for ( let lineIndex = 0; lineIndex < NUM_LINES; lineIndex++ ) {
+			const color = new Color( GREEN_PALETTE[lineIndex % GREEN_PALETTE.length] )
+			const startVertex = lineIndex * NUM_POINTS * 2
+
 			for ( let i = 0; i < NUM_POINTS * 2; i++ ) {
 				colorArray.set( [color.r, color.g, color.b], ( startVertex + i ) * 3 )
 			}
-			
-			// Initialize widths to default (2 vertices per point)
-			for ( let i = 0; i < NUM_POINTS; i++ ) {
-				const widthIndex = lineIdx * NUM_POINTS * 2 + i * 2
-				this.widthArray[widthIndex] = 0.01
-				this.widthArray[widthIndex + 1] = 0.01
-			}
 		}
-		
+
 		this.meshline.geometry.setOrUpdateAttribute( 'lineColor', colorArray, 3 )
 		stage3d.add( this.meshline )
 	}
 
-	// -------------------------------------------------- UPDATE LOOP
 	update = ( dt ) => {
-		// Update width based on mouse speed
-		this.targetMouseSpeed = Math.sqrt( mouse.moveX ** 2 + mouse.moveY ** 2 ) / ( dt / 16 || 1 ) * 0.01
-		this.mouseSpeed = MathUtils.lerp( this.mouseSpeed, this.targetMouseSpeed, 0.15 )
+		const nextMouseSpeed = Math.sqrt( mouse.moveX ** 2 + mouse.moveY ** 2 ) / ( dt / 16 || 1 ) * 0.01
+		this.mouseSpeed = MathUtils.lerp( this.mouseSpeed, nextMouseSpeed, 0.15 )
 
-		// basically here its same than follow.js 
 		for ( let i = 0; i < LINES_FOLLOWING_MOUSE; i++ ) {
 			this.updateFollowingLine( this.lines[i] )
 		}
-		
-		// with the rest of the lines 
+
 		for ( let i = LINES_FOLLOWING_MOUSE; i < NUM_LINES; i++ ) {
-			let line = this.lines[i]
-			let linepath = this.linePath[Math.floor( ( i - LINES_FOLLOWING_MOUSE ) / LINES_BY_PATH )]
-			if ( linepath ) {
-				this.updateLineOnPath( line, linepath, dt )
+			const line = this.lines[i]
+			const path = this.paths[Math.floor( ( i - LINES_FOLLOWING_MOUSE ) / LINES_BY_PATH )]
+			if ( path ) {
+				this.updateLineOnPath( line, path, dt )
 			} else {
 				break
 			}
 		}
 
 		for ( let i = 0; i < NUM_LINES; i++ ) {
-			let line = this.lines[i]
-		
-			// Update width array for all points in this line (2 vertices per point)
-			for ( let k = 0; k < NUM_POINTS; k++ ) {
-				const t = k / ( NUM_POINTS - 1 ) // Calculate t value for this point (0 to 1)
-				let widthWithCallback = this.widthFactor( t ) * line.speed
-				if ( line.pathTime > 0 ) {
-					widthWithCallback *= smoothstep( 0, 100, line.pathTime )
-				}
-				const widthIndex = i * NUM_POINTS * 2 + k * 2
-				this.widthArray[widthIndex] = widthWithCallback
-				this.widthArray[widthIndex + 1] = widthWithCallback
-			}
-		
-			// Update points from tail to head
+			const line = this.lines[i]
+			this.updateWidthArray( i, line )
+
 			if ( line.justTeleported ) {
 				line.justTeleported = false
 			} else {
-				// Normal "spring" update
 				for ( let k = NUM_POINTS - 1; k >= 0; k-- ) {
 					if ( k === 0 ) {
-					// Head follows target with spring physics
 						const force = force3.copy( line.target ).sub( line.points[k] ).multiplyScalar( line.spring * this.timespeed )
 						line.velocity.add( force ).multiplyScalar( line.friction )
 						line.points[k].add( line.velocity )
 					} else {
-					// Rest follow previous point
 						line.points[k].lerp( line.points[k - 1], 0.9 )
 					}
 				}
 			}
-		
-			// Update positions array
-			line.points.forEach( ( p, idx ) => {
-				line.positionsF32.set( [p.x, p.y, p.z], idx * 3 )
-			} )
-		} 
-		
+
+			writePointsToArray( line.points, line.positions )
+		}
+
 		this.meshline.setPositions( this.lineArrays )
-		
-		// Update the width buffer
 		this.meshline.geometry.setOrUpdateAttribute( 'width', this.widthArray, 1 )
+	}
+
+	updateWidthArray( lineIndex, line ) {
+		for ( let pointIndex = 0; pointIndex < NUM_POINTS; pointIndex++ ) {
+			let width = getWidthFactor( pointIndex / ( NUM_POINTS - 1 ) ) * line.speed
+			if ( line.pathTime > 0 ) {
+				width *= smoothstep( 0, 100, line.pathTime )
+			}
+
+			const attributeIndex = lineIndex * NUM_POINTS * 2 + pointIndex * 2
+			this.widthArray[attributeIndex] = width
+			this.widthArray[attributeIndex + 1] = width
+		}
 	}
 
 	updateFollowingLine( line ) {
@@ -193,111 +168,60 @@ class DrawLinesExample {
 		line.target.set( this.target.x, this.target.y, 0 ).add( line.offset )
 	}
 
-	updateLineOnPath( line, linePath, dt ) {
-		let startTime = linePath.startTime
-		let endTime = linePath.endTime
-		let range = endTime - startTime
-			
-		// Update path time
+	updateLineOnPath( line, path, dt ) {
+		const range = path.endTime - path.startTime
 		line.pathTime += dt * this.timespeed
 		let percent = ( line.pathTime / range ) % 1
-			
-		// Check if we've completed a full cycle
+
 		if ( line.pathTime >= range ) {
-			// Check if the tail has caught up
-			const tailDistance = this.getDistanceFromEnd( line, linePath )
+			const endPoint = path.points[path.points.length - 1]
+			pathPoint3.set( endPoint.x, endPoint.y, 0 )
+			const tailDistance = pathPoint3.distanceTo( line.points[line.points.length - 1] )
 			if ( tailDistance < 0.3 ) {
 				line.pathTime = 0
 				line.justTeleported = true
 				line.velocity.set( 0, 0, 0 )
+				samplePathPoint( path, 0, pathPoint3 )
 
-				// Get starting position
-				const startPt = this.getPointAt( linePath, 0 )
-					
-				// Teleport all points to the starting position
 				for ( let i = 0; i < NUM_POINTS; i++ ) {
-					line.points[i].set( startPt.x + line.offset.x, startPt.y + line.offset.y, 0 )
+					line.points[i].set( pathPoint3.x + line.offset.x, pathPoint3.y + line.offset.y, 0 )
 				}
 			} else {
 				percent = 1
 			}
 		}
-			
-		let pts = this.getPointAt( linePath, percent )
-		let moveX = line.target.x - pts.x
-		let moveY = line.target.y - pts.y
-		let speed = Math.sqrt( moveX ** 2 + moveY ** 2 ) * 0.5
+
+		samplePathPoint( path, percent, pathPoint3 )
+		const moveX = line.target.x - pathPoint3.x
+		const moveY = line.target.y - pathPoint3.y
+		const speed = Math.sqrt( moveX ** 2 + moveY ** 2 ) * 0.5
 		line.speed = MathUtils.lerp( line.speed, speed, 0.15 )
-		line.target.set( pts.x, pts.y, 0 ).add( line.offset )
+		line.target.set( pathPoint3.x, pathPoint3.y, 0 ).add( line.offset )
 	}
-
-	getPointAt( line, percent ) {
-		const { points, startTime, endTime } = line
-				
-		// Calculate target time based on percent
-		const targetTime = startTime + ( endTime - startTime ) * percent
-		
-		// Find the two points to interpolate between
-		let p1 = points[0]
-		let p2 = points[points.length - 1]
-		
-		for ( let i = 0; i < points.length - 1; i++ ) {
-			if ( targetTime >= points[i].time && targetTime <= points[i + 1].time ) {
-				p1 = points[i]
-				p2 = points[i + 1]
-				break
-			}
-		}
-		
-		// Calculate interpolation factor between the two points
-		const segmentDuration = p2.time - p1.time
-		const t = segmentDuration > 0 ? ( targetTime - p1.time ) / segmentDuration : 0
-		
-		// Interpolate position
-		return {
-			x: MathUtils.lerp( p1.x, p2.x, t ),
-			y: MathUtils.lerp( p1.y, p2.y, t ),
-			
-		}
-	}
-
-	widthFactor = ( t ) => {
-		const edge = 0.1
-		if ( t < edge ) return MathUtils.lerp( 0.1, 1, t / edge )
-		if ( t > 1 - edge ) return MathUtils.lerp( 0.1, 1, ( 1 - t ) / edge )
-		return 1
-	}
-
-	getDistanceFromEnd( line, linepath ) {
-		const endPoint = linepath.points[linepath.points.length - 1]
-		const endVector = new Vector3( endPoint.x, endPoint.y, 0 )
-		
-		const tailPoint = line.points[line.points.length - 1]
-		return endVector.distanceTo( tailPoint )
-	}
-
-	// -------------------------------------------------- HELPERS
 	onDown = ( mouseData ) => {
-		// Start recording when mouse is pressed
 		this.updateTarget( mouseData )
-		this.points = [] // Start new path
+		this.activeStroke = []
 		this.addPoint( this.target )
 	}
+
 	onMouseMove = ( mouseData ) => {
 		this.updateTarget( mouseData )
-		// Only add points if mouse is down
-		if ( mouse.isDown && this.points ) {
+		if ( mouse.isDown && this.activeStroke ) {
 			this.addPoint( this.target )
 		}
 	}
+
 	onUp = () => {
-		// Save the recorded path if we have points
-		if ( this.points && this.points.length > 1 ) {
-			let points = this.points // Could use simplify here if needed
-			this.linePath.push( { points, startTime: this.points[0].time, endTime: this.points[this.points.length - 1].time } )
+		if ( this.activeStroke && this.activeStroke.length > 1 ) {
+			this.paths.push( {
+				points: this.activeStroke,
+				startTime: this.activeStroke[0].time,
+				endTime: this.activeStroke[this.activeStroke.length - 1].time
+			} )
 		}
-		this.points = null
+		this.activeStroke = null
 	}
+
 	updateTarget( mouseData ) {
 		pointerNDC.set( mouseData.normalizedX, -mouseData.normalizedY )
 		this.raycaster.setFromCamera( pointerNDC, stage3d.camera )
@@ -309,35 +233,29 @@ class DrawLinesExample {
 	}
 
 	addPoint( point ) {
-		
 		const currentTime = performance.now()
-		// Store the actual width value being used for drawing
-		const currentWidth = MathUtils.clamp( this.mouseSpeed, 0.01, 1 )
-		
 		const x = point.x
 		const y = point.y
-		
-		if ( !this.points || this.points.length === 0 ) {
-			this.points = []
-			this.points.push( { x, y, time: currentTime, width: currentWidth } )
+
+		if ( !this.activeStroke || this.activeStroke.length === 0 ) {
+			this.activeStroke = []
+			this.activeStroke.push( { x, y, time: currentTime } )
 		} else {
-			let lastPoint = this.points[this.points.length - 1]
+			const lastPoint = this.activeStroke[this.activeStroke.length - 1]
 			const dx = x - lastPoint.x
 			const dy = y - lastPoint.y
 			const distance = Math.sqrt( dx * dx + dy * dy )
-			
-			// ignore point to close from last point
+
 			if ( distance > 0.01 ) {
-				this.points.push( { x, y, time: currentTime, width: currentWidth } )
+				this.activeStroke.push( { x, y, time: currentTime } )
 			}
 		}
 	}
 
 	onResize = () => {
-		this.line?.resize()
+		this.meshline?.resize()
 	}
 
-	// -------------------------------------------------- CLEANUP
 	dispose() {
 		stage.onUpdate.remove( this.update )
 		window.removeEventListener( 'resize', this.onResize )
@@ -353,6 +271,46 @@ class DrawLinesExample {
 
 	show() {}
 	hide( cb ) { if ( cb ) cb() }
+}
+
+function getWidthFactor( t ) {
+	const edge = 0.1
+	if ( t < edge ) return MathUtils.lerp( 0.1, 1, t / edge )
+	if ( t > 1 - edge ) return MathUtils.lerp( 0.1, 1, ( 1 - t ) / edge )
+	return 1
+}
+
+function writePointsToArray( points, positions ) {
+	for ( let i = 0; i < NUM_POINTS; i++ ) {
+		const point = points[i]
+		positions[i * 3] = point.x
+		positions[i * 3 + 1] = point.y
+		positions[i * 3 + 2] = point.z
+	}
+}
+
+function samplePathPoint( path, percent, target ) {
+	const { points, startTime, endTime } = path
+	const targetTime = startTime + ( endTime - startTime ) * percent
+	let pointA = points[0]
+	let pointB = points[points.length - 1]
+
+	for ( let i = 0; i < points.length - 1; i++ ) {
+		if ( targetTime >= points[i].time && targetTime <= points[i + 1].time ) {
+			pointA = points[i]
+			pointB = points[i + 1]
+			break
+		}
+	}
+
+	const segmentDuration = pointB.time - pointA.time
+	const interpolation = segmentDuration > 0 ? ( targetTime - pointA.time ) / segmentDuration : 0
+	target.set(
+		MathUtils.lerp( pointA.x, pointB.x, interpolation ),
+		MathUtils.lerp( pointA.y, pointB.y, interpolation ),
+		0
+	)
+	return target
 }
 
 export default new DrawLinesExample()

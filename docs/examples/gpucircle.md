@@ -1,4 +1,5 @@
 ---
+description: "Use GPU-driven positions with Makio MeshLine and Three.js TSL to animate parametric circles and curves without CPU vertex uploads."
 outline: false
 pageClass: example-page
 ---
@@ -7,7 +8,9 @@ pageClass: example-page
 
 Demonstrates GPU-based position calculation using Three.js TSL (Three Shading Language) nodes, enabling complex animations with minimal CPU overhead.
 
-<iframe src="https://meshline-demo.makio.io/examples/gpu-circle?noUI" width="100%" height="600" style="border: 1px solid #ddd; border-radius: 8px;"></iframe>
+<iframe title="Makio MeshLine GPU Circle demo" src="https://meshline-demo.makio.io/examples/gpu-circle?noUI" width="100%" height="600" style="border: 1px solid #ddd; border-radius: 8px;"></iframe>
+
+[Open the full GPU Circle demo](https://meshline-demo.makio.io/examples/gpu-circle)
 
 ## Key Concepts
 

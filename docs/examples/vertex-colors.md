@@ -1,4 +1,5 @@
 ---
+description: "Color each point in a Makio MeshLine with per-vertex RGB values for gradients, data-driven color ramps, and stylized trails."
 outline: false
 pageClass: example-page
 ---
@@ -7,7 +8,9 @@ pageClass: example-page
 
 Color each point of your line individually with per-vertex RGB colors.
 
-<iframe src="https://meshline-demo.makio.io/examples/vertex-colors?noUI" width="100%" height="600" style="border: 1px solid #ddd; border-radius: 8px;"></iframe>
+<iframe title="Makio MeshLine Vertex Colors demo" src="https://meshline-demo.makio.io/examples/vertex-colors?noUI" width="100%" height="600" style="border: 1px solid #ddd; border-radius: 8px;"></iframe>
+
+[Open the full Vertex Colors demo](https://meshline-demo.makio.io/examples/vertex-colors)
 
 ## Usage
 

@@ -1,12 +1,16 @@
 import { MeshLine } from 'makio-meshline'
 import { Fog } from 'three'
-import { attribute, color, Fn, mix, smoothstep, vec3 } from 'three/tsl'
+import { attribute, color, Fn, mix, smoothstep, vec3, vec4 } from 'three/tsl'
 import { AmbientLight, DirectionalLight, Mesh, MeshStandardMaterial, PCFSoftShadowMap, PlaneGeometry } from 'three/webgpu'
 
 import stage from '@/makio/core/stage'
 import OrbitControl from '@/makio/three/controls/OrbitControl'
 import stage3d from '@/makio/three/stage3d'
 import { random } from '@/makio/utils/random'
+
+const ATMOSPHERE_COLOR = 0xc8d4c0
+const STALK_COUNT = 20
+const NODE_SPACING = 1.2
 
 class BambooGroveExample {
 	constructor() {
@@ -20,7 +24,6 @@ class BambooGroveExample {
 
 	async init() {
 		await stage3d.initRender()
-
 		stage3d.renderer.shadowMap.enabled = true
 		stage3d.renderer.shadowMap.type = PCFSoftShadowMap
 		stage3d.renderer.shadowMap.transmitted = true
@@ -39,15 +42,15 @@ class BambooGroveExample {
 	}
 
 	initAtmosphere() {
-		stage3d.scene.backgroundNode = color( 0xc8d4c0 )
-		stage3d.scene.fog = new Fog( 0xc8d4c0, 15, 25 )
+		stage3d.scene.backgroundNode = color( ATMOSPHERE_COLOR )
+		stage3d.scene.fog = new Fog( ATMOSPHERE_COLOR, 15, 25 )
 	}
 
 	initLights() {
-		this.ambientLight = new AmbientLight( 0x606050, 0.8 ) // Warmer ambient for forest
+		this.ambientLight = new AmbientLight( 0x606050, 0.8 )
 		stage3d.add( this.ambientLight )
 
-		this.light = new DirectionalLight( 0xfff0dd, 4 ) // Warm sun
+		this.light = new DirectionalLight( 0xfff0dd, 4 )
 		this.light.position.set( 8, 8, 8 )
 		this.light.castShadow = true
 
@@ -79,79 +82,94 @@ class BambooGroveExample {
 	}
 
 	createBamboo() {
-		const stalkCount = 20
-		const nodeSpacing = 1.2
+		const { stalks, nodes } = this.createBambooData()
+		this.createStalksMesh( stalks )
+		this.createNodesMesh( nodes )
+	}
 
-		// Pre-calculate all stalk and node data
-		const stalksData = []
-		const nodesData = []
+	createBambooData() {
+		const stalks = []
+		const nodes = []
 
-		for ( let i = 0; i < stalkCount; i++ ) {
-			// Random position in a circular area
+		for ( let i = 0; i < STALK_COUNT; i++ ) {
 			const angle = random( 0, Math.PI * 2 )
 			const radius = random( 0.5, 7.2 )
 			const x = Math.cos( angle ) * radius
 			const z = Math.sin( angle ) * radius
-
-			// Random properties
 			const height = random( 4, 8 )
 			const width = random( 0.06, 0.12 )
 			const lean = random( -0.3, 0.3 )
-			const leanDir = random( 0, Math.PI * 2 )
+			const leanDirection = random( 0, Math.PI * 2 )
+			const leanDirX = Math.cos( leanDirection )
+			const leanDirZ = Math.sin( leanDirection )
 
-			stalksData.push( {
-				x, z, height,
-				widthMult: width / 0.1, // Store as multiplier (0.6-1.2) relative to base 0.1
+			stalks.push( {
+				x,
+				z,
+				height,
+				widthMult: width / 0.1,
 				lean,
-				leanDirX: Math.cos( leanDir ),
-				leanDirZ: Math.sin( leanDir )
+				leanDirX,
+				leanDirZ
 			} )
 
-			// Calculate node rings for this stalk
-			const nodeCount = Math.floor( height / nodeSpacing )
-			for ( let n = 1; n < nodeCount; n++ ) {
-				const t = ( n * nodeSpacing ) / height
-				const y = n * nodeSpacing
-
-				// Match position on stalk with lean
-				const leanAmount = lean * t * t
-				const px = x + Math.cos( leanDir ) * leanAmount
-				const pz = z + Math.sin( leanDir ) * leanAmount
+			const nodeCount = Math.floor( height / NODE_SPACING )
+			for ( let nodeIndex = 1; nodeIndex < nodeCount; nodeIndex++ ) {
+				const progress = nodeIndex * NODE_SPACING / height
+				const y = nodeIndex * NODE_SPACING
+				const leanAmount = lean * progress * progress
 				const ringRadius = width * 1.3 * 0.6
 
-				nodesData.push( { x: px, y, z: pz, size: ringRadius, widthMult: ( width * 1.3 * 0.4 ) / 0.05 } )
+				nodes.push( {
+					x: x + leanDirX * leanAmount,
+					y,
+					z: z + leanDirZ * leanAmount,
+					size: ringRadius,
+					widthMult: width * 1.3 * 0.4 / 0.05
+				} )
 			}
 		}
 
-		this.createStalksMesh( stalksData )
-		this.createNodesMesh( nodesData )
+		return { stalks, nodes }
+	}
+
+	createStalkTemplate( segments = 30 ) {
+		const points = new Float32Array( segments * 3 )
+
+		for ( let i = 0; i < segments; i++ ) {
+			const t = i / ( segments - 1 )
+			points[i * 3] = 0
+			points[i * 3 + 1] = t
+			points[i * 3 + 2] = 0
+		}
+
+		return points
+	}
+
+	createRingTemplate( segments = 8 ) {
+		const points = new Float32Array( segments * 3 )
+
+		for ( let i = 0; i < segments; i++ ) {
+			const angle = i / segments * Math.PI * 2
+			points[i * 3] = Math.cos( angle )
+			points[i * 3 + 1] = 0
+			points[i * 3 + 2] = Math.sin( angle )
+		}
+
+		return points
 	}
 
 	createStalksMesh( stalksData ) {
-		// Template: vertical line from 0 to 1
-		const segments = 30
-		const templatePoints = new Float32Array( segments * 3 )
-		for ( let i = 0; i < segments; i++ ) {
-			const t = i / ( segments - 1 )
-			templatePoints[ i * 3 ] = 0
-			templatePoints[ i * 3 + 1 ] = t
-			templatePoints[ i * 3 + 2 ] = 0
-		}
-
 		this.stalksMesh = new MeshLine()
-			.lines( templatePoints, false )
+			.lines( this.createStalkTemplate(), false )
 			.instances( stalksData.length )
 			.color( 0x497849 )
-			.lineWidth( 0.1 ) // Base width, overridden by widthFn
+			.lineWidth( 0.1 )
 			.shadow( true )
 			.positionFn( Fn( ( [position, progress] ) => {
 				const transform = attribute( 'instanceTransform', 'vec4' )
 				const lean = attribute( 'instanceLean', 'vec3' )
-
-				// Scale Y by height
 				const y = position.y.mul( transform.z )
-
-				// Apply quadratic lean based on progress (t²)
 				const leanAmount = lean.x.mul( progress.mul( progress ) )
 				const px = transform.x.add( lean.y.mul( leanAmount ) )
 				const pz = transform.y.add( lean.z.mul( leanAmount ) )
@@ -160,20 +178,18 @@ class BambooGroveExample {
 			} ) )
 			.widthFn( Fn( ( [width] ) => {
 				const transform = attribute( 'instanceTransform', 'vec4' )
-				return width.mul( transform.w ) // transform.w is width multiplier
+				return width.mul( transform.w )
 			} ) )
 			.colorFn( Fn( ( [col, progress, side] ) => {
 				const shade = side.mul( 0.35 ).add( 0.65 )
 				return mix( col.mul( vec3( shade ) ), color( 0xb6ac9d ), smoothstep( 0.05, 0.15, progress ).oneMinus().mul( 0.3 ) )
 			} ) )
 
-		this.stalksMesh.material.castShadowNode = vec3( 0.7 )
+		this.stalksMesh.material.castShadowNode = vec4( 0.7, 0.7, 0.7, 1 )
 
-		// Add instance attributes
 		this.stalksMesh.addInstanceAttribute( 'instanceTransform', 4 )
 		this.stalksMesh.addInstanceAttribute( 'instanceLean', 3 )
 
-		// Populate instance data
 		for ( let i = 0; i < stalksData.length; i++ ) {
 			const s = stalksData[ i ]
 			this.stalksMesh.setInstanceValue( 'instanceTransform', i, [s.x, s.z, s.height, s.widthMult] )
@@ -186,21 +202,11 @@ class BambooGroveExample {
 	createNodesMesh( nodesData ) {
 		if ( nodesData.length === 0 ) return
 
-		// Template: horizontal ring at origin with radius 1
-		const ringSegments = 8
-		const templatePoints = new Float32Array( ringSegments * 3 )
-		for ( let i = 0; i < ringSegments; i++ ) {
-			const angle = ( i / ringSegments ) * Math.PI * 2
-			templatePoints[ i * 3 ] = Math.cos( angle )
-			templatePoints[ i * 3 + 1 ] = 0
-			templatePoints[ i * 3 + 2 ] = Math.sin( angle )
-		}
-
 		this.nodesMesh = new MeshLine()
-			.lines( templatePoints, true )
+			.lines( this.createRingTemplate(), true )
 			.instances( nodesData.length )
 			.color( 0x2d4a2d )
-			.lineWidth( 0.05 ) // Base width, overridden by widthFn
+			.lineWidth( 0.05 )
 			.shadow( true )
 			.positionFn( Fn( ( [position, progress] ) => {
 				const pos = attribute( 'instancePosition', 'vec3' )
@@ -214,17 +220,15 @@ class BambooGroveExample {
 			} ) )
 			.widthFn( Fn( ( [width] ) => {
 				const w = attribute( 'instanceWidth', 'float' )
-				return width.mul( w ) // w is width multiplier
+				return width.mul( w )
 			} ) )
 
-		this.nodesMesh.material.castShadowNode = vec3( 0.7 )
+		this.nodesMesh.material.castShadowNode = vec4( 0.7, 0.7, 0.7, 1 )
 
-		// Add instance attributes
 		this.nodesMesh.addInstanceAttribute( 'instancePosition', 3 )
 		this.nodesMesh.addInstanceAttribute( 'instanceSize', 1 )
 		this.nodesMesh.addInstanceAttribute( 'instanceWidth', 1 )
 
-		// Populate instance data
 		for ( let i = 0; i < nodesData.length; i++ ) {
 			const n = nodesData[ i ]
 			this.nodesMesh.setInstanceValue( 'instancePosition', i, [n.x, n.y, n.z] )
@@ -237,8 +241,6 @@ class BambooGroveExample {
 
 	update = ( dt ) => {
 		this.time += dt * 0.001
-
-		// Orbit the light slowly
 		const radius = 12
 		this.light.position.x = Math.cos( this.time * 0.2 ) * radius
 		this.light.position.z = Math.sin( this.time * 0.2 ) * radius

@@ -5,7 +5,7 @@
   "main": "index.js",
   "module": "index.js",
   "types": "index.d.ts",
-  "description": "TSL-powered MeshLine for Three.js WebGPURenderer with gradients, dashes, textures, variable width, and instancing.",
+  "description": "TSL-powered wide-line and MeshLine renderer for Three.js with gradients, dashes, textures, shadows, GPU positions, and instancing.",
   "exports": {
     ".": {
       "types": "./index.d.ts",
@@ -36,6 +36,7 @@
     "tsl",
     "line",
     "meshline",
+    "wide-line",
     "polyline",
     "thick-line",
     "line-rendering",

@@ -1,4 +1,5 @@
 ---
+description: "See how Makio MeshLine lines cast shadows in Three.js, including dashed shadow behavior, spotlights, and custom shadow appearance."
 outline: false
 pageClass: example-page
 ---
@@ -7,7 +8,9 @@ pageClass: example-page
 
 MeshLine supports shadow casting, allowing lines to participate in Three.js shadow rendering with full support for dashed patterns.
 
-<iframe src="https://meshline-demo.makio.io/examples/shadow?noUI" width="100%" height="600" style="border: 1px solid #ddd; border-radius: 8px;"></iframe>
+<iframe title="Makio MeshLine Shadow demo" src="https://meshline-demo.makio.io/examples/shadow?noUI" width="100%" height="600" style="border: 1px solid #ddd; border-radius: 8px;"></iframe>
+
+[Open the full Shadow demo](https://meshline-demo.makio.io/examples/shadow)
 
 ## Overview
 
@@ -71,7 +74,7 @@ const dashedLine = new MeshLine()
 After building the line, you can customize the shadow appearance using `castShadowNode`:
 
 ```javascript
-import { vec3 } from 'three/tsl'
+import { vec4 } from 'three/tsl'
 
 const line = new MeshLine()
   .lines(positions)
@@ -79,7 +82,7 @@ const line = new MeshLine()
   .build()
 
 // Lighter, softer shadows
-line.material.castShadowNode = vec3(0.7)
+line.material.castShadowNode = vec4( 0.7, 0.7, 0.7, 1 )
 ```
 
 ## Best Practices

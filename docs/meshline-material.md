@@ -1,3 +1,7 @@
+---
+description: "Reference MeshLineNodeMaterial for Makio MeshLine, including gradients, dashes, textures, opacity, hooks, and miter join settings."
+---
+
 # MeshLineNodeMaterial
 
 The `MeshLineNodeMaterial` class is a specialized Three.js NodeMaterial that implements the vertex and fragment shaders for rendering thick, dashed, and textured lines using GPU-friendly techniques.
@@ -31,8 +35,7 @@ new MeshLineNodeMaterial(
     dashRatio?: number | null,
     dashOffset?: number,
     useMiterLimit?: boolean,
-    miterLimit?: number,
-    highQualityMiter?: boolean
+    miterLimit?: number
   }
 )
 ```
@@ -73,27 +76,18 @@ Creates a new MeshLineNodeMaterial with the specified parameters.
 
 ### Miter Limit (advanced)
 
-`MeshLineNodeMaterial` can clamp very sharp joints to avoid oversized spikes by enabling miter clipping:
+`MeshLineNodeMaterial` can clamp very sharp joints to avoid oversized spikes by enabling the miter join path:
 
 ```js
 const material = new MeshLineNodeMaterial({
-  useMiterLimit: true, // activate clipping
+  useMiterLimit: true, // enable clamped miter joins
   miterLimit: 6        // (optional) maximum expansion factor
 })
 ```
 
 If omitted, `miterLimit` defaults to **4.0** which works well for most scenes.
 
-For avoiding extra strech at sharp corners near the screen center, enable high quality miter:
-
-```js
-const material = new MeshLineNodeMaterial({
-  useMiterLimit: true,
-  highQualityMiter: true  // Reduces spikes at screen center
-})
-```
-
-The `highQualityMiter` option applies advanced calculations to prevent visual artifacts when sharp corners appear near the horizontal or vertical screen axes. This is particularly useful for square or rectangular shapes.
+When `useMiterLimit` is `false`, the material falls back to the simpler non-expanded join path.
 
 ### Textures
 

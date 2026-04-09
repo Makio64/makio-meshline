@@ -1,8 +1,18 @@
+---
+description: "Copy practical Makio MeshLine recipes for circles, dashed lines, gradients, textures, dynamic updates, and sharp-corner handling in Three.js."
+---
+
 # Common Patterns
 
 Quick recipes covering typical simple use-cases. Copy-paste and tweak. 
 
-For testing yourself and have code generated, see [Interactive sandbox](./examples/sandbox.md)
+Start with these self-contained examples if you want the same ideas in full demo form:
+
+- [Basic Examples](./examples/basic.md)
+- [Follow](./examples/follow.md)
+- [Draw Lines](./examples/drawlines.md)
+- [Instancing](./examples/instancing.md)
+- [Interactive sandbox](./examples/sandbox.md)
 
 For advanced techniques like GPU-driven positions and custom shaders, see [Advanced Patterns](./advanced-patterns.md).
 
@@ -124,12 +134,12 @@ const line = new MeshLine()
   .join({ type: 'miter', limit: 4 })
   .lineWidth(2)
 
-// Custom miter limit
+// Higher limit keeps corners sharper before the clamp kicks in
 const line2 = new MeshLine()
   .join({ type: 'miter', limit: 6 }) // Higher limit = sharper corners but potential bigger spikes ( see under )
 
-// High quality miter (fix for when the screen-centered sharp corners)
+// Simple join without miter expansion
 const line3 = new MeshLine()
   .lines(squarePositions(16), true)
-  .join({ type: 'miter', limit: 4, quality: 'high' }) // High quality mode
+  .join({ type: 'simple' })
 ``` 

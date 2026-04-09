@@ -1,3 +1,7 @@
+---
+description: "Reference the main MeshLine class for Three.js wide lines, including styling, dashes, textures, hooks, instancing, and GPU positions."
+---
+
 # MeshLine Class
 
 The `MeshLine` class is the main interface for creating lines. It extends `Mesh` from `three/webgpu` and provides TSL-powered line rendering capabilities.
@@ -61,7 +65,7 @@ See [Common Patterns](./common-patterns.md) for more examples.
 
 **Advanced:**
 
-- `join({ type: 'miter'|'simple', limit?: number, quality?: 'standard'|'high' })` - Choose the high-quality miter join or the default simple join; `limit` and `quality` apply only to `miter`
+- `join({ type: 'miter'|'simple', limit?: number })` - Choose a clamped miter join or the simpler fallback join; `limit` applies only to `miter`
 - `dpr(ratio: number)` - Set device pixel ratio
 - `setFrustumCulled(enable: boolean)` - Enable/disable frustum culling; when disabled, build-time bounding volumes are skipped
 - `verbose(enable: boolean)` - Enable/disable verbose logging
@@ -258,7 +262,7 @@ interface MeshLineOptions {
 
 - **`shadow`** (`boolean`) — Enable shadow casting for the line. When enabled, the line will cast shadows in your scene. Requires proper Three.js shadow setup (renderer shadowMap enabled, lights with castShadow, and receiving meshes with receiveShadow). Default: `false`.
 
-> **Custom Shadow Color:** After building the line, access `material.castShadowNode` to customize shadow appearance. For example, `material.castShadowNode = vec3(0.7)` creates lighter, softer shadows.
+> **Custom Shadow Color:** After building the line, access `material.castShadowNode` to customize shadow appearance. Use a `vec4` so the shadow keeps an explicit alpha channel. For example, `material.castShadowNode = vec4( 0.7, 0.7, 0.7, 1 )` creates lighter, softer shadows.
 
 ### Rendering Flags
 

@@ -1,5 +1,5 @@
 import { attribute, cameraProjectionMatrix, cameraWorldMatrix, Discard, dot, float, Fn, max, mix, mod, modelViewMatrix, modelWorldMatrixInverse, normalize, positionGeometry, step, texture, uniform, uv, varying, varyingProperty, vec2, vec3, vec4 } from 'three/tsl'
-import { Color, MeshBasicNodeMaterial, Vector2 } from 'three/webgpu'
+import { Color, DoubleSide, MeshBasicNodeMaterial, Vector2 } from 'three/webgpu'
 
 const fix = Fn( ( [i_immutable, aspect_immutable] ) => {
 	const aspect = float( aspect_immutable ).toVar()
@@ -55,7 +55,6 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 		this.alphaTest = options.alphaTest ?? 0
 		this.sizeAttenuation = options.sizeAttenuation ?? true
 		this.useMiterLimit = options.useMiterLimit ?? false
-		this.highQualityMiter = options.highQualityMiter ?? false
 
 		// Can be changed dynamically
 		this.resolution = uniform( options.resolution ?? new Vector2( 1, 1 ) )
@@ -133,11 +132,13 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 		if ( enabled === this._shadowEnabled ) return
 		this._shadowEnabled = enabled
 		if ( enabled ) {
+			this.shadowSide = DoubleSide
 			this.buildShadowPositionNode()
 		} else {
 			this.castShadowPositionNode = null
-			this.castShadowNode = null
+			this.maskShadowNode = null
 			this.shadowNode = null
+			this.shadowSide = null
 		}
 		this.needsUpdate = true
 	}
@@ -205,9 +206,11 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 			return modelWorldMatrixInverse.mul( worldPos ).xyz
 		} )()
 
-		// Add shadowNode for dash discard during shadow pass
+		this.maskShadowNode = null
+
+		// Add a shadow mask for dashed lines during the shadow pass
 		if ( this.dashCount ) {
-			this.castShadowNode = Fn( () => {
+			this.maskShadowNode = Fn( () => {
 				const vProg = varying( aProgress )
 				let cyclePosition = mod( vProg.mul( this.dashCount ).add( this.dashOffset ), float( 1 ) ).toVar( 'cyclePosition' )
 
@@ -216,9 +219,7 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 				}
 
 				const dashMask = step( cyclePosition, this.dashRatio )
-				Discard( dashMask.lessThan( 0.001 ) )
-
-				return vec3( 0 )
+				return dashMask.greaterThan( 0.001 )
 			} )()
 		}
 	}
@@ -289,9 +290,8 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 				const miterLength = float( 1 ).div( max( dot( dir1, dir ), float( 0.01 ) ) ).toVar( 'miterLength' )
 				const limitedMiterLength = miterLength.min( this.miterLimit ).toVar( 'limitedMiterLength' )
 
-				// Use uncapped miter length for consistent width at all angles.
-				// The safe bisector prevents NaN at 180°, so no cap needed.
-				normal.xy.assign( vec2( dir.y.negate(), dir.x ).mul( miterLength ) )
+				// Clamp the miter expansion to avoid oversized spikes at sharp corners.
+				normal.xy.assign( vec2( dir.y.negate(), dir.x ).mul( limitedMiterLength ) )
 
 				normal.xy.mulAssign( w.mul( 0.5 ) )
 			} else {
@@ -419,7 +419,6 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 		this.alphaTest = source.alphaTest
 		this.sizeAttenuation = source.sizeAttenuation
 		this.useMiterLimit = source.useMiterLimit
-		this.highQualityMiter = source.highQualityMiter
 
 		// Copy uniform values
 		this.lineWidth.value = source.lineWidth.value

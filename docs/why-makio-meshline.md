@@ -1,3 +1,7 @@
+---
+description: "Learn why Makio MeshLine is a modern THREE.MeshLine alternative for Three.js with TSL, WebGPU, instancing, and GPU-driven workflows."
+---
+
 # **Makio MeshLine**
 
 Makio MeshLine is a **TSL‑powered line library for Three.js** that delivers fast, easy to customizable thick lines with modern features made by [Makio64](https://x.com/makio64).
@@ -23,6 +27,21 @@ With Three.js evolving, there was a need for a modern Meshline version that leve
 - Simplify usage: a chainable, ergonomic Fluent API
 - Handy helpers (`circlePositions`, `straightLine`, etc.)
 - Sustain long‑term: ESM‑only, typed, tree‑shakeable
+
+## When to Choose Makio MeshLine
+
+Choose Makio MeshLine when you need a modern Three.js line library that goes beyond the limitations of `THREE.Line` and older MeshLine implementations.
+
+- You need wide or thick lines in Three.js without building custom geometry for every effect.
+- You want gradients, dashes, textures, opacity fades, or custom shader logic on the same line system.
+- You need WebGPU-ready rendering with TSL hooks, while still supporting WebGL2 through `WebGPURenderer`.
+- You want to scale from one interactive line to thousands of instanced lines without rewriting the API.
+
+## Compared with Older MeshLine Workflows
+
+Makio MeshLine keeps the original MeshLine spirit, but it targets the current Three.js rendering model. The main shift is that styling and motion are treated as first-class shader problems through TSL, while the geometry and material only allocate what the current line actually needs.
+
+That makes it a strong fit if you are searching for a `THREE.MeshLine` replacement, a Three.js wide-line renderer, or a WebGPU-friendly line library for creative coding and motion design.
 
 ## Thanks
 

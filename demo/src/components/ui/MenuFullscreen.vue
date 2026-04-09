@@ -13,11 +13,17 @@
 		<div class="content">
 			<div class="column">
 				<p ref="desc" class="desc basic-desc">Simple example</p>
-				<a v-for="link in basicLinks" :key="link.text" ref="link" :href="link.href" class="basic-link" @click="close">{{ link.text }}</a>
+				<a v-for="link in basicLinks" :key="link.id" ref="link" :href="link.href" class="basic-link" @click="close">
+					<span class="link-title">{{ link.title }}</span>
+					<span class="link-subtitle">{{ link.subtitle }}</span>
+				</a>
 			</div>
 			<div class="column">
 				<p ref="desc" class="desc advanced-desc">Advanced demo</p>
-				<a v-for="link in advancedLinks" :key="link.text" ref="link" :href="link.href" :class="{ primary: link.primary, 'advanced-link': !link.primary }" @click="close">{{ link.text }}</a>
+				<a v-for="link in advancedLinks" :key="link.id" ref="link" :href="link.href" :class="{ primary: link.primary, 'advanced-link': !link.primary }" @click="close">
+					<span class="link-title">{{ link.title }}</span>
+					<span class="link-subtitle">{{ link.subtitle }}</span>
+				</a>
 			</div>
 		</div>
 		<div ref="footer" class="footer">
@@ -33,6 +39,7 @@
 <script>
 import { animate, stagger, utils } from 'animejs'
 
+import { advancedDemoMeta, basicDemoMeta } from '@/demoMeta'
 import { isMobile } from '@/makio/utils/detect'
 import keyboard from '@/makio/utils/input/keyboard'
 import { menuOpen } from '@/store'
@@ -41,24 +48,14 @@ export default {
 	name: 'MenuFullscreen',
 	data() {
 		return {
-			basicLinks: [
-				{ text: 'Basic', href: '/examples/basic' },
-				{ text: 'Waves', href: '/examples/waves' },
-				{ text: 'Follow', href: '/examples/follow' },
-				{ text: 'Vertex Colors', href: '/examples/vertex-colors' },
-				{ text: 'GPU Circle', href: '/examples/gpu-circle' },
-				{ text: 'GPU Instancing', href: '/examples/gpu-instance' },
-				{ text: 'Shadows', href: '/examples/shadow' },
-			],
-			advancedLinks: [
-				{ text: 'Sandbox', href: '/examples/sandbox', primary: true },
-				{ text: 'Rice Field', href: '/examples/ricefield' },
-				{ text: 'Draw Lines', href: '/examples/drawlines' },
-				{ text: 'Flying Baguettes', href: '/examples/baguettes' },
-				{ text: 'Venus & David', href: '/examples/venus-and-david' },
-				{ text: 'Bamboooo', href: '/examples/bamboooo' },
-				{ text: 'Bunker', href: '/examples/bunker' },
-			],
+			basicLinks: basicDemoMeta.map( demo => ( {
+				...demo,
+				href: `/examples/${demo.id}`
+			} ) ),
+			advancedLinks: advancedDemoMeta.map( demo => ( {
+				...demo,
+				href: `/examples/${demo.id}`
+			} ) ),
 		}
 	},
 	computed: {
@@ -89,7 +86,7 @@ export default {
 				},
 			} )
 			utils.set( desc, { opacity: 0 } )
-			utils.set( link, { opacity: 0, width: 0 } )
+			utils.set( link, { opacity: 0, y: 14, scale: 0.96 } )
 			utils.set( footer, { opacity: 0 } )
 			animate( desc, {
 				opacity: [0, 1],
@@ -98,8 +95,8 @@ export default {
 				ease: 'outExpo',
 			} )
 			animate( link, {
-				// x: [-50, 0],
-				width: [0, 200],
+				y: [14, 0],
+				scale: [0.96, 1],
 				opacity: [0, 1],
 				delay: stagger( 0.05, { start: 0.1 } ),
 				duration: 0.8,
@@ -126,7 +123,9 @@ export default {
 				ease: 'inQuad',
 			} )
 			animate( link, {
-				width: 0,
+				y: 10,
+				scale: 0.97,
+				opacity: 0,
 				delay: stagger( 0.07 ),
 				duration: 0.3,
 				ease: 'easeInExpo',
@@ -267,19 +266,21 @@ export default {
 				font-weight 500
 
 	.content .column a
-		background white
-		width 200px
-		height 56px
-		color black
+		background rgba(255,255,255,.045)
+		width 220px
+		min-height 64px
+		color white
 		font-weight 600
 		font-size 1.125rem
 		font-family 'Inter', sans-serif
 		letter-spacing -0.02em
 		text-decoration none
-		white-space nowrap
 		display flex
+		flex-direction column
 		align-items center
 		justify-content center
+		gap 3px
+		padding 10px 14px
 		opacity 0
 		box-sizing border-box
 		overflow hidden
@@ -290,27 +291,49 @@ export default {
 		transition color .25s ease, background .25s ease, border .25s ease
 
 		&:hover
-			// color #fff
 			border 1px solid rgba(255,255,255,.8)
-			background rgba(255,255,255,.1)
+			background rgba(255,255,255,.09)
 		
-		// Beginner-friendly soft green to soft yellow gradient for basic examples
-		&.basic-link
-			background: linear-gradient(135deg, #b8e6ce, #d4db8c)
-			-webkit-background-clip: text
-			-webkit-text-fill-color: transparent
-		
-		// Red-orange-pink gradient for advanced demos (except Sandbox)
-		&.advanced-link
-			background: linear-gradient(135deg, #ff6b6b, #ff8e53, #ff6bcb)
-			-webkit-background-clip: text
-			-webkit-text-fill-color: transparent
-		
-		// Blue gradient for primary (Sandbox)
-		&.primary
-			background: linear-gradient(90deg, #007cf0, #00bfff)
-			-webkit-background-clip: text
-			-webkit-text-fill-color: transparent
+		&.basic-link .link-title
+			background linear-gradient(135deg, #b8e6ce, #d4db8c)
+			-webkit-background-clip text
+			-webkit-text-fill-color transparent
+
+		&.basic-link .link-subtitle
+			color #cfe0a6
+
+		&.advanced-link .link-title
+			background linear-gradient(135deg, #ff6b6b, #ff8e53, #ff6bcb)
+			-webkit-background-clip text
+			-webkit-text-fill-color transparent
+
+		&.advanced-link .link-subtitle
+			color #ffb0a8
+
+		&.primary .link-title
+			background linear-gradient(90deg, #007cf0, #00bfff)
+			-webkit-background-clip text
+			-webkit-text-fill-color transparent
+
+		&.primary .link-subtitle
+			color #8fd6ff
+
+	.link-title
+		display block
+		font-size 1.02rem
+		font-weight 600
+		line-height 1.05
+		color white
+
+	.link-subtitle
+		display block
+		font-size 10px
+		font-weight 700
+		letter-spacing 0.18em
+		line-height 1.1
+		text-transform uppercase
+		opacity .72
+		color rgba(255,255,255,.78)
 	.u-link
 		color white
 		background transparent
@@ -398,8 +421,8 @@ export default {
 			.desc
 				max-width 36ch
 			.content .column a
-				width 180px
-				height 50px
+				width 200px
+				min-height 58px
 				font-size 1rem
 		.footer
 			position relative

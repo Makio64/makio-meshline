@@ -1,3 +1,7 @@
+---
+description: "Reference helper functions like circlePositions, squarePositions, sineWavePositions, and straightLine for building Three.js MeshLine paths."
+---
+
 # Helper Functions
 
 Utilities functions to help generate `Float32Array` for common line shapes.

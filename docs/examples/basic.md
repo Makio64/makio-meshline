@@ -1,57 +1,43 @@
 ---
+description: "Start with one shape and change one option at a time to learn MeshLine width, dashes, gradients, textures, opacity, and size attenuation in Three.js."
 outline: false
 pageClass: example-page
 ---
 
 # Basic Examples
 
-This demo displays 16 different MeshLine configurations each demonstrating specific features or combinaison
+Start with one shape and change one option at a time. The live demo repeats this small pattern to show width, dashes, gradients, textures, opacity, and size attenuation side by side.
 
-<iframe src="https://meshline-demo.makio.io/examples/basic?noUI" width="100%" height="600" style="border: 1px solid #ddd; border-radius: 8px;"></iframe>
+<iframe title="Makio MeshLine Basic Examples demo" src="https://meshline-demo.makio.io/examples/basic?noUI" width="100%" height="600" style="border: 1px solid #ddd; border-radius: 8px;"></iframe>
 
+[Open the full Basic Examples demo](https://meshline-demo.makio.io/examples/basic)
 
-<!-- ## How to make a reveal animation
-
-This example include an animated reveal effects where lines draw in and out sequentially.
-
-This effect is managed using discardFn to discard the value before/after two percentage uniforms.
+## Minimal Pattern
 
 ```javascript
-import { animate } from 'animejs'
-import { uniform, Fn, step, uv } from 'three/tsl'
-import { MeshLine } from 'makio-meshline'
+import { MeshLine, circlePositions } from 'makio-meshline'
 
-// Create uniforms for animation control
-const line = new MeshLine()
-  .lines( circlePositions(64) )
-  .closed( true )
-  .needsUV( true )
-  .color( 0xff3300 )
+function makeLine( x, options = {} ) {
+  const line = new MeshLine()
+    .lines( circlePositions( 64 ), true )
+    .color( options.color ?? 0xff6633 )
+    .lineWidth( options.lineWidth ?? 0.25 )
 
-// Add animation uniforms
-line.percent1 = uniform( 0 )
-line.percent2 = uniform( 1 )
+  if ( options.gradientColor ) line.gradientColor( options.gradientColor )
+  if ( options.dash ) line.dash( options.dash )
+  if ( options.opacity !== undefined ) {
+    line.opacity( options.opacity )
+    line.transparent( options.opacity < 1 )
+  }
 
-// Use discardFn to control line visibility
-line.discardFn( Fn( () => {
-  return 
-    step( uv().x, line.percent1 ).mul(        // discard uv.x before percent1
-    step( uv().x.oneMinus(), line.percent2 )  // discard uv.x after percent2
-  ).lessThan( 0.00001 )
-} ) )
-
-// Animate the reveal
-function animateReveal() {
-  animate( line.percent1, {  duration: 1,  value: [-0.01, 1.01],  ease: 'easeOut'  } )
-  animate( line.percent2, {  duration: 1,  value: [1.01, -0.01],  delay: 3,  ease: 'easeOut',
-    onComplete: () => animateReveal() // Loop
-  } )
+  line.position.x = x
+  line.build()
+  return line
 }
 
-animateReveal()
+scene.add( makeLine( -4, { color: 0xff6633 } ) )
+scene.add( makeLine( 0, { color: 0x00ff88, dash: { count: 8, ratio: 0.5 } } ) )
+scene.add( makeLine( 4, { color: 0xffffff, gradientColor: 0x3366ff, opacity: 0.7 } ) )
 ```
 
-This technique uses TSL's `discardFn` hook with UV coordinates to progressively reveal/hide the line, creating smooth draw-in and draw-out effects.
-
-**Note** the usage of `.needsUV( true )` to build the uv on the lines so we can access it in the discardFn we declared.
- -->
+Keep the geometry fixed and change one option at a time. That is the simplest way to see what each MeshLine feature is doing.

@@ -1,0 +1,25 @@
+<svg width="1200" height="630" viewBox="0 0 1200 630" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1200" height="630" fill="#0B1016"/>
+  <rect x="28" y="28" width="1144" height="574" rx="30" fill="url(#panel)" stroke="rgba(255,255,255,0.08)"/>
+  <circle cx="987" cy="118" r="170" fill="url(#glow)" opacity="0.8"/>
+  <circle cx="185" cy="540" r="120" fill="#183245" opacity="0.75"/>
+  <path d="M142 421C221 334 321 311 413 360C478 394 551 469 641 457C752 442 790 283 904 283C974 283 1035 333 1065 406" stroke="#FF6A3D" stroke-width="18" stroke-linecap="round"/>
+  <path d="M153 444C245 358 331 351 409 395C472 431 537 500 633 489C739 477 790 319 902 319C964 319 1020 358 1051 417" stroke="#28C8FF" stroke-width="10" stroke-linecap="round" opacity="0.95"/>
+  <path d="M181 176C271 99 382 79 471 131C551 177 615 254 707 252C807 250 859 135 958 136" stroke="#F5F7FA" stroke-opacity="0.16" stroke-width="5" stroke-linecap="round" stroke-dasharray="11 17"/>
+  <text x="96" y="172" fill="#F5F7FA" font-family="Helvetica, Arial, sans-serif" font-size="84" font-weight="700">Makio MeshLine</text>
+  <text x="99" y="240" fill="#B9C4D0" font-family="Helvetica, Arial, sans-serif" font-size="34" font-weight="500">TSL-powered wide lines for Three.js</text>
+  <text x="99" y="324" fill="#D5DEE7" font-family="Helvetica, Arial, sans-serif" font-size="29" font-weight="500">Gradients, dashes, textures, shadows, GPU positions, and instancing</text>
+  <text x="99" y="374" fill="#D5DEE7" font-family="Helvetica, Arial, sans-serif" font-size="29" font-weight="500">built for WebGPU and WebGL2 workflows</text>
+  <rect x="99" y="461" width="262" height="58" rx="29" fill="#101923" stroke="#2A3743"/>
+  <text x="132" y="499" fill="#DDE7F0" font-family="Helvetica, Arial, sans-serif" font-size="27" font-weight="700">meshline.makio.io</text>
+  <defs>
+    <linearGradient id="panel" x1="87" y1="64" x2="1115" y2="572" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#111923"/>
+      <stop offset="1" stop-color="#0F1620"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(987 118) rotate(90) scale(170)">
+      <stop stop-color="#FF8A4A"/>
+      <stop offset="1" stop-color="#FF8A4A" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+</svg>

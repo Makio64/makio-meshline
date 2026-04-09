@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.2.1
+## 1.2.2
 - Fix dynamic buffer usage hints so `.dynamic()` and explicit `usage()` settings apply correctly on build
 - Skip build-time bounding volume computation when `frustumCulled` is disabled
 - Align TypeScript definitions and docs with the implemented shadow and join APIs

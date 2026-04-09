@@ -16,124 +16,93 @@ const BAGUETTE_SPEED = 0.03  // Speed for all baguettes
 
 class FlyingBaguettes {
 	constructor() {
-		this.baguettes = []
 		this.curves = []
-		
-		// Generate random looping paths using Catmull-Rom curves
-		for ( let i = 0; i < BAGUETTE_COUNT; i++ ) {
-			// Create random path points for smooth curves
-			const pathPoints = []
-			for ( let j = 0; j < PATH_POINTS; j++ ) {
-				pathPoints.push( new Vector3(
-					random( -SPREAD, SPREAD ),
-					random( -SPREAD, SPREAD ),
-					random( -SPREAD, SPREAD )
-				) )
-			}
-			
-			// Create a smooth looping curve using CatmullRomCurve3
-			const curve = new CatmullRomCurve3( pathPoints, true, 'catmullrom', 0.5 )
-			this.curves.push( curve )
-			
-			// Store the curve's total length for absolute distance calculations
-			const curveLength = curve.getLength()
-			
-			// Initialize baguette data with brightness variation
-			this.baguettes.push( {
+		this.baguettes = []
+		this.lineArrays = []
+		this.lineIndices = new Float32Array( SEGMENTS * 2 * BAGUETTE_COUNT )
+		this.line = null
+		this.texture = null
+
+		let vertexOffset = 0
+		for ( let lineIndex = 0; lineIndex < BAGUETTE_COUNT; lineIndex++ ) {
+			const points = Array.from( { length: PATH_POINTS }, () => new Vector3(
+				random( -SPREAD, SPREAD ),
+				random( -SPREAD, SPREAD ),
+				random( -SPREAD, SPREAD )
+			) )
+			const curve = new CatmullRomCurve3( points, true, 'catmullrom', 0.5 )
+			const baguette = {
 				positions: new Float32Array( SEGMENTS * 3 ),
 				progress: random( 0, 1 ),
 				speed: BAGUETTE_SPEED,
-				curveLength: curveLength,
-				brightness: random( 0.3, 1.0 ) // Darkness variation
-			} )
-		}
-		
-		// Prepare line arrays
-		this.lineArrays = this.baguettes.map( b => b.positions )
-		
-		// Create lineIndex attribute data for identifying each baguette
-		const totalVertices = SEGMENTS * 2 * BAGUETTE_COUNT // 2 vertices per segment point
-		this.lineIndices = new Float32Array( totalVertices )
-		let vertexOffset = 0
-		for ( let i = 0; i < BAGUETTE_COUNT; i++ ) {
-			for ( let j = 0; j < SEGMENTS * 2; j++ ) {
-				this.lineIndices[ vertexOffset++ ] = i
+				curveLength: curve.getLength()
+			}
+
+			this.curves.push( curve )
+			this.baguettes.push( baguette )
+			this.lineArrays.push( baguette.positions )
+
+			for ( let i = 0; i < SEGMENTS * 2; i++ ) {
+				this.lineIndices[vertexOffset++] = lineIndex
 			}
 		}
 	}
 
-	// -------------------------------------------------- INIT
 	async init() {
 		await stage3d.initRender()
 		stage3d.control = new OrbitControl( stage3d.camera, 30 )
 		stage3d.control.autoRotate = true
 		stage3d.control.autoRotateSpeed = 0.3
-		
-		// Add fog to fade to black
 		stage3d.scene.fog = new Fog( 0x000000, 20, 60 )
 
 		this.texture = new TextureLoader().load( '/textures/baguette.png' )
 		this.texture.colorSpace = SRGBColorSpace
-		// Create meshline with multiple baguettes
+		this.createLine()
+
+		window.addEventListener( 'resize', this.onResize )
+		stage.onUpdate.add( this.update )
+	}
+
+	createLine() {
 		this.line = new MeshLine()
 			.lines( this.lineArrays, false )
 			.lineWidth( 1.4 )
 			.map( this.texture )
 			.alphaTest( 0.1 )
-		
-		// Add custom attribute for line identification
-		this.line.geometry.setAttribute( 'lineIndex', 
-			new BufferAttribute( this.lineIndices, 1 ) )
-		
-		// Apply color function to vary darkness per baguette
+
+		this.line.geometry.setAttribute( 'lineIndex', new BufferAttribute( this.lineIndices, 1 ) )
 		this.line.colorFn( Fn( ( [color] ) => {
 			const lineIdx = attribute( 'lineIndex', 'float' )
-			// Simple approach: use line index to calculate brightness
-			// Each baguette gets progressively darker
 			const brightness = lineIdx.div( BAGUETTE_COUNT ).mul( 0.7 ).add( 0.3 )
 			return color.mul( brightness )
 		} ) )
 
 		stage3d.add( this.line )
-		
-		window.addEventListener( 'resize', this.onResize )
-		stage.onUpdate.add( this.update )
 	}
 
-	// -------------------------------------------------- UPDATE LOOP
 	update = ( dt ) => {
 		this.baguettes.forEach( ( baguette, baguetteIndex ) => {
-			// Update progress
+			const curve = this.curves[baguetteIndex]
 			baguette.progress += baguette.speed * dt * 0.001
 			if ( baguette.progress > 1 ) baguette.progress -= 1
-			
-			const curve = this.curves[ baguetteIndex ]
-			
-			// Generate baguette trail with constant absolute length
+
 			for ( let i = 0; i < SEGMENTS; i++ ) {
-				// Calculate distance along curve for this segment
-				const segmentDistance = ( i / ( SEGMENTS - 1 ) ) * BAGUETTE_LENGTH
-				
-				// Calculate the starting position in curve distance
+				const segmentDistance = i / ( SEGMENTS - 1 ) * BAGUETTE_LENGTH
 				const startDistance = baguette.progress * baguette.curveLength
 				let pointDistance = startDistance - segmentDistance
-				
-				// Wrap around for looping
+
 				if ( pointDistance < 0 ) pointDistance += baguette.curveLength
 				if ( pointDistance > baguette.curveLength ) pointDistance -= baguette.curveLength
-				
-				// Convert distance back to normalized parameter (0-1)
+
 				const pathProgress = pointDistance / baguette.curveLength
-				
-				// Get smooth position from curve
-				const pos = curve.getPoint( pathProgress )
-				
-				baguette.positions[ i * 3 ] = pos.x
-				baguette.positions[ i * 3 + 1 ] = pos.y
-				baguette.positions[ i * 3 + 2 ] = pos.z
+				const position = curve.getPoint( pathProgress )
+
+				baguette.positions[i * 3] = position.x
+				baguette.positions[i * 3 + 1] = position.y
+				baguette.positions[i * 3 + 2] = position.z
 			}
 		} )
-		
+
 		this.line.setPositions( this.lineArrays )
 	}
 
@@ -141,7 +110,6 @@ class FlyingBaguettes {
 		this.line?.resize()
 	}
 
-	// -------------------------------------------------- CLEANUP
 	dispose() {
 		stage.onUpdate.remove( this.update )
 		window.removeEventListener( 'resize', this.onResize )

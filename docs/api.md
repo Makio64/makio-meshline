@@ -1,3 +1,7 @@
+---
+description: "Browse the Makio MeshLine API reference for MeshLine, MeshLineGeometry, MeshLineNodeMaterial, hooks, helpers, and rendering options."
+---
+
 # API Reference
 
 Makio MeshLine is built with creative coding requirement in mind : **performance**, **customization**, **simplicity** so you can focus on your creativity.

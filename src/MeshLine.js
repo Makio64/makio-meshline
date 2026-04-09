@@ -275,16 +275,21 @@ export default class MeshLine extends Mesh {
 	 * @param {import('./index.d.ts').MeshLineJoinOptions} [options]
 	 * @returns {this}
 	 */
-	join( { type = 'miter', limit = 4, quality = 'standard' } = {} ) {
+	join( { type = 'miter', limit = 4 } = {} ) {
 		const useMiter = type === 'miter'
-		const high = quality === 'high'
 		this._options.useMiterLimit = useMiter
 		this._options.miterLimit = limit
-		this._options.highQualityMiter = high
 		if ( this._built && this.material ) {
+			const needsShaderRebuild = this.material.useMiterLimit !== useMiter || ( useMiter && !this.material.miterLimit )
 			this.material.useMiterLimit = useMiter
-			if ( this.material.miterLimit ) this.material.miterLimit.value = limit
-			this.material.highQualityMiter = high
+			if ( useMiter ) {
+				if ( this.material.miterLimit ) {
+					this.material.miterLimit.value = limit
+				} else {
+					this.material.miterLimit = uniform( limit )
+				}
+			}
+			if ( needsShaderRebuild ) this.material.needsUpdate = true
 		}
 		return this
 	}

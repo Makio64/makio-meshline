@@ -143,7 +143,6 @@ export type GPUPositionNodeFn = ( progress: ShaderNodeObject<Node>, extra: Shade
 export interface MeshLineJoinOptions {
 	type?: 'miter' | 'simple'
 	limit?: number
-	quality?: 'standard' | 'high'
 }
 
 export interface MeshLineDashOptions {

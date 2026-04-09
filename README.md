@@ -3,11 +3,13 @@
 [![license](https://img.shields.io/npm/l/makio-meshline)](./LICENSE)
 [![three.js](https://img.shields.io/badge/three.js-r180%2B-blue)](https://threejs.org/)
 
-*A modern, performant TSL-powered meshline solution for Three.js*
+*A modern MeshLine library for Three.js wide lines, gradients, dashes, textures, shadows, GPU positions, and instancing.*
 
 [
 ![demo](https://github.com/user-attachments/assets/4f1c7cee-0f8f-4c21-a720-531eb26bf485)
 ](https://meshline-demo.makio.io)
+
+Makio MeshLine is built for creative coding, interactive trails, data visualization, and stylized rendering on top of Three.js `WebGPURenderer`. It gives you a small fluent API for wide and thick lines, while keeping TSL hooks available when you need custom GPU behavior.
 
 ## Features
 
@@ -17,12 +19,26 @@
 - **14 GPU hooks** — Customize position, color, width, opacity, dash, UV and more in the shader
 - **Gradients, dashes, textures** — Built-in support for common line styles
 - **Variable width** — Per-vertex width control via callback or GPU hook
-- **Miter joins** — Standard and high-quality miter with configurable limit
+- **Line joins** — Clamped miter and simple joins for sharp corners
 - **Shadow support** — Cast shadows from lines
 - **GPU positions** — Procedural line generation entirely on the GPU
 - **Tree-shakeable** — ESM-only, `sideEffects: false`, import only what you need
 - **TypeScript** — Full type definitions included
 - **Zero dependencies** — Only Three.js as peer dependency
+
+## Why Use Makio MeshLine?
+
+- Replace older `THREE.MeshLine` style workflows with a WebGPU-ready Three.js line renderer.
+- Use the same API for one-off wide lines, repeated batches, or thousands of instanced lines.
+- Keep CPU uploads low with `setPositions()`, batching, and GPU position nodes.
+- Add styling and motion with gradients, dashes, textures, vertex colors, opacity, and TSL hooks instead of maintaining multiple line systems.
+
+## Use Cases
+
+- Interactive cursor trails, drawing tools, and paint-like strokes
+- Motion design, sci-fi wireframes, stylized ropes, and decorative outlines
+- Data visualization, flow fields, and parametric curves
+- Large repeated scenes such as vegetation, hair-like structures, or wire sculptures
 
 ## Support Matrix
 

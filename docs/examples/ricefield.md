@@ -1,31 +1,52 @@
 ---
+description: "Use Makio MeshLine instancing to render thousands of stylized grass or rice blades with small line templates and per-instance transforms."
 outline: false
 pageClass: example-page
 ---
 
 # Rice Field
 
-A demo inspired by my trip in japan and the beauty of ricefields.
+This scene stays manageable by repeating one very small blade template many times with instancing.
 
-<iframe src="https://meshline-demo.makio.io/examples/ricefield?noUI" width="100%" height="600" style="border: 1px solid #ddd; border-radius: 8px;"></iframe>
+<iframe title="Makio MeshLine Rice Field demo" src="https://meshline-demo.makio.io/examples/ricefield?noUI" width="100%" height="600" style="border: 1px solid #ddd; border-radius: 8px;"></iframe>
 
+[Open the full Rice Field demo](https://meshline-demo.makio.io/examples/ricefield)
 
-## How it works
+## Minimal Pattern
 
-This demo use two meshlines, one for the floor to delimited the fields and anothers for the rice. 
+```javascript
+import { MeshLine, straightLine } from 'makio-meshline'
+import { attribute, Fn, vec3 } from 'three/tsl'
 
-### Performance 
+const bladeCount = 2000
 
-Both are using the `instance(true)` for performance.
+const rice = new MeshLine()
+	.lines( straightLine( 1, 24 ) )
+	.instances( bladeCount )
+	.lineWidth( 0.03 )
+	.color( 0x6fbf4b )
+	.positionFn( Fn( ( [position] ) => {
+		const transform = attribute( 'instanceTransform', 'vec4' )
+		const x = transform.x
+		const z = transform.y
+		const height = transform.z
+		const bend = transform.w
 
-### Make rice grow
-For the rice field it use a compute shader to make it grow & react to the mouse.
+		return vec3(
+			x.add( position.y.mul( bend ) ),
+			position.y.mul( height ),
+			z
+		)
+	} ) )
 
-### Floor
-For the floor it use `mitters(true)` to get nice edge.
+rice.addInstanceAttribute( 'instanceTransform', 4 )
 
-### Global shape
-The shape use a simple quadtree + padding offset to separate each field
+for ( let i = 0; i < bladeCount; i++ ) {
+	rice.setInstanceValue( 'instanceTransform', i, [x, z, height, bend] )
+}
 
-### Final touch
-The sky is a simple gradient using `scene.backgroundNode` & there is a `reflector` to simulate the water
+rice.build()
+scene.add( rice )
+```
+
+The live demo adds a second MeshLine for the field borders, a quadtree layout, compute-driven motion, a sky gradient, and a reflector. The core idea is still one simple blade shape plus per-instance transforms.

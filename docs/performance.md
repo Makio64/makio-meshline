@@ -1,3 +1,7 @@
+---
+description: "Performance tips for Makio MeshLine covering instancing, batching, dynamic position updates, GPU positioning, and sharp-corner rendering."
+---
+
 # Performance Guide
 
 Makio MeshLine uses TSL core for efficient GPU rendering, supporting both WebGPU and WebGL2 backends. 

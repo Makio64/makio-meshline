@@ -6,6 +6,7 @@
 	</div></template>
 
 <script>
+import { resolveDemoMeta } from '@/demoMeta'
 import baguettes from '@/demos/baguettes'
 import bambooGrove from '@/demos/bambooGrove'
 import basic from '@/demos/basic'
@@ -34,6 +35,7 @@ export default {
 	async mounted() {
 		const id = this.$router.params.id
 		const mapping = {
+			basic,
 			waves,
 			follow,
 			drawlines,
@@ -46,28 +48,12 @@ export default {
 			'venus-and-david': venus,
 			baguettes,
 			'vertex-colors': vertexColors,
-			bunker,
+			'laser-heist': bunker,
 		}
-		this.example = mapping[id] || basic
+		const demo = resolveDemoMeta( id ) || resolveDemoMeta( 'basic' )
+		this.example = mapping[demo.id] || basic
 
-		// map route id to source filename for GitHub link
-		const fileMap = {
-			waves: 'waves.js',
-			follow: 'follow.js',
-			drawlines: 'drawlines.js',
-			'gpu-circle': 'gpuCircle.js',
-			'gpu-instance': 'gpuInstance.js',
-			'bamboooo': 'bambooGrove.js',
-			shadow: 'shadow.js',
-			ricefield: 'ricefield.js',
-			sandbox: 'sandbox.js',
-			'venus-and-david': 'venus.js',
-			baguettes: 'baguettes.js',
-			'vertex-colors': 'vertexColors.js',
-			basic: 'basic.js',
-			bunker: 'bunker.js'
-		}
-		const file = fileMap[id] || 'basic.js'
+		const file = demo?.sourceFile || 'basic.js'
 		this.codeUrl = `https://github.com/Makio64/makio-meshline/tree/main/demo/src/demos/${file}`
 		await this.example.init()
 		this.text = this.example.text || ''

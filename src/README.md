@@ -1,9 +1,9 @@
 # Makio MeshLine
 
-A modern, performant TSL-powered meshline solution for Three.js.
+A modern MeshLine library for Three.js wide lines, gradients, dashes, textures, shadows, GPU positions, and instancing.
 
-- Supports: Three.js r180+, WebGPURenderer (WebGPU and WebGL2 backend)
-- Features: gradients, dashes, textures, variable width, instancing, TSL hooks
+- Supports: Three.js r180+, `WebGPURenderer` (WebGPU and WebGL2 backends)
+- Features: gradients, dashes, textures, vertex colors, shadows, GPU positions, instancing, TSL hooks
 
 ## Install
 
@@ -36,6 +36,12 @@ renderer.setAnimationLoop(() => renderer.render(scene, camera))
 
 - Docs: https://meshline.makio.io
 - Live demos: https://meshline-demo.makio.io
+
+## Use Cases
+
+- Wide and thick lines for creative coding and motion design
+- Interactive trails and drawing tools in Three.js
+- GPU-driven curves and instanced line scenes
 
 ## License
 

@@ -1,3 +1,7 @@
+---
+description: "Reference MeshLineGeometry for efficient line mesh generation, attribute control, batching, and fast position updates in Makio MeshLine."
+---
+
 # MeshLineGeometry
 
 The `MeshLineGeometry` class builds the line mesh geometry from raw point data, handling the complex vertex calculations needed for thick, smooth lines.

@@ -1,3 +1,7 @@
+---
+description: "Explore advanced Makio MeshLine patterns for GPU positions, instancing, batching, animated dashes, and custom TSL material hooks."
+---
+
 # Advanced Patterns
 
 These snippets showcase features that go beyond basic styling.

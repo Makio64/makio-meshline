@@ -1,3 +1,7 @@
+---
+description: "Get started with Makio MeshLine for Three.js, from installation to your first wide, dashed, gradient, or textured line in WebGPU."
+---
+
 # Getting Started
 
 This guide will walk you through the basics of installing and using Makio MeshLine in your Three.js project.
@@ -48,6 +52,9 @@ That's it! You should now see a vibrant orange circle in your scene.
 
 ## Next Steps
 
-- Use the [Sandbox](./examples/sandbox.md) example to test the options and generate the code for your line 
-- Check other examples [Live Demos](https://meshline-demo.makio.io) to see various implementations in action
+- Start with [Basic Examples](./examples/basic.md) to see one option change at a time
+- Check [Follow](./examples/follow.md) and [Draw Lines](./examples/drawlines.md) for dynamic updates
+- Use the [Sandbox](./examples/sandbox.md) to tune parameters and copy the generated line
+- Move to [Instancing](./examples/instancing.md) and [GPU Circle](./examples/gpucircle.md) once the basics are clear
+- Check other examples in the [Live Demos](https://meshline-demo.makio.io) to see the more advanced scenes in action
 - Check out the [API Reference](./api.md) to explore all the available customization options.

@@ -1,5 +1,6 @@
 ---
 layout: home
+description: "Makio MeshLine is a TSL-powered MeshLine library for Three.js with wide lines, gradients, dashes, textures, shadows, GPU positions, and instancing."
 
 hero:
   name: "Makio MeshLine"
@@ -11,7 +12,7 @@ hero:
       link: /why-makio-meshline
     - theme: alt
       text: Examples
-      link: /examples/sandbox
+      link: /examples/basic
     - theme: alt
       text: Quickstart
       link: /guide
@@ -47,3 +48,44 @@ hero:
     Your browser does not support the video tag.
   </video>
 </div> 
+
+## A Modern MeshLine for Three.js
+
+Makio MeshLine is built for the cases where `THREE.Line` is too limited and older MeshLine approaches feel dated. It gives you wide and thick lines for Three.js with gradients, dashes, textures, shadows, GPU-driven positions, and instancing, all wrapped in a small fluent API.
+
+It is designed around Three.js TSL and `WebGPURenderer`, so the same line system works across WebGPU and WebGL2 backends while staying friendly to creative coding, interactive scenes, data visualization, and stylized rendering.
+
+## What You Can Build
+
+- Cursor trails and draw-on-screen tools
+- GPU-driven circles, waves, and parametric curves
+- Instanced vegetation, ropes, and wire sculptures
+- Gradient, dashed, and textured lines for motion design
+- Shadow-casting line meshes for stylized environments
+
+## Why It Stands Out
+
+- TSL-powered hooks let you customize position, width, color, opacity, UVs, dashes, and discard logic directly in the shader.
+- Instancing and batched lines keep draw calls low when one line turns into hundreds or thousands.
+- GPU position nodes let you animate lines without pushing vertex updates from the CPU every frame.
+- The API stays small enough to learn quickly, with helpers like `circlePositions`, `squarePositions`, `sineWavePositions`, and `straightLine`.
+
+## Start Here
+
+- Read [Getting Started](./guide.md) for installation and the first line setup.
+- Open [Basic Examples](./examples/basic.md) to compare width, dashes, gradients, textures, opacity, and size attenuation side by side.
+- Use the [Interactive Sandbox](./examples/sandbox.md) to tune a line visually and export code.
+- Browse the [API Reference](./api.md) once you want hooks, joins, helpers, instancing, or GPU positions.
+
+## Feature Snapshot
+
+| Capability | Included |
+| --- | --- |
+| Wide and thick lines | Yes |
+| Gradients and dashed lines | Yes |
+| Texture and alpha maps | Yes |
+| TSL material hooks | Yes |
+| GPU-driven positions | Yes |
+| Instancing | Yes |
+| Shadow casting | Yes |
+| WebGPU and WebGL2 via `WebGPURenderer` | Yes |
