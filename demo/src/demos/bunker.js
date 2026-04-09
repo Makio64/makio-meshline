@@ -5,7 +5,7 @@ import { bloom } from 'three/addons/tsl/display/BloomNode.js'
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { attribute, cos, float, Fn, fract, instanceIndex, mix, pass, reflector, sin, time, uniform, uv, vec3, vec4 } from 'three/tsl'
-import { AmbientLight, BoxGeometry, CylinderGeometry, InstancedMesh, Mesh, MeshStandardNodeMaterial, Object3D, PlaneGeometry, PMREMGenerator, Raycaster, RenderPipeline, SphereGeometry, SpotLight, StaticDrawUsage, Vector2 } from 'three/webgpu'
+import { AdditiveBlending, AmbientLight, BoxGeometry, CylinderGeometry, InstancedMesh, Mesh, MeshStandardNodeMaterial, Object3D, PlaneGeometry, PMREMGenerator, Raycaster, RenderPipeline, SphereGeometry, SpotLight, StaticDrawUsage, Vector2 } from 'three/webgpu'
 
 import { stage } from '@/makio/core/stage'
 import OrbitControl from '@/makio/three/controls/OrbitControl'
@@ -257,6 +257,8 @@ class BunkerExample {
 			this.line.setInstanceValue( 'instancePhase', i, beams[i].phase )
 		}
 
+		this.line.material.blending = AdditiveBlending
+
 		stage3d.add( this.line )
 
 		// Add small white sphere emitters at start and end points
@@ -413,6 +415,8 @@ class BunkerExample {
 				return color.mul( 1.15 )
 			} ) )
 			.usage( StaticDrawUsage )
+
+		this.scanLine.material.blending = AdditiveBlending
 
 		stage3d.add( this.scanLine )
 	}
