@@ -54,26 +54,23 @@ import { MeshLine, circlePositions } from 'makio-meshline'
 
 // 1. Basic Three.js scaffolding ------------------------------------------------
 const renderer = new THREE.WebGPURenderer()
+renderer.setSize(innerWidth, innerHeight)
 document.body.appendChild(renderer.domElement)
-const scene = new THREE.Scene()
-const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 100)
-camera.position.set(0, 0, 4)
 
-// 2. Create a line -------------------------------------------------------------
-const line = new MeshLine({
-  lines: circlePositions(64), // Float32Array helper – use your own points too
-  closed: true,               // close the loop
-  color: 0xff6600,            // hex or THREE.Color
-  lineWidth: 0.4              // in pixels (when sizeAttenuation=false)
-})
+const scene = new THREE.Scene()
+const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 100)
+camera.position.z = 4
+
+// 2. Create a line (fluent API) ------------------------------------------------
+const line = new MeshLine()
+  .lines(circlePositions(64), true) // 64-segment circle, closed loop
+  .color(0xff6600)                  // hex or THREE.Color
+  .lineWidth(0.4)                   // world units (sizeAttenuation on by default)
+
 scene.add(line)
 
 // 3. Render loop ---------------------------------------------------------------
-function animate() {
-  requestAnimationFrame(animate)
-  renderer.render(scene, camera)
-}
-animate()
+renderer.setAnimationLoop(() => renderer.render(scene, camera))
 ```
 
 ## [Documentation](https://meshline.makio.io)
