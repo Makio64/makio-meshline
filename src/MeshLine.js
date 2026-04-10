@@ -342,7 +342,7 @@ export default class MeshLine extends Mesh {
 	alphaMap( alphaMap ) {
 		this._options.alphaMap = alphaMap
 		if ( this.material.alphaMap ) {
-			this.material.alphaMap = alphaMap
+			this.material.alphaMap.value = alphaMap
 		}
 		return this
 	}

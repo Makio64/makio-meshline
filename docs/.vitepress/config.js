@@ -31,7 +31,10 @@ const PAGE_DESCRIPTIONS = {
   'examples/shadow.md': 'See how Makio MeshLine lines cast shadows in Three.js, including dashed shadow behavior, spotlights, and custom shadow appearance.',
   'examples/bamboo.md': 'Build a procedural bamboo grove with Makio MeshLine instancing, custom TSL transforms, and shadow-casting line templates.',
   'examples/ricefield.md': 'Use Makio MeshLine instancing to render thousands of stylized grass or rice blades with small line templates and per-instance transforms.',
-  'examples/venus-and-david.md': 'Morph one instanced MeshLine layout between sampled sculpture positions using TSL attributes and a single interpolation uniform.'
+  'examples/venus-and-david.md': 'Morph one instanced MeshLine layout between sampled sculpture positions using TSL attributes and a single interpolation uniform.',
+  'hooks.md': 'Complete guide to the 14 TSL hooks in Makio MeshLine for customizing vertex positions, line width, colors, opacity, dashes, UVs, and fragment output.',
+  'react-three-fiber.md': 'Use Makio MeshLine with React Three Fiber (R3F) for wide lines, gradients, dashes, textures, and GPU-driven effects in React and Three.js WebGPU.',
+  'tresjs.md': 'Use Makio MeshLine with TresJS for wide lines, gradients, dashes, textures, and GPU-driven effects in Vue 3 and Three.js WebGPU.'
 }
 
 function stripMarkup( value = '' ) {
@@ -212,7 +215,15 @@ export default defineConfig( {
         text: 'Patterns',
         items: [
           { text: 'Common', link: '/common-patterns' },
-          { text: 'Advanced', link: '/advanced-patterns' }
+          { text: 'Advanced', link: '/advanced-patterns' },
+          { text: 'TSL Hooks', link: '/hooks' }
+        ]
+      },
+      {
+        text: 'Frameworks',
+        items: [
+          { text: 'React Three Fiber', link: '/react-three-fiber' },
+          { text: 'TresJS (Vue)', link: '/tresjs' }
         ]
       },
       {

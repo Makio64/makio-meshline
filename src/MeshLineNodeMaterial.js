@@ -423,20 +423,19 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 		// Copy uniform values
 		this.lineWidth.value = source.lineWidth.value
 
-		// Copy uniforms
-		this.opacity?.value && ( this.opacity.value = source.opacity.value )
-		this.map?.value && ( this.map.value = source.map.value )
-		this.alphaMap?.value && ( this.alphaMap.value = source.alphaMap.value )
-		this.gradient?.value && ( this.gradient.value = source.gradient.value )
-		this.dashCount?.value && ( this.dashCount.value = source.dashCount.value )
-		this.dashRatio?.value && ( this.dashRatio.value = source.dashRatio.value )
-		this.dashOffset?.value && ( this.dashOffset.value = source.dashOffset.value )
-		this.miterLimit?.value && ( this.miterLimit.value = source.miterLimit.value )
-		source.color?.value && this.color.value.copy( source.color.value )
-		source.resolution?.value && this.resolution.value.copy( source.resolution.value )
-		source.repeat?.value && this.repeat.value.copy( source.repeat.value )
-		source.mapOffset?.value && this.mapOffset.value.copy( source.mapOffset.value )
-		source.dpr?.value && this.dpr.value.copy( source.dpr.value )
+		// Copy uniforms (guard on source having the uniform)
+		if ( source.opacity ) this.opacity.value = source.opacity.value
+		if ( source.map ) this.map.value = source.map.value
+		if ( source.alphaMap ) this.alphaMap.value = source.alphaMap.value
+		if ( source.gradient ) this.gradient.value = source.gradient.value
+		if ( source.dashCount ) this.dashCount.value = source.dashCount.value
+		if ( source.dashRatio ) this.dashRatio.value = source.dashRatio.value
+		if ( source.dashOffset ) this.dashOffset.value = source.dashOffset.value
+		if ( source.miterLimit ) this.miterLimit.value = source.miterLimit.value
+		if ( source.color ) this.color.value.copy( source.color.value )
+		if ( source.resolution ) this.resolution.value.copy( source.resolution.value )
+		if ( source.repeat ) this.repeat.value.copy( source.repeat.value )
+		if ( source.mapOffset ) this.mapOffset.value.copy( source.mapOffset.value )
 		if ( source.dpr ) this.dpr.value = source.dpr.value
 
 		// Copy node hooks

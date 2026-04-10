@@ -386,7 +386,6 @@ export class MeshLineGeometry extends BufferGeometry {
 
 		if ( this.options.frustumCulled !== false ) {
 			this.computeBoundingBoxes()
-			this.computeBoundingBox()
 			this.computeBoundingSphere()
 		} else {
 			this.boundingBoxes = []
@@ -416,8 +415,8 @@ export class MeshLineGeometry extends BufferGeometry {
 			return
 		}
 		this.boundingBox.copy( this.boundingBoxes[0] )
-		for ( const box of this.boundingBoxes.slice( 1 ) ) {
-			this.boundingBox.union( box )
+		for ( let i = 1; i < this.boundingBoxes.length; i++ ) {
+			this.boundingBox.union( this.boundingBoxes[i] )
 		}
 	}
 
@@ -629,7 +628,7 @@ const toFloat32 = pts => {
 	}
 
 	// If we skipped some points, return a correctly sized array
-	return offset === result.length ? result : result.slice( 0, offset )
+	return offset === result.length ? result : result.subarray( 0, offset )
 }
 
 export default MeshLineGeometry

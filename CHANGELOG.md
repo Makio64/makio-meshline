@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.2.3
+- Fix `alphaMap()` setter not updating the texture uniform correctly after build
+- Fix `material.copy()` checking wrong target for optional uniforms and duplicating dpr assignment
+- Fix `sineWavePositions()` division by zero when `segments` is 1
+- Remove redundant `computeBoundingBox()` call (already called internally by `computeBoundingSphere()`)
+- Use zero-copy `subarray()` instead of `slice()` in `toFloat32` for better memory efficiency
+- Avoid temporary array allocation in `computeBoundingBox()` loop
+
 ## 1.2.2
 - Fix dynamic buffer usage hints so `.dynamic()` and explicit `usage()` settings apply correctly on build
 - Skip build-time bounding volume computation when `frustumCulled` is disabled

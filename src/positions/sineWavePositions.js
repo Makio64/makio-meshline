@@ -7,8 +7,9 @@
  * @returns {Float32Array} Flat xyz array
  */
 export const sineWavePositions = ( wavelengths = 2, segments = 100, amplitude = 1, length = 4 ) => {
+	segments = Math.max( segments, 2 )
 	const positions = new Float32Array( segments * 3 )
-	
+
 	for ( let i = 0; i < segments; i++ ) {
 		const t = i / ( segments - 1 )
 		const x = ( t - 0.5 ) * length
