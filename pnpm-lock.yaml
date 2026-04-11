@@ -125,8 +125,8 @@ importers:
   docs:
     dependencies:
       makio-meshline:
-        specifier: '>=1.2.2'
-        version: 1.2.2(three@0.183.2)
+        specifier: '>=1.2.3'
+        version: 1.2.3(three@0.183.2)
       three:
         specifier: '>=0.183.2'
         version: 0.183.2
@@ -1614,8 +1614,8 @@ packages:
   magic-string@0.30.21:
     resolution: {integrity: sha512-vd2F4YUyEXKGcLHoq+TEyCjxueSeHnFxyyjNp80yg0XV4vUhnDer/lvvlqM/arB5bXQN5K2/3oinyCRyx8T2CQ==}
 
-  makio-meshline@1.2.2:
-    resolution: {integrity: sha512-rSevR0uPkzQZw7ft1YdfztP/mnNHLNYHYxa/+LcDeswoX7EA84v5iRVL5Y4zz3WFmEqPvniT8R3XhbpTo82DXA==}
+  makio-meshline@1.2.3:
+    resolution: {integrity: sha512-GwJFaA6zChn0K21iGiIVkQHdurylmag6PL4Wilv83kqnN7er2EPaQF+OkgFxgpPRJSfHeTKpjLDiA/nPBr0zHg==}
     peerDependencies:
       three: '>=0.180.0'
 
@@ -3601,7 +3601,7 @@ snapshots:
     dependencies:
       '@jridgewell/sourcemap-codec': 1.5.5
 
-  makio-meshline@1.2.2(three@0.183.2):
+  makio-meshline@1.2.3(three@0.183.2):
     dependencies:
       three: 0.183.2
 
