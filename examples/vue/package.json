@@ -1,0 +1,18 @@
+{
+  "name": "makio-meshline-vue-example",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build"
+  },
+  "dependencies": {
+    "makio-meshline": "^1.2.3",
+    "three": "^0.183.2",
+    "vue": "^3.5.32"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^6.0.5",
+    "vite": "^8.0.8"
+  }
+}

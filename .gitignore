@@ -4,6 +4,7 @@ src/node_modules
 demo/node_modules
 /dist
 demo/dist
+examples/*/dist
 docs/.vitepress/dist
 docs/.vitepress/cache
 docs/.vitepress/.temp

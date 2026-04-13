@@ -223,7 +223,7 @@ export default defineConfig( {
         text: 'Frameworks',
         items: [
           { text: 'React Three Fiber', link: '/react-three-fiber' },
-          { text: 'TresJS (Vue)', link: '/tresjs' }
+          { text: 'Vue', link: '/vue' }
         ]
       },
       {
