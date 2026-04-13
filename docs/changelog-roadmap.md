@@ -20,12 +20,14 @@ A quick look at where Makio MeshLine has been and where it's headed. We're just 
 
 ## Changelog
 
-- **v1.3.0**: Add ready-to-run StackBlitz examples for React Three Fiber and Vue, each with a declarative `<MeshLine>` wrapper component exposing every MeshLine option and TSL hook as props. Includes WebGPU renderer setup, OrbitControls, and simplified framework doc pages. Add `examples/*` to pnpm workspace.
-- **v1.2.3**: Fix `alphaMap()` setter not updating the texture uniform after build, fix `material.copy()` checking the wrong target for optional uniforms and duplicating dpr assignment, fix `sineWavePositions()` division by zero when `segments` is 1. Remove redundant `computeBoundingBox()` call (already handled by `computeBoundingSphere()`), use zero-copy `subarray()` in `toFloat32`, and avoid temporary array allocation in `computeBoundingBox()`.
-- **v1.2.2**: Fix dynamic buffer usage hints, skip bounding volume work when `frustumCulled` is disabled, align shadow/join typings and docs, and tighten miter handling for near-180° angles
-- **v1.2.0**: Shadow casting support (`.shadow()` method, custom `castShadowNode`), internal refactoring for line position and width calculations, new demos (Shadow, Bamboo Grove)
-- **v1.1.0**: Three.js r181 compatibility, geometry performance improvements, `ensureBuilt()` method
+- **v1.3.0**: R3F & Vue StackBlitz examples with declarative `<MeshLine>` wrapper components
+- **v1.2.3**: Fixes for `alphaMap()`, `material.copy()`, and `sineWavePositions()`; minor allocation cleanups
+- **v1.2.2**: Buffer usage fixes, frustum-culling skip, miter handling for near-180° angles
+- **v1.2.0**: Shadow casting (`.shadow()`, `castShadowNode`); Shadow & Bamboo Grove demos
+- **v1.1.0**: Three.js r181 support, faster geometry, `ensureBuilt()`
 - **v1.0.5**: Fix TSL assign operation error
-- **v1.0.4**: Per-vertex RGB colors, Three.js ^0.180.0 peer dependency
-- **v1.0.3**: Rename counters→progress, fix alphaTest/transparency, vSide→aSide optimization
-- **v1.0.0** (Initial Release): Core implementation with TSL, multi-line batching, instancing, dashes, gradients, mitter, hooks, and GPU positions. Built for Three.js r178+.
+- **v1.0.4**: Per-vertex RGB colors; Three.js ^0.180.0 peer
+- **v1.0.3**: counters→progress rename, alphaTest/transparency fix
+- **v1.0.0**: Initial release — TSL, batching, instancing, dashes, gradients, miter, hooks, GPU positions
+
+Full changelog: [CHANGELOG.md](https://github.com/Makio64/makio-meshline/blob/main/CHANGELOG.md)
