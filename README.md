@@ -89,6 +89,56 @@ scene.add(line)
 renderer.setAnimationLoop(() => renderer.render(scene, camera))
 ```
 
+## Framework Quickstart
+
+Use Makio MeshLine with React Three Fiber or Vue. Each example ships a declarative `<MeshLine>` wrapper and is ready to open on StackBlitz.
+
+### React Three Fiber
+
+[![Open in StackBlitz](https://developer.stackblitz.com/img/open_in_stackblitz.svg)](https://stackblitz.com/github/Makio64/makio-meshline/tree/main/examples/react-three-fiber)
+
+```jsx
+import { Canvas } from '@react-three/fiber'
+import { WebGPURenderer } from 'three/webgpu'
+import { circlePositions } from 'makio-meshline'
+import { MeshLine } from './MeshLine' // wrapper from the example
+
+export default function App() {
+  return (
+    <Canvas
+      camera={{ position: [0, 0, 10] }}
+      gl={async ( props ) => {
+        const renderer = new WebGPURenderer( { ...props, antialias: true } )
+        await renderer.init()
+        return renderer
+      }}
+    >
+      <MeshLine points={circlePositions( 64, 3 )} closed lineWidth={0.2} color={0xff8800} gradientColor={0xffffff} />
+    </Canvas>
+  )
+}
+```
+
+Full example & wrapper source: [examples/react-three-fiber/](./examples/react-three-fiber/) — [docs](https://meshline.makio.io/react-three-fiber.html)
+
+### Vue
+
+[![Open in StackBlitz](https://developer.stackblitz.com/img/open_in_stackblitz.svg)](https://stackblitz.com/github/Makio64/makio-meshline/tree/main/examples/vue)
+
+```vue
+<MeshLine
+  v-if="group"
+  :parent="group"
+  :points="circlePositions( 64, 3 )"
+  closed
+  :line-width="0.2"
+  :color="0xff8800"
+  :gradient-color="0xffffff"
+/>
+```
+
+Full example & wrapper source: [examples/vue/](./examples/vue/) — [docs](https://meshline.makio.io/vue.html)
+
 ## [Documentation](https://meshline.makio.io)
 
 Check out the [documentation site](https://meshline.makio.io/) for detailed instructions, API reference, and examples.
@@ -99,6 +149,8 @@ Check out the [documentation site](https://meshline.makio.io/) for detailed inst
 - [Advanced Patterns](https://meshline.makio.io/advanced-patterns.html)
 - [Performance tips](https://meshline.makio.io/performance.html)
 - [Helpers functions](https://meshline.makio.io/helpers.html)
+- [React Three Fiber integration](https://meshline.makio.io/react-three-fiber.html)
+- [Vue integration](https://meshline.makio.io/vue.html)
 
 <img width="1709" height="970" alt="Screenshot 2025-07-14 at 19 45 01" src="https://github.com/user-attachments/assets/0cbe4a1f-b84e-462a-aeeb-3cb190097bf8" />
 

@@ -50,6 +50,13 @@ loop()
 That's it! You should now see a vibrant orange circle in your scene.
 
 
+## Using a Framework?
+
+If you're building with React or Vue, jump to a ready-to-run example with a declarative `<MeshLine>` wrapper component:
+
+- [React Three Fiber](./react-three-fiber.md) — open the [R3F StackBlitz template](https://stackblitz.com/github/Makio64/makio-meshline/tree/main/examples/react-three-fiber)
+- [Vue](./vue.md) — open the [Vue StackBlitz template](https://stackblitz.com/github/Makio64/makio-meshline/tree/main/examples/vue)
+
 ## Next Steps
 
 - Start with [Basic Examples](./examples/basic.md) to see one option change at a time

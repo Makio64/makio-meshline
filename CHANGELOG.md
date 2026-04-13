@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.3.0
+- Add ready-to-run StackBlitz examples for React Three Fiber and Vue
+- Add declarative `<MeshLine>` wrapper components for both R3F and Vue, exposing every MeshLine option and TSL hook as props
+- Simplify framework documentation pages
+- Add `examples/*` to the pnpm workspace
+
 ## 1.2.3
 - Fix `alphaMap()` setter not updating the texture uniform correctly after build
 - Fix `material.copy()` checking wrong target for optional uniforms and duplicating dpr assignment

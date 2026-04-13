@@ -32,6 +32,13 @@ scene.add(line)
 renderer.setAnimationLoop(() => renderer.render(scene, camera))
 ```
 
+## Framework Quickstart
+
+Ready-to-run examples with a declarative `<MeshLine>` wrapper:
+
+- **React Three Fiber** — [docs](https://meshline.makio.io/react-three-fiber.html) · [open in StackBlitz](https://stackblitz.com/github/Makio64/makio-meshline/tree/main/examples/react-three-fiber)
+- **Vue** — [docs](https://meshline.makio.io/vue.html) · [open in StackBlitz](https://stackblitz.com/github/Makio64/makio-meshline/tree/main/examples/vue)
+
 ## Documentation & Demos
 
 - Docs: https://meshline.makio.io
