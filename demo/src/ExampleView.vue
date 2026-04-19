@@ -6,15 +6,17 @@
 	</div></template>
 
 <script>
+import { markRaw } from 'vue'
+
 import { resolveDemoMeta } from '@/demoMeta'
 import baguettes from '@/demos/baguettes'
 import bambooGrove from '@/demos/bambooGrove'
 import basic from '@/demos/basic'
-import bunker from '@/demos/bunker'
 import drawlines from '@/demos/drawlines'
 import follow from '@/demos/follow'
 import gpuCircle from '@/demos/gpuCircle'
 import gpuInstance from '@/demos/gpuInstance'
+import heist from '@/demos/heist'
 import ricefield from '@/demos/ricefield'
 import sandbox from '@/demos/sandbox'
 import shadow from '@/demos/shadow'
@@ -48,10 +50,12 @@ export default {
 			'venus-and-david': venus,
 			baguettes,
 			'vertex-colors': vertexColors,
-			'laser-heist': bunker,
+			'laser-heist': heist,
 		}
 		const demo = resolveDemoMeta( id ) || resolveDemoMeta( 'basic' )
-		this.example = mapping[demo.id] || basic
+		// Opt out of Vue reactivity: Three.js caches geometries/materials in internal
+		// WeakMaps, and a deep-reactive demo would double-insert raw+proxy versions.
+		this.example = markRaw( mapping[demo.id] || basic )
 
 		const file = demo?.sourceFile || 'basic.js'
 		this.codeUrl = `https://github.com/Makio64/makio-meshline/tree/main/demo/src/demos/${file}`
@@ -84,7 +88,7 @@ export default {
 	.bottom
 		position absolute
 		bottom 10px
-	.instruction 
+	.instruction
 		user-select none
 		pointer-events none
 

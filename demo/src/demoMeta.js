@@ -12,7 +12,7 @@ export const demoMeta = [
 	{ id: 'baguettes', title: 'Flying Baguettes', subtitle: 'multi-line batch', sourceFile: 'baguettes.js', group: 'advanced' },
 	{ id: 'venus-and-david', title: 'Venus & David', subtitle: 'mesh paths', sourceFile: 'venus.js', group: 'advanced' },
 	{ id: 'bamboooo', title: 'Bamboooo', subtitle: 'instancing + shadows', sourceFile: 'bambooGrove.js', group: 'advanced' },
-	{ id: 'laser-heist', title: 'Laser Heist', subtitle: 'raycasting', sourceFile: 'bunker.js', group: 'advanced', aliases: ['bunker'] },
+	{ id: 'laser-heist', title: 'Laser Heist', subtitle: 'raycast vs picker', sourceFile: 'heist.js', group: 'advanced' },
 ]
 
 export const basicDemoMeta = demoMeta.filter( demo => demo.group === 'basic' )

@@ -1,12 +1,12 @@
 <template>
 	<div class="sandbox-view">
-		<div ref="codeOutput" class="code-output" :class="{ 'no-menu': hasNoMenu }">
+		<div ref="codeOutput" class="code-output" :class="{ 'no-menu': api.hasNoMenu }">
 			<div class="code-header">
 				<span class="code-title">Generated Code</span>
-				<button class="copy-button" @click="$emit('copy-code')">📋 Copy</button>
+				<button class="copy-button" @click="api.copyCode()">📋 Copy</button>
 			</div>
-			<div v-if="highlightedCode && highlightedCode !== generatedCode" class="code-content" v-html="highlightedCode" />
-			<pre v-else class="code-content">{{ generatedCode }}</pre>
+			<div v-if="api.config.highlightedCode && api.config.highlightedCode !== api.config.generatedCode" class="code-content" v-html="api.config.highlightedCode" />
+			<pre v-else class="code-content">{{ api.config.generatedCode }}</pre>
 		</div>
 	</div>
 </template>
@@ -15,28 +15,14 @@
 export default {
 	name: 'SandboxView',
 	props: {
-		generatedCode: {
-			type: String,
-			required: true
-		},
-		highlightedCode: {
-			type: String,
-			default: ''
-		},
-		hasNoMenu: {
-			type: Boolean,
-			default: false
-		}
+		api: { type: Object, required: true },
 	},
-	emits: ['copy-code']
 }
 </script>
 
 <style lang="stylus" scoped>
 .sandbox-view
-	width 100%
-	height 100vh
-	position relative
+	bottom auto
 	font-family 'Roboto Mono', monospace
 
 .code-output

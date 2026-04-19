@@ -1,6 +1,8 @@
 # Changelog
 
 ## 1.3.0
+- Add `MeshLinePicker` — GPU pixel-picker that identifies the line and instance under the cursor; works with GPU-positioned, instanced, animated, and hook-driven lines
+- Add `docs/picking.md` documenting the picker alongside Three.js `Raycaster` for line interaction
 - Add ready-to-run StackBlitz examples for React Three Fiber and Vue
 - Add declarative `<MeshLine>` wrapper components for both R3F and Vue, exposing every MeshLine option and TSL hook as props
 - Simplify framework documentation pages

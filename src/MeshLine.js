@@ -880,7 +880,14 @@ export default class MeshLine extends Mesh {
 		const hasLines = !!( geometry._lines && geometry._lines.length > 0 )
 
 		if ( !isInstanced ) {
-			if ( !hasLines || this._options.gpuPositionNode ) return
+			if ( !hasLines ) return
+			if ( this._options.gpuPositionNode ) {
+				if ( !this._warnedGpuRaycast ) {
+					console.info( 'MeshLine.raycast: GPU-positioned lines are not raycastable — use MeshLinePicker.' )
+					this._warnedGpuRaycast = true
+				}
+				return
+			}
 
 			if ( geometry.boundingSphere === null ) geometry.computeBoundingSphere()
 			if ( geometry.boundingSphere !== null && geometry.boundingSphere.radius > 0 ) {

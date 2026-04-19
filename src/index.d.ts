@@ -8,7 +8,10 @@ import type {
 	Color,
 	BufferGeometry,
 	BufferAttribute,
-	Usage
+	Usage,
+	Scene,
+	Camera,
+	WebGPURenderer
 } from 'three/webgpu'
 
 import type { ShaderNodeObject, Node } from 'three/tsl'
@@ -295,6 +298,43 @@ export class MeshLineNodeMaterial {
 	constructor()
 	buildLine( options?: Partial<MeshLineConfigureOptions> ): void
 	setShadow( enabled: boolean ): void
+	dispose(): void
+}
+
+// ---------------------------------------------------------------------------
+// MeshLinePicker
+// ---------------------------------------------------------------------------
+
+export interface MeshLinePickerOptions {
+	/** Size of the offscreen render target in CSS pixels (default 1). Larger = scans more nearby pixels. */
+	targetSize?: number
+	/**
+	 * Multiplier applied to each registered line's width when drawn into the
+	 * picking pass — makes thin lines easier to hit without changing the visible
+	 * line width. Default 15. Set to 1 for pixel-exact picking.
+	 */
+	hitRadius?: number
+}
+
+export interface MeshLinePickerHit {
+	line: MeshLine
+	/** Instance index when the line is instanced, otherwise -1. */
+	instanceId: number
+}
+
+/**
+ * GPU pixel-picker for MeshLines. Renders registered lines with unique ID
+ * colors to an offscreen target and reads back the pixel under the cursor
+ * to identify which line / instance was hit.
+ *
+ * Works with GPU-positioned, instanced, animated, or hook-driven lines —
+ * because it reads what was rendered, not a CPU proxy.
+ */
+export class MeshLinePicker {
+	constructor( renderer: WebGPURenderer, scene: Scene, camera: Camera, options?: MeshLinePickerOptions )
+	add( line: MeshLine ): this
+	remove( line: MeshLine ): this
+	pick( x: number, y: number ): Promise<MeshLinePickerHit | null>
 	dispose(): void
 }
 

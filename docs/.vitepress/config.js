@@ -33,6 +33,7 @@ const PAGE_DESCRIPTIONS = {
   'examples/ricefield.md': 'Use Makio MeshLine instancing to render thousands of stylized grass or rice blades with small line templates and per-instance transforms.',
   'examples/venus-and-david.md': 'Morph one instanced MeshLine layout between sampled sculpture positions using TSL attributes and a single interpolation uniform.',
   'hooks.md': 'Complete guide to the 14 TSL hooks in Makio MeshLine for customizing vertex positions, line width, colors, opacity, dashes, UVs, and fragment output.',
+  'picking.md': 'Pick GPU-positioned and instanced Makio MeshLines under the cursor with MeshLinePicker, an offscreen ID-render picker that works where raycasting cannot.',
   'react-three-fiber.md': 'Use Makio MeshLine with React Three Fiber (R3F) for wide lines, gradients, dashes, textures, and GPU-driven effects in React and Three.js WebGPU.',
   'tresjs.md': 'Use Makio MeshLine with TresJS for wide lines, gradients, dashes, textures, and GPU-driven effects in Vue 3 and Three.js WebGPU.'
 }
@@ -208,6 +209,7 @@ export default defineConfig( {
           { text: 'MeshLine', link: '/meshline' },
           { text: 'MeshLineGeometry', link: '/meshline-geometry' },
           { text: 'MeshLineNodeMaterial', link: '/meshline-material' },
+          { text: 'MeshLinePicker (GPU)', link: '/picking' },
           { text: 'Helpers', link: '/helpers' },
         ]
       },

@@ -65,7 +65,7 @@ class RicefieldExample {
 		stage3d.camera.updateProjectionMatrix()
 		await this.initHDR()
 		this.initScene()
-		window.addEventListener( 'resize', this.onResize )
+		stage.onResize.add( this.onResize )
 		onMove.add( this.onMouseMove )
 		onClick.add( this.onMouseClick )
 	}
@@ -544,81 +544,51 @@ class RicefieldExample {
 	}
 
 	dispose() {
-		// Remove event listeners
-		window.removeEventListener( 'resize', this.onResize )
+		stage.onResize.remove( this.onResize )
 		onMove.remove( this.onMouseMove )
 		onClick.remove( this.onMouseClick )
-		
-		// Dispose rice lines
-		if ( this.lines ) {
-			stage3d.remove( this.lines )
-			this.lines.dispose()
-			this.lines = null
+
+		const disposeObj = ( o ) => {
+			if ( !o ) return null
+			stage3d.remove( o )
+			// Prefer the object's own dispose() when defined — MeshLine cleans up
+			// auto-resize listeners and instance buffers internally.
+			if ( typeof o.dispose === 'function' ) o.dispose()
+			else {
+				o.geometry?.dispose()
+				o.material?.dispose()
+			}
+			return null
 		}
-		
-		// Dispose field border
-		if ( this.fieldBorder ) {
-			stage3d.remove( this.fieldBorder )
-			this.fieldBorder.dispose()
-			this.fieldBorder = null
+		for ( const k of ['lines', 'fieldBorder', 'water'] ) {
+			this[k] = disposeObj( this[k] )
 		}
-		
-		// Dispose water
-		if ( this.water ) {
-			stage3d.remove( this.water )
-			this.water.geometry.dispose()
-			this.water.material.dispose()
-			this.water = null
-		}
-		
-		// Dispose reflection target
+
 		if ( this.reflectionTarget ) {
 			stage3d.remove( this.reflectionTarget )
-			// Note: the reflector target disposal is handled by Three.js internally
 			this.reflectionTarget = null
 		}
-		
-		// Dispose quadtree visualization group
+
 		if ( this.quadTreeGroup ) {
 			stage3d.remove( this.quadTreeGroup )
 			this.quadTreeGroup.traverse( ( child ) => {
-				if ( child.geometry ) child.geometry.dispose()
-				if ( child.material ) child.material.dispose()
+				child.geometry?.dispose()
+				child.material?.dispose()
 			} )
 			this.quadTreeGroup = null
 		}
-		
-		// Clear compute shader resources
-		if ( this.scaleStorageBuffer ) {
-			// StorageBufferAttribute doesn't need explicit disposal
-			this.scaleStorageBuffer = null
-		}
-		
-		// Dispose compute update
-		if ( this.computeUpdate ) {
-			this.computeUpdate = null
-		}
-		
-		// Clear data arrays
+
+		this.noiseTexture?.dispose()
+		this.noiseTexture = null
+		this.scaleStorageBuffer = null
+		this.computeUpdate = null
 		this.cells = []
 		this.riceInstances = []
 		this.lineArrays = []
-		
-		// Dispose controls
-		if ( stage3d.control ) {
-			stage3d.control.dispose()
-		}
-		
-		// Clear environment and background
+
+		stage3d.control?.dispose()
 		stage3d.scene.environment = null
 		stage3d.scene.backgroundNode = null
-		
-		// Dispose noise texture
-		if ( this.noiseTexture ) {
-			this.noiseTexture.dispose()
-			this.noiseTexture = null
-		}
-		
 	}
 
 	show() {

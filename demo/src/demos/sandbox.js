@@ -1,7 +1,7 @@
 import GUI from 'lil-gui'
 import { circlePositions, MeshLine, sineWavePositions, squarePositions, straightLine } from 'makio-meshline'
 import { DoubleSide, Mesh, MeshBasicMaterial, PlaneGeometry } from 'three/webgpu'
-import { createApp, h, reactive, watch } from 'vue'
+import { markRaw, reactive, watch } from 'vue'
 
 import stage from '@/makio/core/stage'
 import OrbitControl from '@/makio/three/controls/OrbitControl'
@@ -48,8 +48,7 @@ const strongAnglePositions = ( segments = 48, width = 18 ) => {
 
 class SandboxExample {
 	constructor() {
-		this.app = null
-		this.container = null
+		this.uiComponent = markRaw( SandboxView )
 		this.line = null
 		this.gui = null
 		this.animationHandler = null
@@ -117,27 +116,9 @@ class SandboxExample {
 		
 		// Set up reactive watchers
 		this.setupWatchers()
-		
-		// Create Vue app for display
-		this.container = document.createElement( 'div' )
-		this.container.style.width = '100%'
-		this.container.style.height = '100vh'
-		document.body.appendChild( this.container )
-		
-		this.app = createApp( {
-			render: () => h( SandboxView, {
-				generatedCode: this.config.generatedCode,
-				highlightedCode: this.config.highlightedCode,
-				hasNoMenu: this.hasNoMenu,
-				'onCopy-code': () => this.copyCode()
-			} )
-		} )
-		this.app.mount( this.container )
-		
+
 		stage.onUpdate.add( this.updateDashes )
-		
-		// Add resize handler
-		window.addEventListener( 'resize', this.onResize )
+		stage.onResize.add( this.onResize )
 	}
 	
 	initGUI() {
@@ -499,35 +480,22 @@ class SandboxExample {
 	}
 
 	dispose() {
-		window.removeEventListener( 'resize', this.onResize )
-
 		stage.onUpdate.remove( this.updateDashes )
+		stage.onResize.remove( this.onResize )
 
 		if ( this.line ) {
 			stage3d.remove( this.line )
 			this.line.dispose()
 		}
-		
+
 		if ( this.referencePlane ) {
 			stage3d.remove( this.referencePlane )
 			this.referencePlane.geometry.dispose()
 			this.referencePlane.material.dispose()
 		}
-		
-		if ( this.gui ) {
-			this.gui.destroy()
-		}
-		
+
+		this.gui?.destroy()
 		stage3d.control?.dispose()
-		
-		if ( this.app ) {
-			this.app.unmount()
-			this.app = null
-		}
-		if ( this.container ) {
-			document.body.removeChild( this.container )
-			this.container = null
-		}
 	}
 
 	show() {
