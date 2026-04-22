@@ -1,6 +1,64 @@
 import { Box3, BufferAttribute, BufferGeometry, Sphere, StaticDrawUsage, StreamDrawUsage, Vector2, Vector3 } from 'three/webgpu'
 
 /**
+ * Replace each sharp corner of a polyline with two cutoff points so the
+ * shader-side miter never sees near-hairpin bends. Screen-space meshlines
+ * can't faithfully render a single vertex whose two neighbouring segments
+ * diverge too far — the bisector collapses and produces bowtie-shaped ribbons
+ * at oblique camera angles. Splitting the corner into two gentler bends
+ * lets the miter math stay well-conditioned.
+ *
+ * `dotThreshold` is on `dot(dir_in, dir_out)`: values closer to -1 mean
+ * "subdivide only the sharpest corners". Default -0.5 ≈ interior bend < 60°.
+ * `alpha` controls how far back along each adjacent segment the cutoff sits.
+ */
+function subdivideSharpBends( line, isLooped, dotThreshold = -0.5, alpha = 0.001 ) {
+	const n = line.length / 3
+	if ( n < 3 ) return line
+
+	// Clamp alpha so two adjacent sharp bends can't insert overlapping points.
+	const a = Math.max( 0, Math.min( alpha, 0.5 ) )
+	const out = []
+
+	for ( let i = 0; i < n; i++ ) {
+		const x = line[i * 3], y = line[i * 3 + 1], z = line[i * 3 + 2]
+
+		// Endpoints of non-looped polylines have no "bend" to subdivide.
+		if ( !isLooped && ( i === 0 || i === n - 1 ) ) {
+			out.push( x, y, z )
+			continue
+		}
+
+		const iPrev = i === 0 ? n - 1 : i - 1
+		const iNext = i === n - 1 ? 0 : i + 1
+		const px = line[iPrev * 3], py = line[iPrev * 3 + 1], pz = line[iPrev * 3 + 2]
+		const nx = line[iNext * 3], ny = line[iNext * 3 + 1], nz = line[iNext * 3 + 2]
+
+		const dx1 = x - px, dy1 = y - py, dz1 = z - pz
+		const dx2 = nx - x, dy2 = ny - y, dz2 = nz - z
+		const len1 = Math.hypot( dx1, dy1, dz1 )
+		const len2 = Math.hypot( dx2, dy2, dz2 )
+		if ( len1 < 1e-6 || len2 < 1e-6 ) {
+			out.push( x, y, z )
+			continue
+		}
+
+		const cosAngle = ( dx1 * dx2 + dy1 * dy2 + dz1 * dz2 ) / ( len1 * len2 )
+		if ( cosAngle >= dotThreshold ) {
+			out.push( x, y, z )
+			continue
+		}
+
+		out.push(
+			x + ( px - x ) * a, y + ( py - y ) * a, z + ( pz - z ) * a,
+			x + ( nx - x ) * a, y + ( ny - y ) * a, z + ( nz - z ) * a,
+		)
+	}
+
+	return new Float32Array( out )
+}
+
+/**
  * Geometry builder that creates the vertex buffers (position, previous, next,
  * side, progress, uv, width, vertex colors) needed for meshline rendering.
  * Supports multi-line batching and efficient in-place position updates.
@@ -66,6 +124,15 @@ export class MeshLineGeometry extends BufferGeometry {
 		// Convert each line to Float32Array and store separately
 		const convertedLines = []
 
+		// Skip CPU-side corner subdivision when GPU positions drive the line:
+		// the CPU array is a straight-line template whose point count controls
+		// the vertex/progress grid, and a `closed: true` straight line reads as
+		// a hairpin at both endpoints to the subdivision pass. Subdividing would
+		// shift the progress mapping that the GPU node samples against.
+		const smooth = this.options.smoothSharpBends !== false && !this.options.gpuPositionNode
+		const dotThreshold = this.options.smoothSharpBendsThreshold ?? -0.5
+		const alpha = this.options.smoothSharpBendsAlpha ?? 0.001
+
 		for ( let i = 0; i < lines.length; i++ ) {
 			const pts = lines[i]
 			if ( !pts || pts.length === 0 ) continue
@@ -74,6 +141,10 @@ export class MeshLineGeometry extends BufferGeometry {
 			// Get loop value either from single boolean or from array
 			const loopValue = isSingleLoop ? lineLoops : ( lineLoops?.[i] ?? false )
 			const shouldLoop = loopValue && arr.length >= 9 // Need at least 3 points (9 values) for a loop
+
+			if ( smooth ) {
+				arr = subdivideSharpBends( arr, shouldLoop, dotThreshold, alpha )
+			}
 
 			if ( shouldLoop ) {
 				const newArr = new Float32Array( arr.length + 3 )
@@ -448,13 +519,38 @@ export class MeshLineGeometry extends BufferGeometry {
 			pts = [pts]
 		}
 
-		// Convert all inputs to Float32Array
-		const newLines = pts.map( line => toFloat32( line ) )
+		// Convert all inputs to Float32Array and apply the same prep pipeline that
+		// setLines() used: subdivide sharp bends, then append the loop duplicate.
+		// Matching lengths with the stored lines then implies matching topology.
+		// Skip CPU-side corner subdivision when GPU positions drive the line:
+		// the CPU array is a straight-line template whose point count controls
+		// the vertex/progress grid, and a `closed: true` straight line reads as
+		// a hairpin at both endpoints to the subdivision pass. Subdividing would
+		// shift the progress mapping that the GPU node samples against.
+		const smooth = this.options.smoothSharpBends !== false && !this.options.gpuPositionNode
+		const dotThreshold = this.options.smoothSharpBendsThreshold ?? -0.5
+		const alpha = this.options.smoothSharpBendsAlpha ?? 0.001
+		const newLines = pts.map( ( line, i ) => {
+			let arr = toFloat32( line )
+			const isLooped = this._isSingleLoopValue ? this._lineLoops : ( this._lineLoops?.[i] ?? false )
+			if ( smooth ) {
+				arr = subdivideSharpBends( arr, isLooped, dotThreshold, alpha )
+			}
+			if ( isLooped && arr.length >= 9 ) {
+				const looped = new Float32Array( arr.length + 3 )
+				looped.set( arr )
+				looped[arr.length] = arr[0]
+				looped[arr.length + 1] = arr[1]
+				looped[arr.length + 2] = arr[2]
+				arr = looped
+			}
+			return arr
+		} )
 
 		// Validate we have the same number of lines
 		if ( newLines.length !== this._lines.length ) {
 			// Fallback to full rebuild if line count changes
-			this.setLines( newLines )
+			this.setLines( pts )
 			return
 		}
 
@@ -462,7 +558,7 @@ export class MeshLineGeometry extends BufferGeometry {
 		for ( let i = 0; i < newLines.length; i++ ) {
 			if ( newLines[i].length !== this._lines[i].length ) {
 				// Fallback to full rebuild if any line changes size
-				this.setLines( newLines )
+				this.setLines( pts )
 				return
 			}
 		}

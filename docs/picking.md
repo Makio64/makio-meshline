@@ -9,6 +9,39 @@ It renders your registered MeshLines with unique ID colors to a 1×1 offscreen r
 - Thousands of instances animated per-frame on the GPU
 - Hook-driven line width, bend, sway — any visual effect is picked correctly
 
+<svg viewBox="0 0 820 280" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Picker architecture: one camera, two scenes" style="max-width:100%;height:auto;display:block;margin:1.5em auto;">
+  <defs>
+    <marker id="picker-arch-arrow" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+    </marker>
+  </defs>
+  <rect x="20" y="110" width="140" height="60" rx="10" ry="10" fill="currentColor" fill-opacity="0.05" stroke="currentColor" stroke-width="1.5"/>
+  <text x="90" y="138" text-anchor="middle" font-size="14" fill="currentColor">Camera</text>
+  <text x="90" y="156" text-anchor="middle" font-size="11" fill="currentColor" opacity="0.65">user's camera</text>
+  <path d="M 160 140 Q 195 140 195 70 L 210 70" fill="none" stroke="currentColor" stroke-width="1.5" marker-end="url(#picker-arch-arrow)"/>
+  <path d="M 160 140 Q 195 140 195 210 L 210 210" fill="none" stroke="currentColor" stroke-width="1.5" marker-end="url(#picker-arch-arrow)"/>
+  <rect x="215" y="40" width="180" height="60" rx="10" ry="10" fill="none" stroke="currentColor" stroke-width="1.5"/>
+  <text x="305" y="68" text-anchor="middle" font-size="14" fill="currentColor">User scene</text>
+  <text x="305" y="86" text-anchor="middle" font-size="11" fill="currentColor" opacity="0.65">normal materials</text>
+  <line x1="395" y1="70" x2="430" y2="70" stroke="currentColor" stroke-width="1.5" marker-end="url(#picker-arch-arrow)"/>
+  <rect x="435" y="40" width="170" height="60" rx="10" ry="10" fill="none" stroke="currentColor" stroke-width="1.5"/>
+  <text x="520" y="68" text-anchor="middle" font-size="14" fill="currentColor">Screen canvas</text>
+  <text x="520" y="86" text-anchor="middle" font-size="11" fill="currentColor" opacity="0.65">what the user sees</text>
+  <rect x="215" y="180" width="180" height="60" rx="10" ry="10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4 3"/>
+  <text x="305" y="208" text-anchor="middle" font-size="14" fill="currentColor">Picking scene</text>
+  <text x="305" y="226" text-anchor="middle" font-size="11" fill="currentColor" opacity="0.65">proxies · ID material</text>
+  <line x1="395" y1="210" x2="430" y2="210" stroke="currentColor" stroke-width="1.5" marker-end="url(#picker-arch-arrow)"/>
+  <rect x="435" y="180" width="130" height="60" rx="10" ry="10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4 3"/>
+  <text x="500" y="208" text-anchor="middle" font-size="14" fill="currentColor">N×N RT</text>
+  <text x="500" y="226" text-anchor="middle" font-size="11" fill="currentColor" opacity="0.65">GPU texture</text>
+  <line x1="565" y1="210" x2="600" y2="210" stroke="currentColor" stroke-width="1.5" marker-end="url(#picker-arch-arrow)"/>
+  <rect x="605" y="180" width="190" height="60" rx="10" ry="10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4 3"/>
+  <text x="700" y="208" text-anchor="middle" font-size="14" fill="currentColor">CPU readback → ID</text>
+  <text x="700" y="226" text-anchor="middle" font-size="11" fill="currentColor" opacity="0.65">async, ~1 frame latency</text>
+</svg>
+
+The picker keeps a parallel **picking scene** alongside your regular scene, holding lightweight proxy meshes that share your lines' geometry but render with an ID-encoding material. Both scenes are driven by the same camera — the user's scene draws to the canvas as usual, while the picking scene is rendered on demand into a tiny offscreen target and read back for the hit ID.
+
 ## When to use what
 
 | Use case | `raycast()` | `MeshLinePicker` |
@@ -48,6 +81,70 @@ canvas.addEventListener( 'pointermove', async ( e ) => {
 
 The returned hit is `{ line, instanceId }` — `instanceId` is `-1` for non-instanced lines.
 
+## How `pick()` works
+
+<svg viewBox="0 0 800 140" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Picker pipeline" style="max-width:100%;height:auto;display:block;margin:1em auto;">
+  <defs>
+    <marker id="picker-pipe-arrow" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+    </marker>
+  </defs>
+  <rect x="10" y="40" width="170" height="60" rx="10" ry="10" fill="currentColor" fill-opacity="0.05" stroke="currentColor" stroke-width="1.5"/>
+  <text x="95" y="68" text-anchor="middle" font-size="14" fill="currentColor" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">pick(x, y)</text>
+  <text x="95" y="86" text-anchor="middle" font-size="11" fill="currentColor" opacity="0.65">canvas CSS px</text>
+  <line x1="180" y1="70" x2="212" y2="70" stroke="currentColor" stroke-width="1.5" marker-end="url(#picker-pipe-arrow)"/>
+  <rect x="215" y="40" width="170" height="60" rx="10" ry="10" fill="none" stroke="currentColor" stroke-width="1.5"/>
+  <text x="300" y="68" text-anchor="middle" font-size="14" fill="currentColor">Render picking scene</text>
+  <text x="300" y="86" text-anchor="middle" font-size="11" fill="currentColor" opacity="0.65">IDs → tiny RenderTarget</text>
+  <line x1="385" y1="70" x2="417" y2="70" stroke="currentColor" stroke-width="1.5" marker-end="url(#picker-pipe-arrow)"/>
+  <rect x="420" y="40" width="170" height="60" rx="10" ry="10" fill="none" stroke="currentColor" stroke-width="1.5"/>
+  <text x="505" y="68" text-anchor="middle" font-size="14" fill="currentColor">Async readback</text>
+  <text x="505" y="86" text-anchor="middle" font-size="11" fill="currentColor" opacity="0.65">4 bytes · RGBA</text>
+  <line x1="590" y1="70" x2="622" y2="70" stroke="currentColor" stroke-width="1.5" marker-end="url(#picker-pipe-arrow)"/>
+  <rect x="625" y="40" width="170" height="60" rx="10" ry="10" fill="currentColor" fill-opacity="0.05" stroke="currentColor" stroke-width="1.5"/>
+  <text x="710" y="68" text-anchor="middle" font-size="14" fill="currentColor">Decode → hit</text>
+  <text x="710" y="86" text-anchor="middle" font-size="11" fill="currentColor" opacity="0.65" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">{ line, instanceId }</text>
+</svg>
+
+Each call to `picker.pick(x, y)`:
+
+1. Re-centres the frustum on the pixel at `(x, y)` with `camera.setViewOffset(...)` — a viewport trick that focuses the full frame into the tiny render target without touching scene state.
+2. Renders the internal picking scene into an offscreen render target. Each registered line's proxy uses a picking material that outputs a unique ID color instead of shading.
+3. Reads the RT back via `readRenderTargetPixelsAsync(...)` — 4 bytes, no main-loop stall.
+4. Decodes the bytes and returns `{ line, instanceId }` or `null`.
+
+### ID encoding
+
+Every fragment rendered in the picking pass writes a 4-byte color whose channels carry the hit identity:
+
+<svg viewBox="0 0 700 220" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="RGBA ID encoding" style="max-width:100%;height:auto;display:block;margin:1em auto;">
+  <rect x="30" y="30" width="150" height="90" rx="10" ry="10" fill="currentColor" fill-opacity="0.05" stroke="currentColor" stroke-width="1.5"/>
+  <text x="105" y="60" text-anchor="middle" font-size="24" font-weight="600" fill="currentColor" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">R</text>
+  <text x="105" y="88" text-anchor="middle" font-size="13" fill="currentColor">line slot</text>
+  <text x="105" y="106" text-anchor="middle" font-size="11" fill="currentColor" opacity="0.65">1–255</text>
+  <rect x="195" y="30" width="150" height="90" rx="10" ry="10" fill="currentColor" fill-opacity="0.05" stroke="currentColor" stroke-width="1.5"/>
+  <text x="270" y="60" text-anchor="middle" font-size="24" font-weight="600" fill="currentColor" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">G</text>
+  <text x="270" y="88" text-anchor="middle" font-size="13" fill="currentColor">instance hi</text>
+  <text x="270" y="106" text-anchor="middle" font-size="11" fill="currentColor" opacity="0.65" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">(id &gt;&gt; 8) &amp; 0xff</text>
+  <rect x="360" y="30" width="150" height="90" rx="10" ry="10" fill="currentColor" fill-opacity="0.05" stroke="currentColor" stroke-width="1.5"/>
+  <text x="435" y="60" text-anchor="middle" font-size="24" font-weight="600" fill="currentColor" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">B</text>
+  <text x="435" y="88" text-anchor="middle" font-size="13" fill="currentColor">instance lo</text>
+  <text x="435" y="106" text-anchor="middle" font-size="11" fill="currentColor" opacity="0.65" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">id &amp; 0xff</text>
+  <rect x="525" y="30" width="150" height="90" rx="10" ry="10" fill="currentColor" fill-opacity="0.05" stroke="currentColor" stroke-width="1.5"/>
+  <text x="600" y="60" text-anchor="middle" font-size="24" font-weight="600" fill="currentColor" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">A</text>
+  <text x="600" y="88" text-anchor="middle" font-size="13" fill="currentColor">hit mask</text>
+  <text x="600" y="106" text-anchor="middle" font-size="11" fill="currentColor" opacity="0.65">1 = fragment hit</text>
+  <path d="M 195 145 L 195 158 L 510 158 L 510 145" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.55"/>
+  <line x1="352.5" y1="158" x2="352.5" y2="172" stroke="currentColor" stroke-width="1.5" opacity="0.55"/>
+  <text x="352.5" y="192" text-anchor="middle" font-size="13" fill="currentColor">16-bit instance ID (0 – 65 535)</text>
+</svg>
+
+- **R** (1 byte) — slot ID assigned to the line by `picker.add()`. `0` means empty (no hit).
+- **G + B** (2 bytes) — 16-bit instance index, decoded as `instanceId = (g << 8) | b`. Returned as `-1` for non-instanced lines.
+- **A** — constant `1`; the alpha channel acts purely as a hit mask so the decoder can ignore background pixels.
+
+This fits up to **255 lines × 65 536 instances** per pass.
+
 ## API
 
 ### `new MeshLinePicker( renderer, scene, camera, options? )`
@@ -56,6 +153,7 @@ The returned hit is `{ line, instanceId }` — `instanceId` is `-1` for non-inst
 - `scene` — the scene the lines live in (same scene used for normal rendering)
 - `camera` — the camera used for normal rendering
 - `options.targetSize` — offscreen render target size in CSS pixels, default `1`. Larger sizes scan a wider neighborhood around the cursor. DPR scaling is handled internally.
+- `options.hitRadius` — multiplier applied to each registered line's width when drawn into the picking pass, default `15`. Lets thin lines be picked reliably without making them visually thicker. Set to `1` to pick against the exact rendered width.
 
 ### `picker.add( meshLine )`
 

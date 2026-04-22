@@ -8,36 +8,87 @@ Makio MeshLine exposes **14 GPU hooks** that let you inject custom [TSL (Three.j
 
 ## Pipeline Overview
 
-```
-                         VERTEX SHADER
-┌─────────────────────────────────────────────────────┐
-│                                                     │
-│  Positions ─── positionFn ──┐                       │
-│  Previous  ─── previousFn ──┼── direction calc      │
-│  Next      ─── nextFn ──────┘        │              │
-│                                      ▼              │
-│                              widthFn ── normalFn    │
-│                                      │              │
-│                              colorFn ─┘             │
-│                                      │              │
-│                                 vertexFn            │
-│                                      │              │
-└──────────────────────────────────────┼──────────────┘
-                                       │
-                         FRAGMENT SHADER
-┌──────────────────────────────────────┼──────────────┐
-│                                      ▼              │
-│                      uvFn ── gradientFn             │
-│                                      │              │
-│                           fragmentColorFn           │
-│                                      │              │
-│                    opacityFn ── dashFn               │
-│                                      │              │
-│                  fragmentAlphaFn ── discardFn        │
-│                                      │              │
-│                                   output            │
-└─────────────────────────────────────────────────────┘
-```
+<svg viewBox="0 0 900 490" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Shader pipeline with 14 hooks" style="max-width:100%;height:auto;display:block;margin:1.5em auto;">
+  <defs>
+    <marker id="hk-arrow" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="currentColor" fill-opacity="0.55"/>
+    </marker>
+  </defs>
+
+  <!-- VERTEX PANEL -->
+  <rect x="15" y="15" width="870" height="210" rx="12" ry="12" class="hk-panel"/>
+  <text x="32" y="38" class="hk-stage-label">Vertex Shader</text>
+
+  <!-- Col 1: Position inputs -->
+  <text x="40" y="68" class="hk-group-label">Positions</text>
+  <rect x="40" y="78" width="170" height="34" rx="17" ry="17" class="hk-pill"/>
+  <text x="125" y="100" text-anchor="middle" class="hk-pill-text">positionFn</text>
+  <rect x="40" y="118" width="170" height="34" rx="17" ry="17" class="hk-pill"/>
+  <text x="125" y="140" text-anchor="middle" class="hk-pill-text">previousFn</text>
+  <rect x="40" y="158" width="170" height="34" rx="17" ry="17" class="hk-pill"/>
+  <text x="125" y="180" text-anchor="middle" class="hk-pill-text">nextFn</text>
+  <line x1="215" y1="135" x2="245" y2="135" class="hk-flow" marker-end="url(#hk-arrow)"/>
+
+  <!-- Col 2: Width & Normal -->
+  <text x="250" y="68" class="hk-group-label">Width &amp; Normal</text>
+  <rect x="250" y="78" width="170" height="34" rx="17" ry="17" class="hk-pill"/>
+  <text x="335" y="100" text-anchor="middle" class="hk-pill-text">widthFn</text>
+  <rect x="250" y="118" width="170" height="34" rx="17" ry="17" class="hk-pill"/>
+  <text x="335" y="140" text-anchor="middle" class="hk-pill-text">normalFn</text>
+  <line x1="425" y1="135" x2="455" y2="135" class="hk-flow" marker-end="url(#hk-arrow)"/>
+
+  <!-- Col 3: Color -->
+  <text x="460" y="68" class="hk-group-label">Color</text>
+  <rect x="460" y="78" width="170" height="34" rx="17" ry="17" class="hk-pill"/>
+  <text x="545" y="100" text-anchor="middle" class="hk-pill-text">colorFn</text>
+  <line x1="635" y1="135" x2="665" y2="135" class="hk-flow" marker-end="url(#hk-arrow)"/>
+
+  <!-- Col 4: Clip-space final -->
+  <text x="670" y="68" class="hk-group-label">Clip Space</text>
+  <rect x="670" y="78" width="170" height="34" rx="17" ry="17" class="hk-pill"/>
+  <text x="755" y="100" text-anchor="middle" class="hk-pill-text">vertexFn</text>
+
+  <!-- Down-arrow from vertex to fragment stage -->
+  <line x1="450" y1="225" x2="450" y2="260" class="hk-flow" marker-end="url(#hk-arrow)"/>
+  <text x="450" y="252" text-anchor="middle" class="hk-final">rasterize →</text>
+
+  <!-- FRAGMENT PANEL -->
+  <rect x="15" y="270" width="870" height="205" rx="12" ry="12" class="hk-panel"/>
+  <text x="32" y="293" class="hk-stage-label">Fragment Shader</text>
+
+  <!-- Col 1: UV -->
+  <text x="40" y="322" class="hk-group-label">UV</text>
+  <rect x="40" y="332" width="170" height="34" rx="17" ry="17" class="hk-pill"/>
+  <text x="125" y="354" text-anchor="middle" class="hk-pill-text">uvFn</text>
+  <line x1="215" y1="390" x2="245" y2="390" class="hk-flow" marker-end="url(#hk-arrow)"/>
+
+  <!-- Col 2: Color -->
+  <text x="250" y="322" class="hk-group-label">Color</text>
+  <rect x="250" y="332" width="170" height="34" rx="17" ry="17" class="hk-pill"/>
+  <text x="335" y="354" text-anchor="middle" class="hk-pill-text">gradientFn</text>
+  <rect x="250" y="372" width="170" height="34" rx="17" ry="17" class="hk-pill"/>
+  <text x="335" y="394" text-anchor="middle" class="hk-pill-text">fragmentColorFn</text>
+  <line x1="425" y1="390" x2="455" y2="390" class="hk-flow" marker-end="url(#hk-arrow)"/>
+
+  <!-- Col 3: Alpha -->
+  <text x="460" y="322" class="hk-group-label">Alpha</text>
+  <rect x="460" y="332" width="170" height="34" rx="17" ry="17" class="hk-pill"/>
+  <text x="545" y="354" text-anchor="middle" class="hk-pill-text">opacityFn</text>
+  <rect x="460" y="372" width="170" height="34" rx="17" ry="17" class="hk-pill"/>
+  <text x="545" y="394" text-anchor="middle" class="hk-pill-text">dashFn</text>
+  <rect x="460" y="412" width="170" height="34" rx="17" ry="17" class="hk-pill"/>
+  <text x="545" y="434" text-anchor="middle" class="hk-pill-text">fragmentAlphaFn</text>
+  <line x1="635" y1="410" x2="665" y2="410" class="hk-flow" marker-end="url(#hk-arrow)"/>
+
+  <!-- Col 4: Discard -->
+  <text x="670" y="322" class="hk-group-label">Discard</text>
+  <rect x="670" y="332" width="170" height="34" rx="17" ry="17" class="hk-pill"/>
+  <text x="755" y="354" text-anchor="middle" class="hk-pill-text">discardFn</text>
+  <text x="755" y="395" text-anchor="middle" class="hk-final">↓</text>
+  <text x="755" y="420" text-anchor="middle" class="hk-final">output</text>
+</svg>
+
+**Hover any pill** to highlight it. The 7 vertex hooks run per-vertex, the 7 fragment hooks run per-fragment; both stages are wired into the same rasterization pipeline below.
 
 ## Quick Reference
 

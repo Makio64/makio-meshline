@@ -23,7 +23,7 @@ With Three.js evolving, there was a need for a modern Meshline version that leve
 - Modernize the stack: first‑class TSL nodes and WebGPU pipeline
 - Push performance: minimal uploads, smart attributes, large indices
 - Instancing out of the box
-- Expand flexibility: rich node hooks (position, width, color, opacity, dash), CPU or GPU positions, miter options, gradients, textures, dashes
+- Expand flexibility: rich node hooks (position, width, color, opacity, dash), CPU or GPU positions, miter limit + automatic sharp-bend smoothing, gradients, textures, dashes
 - Simplify usage: a chainable, ergonomic Fluent API
 - Handy helpers (`circlePositions`, `straightLine`, etc.)
 - Sustain long‑term: ESM‑only, typed, tree‑shakeable

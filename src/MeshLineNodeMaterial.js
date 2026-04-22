@@ -1,6 +1,9 @@
-import { attribute, cameraProjectionMatrix, cameraWorldMatrix, Discard, dot, float, Fn, max, mix, mod, modelViewMatrix, modelWorldMatrixInverse, normalize, positionGeometry, step, texture, uniform, uv, varying, varyingProperty, vec2, vec3, vec4 } from 'three/tsl'
+import { attribute, cameraProjectionMatrix, cameraWorldMatrix, Discard, float, Fn, max, mix, mod, modelViewMatrix, modelWorldMatrixInverse, normalize, positionGeometry, step, texture, uniform, uv, varying, varyingProperty, vec2, vec3, vec4 } from 'three/tsl'
 import { Color, DoubleSide, MeshBasicNodeMaterial, Vector2 } from 'three/webgpu'
 
+// Map a clip-space vec4 into aspect-corrected NDC (xy/w with the X axis
+// stretched by aspect). Directions measured in this space correspond 1:1 to
+// screen-pixel directions — they're what the miter math consumes.
 const fix = Fn( ( [i_immutable, aspect_immutable] ) => {
 	const aspect = float( aspect_immutable ).toVar()
 	const i = vec4( i_immutable ).toVar()
@@ -54,7 +57,6 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 
 		this.alphaTest = options.alphaTest ?? 0
 		this.sizeAttenuation = options.sizeAttenuation ?? true
-		this.useMiterLimit = options.useMiterLimit ?? false
 
 		// Can be changed dynamically
 		this.resolution = uniform( options.resolution ?? new Vector2( 1, 1 ) )
@@ -90,9 +92,10 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 			this.dashOffset = uniform( options.dashOffset ?? 0 )
 		}
 
-		if ( this.useMiterLimit ) {
-			this.miterLimit = uniform( options.miterLimit ?? 4.0 )
-		}
+		// Miter is always on. The shader reads `_miterThreshold` (= 2/miterLimit),
+		// the lower bound on |dir1+dir2| below which the offset magnitude plateaus.
+		this._miterLimit = options.miterLimit ?? 4.0
+		this._miterThreshold = uniform( 2 / this._miterLimit )
 
 		// GPU position node (optional)
 		this.gpuPositionNode = options.gpuPositionNode ?? null
@@ -121,6 +124,17 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 
 	dispose() {
 		super.dispose()
+	}
+
+	get miterLimit() {
+		return this._miterLimit
+	}
+
+	set miterLimit( value ) {
+		this._miterLimit = value
+		if ( this._miterThreshold ) {
+			this._miterThreshold.value = 2 / value
+		}
 	}
 
 	/**
@@ -263,45 +277,47 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 			const prevPos = mvpMatrix.mul( vec4( previous, 1.0 ) ).toVar( 'prevPos' )
 			const nextPos = mvpMatrix.mul( vec4( next, 1.0 ) ).toVar( 'nextPos' )
 
-			// screen-space transformations
+			// Direction vectors in aspect-corrected NDC (post perspective divide).
+			// This is the space the miter math measures pixel-accurate offsets in.
+			// Sharp CPU-side polyline corners that could otherwise collapse the
+			// bisector under oblique perspective are handled upstream by the
+			// geometry's `smoothSharpBends` pass (on by default).
 			const currentP = fix( finalPosition, aspect ).toVar( 'currentP' )
 			const prevP = fix( prevPos, aspect ).toVar( 'prevP' )
 			const nextP = fix( nextPos, aspect ).toVar( 'nextP' )
+			const delta1 = currentP.sub( prevP ).toVar( 'delta1' )
+			const delta2 = nextP.sub( currentP ).toVar( 'delta2' )
 
 			const w = this.getLineWidth( this.lineWidth.mul( this.dpr ), progress, side ).toVar( 'w' )
 
 			vWidth.assign( w )
 
-			// Calculate the miter direction
-			const dir1 = normalize( currentP.sub( prevP ) ).toVar( 'dir1' )
-			const dir2 = normalize( nextP.sub( currentP ) ).toVar( 'dir2' )
-			// Safe bisector: at near-180° angles dir1+dir2 ≈ 0, normalize() returns NaN
-			// Use perpendicular of dir1 as fallback (always well-defined)
-			const bisectorSum = dir1.add( dir2 ).toVar( 'bisectorSum' )
-			const bisectorLen = bisectorSum.length().toVar( 'bisectorLen' )
-			const bisectorFallback = vec2( dir1.y.negate(), dir1.x ).toVar( 'bisectorFallback' )
-			const dir = mix( bisectorFallback, bisectorSum.div( max( bisectorLen, float( 0.0001 ) ) ), step( float( 0.001 ), bisectorLen ) ).toVar( 'dir' )
+			// Miter offset. |dir1+dir2| = 2·cos(α/2) for interior bend α.
+			// Magnitude: w/max(|dir1+dir2|, 2/miterLimit) — monotonic, plateaus at
+			// miterLimit·w/2 for sharp bends. Direction: unit perpendicular of the
+			// bisector, with perp(dir1) as a fallback for near-180° reversals.
+			const dir1 = normalize( delta1 ).toVar( 'dir1' )
+			const dir2 = normalize( delta2 ).toVar( 'dir2' )
+			const dirSum = dir1.add( dir2 ).toVar( 'dirSum' )
+			const dirSumLen = dirSum.length().toVar( 'dirSumLen' )
 
-			// Calculate final normal based on whether miter limit is enabled
-			let normal = vec4( 0, 0, 0, 1 ).toVar( 'normal' )
+			const perpRaw = vec2( dirSum.y.negate(), dirSum.x ).toVar( 'perpRaw' )
+			const perpFallback = vec2( dir1.y.negate(), dir1.x ).toVar( 'perpFallback' )
+			const unitPerp = mix(
+				perpFallback,
+				perpRaw.div( max( dirSumLen, float( 0.0001 ) ) ),
+				step( float( 0.001 ), dirSumLen )
+			).toVar( 'unitPerp' )
 
-			if ( this.useMiterLimit ) {
-				// Calculate miter length
-				const miterLength = float( 1 ).div( max( dot( dir1, dir ), float( 0.01 ) ) ).toVar( 'miterLength' )
-				const limitedMiterLength = miterLength.min( this.miterLimit ).toVar( 'limitedMiterLength' )
+			const miterHalfWidth = w.div( max( dirSumLen, this._miterThreshold ) ).toVar( 'miterHalfWidth' )
 
-				// Clamp the miter expansion to avoid oversized spikes at sharp corners.
-				normal.xy.assign( vec2( dir.y.negate(), dir.x ).mul( limitedMiterLength ) )
+			const normal = vec4( 0, 0, 0, 1 ).toVar( 'normal' )
+			normal.xy.assign( unitPerp.mul( miterHalfWidth ) )
 
-				normal.xy.mulAssign( w.mul( 0.5 ) )
-			} else {
-				// Simple approach only
-				normal.xy.assign( vec2( dir.y.negate(), dir.x ) )
-				normal.xy.mulAssign( w.mul( 0.5 ) )
-			}
-
-			// Apply normal modifier if provided
+			// Apply normal modifier if provided. Pass the unit bisector for backward
+			// compatibility with existing normalFn hooks.
 			if ( this.normalFn ) {
+				const dir = vec2( unitPerp.y, unitPerp.x.negate() ).toVar( 'dir' )
 				normal.assign( this.normalFn( normal, dir, dir1, dir2, progress, side ) )
 			}
 
@@ -418,7 +434,6 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 		// Copy feature flags
 		this.alphaTest = source.alphaTest
 		this.sizeAttenuation = source.sizeAttenuation
-		this.useMiterLimit = source.useMiterLimit
 
 		// Copy uniform values
 		this.lineWidth.value = source.lineWidth.value
@@ -431,7 +446,9 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 		if ( source.dashCount ) this.dashCount.value = source.dashCount.value
 		if ( source.dashRatio ) this.dashRatio.value = source.dashRatio.value
 		if ( source.dashOffset ) this.dashOffset.value = source.dashOffset.value
-		if ( source.miterLimit ) this.miterLimit.value = source.miterLimit.value
+		if ( source._miterLimit !== undefined && this._miterThreshold ) {
+			this.miterLimit = source._miterLimit
+		}
 		if ( source.color ) this.color.value.copy( source.color.value )
 		if ( source.resolution ) this.resolution.value.copy( source.resolution.value )
 		if ( source.repeat ) this.repeat.value.copy( source.repeat.value )

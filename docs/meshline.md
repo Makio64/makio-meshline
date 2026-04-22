@@ -65,7 +65,10 @@ See [Common Patterns](./common-patterns.md) for more examples.
 
 **Advanced:**
 
-- `join({ type: 'miter'|'simple', limit?: number })` - Choose a clamped miter join or the simpler fallback join; `limit` applies only to `miter`
+- `join({ limit?: number })` - Set the miter clamp; lower values flatten sharp corners sooner. Defaults to `4`. (The `type` field is retained for back-compat but has no effect — miter is always applied.)
+- `smoothSharpBends(enabled: boolean)` - Toggle the automatic CPU-side splitting of polyline corners that are too sharp for the screen-space miter to render cleanly. Defaults to `true`. Disable to keep GPU buffers aligned 1:1 with your input points.
+- `smoothSharpBendsAlpha(alpha: number)` - Cutoff fraction used when `smoothSharpBends` is on: each sharp corner is replaced by two points sitting `alpha` of the way back along each adjacent segment. Smaller values preserve the pointy look; larger values flatten the tip more. Defaults to `0.001` (visually imperceptible but enough to stabilise the shader miter math).
+- `smoothSharpBendsThreshold(threshold: number)` - `dot(dir_in, dir_out)` cutoff below which a vertex is considered sharp enough to subdivide. Defaults to `-0.5` (≈ 60° interior bend). Lower (more negative) values subdivide only the very sharpest corners.
 - `dpr(ratio: number)` - Set device pixel ratio
 - `setFrustumCulled(enable: boolean)` - Enable/disable frustum culling; when disabled, build-time bounding volumes are skipped
 - `verbose(enable: boolean)` - Enable/disable verbose logging

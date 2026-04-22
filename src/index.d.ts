@@ -144,7 +144,13 @@ export type GPUPositionNodeFn = ( progress: ShaderNodeObject<Node>, extra: Shade
 // ---------------------------------------------------------------------------
 
 export interface MeshLineJoinOptions {
+	/**
+	 * Join type. Retained for back-compat; only `'miter'` is implemented —
+	 * `'simple'` now renders identically to `'miter'`.
+	 * @deprecated The field has no effect; thickness is uniform at all angles.
+	 */
 	type?: 'miter' | 'simple'
+	/** Maximum miter expansion factor at sharp bends. Defaults to 4. */
 	limit?: number
 }
 
@@ -178,6 +184,26 @@ export interface MeshLineConfigureOptions {
 	// advanced
 	dash?: MeshLineDashOptions
 	join?: MeshLineJoinOptions
+	/**
+	 * Auto-subdivide polyline corners that are too sharp for the screen-space
+	 * miter to render cleanly. Defaults to `true`. Set to `false` to keep the
+	 * GPU buffers aligned exactly with your input points.
+	 */
+	smoothSharpBends?: boolean
+	/**
+	 * Cutoff fraction used by `smoothSharpBends`. Each sharp corner is replaced
+	 * by two points sitting `alpha` of the way back along each adjacent segment.
+	 * Smaller values preserve the peak (closer to the original pointy shape);
+	 * larger values flatten it more. Default `0.001` — the cutoff is visually
+	 * imperceptible but large enough to keep the shader math well-conditioned.
+	 */
+	smoothSharpBendsAlpha?: number
+	/**
+	 * `dot(dir_in, dir_out)` cutoff below which a vertex is considered sharp
+	 * enough to be subdivided. Default `-0.5` (≈ 60° interior bend). Lower
+	 * (more negative) values subdivide only the very sharpest corners.
+	 */
+	smoothSharpBendsThreshold?: number
 	dpr?: number
 	frustumCulled?: boolean
 	verbose?: boolean
@@ -225,6 +251,9 @@ export class MeshLine extends ThreeMesh {
 	wireframe( enabled: boolean ): this
 
 	join( options?: MeshLineJoinOptions ): this
+	smoothSharpBends( enabled: boolean ): this
+	smoothSharpBendsAlpha( alpha: number ): this
+	smoothSharpBendsThreshold( threshold: number ): this
 	gradientColor( color: number | string | Color | null ): this
 	map( tex: Texture | null ): this
 	mapOffset( offset: Vector2 ): this

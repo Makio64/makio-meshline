@@ -6,6 +6,19 @@ description: "Get started with Makio MeshLine for Three.js, from installation to
 
 This guide will walk you through the basics of installing and using Makio MeshLine in your Three.js project.
 
+<svg viewBox="0 0 820 220" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="THREE.Line versus makio-meshline" style="max-width:100%;height:auto;display:block;margin:1.5em auto;">
+  <text x="40" y="32" class="ml-label">THREE.Line</text>
+  <text x="40" y="195" class="ml-sub">1 device pixel · GPU line primitive</text>
+  <path d="M 40 130 C 140 70, 280 190, 380 130" class="ml-thin ml-draw"/>
+  <line x1="410" y1="25" x2="410" y2="200" class="ml-divider"/>
+  <text x="440" y="32" class="ml-label">makio-meshline</text>
+  <text x="440" y="195" class="ml-sub">triangle strip · real width in world units · styleable</text>
+  <path d="M 440 130 C 540 70, 680 190, 780 130" class="ml-ribbon ml-draw"/>
+  <path d="M 440 130 C 540 70, 680 190, 780 130" class="ml-center"/>
+</svg>
+
+A **MeshLine** is not a native GPU line — it's a triangle-strip ribbon that mirrors your polyline on both sides, so every line has a real thickness in world units, supports gradients, dashes, textures, and plugs into any TSL shader hook.
+
 ## Installation
 
 First, install the package:

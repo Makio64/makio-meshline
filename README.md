@@ -19,7 +19,7 @@ Makio MeshLine is built for creative coding, interactive trails, data visualizat
 - **14 GPU hooks** — Customize position, color, width, opacity, dash, UV and more in the shader
 - **Gradients, dashes, textures** — Built-in support for common line styles
 - **Variable width** — Per-vertex width control via callback or GPU hook
-- **Line joins** — Clamped miter and simple joins for sharp corners
+- **Line joins** — Always-on clamped miter with automatic CPU-side corner smoothing for very sharp polylines (opt-out available)
 - **Shadow support** — Cast shadows from lines
 - **GPU positions** — Procedural line generation entirely on the GPU
 - **Tree-shakeable** — ESM-only, `sideEffects: false`, import only what you need

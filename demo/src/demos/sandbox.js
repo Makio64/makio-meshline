@@ -46,6 +46,39 @@ const strongAnglePositions = ( segments = 48, width = 18 ) => {
 	return buildPolylinePositions( STRONG_ANGLE_POINTS, segments, width )
 }
 
+// Irregular sawtooth — per-tooth amplitude variation produces a mix of gentle
+// and hairpin bends, so uniform thickness can be eyeballed across a wide range
+// of corner angles. Adjust the miter slider to watch the clamp kick in.
+const zigzagPositions = ( teeth = 14, width = 20, baseAmp = 5 ) => {
+	const positions = []
+	const step = width / teeth
+	const startX = -width / 2
+	for ( let i = 0; i <= teeth; i++ ) {
+		const x = startX + i * step
+		const ampMod = 0.35 + 0.9 * Math.abs( Math.sin( i * 1.37 ) )
+		const y = ( i % 2 === 0 ? -1 : 1 ) * baseAmp * ampMod
+		positions.push( x, y, 0 )
+	}
+	return new Float32Array( positions )
+}
+
+// Serpentine path with amplitude swelling toward the middle — smooth curves
+// with varied corner angles. Complements the angular zigzag by demonstrating
+// consistent thickness across gentle and moderate bends.
+const snakePositions = ( segments = 240, width = 22 ) => {
+	const positions = new Float32Array( ( segments + 1 ) * 3 )
+	for ( let i = 0; i <= segments; i++ ) {
+		const t = i / segments
+		const x = -width / 2 + width * t
+		const envelope = 0.3 + 0.7 * Math.sin( t * Math.PI )
+		const y = 5 * envelope * Math.sin( t * Math.PI * 5 )
+		positions[i * 3] = x
+		positions[i * 3 + 1] = y
+		positions[i * 3 + 2] = 0
+	}
+	return positions
+}
+
 class SandboxExample {
 	constructor() {
 		this.uiComponent = markRaw( SandboxView )
@@ -83,8 +116,9 @@ class SandboxExample {
 			
 			// Advanced
 			wireframe: false,
-			useMiterLimit: false,
-			miterLimit: 3,
+			miterLimit: 4,
+			smoothSharpBends: true,
+			smoothSharpBendsAlpha: 0.001,
 			
 			// Generated code
 			generatedCode: '',
@@ -132,7 +166,9 @@ class SandboxExample {
 			Sine: 'sine',
 			Square: 'square',
 			Straight: 'straight',
-			'Strong Angle': 'strongAngle'
+			'Strong Angle': 'strongAngle',
+			Zigzag: 'zigzag',
+			Snake: 'snake'
 		} ).onChange( ( value ) => this.configureLineType( value ) )
 		geometryFolder.add( this.config, 'segments', 8, 256, 1 )
 		geometryFolder.add( this.config, 'closed' )
@@ -159,8 +195,9 @@ class SandboxExample {
 		
 		// Advanced folder
 		const advancedFolder = this.gui.addFolder( 'Advanced' )
-		advancedFolder.add( this.config, 'useMiterLimit' ).name( 'Miter Join' ).listen()
 		advancedFolder.add( this.config, 'miterLimit', 1, 10, 0.1 ).name( 'Miter Limit' )
+		advancedFolder.add( this.config, 'smoothSharpBends' ).name( 'Smooth Sharp Bends' )
+		advancedFolder.add( this.config, 'smoothSharpBendsAlpha', 0.001, 0.5, 0.001 ).name( 'Smooth Cutoff' )
 		
 		// Actions
 		this.gui.add( { copyCode: () => this.copyCode() }, 'copyCode' ).name( '📋 Copy Code' )
@@ -169,23 +206,30 @@ class SandboxExample {
 	applyUrlPreset( urlParams ) {
 		const preset = normalizePreset( urlParams.get( 'preset' ) || urlParams.get( 'shape' ) || urlParams.get( 'lineType' ) || '' )
 
-		if ( preset !== 'strongangle' ) {
+		if ( preset === 'strongangle' ) {
+			Object.assign( this.config, {
+				lineType: 'strongAngle',
+				segments: 72,
+				closed: false,
+				color: '#ff5a36',
+				lineWidth: 18,
+				useGradient: true,
+				gradientColor: '#0ea5e9',
+				useDashes: false,
+				animateDashes: false,
+				miterLimit: 4,
+			} )
 			return
 		}
 
-		Object.assign( this.config, {
-			lineType: 'strongAngle',
-			segments: 72,
-			closed: false,
-			color: '#ff5a36',
-			lineWidth: 18,
-			useGradient: true,
-			gradientColor: '#0ea5e9',
-			useDashes: false,
-			animateDashes: false,
-			useMiterLimit: true,
-			miterLimit: 1.5,
-		} )
+		if ( preset === 'zigzag' || preset === 'snake' ) {
+			Object.assign( this.config, {
+				lineType: preset,
+				closed: false,
+				useDashes: false,
+				animateDashes: false,
+			} )
+		}
 	}
 
 	configureLineType( value ) {
@@ -196,16 +240,8 @@ class SandboxExample {
 			this.config.closed = false
 		}
 
-		if ( value === 'square' ) {
-			this.config.useMiterLimit = true
-		} else if ( value === 'strongAngle' ) {
+		if ( value === 'strongAngle' ) {
 			this.config.useGradient = true
-			this.config.useMiterLimit = true
-			if ( this.config.miterLimit < 1.5 ) {
-				this.config.miterLimit = 1.5
-			}
-		} else {
-			this.config.useMiterLimit = false
 		}
 	}
 	
@@ -230,8 +266,9 @@ class SandboxExample {
 				dashOffset: this.config.dashOffset,
 				sizeAttenuation: this.config.sizeAttenuation,
 				wireframe: this.config.wireframe,
-				useMiterLimit: this.config.useMiterLimit,
 				miterLimit: this.config.miterLimit,
+				smoothSharpBends: this.config.smoothSharpBends,
+				smoothSharpBendsAlpha: this.config.smoothSharpBendsAlpha,
 			} ),
 			() => this.updateMaterial()
 		)
@@ -247,6 +284,10 @@ class SandboxExample {
 				return squarePositions( 20, this.config.segments )
 			case 'strongAngle':
 				return strongAnglePositions( this.config.segments, 18 )
+			case 'zigzag':
+				return zigzagPositions( 14, 20, 5 )
+			case 'snake':
+				return snakePositions( 240, 22 )
 			case 'straight':
 			default:
 				return straightLine( 20, this.config.segments )
@@ -294,10 +335,10 @@ class SandboxExample {
 			this.line.dash( { count: this.config.dashCount, ratio: this.config.dashRatio, offset: this.config.dashOffset } )
 		}
 		
-		if ( this.config.useMiterLimit ) {
-			this.line.join( { type: 'miter', limit: this.config.miterLimit } )
-		}
-		
+		this.line.join( { limit: this.config.miterLimit } )
+		this.line.smoothSharpBends( this.config.smoothSharpBends )
+		this.line.smoothSharpBendsAlpha( this.config.smoothSharpBendsAlpha )
+
 		this.line.build()
 		stage3d.add( this.line )
 		
@@ -314,15 +355,35 @@ class SandboxExample {
 		let code = `import { MeshLine`
 		
 		// Add position helper import if needed
+		const inlineTypes = ['strongAngle', 'zigzag', 'snake']
 		if ( this.config.lineType === 'straight' ) {
 			code += `, straightLine`
-		} else if ( this.config.lineType !== 'strongAngle' ) {
+		} else if ( !inlineTypes.includes( this.config.lineType ) ) {
 			code += `, ${this.config.lineType}Positions`
 		}
 		code += ` } from 'makio-meshline'\n\n`
-		
+
 		// Position generation
-		if ( this.config.lineType === 'strongAngle' ) {
+		if ( this.config.lineType === 'zigzag' ) {
+			code += `// Irregular sawtooth with per-tooth amplitude variation\n`
+			code += `const teeth = 14, width = 20, baseAmp = 5\n`
+			code += `const positions = new Float32Array( ( teeth + 1 ) * 3 )\n`
+			code += `for ( let i = 0; i <= teeth; i++ ) {\n`
+			code += `\tconst ampMod = 0.35 + 0.9 * Math.abs( Math.sin( i * 1.37 ) )\n`
+			code += `\tpositions[i * 3] = -width / 2 + i * ( width / teeth )\n`
+			code += `\tpositions[i * 3 + 1] = ( i % 2 === 0 ? -1 : 1 ) * baseAmp * ampMod\n`
+			code += `}\n\n`
+		} else if ( this.config.lineType === 'snake' ) {
+			code += `// Serpentine path with swelling amplitude — smooth varied curves\n`
+			code += `const segments = 240, width = 22\n`
+			code += `const positions = new Float32Array( ( segments + 1 ) * 3 )\n`
+			code += `for ( let i = 0; i <= segments; i++ ) {\n`
+			code += `\tconst t = i / segments\n`
+			code += `\tconst envelope = 0.3 + 0.7 * Math.sin( t * Math.PI )\n`
+			code += `\tpositions[i * 3] = -width / 2 + width * t\n`
+			code += `\tpositions[i * 3 + 1] = 5 * envelope * Math.sin( t * Math.PI * 5 )\n`
+			code += `}\n\n`
+		} else if ( this.config.lineType === 'strongAngle' ) {
 			code += `const controlPoints = [\n`
 			code += `\t[-0.8, -0.45, 0],\n`
 			code += `\t[-0.22, -0.12, 0],\n`
@@ -404,8 +465,14 @@ class SandboxExample {
 			code += `\t.wireframe( true )\n`
 		}
 		
-		if ( this.config.useMiterLimit ) {
-			code += `\t.join({ type: 'miter', limit: ${this.config.miterLimit} })\n`
+		if ( this.config.miterLimit !== 4 ) {
+			code += `\t.join({ limit: ${this.config.miterLimit} })\n`
+		}
+
+		if ( this.config.smoothSharpBends === false ) {
+			code += `\t.smoothSharpBends( false )\n`
+		} else if ( this.config.smoothSharpBendsAlpha !== 0.001 ) {
+			code += `\t.smoothSharpBendsAlpha( ${this.config.smoothSharpBendsAlpha} )\n`
 		}
 		
 		code += `\t.build()\n\n`

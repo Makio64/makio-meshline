@@ -84,6 +84,11 @@ export default class MeshLine extends Mesh {
 			instanceCount: -1,
 
 			shadow: false,
+
+			// Auto-subdivide polyline corners that are too sharp for the screen-space
+			// miter to render cleanly. Preserves the user's original point list when
+			// the bends are gentle; splits problematic corners into two cutoff points.
+			smoothSharpBends: true,
 		}
 		this._built = false
 		this.onBeforeRender = this._onBeforeRender
@@ -121,6 +126,9 @@ export default class MeshLine extends Mesh {
 		if ( options.renderWidth !== undefined || options.renderHeight !== undefined ) this.renderSize( options.renderWidth, options.renderHeight )
 		if ( options.dash ) this.dash( options.dash )
 		if ( options.join ) this.join( options.join )
+		if ( options.smoothSharpBends !== undefined ) this.smoothSharpBends( options.smoothSharpBends )
+		if ( options.smoothSharpBendsAlpha !== undefined ) this.smoothSharpBendsAlpha( options.smoothSharpBendsAlpha )
+		if ( options.smoothSharpBendsThreshold !== undefined ) this.smoothSharpBendsThreshold( options.smoothSharpBendsThreshold )
 		if ( options.dynamic !== undefined ) this.dynamic( options.dynamic )
 		if ( options.autoResize ) this.autoResize( options.autoResize )
 		return this
@@ -271,25 +279,67 @@ export default class MeshLine extends Mesh {
 	}
 
 	/**
-	 * Configure miter join behaviour at sharp corners.
+	 * Configure miter limit at sharp corners. The `type` field is accepted for
+	 * back-compat; only miter joins are implemented — every value behaves as
+	 * `'miter'`. `limit` caps the miter extension at sharp bends (default 4).
 	 * @param {import('./index.d.ts').MeshLineJoinOptions} [options]
 	 * @returns {this}
 	 */
-	join( { type = 'miter', limit = 4 } = {} ) {
-		const useMiter = type === 'miter'
-		this._options.useMiterLimit = useMiter
+	join( { type: _type = 'miter', limit = 4 } = {} ) {
 		this._options.miterLimit = limit
 		if ( this._built && this.material ) {
-			const needsShaderRebuild = this.material.useMiterLimit !== useMiter || ( useMiter && !this.material.miterLimit )
-			this.material.useMiterLimit = useMiter
-			if ( useMiter ) {
-				if ( this.material.miterLimit ) {
-					this.material.miterLimit.value = limit
-				} else {
-					this.material.miterLimit = uniform( limit )
-				}
-			}
-			if ( needsShaderRebuild ) this.material.needsUpdate = true
+			this.material.miterLimit = limit
+		}
+		return this
+	}
+
+	/**
+	 * Enable or disable automatic subdivision of polyline corners that are too
+	 * sharp for the screen-space miter to render cleanly. On by default. Disable
+	 * when you need the GPU buffers to match your input point list exactly.
+	 * @param {boolean} enabled
+	 * @returns {this}
+	 */
+	smoothSharpBends( enabled ) {
+		this._options.smoothSharpBends = enabled
+		if ( this._built ) {
+			this.geometry.options.smoothSharpBends = enabled
+			if ( this._options.lines ) this.geometry.setLines( this._options.lines )
+		}
+		return this
+	}
+
+	/**
+	 * Cutoff fraction used by `smoothSharpBends`. Each sharp-corner vertex is
+	 * replaced by two points sitting `alpha` of the way back along each adjacent
+	 * segment. Smaller values preserve the peak visually (closer to pointy);
+	 * larger values flatten it more. Default `0.001` — visually imperceptible
+	 * but enough to keep the shader miter math stable.
+	 * @param {number} alpha
+	 * @returns {this}
+	 */
+	smoothSharpBendsAlpha( alpha ) {
+		this._options.smoothSharpBendsAlpha = alpha
+		if ( this._built ) {
+			this.geometry.options.smoothSharpBendsAlpha = alpha
+			if ( this._options.lines ) this.geometry.setLines( this._options.lines )
+		}
+		return this
+	}
+
+	/**
+	 * `dot(dir_in, dir_out)` cutoff below which a vertex is considered sharp
+	 * enough to be subdivided by `smoothSharpBends`. Default `-0.5` (≈ 60°
+	 * interior bend). Lower (more negative) values subdivide only the very
+	 * sharpest corners.
+	 * @param {number} threshold
+	 * @returns {this}
+	 */
+	smoothSharpBendsThreshold( threshold ) {
+		this._options.smoothSharpBendsThreshold = threshold
+		if ( this._built ) {
+			this.geometry.options.smoothSharpBendsThreshold = threshold
+			if ( this._options.lines ) this.geometry.setLines( this._options.lines )
 		}
 		return this
 	}

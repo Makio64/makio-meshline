@@ -63,15 +63,21 @@ function update() {
 
 No buffers recreated, only a sub-data upload.
 
-## 4. Miter Clip for Sharp Corners
+## 4. Sharp Corners
+
+Two-layer approach: CPU-side geometry smoothing splits any corner sharper than ~60° interior bend into two cutoff points (on by default); the shader-side miter clamp caps any residual spike. Both are tunable per line.
 
 ```js
 const sharp = new MeshLine()
   .lines(myPolyline)
   .lineWidth(0.8)
-  .join({ type: 'miter', limit: 5 })
+  .join({ limit: 2 })          // tighter cap = bevel-like residual spikes
   .build()
+// Default smoothSharpBendsAlpha (0.001) is already near-imperceptible.
+// Raise it (e.g. .smoothSharpBendsAlpha(0.05)) if you want a visible bevel cap.
 ```
+
+See [common-patterns › Sharp Corners](./common-patterns.md#11-sharp-corners-miter-smoothing) for a side-by-side comparison of the knobs.
 
 ## 5. Animated Dashes
 

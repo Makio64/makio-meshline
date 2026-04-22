@@ -34,7 +34,6 @@ new MeshLineNodeMaterial(
     dashCount?: number | null,
     dashRatio?: number | null,
     dashOffset?: number,
-    useMiterLimit?: boolean,
     miterLimit?: number
   }
 )
@@ -76,18 +75,17 @@ Creates a new MeshLineNodeMaterial with the specified parameters.
 
 ### Miter Limit (advanced)
 
-`MeshLineNodeMaterial` can clamp very sharp joints to avoid oversized spikes by enabling the miter join path:
+Thickness is kept consistent at every bend via a miter-extended offset. Very tight bends are clamped so they don't produce oversized spikes:
 
 ```js
 const material = new MeshLineNodeMaterial({
-  useMiterLimit: true, // enable clamped miter joins
-  miterLimit: 6        // (optional) maximum expansion factor
+  miterLimit: 6 // maximum expansion factor at sharp bends
 })
 ```
 
-If omitted, `miterLimit` defaults to **4.0** which works well for most scenes.
+`miterLimit` defaults to **4.0**, which keeps sharp corners visually clean while leaving gentler bends fully mitered. Lower values clamp earlier (more bevel-like at sharp bends); higher values allow longer spikes.
 
-When `useMiterLimit` is `false`, the material falls back to the simpler non-expanded join path.
+**Tip for very sharp polylines (zigzags, angular paths):** pair a lower `miterLimit` (e.g. `2`) with the geometry's automatic sharp-bend smoothing (`MeshLine.smoothSharpBends`, enabled by default). The geometry pass subdivides corners whose interior bend drops below ~60°, and the miter clamp catches anything left over. See [MeshLine geometry › Smooth sharp bends](./meshline-geometry.md#smooth-sharp-bends).
 
 ### Textures
 

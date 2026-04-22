@@ -53,3 +53,95 @@
   max-width: 100%;
   width: 100%;
 }
+
+/* ─────────────────────────────────────────────
+   Docs inline-SVG diagram styles
+   Shared CSS for schematics in guide / classes /
+   hooks / meshline-geometry / performance.
+   Inlined <style> inside SVG is stripped by
+   VitePress's Vue SFC compiler, so all class
+   rules live here. Every class is prefixed to
+   avoid collisions across diagrams.
+   ───────────────────────────────────────────── */
+
+/* guide.md — thin vs thick line */
+.ml-label { font-size: 12px; fill: currentColor; opacity: 0.6; letter-spacing: 0.08em; text-transform: uppercase; }
+.ml-sub { font-size: 11px; fill: currentColor; opacity: 0.55; }
+.ml-divider { stroke: currentColor; stroke-opacity: 0.15; stroke-dasharray: 4 4; }
+.ml-thin { stroke: currentColor; stroke-width: 1.25; fill: none; stroke-linecap: round; }
+.ml-ribbon { stroke: currentColor; fill: none; stroke-linecap: round; stroke-opacity: 0.22; animation: mlPulse 3.6s ease-in-out infinite; }
+.ml-center { stroke: currentColor; fill: none; stroke-width: 1; stroke-opacity: 0.45; stroke-dasharray: 3 4; }
+.ml-draw { stroke-dasharray: 500; stroke-dashoffset: 500; animation: mlDrawOn 1.6s ease-out 0.15s forwards; }
+@keyframes mlPulse { 0%, 100% { stroke-width: 22; } 50% { stroke-width: 30; } }
+@keyframes mlDrawOn { to { stroke-dashoffset: 0; } }
+
+/* classes.md — architecture */
+.arc-facade { fill: currentColor; fill-opacity: 0.04; stroke: currentColor; stroke-width: 1.5; stroke-opacity: 0.55; }
+.arc-class { fill: currentColor; fill-opacity: 0.08; stroke: currentColor; stroke-width: 1.5; transition: fill-opacity 0.2s ease; cursor: default; }
+.arc-class:hover { fill-opacity: 0.18; }
+.arc-arrow-line { stroke: currentColor; stroke-width: 1.5; fill: none; }
+.arc-title { font-size: 15px; font-weight: 600; fill: currentColor; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.arc-sub { font-size: 11px; fill: currentColor; opacity: 0.6; }
+.arc-label { font-size: 11px; fill: currentColor; opacity: 0.7; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.arc-role { font-size: 10px; fill: currentColor; opacity: 0.55; letter-spacing: 0.08em; }
+.arc-pulse { fill: currentColor; animation: arcFlow 3s linear infinite; }
+@keyframes arcFlow {
+  0%   { transform: translate(75px, 160px); opacity: 0; }
+  12%  { opacity: 1; }
+  88%  { opacity: 1; }
+  100% { transform: translate(735px, 160px); opacity: 0; }
+}
+
+/* hooks.md — shader pipeline */
+.hk-stage-label { font-size: 11px; fill: currentColor; opacity: 0.55; letter-spacing: 0.14em; text-transform: uppercase; font-weight: 600; }
+.hk-group-label { font-size: 11px; fill: currentColor; opacity: 0.55; letter-spacing: 0.04em; text-transform: uppercase; }
+.hk-pill { fill: currentColor; fill-opacity: 0.06; stroke: currentColor; stroke-width: 1.25; stroke-opacity: 0.5; transition: fill-opacity 0.2s ease, stroke-opacity 0.2s ease; cursor: default; }
+.hk-pill:hover { fill-opacity: 0.2; stroke-opacity: 1; }
+.hk-pill-text { font-size: 13px; fill: currentColor; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; pointer-events: none; }
+.hk-stage-rail { stroke: currentColor; stroke-opacity: 0.18; stroke-dasharray: 3 5; }
+.hk-flow { stroke: currentColor; stroke-width: 1.25; stroke-opacity: 0.45; fill: none; }
+.hk-final { font-size: 12px; fill: currentColor; opacity: 0.65; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.hk-panel { fill: currentColor; fill-opacity: 0.02; stroke: currentColor; stroke-opacity: 0.18; stroke-dasharray: 4 4; }
+
+/* meshline-geometry.md — sharp-bend smoothing */
+.ssb-label { font-size: 11px; fill: currentColor; opacity: 0.55; letter-spacing: 0.12em; text-transform: uppercase; font-weight: 600; }
+.ssb-sub { font-size: 11px; fill: currentColor; opacity: 0.55; }
+.ssb-vertex { fill: currentColor; }
+.ssb-ghost-dot { fill: currentColor; fill-opacity: 0.35; }
+.ssb-ghost-ring { fill: none; stroke: currentColor; stroke-opacity: 0.35; stroke-dasharray: 2 2; }
+.ssb-centerline { stroke: currentColor; fill: none; stroke-width: 1.25; stroke-opacity: 0.8; }
+.ssb-ribbon-spike { stroke: currentColor; fill: none; stroke-width: 16; stroke-opacity: 0.18; stroke-linejoin: miter; stroke-linecap: round; }
+.ssb-ribbon-clean { stroke: currentColor; fill: none; stroke-width: 16; stroke-opacity: 0.18; stroke-linejoin: bevel; stroke-linecap: round; }
+.ssb-divider { stroke: currentColor; stroke-opacity: 0.15; stroke-dasharray: 4 4; }
+.ssb-warn { font-size: 10px; fill: currentColor; opacity: 0.7; font-style: italic; }
+.ssb-annotate { stroke: currentColor; stroke-width: 0.8; stroke-dasharray: 2 2; stroke-opacity: 0.5; fill: none; }
+.ssb-alpha { font-size: 10px; fill: currentColor; opacity: 0.7; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.ssb-spike-pulse { animation: ssbSpikePulse 2.6s ease-in-out infinite; }
+@keyframes ssbSpikePulse { 0%, 100% { stroke-opacity: 0.14; } 50% { stroke-opacity: 0.3; } }
+
+/* meshline-geometry.md — vertex expansion */
+.vex-label { font-size: 11px; fill: currentColor; opacity: 0.55; letter-spacing: 0.12em; text-transform: uppercase; font-weight: 600; }
+.vex-sub { font-size: 11px; fill: currentColor; opacity: 0.55; }
+.vex-dot { fill: currentColor; }
+.vex-strip-fill { fill: currentColor; fill-opacity: 0.07; stroke: none; }
+.vex-strip-edge { stroke: currentColor; stroke-width: 1.25; stroke-opacity: 0.5; fill: none; }
+.vex-strip-diag { stroke: currentColor; stroke-width: 0.75; stroke-opacity: 0.35; fill: none; stroke-dasharray: 2 3; animation: vexDiagDraw 2s ease-out 0.3s both; stroke-dashoffset: 120; }
+.vex-polyline { stroke: currentColor; fill: none; stroke-width: 1.25; stroke-opacity: 0.75; }
+.vex-arrow { stroke: currentColor; stroke-width: 1.5; fill: none; }
+.vex-side-label { font-size: 10px; fill: currentColor; opacity: 0.6; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+@keyframes vexDiagDraw { to { stroke-dashoffset: 0; } }
+
+/* performance.md — instancing */
+.inst-label { font-size: 11px; fill: currentColor; opacity: 0.6; letter-spacing: 0.12em; text-transform: uppercase; font-weight: 600; }
+.inst-sub { font-size: 11px; fill: currentColor; opacity: 0.6; }
+.inst-metric { font-size: 12px; fill: currentColor; opacity: 0.8; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.inst-cpu { fill: currentColor; fill-opacity: 0.06; stroke: currentColor; stroke-width: 1.25; stroke-opacity: 0.5; }
+.inst-gpu-panel { fill: currentColor; fill-opacity: 0.03; stroke: currentColor; stroke-width: 1; stroke-opacity: 0.3; stroke-dasharray: 3 3; }
+.inst-line-small { stroke: currentColor; stroke-width: 2.5; stroke-opacity: 0.65; stroke-linecap: round; fill: none; }
+.inst-arrow-thin { stroke: currentColor; stroke-width: 1; stroke-opacity: 0.35; fill: none; }
+.inst-arrow-fat { stroke: currentColor; stroke-width: 10; stroke-opacity: 0.3; fill: none; }
+.inst-divider { stroke: currentColor; stroke-opacity: 0.15; stroke-dasharray: 4 4; }
+.inst-badge-bg { fill: currentColor; fill-opacity: 0.08; stroke: currentColor; stroke-width: 1; stroke-opacity: 0.45; }
+.inst-badge-text { font-size: 10px; fill: currentColor; opacity: 0.85; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-weight: 600; }
+.inst-pulse-fat { animation: instPulseFat 2.4s ease-in-out infinite; }
+@keyframes instPulseFat { 0%, 100% { stroke-opacity: 0.22; } 50% { stroke-opacity: 0.5; } }

@@ -11,8 +11,7 @@ A quick look at where Makio MeshLine has been and where it's headed. We're just 
 - **Mid-term**:
   - Make a cool tutorial website
   - Add receiveShadow support
-  - Add a static road or track geometry mode with precomputed tangents, normals, arc-length UVs, and explicit join modes (`miter`, `bevel`, `round`) for cleaner wide lines with much less shader work
-  - Align the join API and docs with the implementation by either restoring a dedicated high-quality miter path or replacing it with explicit geometry-driven joins
+  - Add a static road or track geometry mode with precomputed tangents, normals, arc-length UVs, and explicit join modes (`bevel`, `round`) for cleaner wide lines with much less shader work
 - **Long-term**: 
   - Explore more WebGPU performance opportunities
   - Add an optional compute pre-pass for dynamic polylines to resample curves and compute tangents, offsets, join decisions, and arc-length data before rendering
@@ -20,6 +19,7 @@ A quick look at where Makio MeshLine has been and where it's headed. We're just 
 
 ## Changelog
 
+- **v1.3.1**: Corner rendering overhaul — uniform thickness at every bend, stable miter at oblique camera angles, and automatic CPU-side smoothing (`smoothSharpBends`) for very sharp polylines. `useMiterLimit` option removed; miter is always on.
 - **v1.3.0**: R3F & Vue StackBlitz examples with declarative `<MeshLine>` wrapper components
 - **v1.2.3**: Fixes for `alphaMap()`, `material.copy()`, and `sineWavePositions()`; minor allocation cleanups
 - **v1.2.2**: Buffer usage fixes, frustum-culling skip, miter handling for near-180° angles

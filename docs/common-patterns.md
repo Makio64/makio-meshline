@@ -125,21 +125,29 @@ window.addEventListener('resize', () => {
 })
 ```
 
-## 11. Miter Limit for Sharp Corners
+## 11. Sharp Corners (Miter + Smoothing)
+
+Two knobs work together to keep polylines with sharp corners looking clean at every camera angle:
+
+1. **Automatic corner smoothing** (geometry): `smoothSharpBends` (default `true`) subdivides any corner whose interior bend is sharper than ~60°, splitting it into two cutoff points `smoothSharpBendsAlpha` of the way back along each adjacent segment (default `0.001` — visually imperceptible). Raise `α` if you want a visibly flatter bevel cap at the tip.
+2. **Miter clamp** (shader): `.join({ limit })` caps how far the miter offset can extend. Lower values flatten spikes earlier, higher values allow long pointy miters.
 
 ```js
-// Basic miter limit (prevents oversized spikes)
+// Default combo — handles most polylines cleanly
 const line = new MeshLine()
   .lines(squarePositions(16), true)
-  .join({ type: 'miter', limit: 4 })
   .lineWidth(2)
+// Implicit: smoothSharpBends=true, α=0.001, miterLimit=4
 
-// Higher limit keeps corners sharper before the clamp kicks in
-const line2 = new MeshLine()
-  .join({ type: 'miter', limit: 6 }) // Higher limit = sharper corners but potential bigger spikes ( see under )
+// Very sharp polyline (zigzag-style) — tighten the miter clamp
+const zigzag = new MeshLine()
+  .lines(myZigzagPoints)
+  .lineWidth(2)
+  .join({ limit: 2 })            // bevel residual spikes at very sharp bends
 
-// Simple join without miter expansion
-const line3 = new MeshLine()
-  .lines(squarePositions(16), true)
-  .join({ type: 'simple' })
+// Exact 1:1 GPU buffer mapping (animation pinned to input indices)
+const exact = new MeshLine()
+  .lines(myPoints)
+  .smoothSharpBends(false)       // no auto-subdivision
+  .join({ limit: 4 })
 ``` 

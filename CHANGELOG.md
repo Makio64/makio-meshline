@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.3.1
+### Corner rendering — fixed end to end
+- **Uniform thickness at every bend.** Miter extension is now always applied, so the ribbon keeps the same pixel width at straight segments and at corners (a 90° bend previously rendered at ~71% of `lineWidth`). The new shader path uses a non-normalized bisector — no `sqrt`, no branching, single `max`-clamped divide — so runtime cost is actually lower than the old default path.
+- **Stable miter at oblique camera angles.** Direction vectors are built from view-space XY instead of post-perspective screen-space, so adjacent vertex bisectors no longer flip sign when the per-vertex `w` divide warps the projection. Eliminates the bowtie ribbon and thickness collapse at steep pitch.
+- **Automatic corner smoothing for sharp polylines.** New `smoothSharpBends` geometry option (default `true`) splits any polyline vertex whose interior bend is sharper than ~60° into two cutoff points at a configurable distance `smoothSharpBendsAlpha` (default `0.001` — visually imperceptible but enough to stabilise the shader miter) back along each adjacent segment. This fixes the fundamental screen-space-meshline limitation where a single vertex can't cleanly represent two wildly-diverging segments. Tuning: raise `α` toward `0.05`–`0.1` for a visibly flatter bevel cap; pair with a lower `miterLimit` (e.g. `2`) for clean rendering of very sharp zigzag-style polylines. Opt out via `.smoothSharpBends(false)` when exact 1:1 input-to-GPU vertex mapping is needed. Automatically disabled when `gpuPositionNode` is used — the CPU polyline is a progress-grid template under GPU-driven positions, not real geometry.
+
+### Breaking
+- `useMiterLimit` option is removed; miter is always on. `.join({ type })` retained for back-compat but `type` has no effect — every value renders as miter.
+
+### Added
+- `.smoothSharpBends(enabled)` and `.smoothSharpBendsAlpha(alpha)` chainable setters on `MeshLine`, plus matching `smoothSharpBends` / `smoothSharpBendsAlpha` options on `MeshLineConfigureOptions`.
+- Zigzag and Snake presets in the Sandbox demo for visually stress-testing corner thickness across sharp and smooth curves; UI toggle + cutoff slider for the smoothing in the Advanced folder.
+
 ## 1.3.0
 - Add `MeshLinePicker` — GPU pixel-picker that identifies the line and instance under the cursor; works with GPU-positioned, instanced, animated, and hook-driven lines
 - Add `docs/picking.md` documenting the picker alongside Three.js `Raycaster` for line interaction
