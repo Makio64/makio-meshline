@@ -282,13 +282,20 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 			// Sharp CPU-side polyline corners that could otherwise collapse the
 			// bisector under oblique perspective are handled upstream by the
 			// geometry's `smoothSharpBends` pass (on by default).
+			// At open endpoints, reuse the real segment direction instead of the
+			// extrapolated neighbour direction; this keeps single-segment GPU lines
+			// from tapering when the extrapolated point projects badly.
 			const currentP = fix( finalPosition, aspect ).toVar( 'currentP' )
 			const prevP = fix( prevPos, aspect ).toVar( 'prevP' )
 			const nextP = fix( nextPos, aspect ).toVar( 'nextP' )
-			const delta1 = currentP.sub( prevP ).toVar( 'delta1' )
-			const delta2 = nextP.sub( currentP ).toVar( 'delta2' )
+			const delta1Raw = currentP.sub( prevP ).toVar( 'delta1Raw' )
+			const delta2Raw = nextP.sub( currentP ).toVar( 'delta2Raw' )
+			const atStart = float( 1 ).sub( step( float( 0.0001 ), progress ) ).toVar( 'atStart' )
+			const atEnd = step( float( 0.9999 ), progress ).toVar( 'atEnd' )
+			const delta1 = mix( delta1Raw, delta2Raw, atStart ).toVar( 'delta1' )
+			const delta2 = mix( delta2Raw, delta1Raw, atEnd ).toVar( 'delta2' )
 
-			const w = this.getLineWidth( this.lineWidth.mul( this.dpr ), progress, side ).toVar( 'w' )
+			const w = this.getLineWidth( this.lineWidth, progress, side ).toVar( 'w' )
 
 			vWidth.assign( w )
 
@@ -296,8 +303,18 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 			// Magnitude: w/max(|dir1+dir2|, 2/miterLimit) — monotonic, plateaus at
 			// miterLimit·w/2 for sharp bends. Direction: unit perpendicular of the
 			// bisector, with perp(dir1) as a fallback for near-180° reversals.
-			const dir1 = normalize( delta1 ).toVar( 'dir1' )
-			const dir2 = normalize( delta2 ).toVar( 'dir2' )
+			const minDirectionLength = float( 0.0001 )
+			const delta1Len = delta1.length().toVar( 'delta1Len' )
+			const delta2Len = delta2.length().toVar( 'delta2Len' )
+			const dirFallback = vec2( 1, 0 ).toVar( 'dirFallback' )
+			const dir1Raw = delta1.div( max( delta1Len, minDirectionLength ) ).toVar( 'dir1Raw' )
+			const dir2Raw = delta2.div( max( delta2Len, minDirectionLength ) ).toVar( 'dir2Raw' )
+			const dir1 = mix(
+				mix( dirFallback, dir2Raw, step( minDirectionLength, delta2Len ) ),
+				dir1Raw,
+				step( minDirectionLength, delta1Len )
+			).toVar( 'dir1' )
+			const dir2 = mix( dir1, dir2Raw, step( minDirectionLength, delta2Len ) ).toVar( 'dir2' )
 			const dirSum = dir1.add( dir2 ).toVar( 'dirSum' )
 			const dirSumLen = dirSum.length().toVar( 'dirSumLen' )
 
@@ -321,15 +338,16 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 				normal.assign( this.normalFn( normal, dir, dir1, dir2, progress, side ) )
 			}
 
-			// un-stretch X
-			normal.x.divAssign( aspect )
-
-			if ( !this.sizeAttenuation ) {
-				// Convert normal from NDC to screen pixels
-				// Multiply by w to get back to clip space
-				normal.xy.mulAssign( finalPosition.w )
-				// Divide by resolution but only y component to maintain aspect ratio
-				normal.xy.divAssign( this.resolution.y )
+			if ( this.sizeAttenuation ) {
+				// `lineWidth` is a full view/world-space width. Project the offset as
+				// a direction (w = 0), so perspective naturally attenuates with depth.
+				normal.xy.assign( cameraProjectionMatrix.mul( vec4( normal.xy, 0, 0 ) ).xy )
+			} else {
+				// `lineWidth` is a full CSS-pixel width. `resolution` is also CSS-sized:
+				// the canvas still uses more physical pixels on high-DPR screens, but
+				// the visible CSS size stays stable instead of being multiplied twice.
+				normal.x.divAssign( aspect )
+				normal.xy.mulAssign( finalPosition.w.mul( 2 ).div( this.resolution.y ) )
 			}
 
 			finalPosition.xy.addAssign( normal.xy.mul( side ) )

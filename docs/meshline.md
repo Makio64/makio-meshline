@@ -40,9 +40,9 @@ See [Common Patterns](./common-patterns.md) for more examples.
 
 **Appearance:**
 - `color(color: number | THREE.Color)` - Set line color
-- `lineWidth(lineWidth: number)` - Set line width
+- `lineWidth(lineWidth: number)` - Set the full line width. With `sizeAttenuation(false)` this is CSS pixels; with the default `sizeAttenuation(true)` it is projected as a scene-space width.
 - `widthCallback(callback: (t: number) => number)` - Set variable width function
-- `sizeAttenuation(enable: boolean)` - Enable/disable size attenuation
+- `sizeAttenuation(enable: boolean)` - Enable scene-space projected width. Disable it for constant CSS-pixel width.
 - `gradientColor(color: number | THREE.Color)` - Set gradient end color
 - `vertexColors(colors: Float32Array | number[])` - Set per-vertex RGB colors
 - `opacity(opacity: number)` - Set opacity level
@@ -69,7 +69,7 @@ See [Common Patterns](./common-patterns.md) for more examples.
 - `smoothSharpBends(enabled: boolean)` - Toggle the automatic CPU-side splitting of polyline corners that are too sharp for the screen-space miter to render cleanly. Defaults to `true`. Disable to keep GPU buffers aligned 1:1 with your input points.
 - `smoothSharpBendsAlpha(alpha: number)` - Cutoff fraction used when `smoothSharpBends` is on: each sharp corner is replaced by two points sitting `alpha` of the way back along each adjacent segment. Smaller values preserve the pointy look; larger values flatten the tip more. Defaults to `0.001` (visually imperceptible but enough to stabilise the shader miter math).
 - `smoothSharpBendsThreshold(threshold: number)` - `dot(dir_in, dir_out)` cutoff below which a vertex is considered sharp enough to subdivide. Defaults to `-0.5` (≈ 60° interior bend). Lower (more negative) values subdivide only the very sharpest corners.
-- `dpr(ratio: number)` - Set device pixel ratio
+- `dpr(ratio: number)` - Set the legacy/custom-hook DPR uniform
 - `setFrustumCulled(enable: boolean)` - Enable/disable frustum culling; when disabled, build-time bounding volumes are skipped
 - `verbose(enable: boolean)` - Enable/disable verbose logging
 - `renderSize(width: number, height: number)` - Set render resolution
@@ -235,11 +235,11 @@ interface MeshLineOptions {
 
 - **`color`** (`number | THREE.Color`) — Base color of the line. Can be a hex number (`0xff0000`) or `THREE.Color` instance. Default: `0xffffff` (white).
 
-- **`lineWidth`** (`number`) — Width of the line. When `sizeAttenuation` is `false`, this value is multiplied by `dpr` for screen-space rendering. When `true`, it's scaled by distance. Default: `0.3`.
+- **`lineWidth`** (`number`) — Full width of the line. When `sizeAttenuation` is `false`, this is a constant CSS-pixel width. When `true`, it is projected as a scene-space width and attenuates with distance. Default: `0.3`.
 
 - **`widthCallback`** (`(t: number) => number | null`) — A function that receives the line progress (`t`, from 0 to 1) and returns a width multiplier. Allows for variable line width. Default: `null`.
 
-- **`sizeAttenuation`** (`boolean`) — Whether line width should scale with camera distance. When `false`, lines maintain constant pixel width regardless of distance. Default: `true`.
+- **`sizeAttenuation`** (`boolean`) — Whether `lineWidth` is projected in scene space. When `false`, lines maintain constant CSS-pixel width regardless of distance. Default: `true`.
 
 - **`gradientColor`** (`number | null`) — Optional gradient end color. When set, the line will smoothly transition from `color` to `gradientColor` along its length. Default: `null` (no gradient).
 
@@ -281,7 +281,7 @@ interface MeshLineOptions {
 
 ### Device Pixel Ratio
 
-- **`dpr`** (`number`) — Device pixel ratio multiplier used for screen-space `lineWidth`. Defaults to `window.devicePixelRatio`.
+- **`dpr`** (`number`) — Device pixel ratio uniform kept for custom hooks and backward compatibility. CSS-pixel `lineWidth` uses CSS-sized `resolution`, so it stays the same visible size across DPR values while the renderer still draws more physical pixels.
 
 ### Advanced / Internal
 

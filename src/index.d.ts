@@ -168,10 +168,21 @@ export interface MeshLineConfigureOptions {
 
 	// appearance
 	color?: number | string | Color
+	/**
+	 * Full line width. With `sizeAttenuation: false`, this is CSS pixels.
+	 * With `sizeAttenuation: true`, this is projected as a view/world-space width.
+	 * Use CSS-sized `resolution`/`resize()` values so visible pixel width stays
+	 * stable across DPR while the renderer uses more physical pixels.
+	 */
 	lineWidth?: number
 	widthCallback?: ( t: number ) => number
+	/**
+	 * When `false`, `lineWidth` is a constant CSS-pixel width. When `true`
+	 * (default), `lineWidth` is projected in scene space and attenuates with depth.
+	 */
 	sizeAttenuation?: boolean
 	gradientColor?: number | string | Color | null
+	vertexColors?: Float32Array | number[]
 	map?: Texture | null
 	mapOffset?: Vector2 | null
 	alphaMap?: Texture | null
@@ -183,6 +194,12 @@ export interface MeshLineConfigureOptions {
 
 	// advanced
 	dash?: MeshLineDashOptions
+	/** @deprecated Prefer `dash: { count }` or `.dash({ count })`. */
+	dashCount?: number | null
+	/** @deprecated Prefer `dash: { ratio }` or `.dash({ ratio })`. */
+	dashRatio?: number | null
+	/** @deprecated Prefer `dash: { offset }` or `.dash({ offset })`. */
+	dashOffset?: number
 	join?: MeshLineJoinOptions
 	/**
 	 * Auto-subdivide polyline corners that are too sharp for the screen-space
@@ -224,6 +241,23 @@ export interface MeshLineConfigureOptions {
 	needsPrevious?: boolean
 	needsNext?: boolean
 	needsSide?: boolean
+	needsVertexColor?: boolean
+
+	// node hooks (TSL)
+	positionFn?: PositionHookFn | null
+	previousFn?: NeighbourHookFn | null
+	nextFn?: NeighbourHookFn | null
+	widthFn?: WidthHookFn | null
+	normalFn?: NormalHookFn | null
+	colorFn?: ColorHookFn | null
+	gradientFn?: GradientHookFn | null
+	opacityFn?: OpacityHookFn | null
+	dashFn?: DashHookFn | null
+	uvFn?: UVHookFn | null
+	vertexFn?: VertexHookFn | null
+	fragmentColorFn?: FragmentColorHookFn | null
+	fragmentAlphaFn?: FragmentAlphaHookFn | null
+	discardFn?: DiscardHookFn | null
 }
 
 // ---------------------------------------------------------------------------
@@ -231,7 +265,7 @@ export interface MeshLineConfigureOptions {
 // ---------------------------------------------------------------------------
 
 export class MeshLine extends ThreeMesh {
-	constructor()
+	constructor( options?: MeshLineConfigureOptions )
 
 	configure( options?: MeshLineConfigureOptions ): this
 
@@ -296,6 +330,7 @@ export class MeshLine extends ThreeMesh {
 	discardFn( fn: DiscardHookFn ): this
 
 	build(): this
+	rebuild(): this
 	ensureBuilt(): this
 	raycast( raycaster: Raycaster, intersects: Array<Intersection & { lineIndex?: number; instanceId?: number }> ): void
 	setPositions( points: MultiLinePoints, updateBounding?: boolean ): void

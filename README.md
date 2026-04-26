@@ -81,7 +81,7 @@ camera.position.z = 4
 const line = new MeshLine()
   .lines(circlePositions(64), true) // 64-segment circle, closed loop
   .color(0xff6600)                  // hex or THREE.Color
-  .lineWidth(0.4)                   // world units (sizeAttenuation on by default)
+  .lineWidth(0.4)                   // scene-space width (sizeAttenuation on by default)
 
 scene.add(line)
 

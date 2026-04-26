@@ -12,12 +12,12 @@ This guide will walk you through the basics of installing and using Makio MeshLi
   <path d="M 40 130 C 140 70, 280 190, 380 130" class="ml-thin ml-draw"/>
   <line x1="410" y1="25" x2="410" y2="200" class="ml-divider"/>
   <text x="440" y="32" class="ml-label">makio-meshline</text>
-  <text x="440" y="195" class="ml-sub">triangle strip · real width in world units · styleable</text>
+  <text x="440" y="195" class="ml-sub">triangle strip · real projected thickness · styleable</text>
   <path d="M 440 130 C 540 70, 680 190, 780 130" class="ml-ribbon ml-draw"/>
   <path d="M 440 130 C 540 70, 680 190, 780 130" class="ml-center"/>
 </svg>
 
-A **MeshLine** is not a native GPU line — it's a triangle-strip ribbon that mirrors your polyline on both sides, so every line has a real thickness in world units, supports gradients, dashes, textures, and plugs into any TSL shader hook.
+A **MeshLine** is not a native GPU line — it's a triangle-strip ribbon that mirrors your polyline on both sides, so every line has real projected thickness, supports gradients, dashes, textures, and plugs into any TSL shader hook.
 
 ## Installation
 
@@ -47,7 +47,7 @@ document.body.append(renderer.domElement)
 const line = new MeshLine()
   .lines(circlePositions(64, 10))// 64-segment circle, radius 10
   .closed(true) // we close the loop ( last 2 point are connected )
-  .lineWidth(1) // dimension in world units
+  .lineWidth(1) // scene-space width with sizeAttenuation enabled
   .color(0xff8800) // color 
   .gradientColor(0xffffff) // with a gradient to white
 

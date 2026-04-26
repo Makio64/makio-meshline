@@ -25,7 +25,7 @@ const line = new MeshLine().configure({
   lines: circlePositions(64),
   closed: true,
   color: 0xff6600,
-  lineWidth: 0.4
+  lineWidth: 0.4 // scene-space width by default
 })
 scene.add(line)
 

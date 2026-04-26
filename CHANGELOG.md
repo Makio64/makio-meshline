@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.3.2
+### Fixed
+- Normalize `lineWidth` semantics: with `sizeAttenuation: false`, width is a stable CSS-pixel value; with `sizeAttenuation: true`, width is projected in scene space and attenuates with depth.
+- Stabilize GPU-positioned single-segment lines by reusing real endpoint tangents and guarding near-degenerate projected directions, preventing lasers/straight segments from collapsing to very thin ribbons at oblique angles.
+- Fix `.opacity()` before `build()` so fluent usage no longer tries to write `.value` onto Three.js's numeric material opacity.
+
+### API
+- Support `new MeshLine(options)` directly.
+- Expand `.configure()` coverage to include hooks, GPU positions, instancing, optional attributes, and legacy dash aliases.
+- Rebuild material/geometry when post-build feature toggles require new uniforms, attributes, or closed-loop topology.
+
 ## 1.3.1
 ### Corner rendering — fixed end to end
 - **Uniform thickness at every bend.** Miter extension is now always applied, so the ribbon keeps the same pixel width at straight segments and at corners (a 90° bend previously rendered at ~71% of `lineWidth`). The new shader path uses a non-normalized bisector — no `sqrt`, no branching, single `max`-clamped divide — so runtime cost is actually lower than the old default path.

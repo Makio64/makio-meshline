@@ -53,9 +53,9 @@ Creates a new MeshLineNodeMaterial with the specified parameters.
 
 ### Line Appearance
 
-- `sizeAttenuation` (boolean) — whether line width attenuates with perspective (gets smaller with distance). When `false`, maintains constant pixel size. Default: `true`.
+- `sizeAttenuation` (boolean) — when `true`, `lineWidth` is projected as a scene-space width and attenuates with distance. When `false`, `lineWidth` is a constant CSS-pixel width. Default: `true`.
 - `resolution` (`THREE.Vector2`) — viewport resolution for correct aspect scaling. Default: `new Vector2(1, 1)`.
-- `lineWidth` (number) — base width multiplier for the line in screen space. Default: `1`.
+- `lineWidth` (number) — full line width. Units depend on `sizeAttenuation`: scene/view units when `true`, CSS pixels when `false`. Default: `1`.
 - `color` (number | `THREE.Color`) — line color. Default: `0xffffff`.
 - `gradientColor` (`THREE.Color` | null) — optional gradient end color. Default: `null`.
 - `opacity` (number) — global opacity. Default: `1`.
@@ -114,15 +114,18 @@ const material = new MeshLineNodeMaterial({
 
 ### Size Attenuation
 
-When `sizeAttenuation` is enabled, lines maintain consistent visual thickness regardless of camera distance:
+When `sizeAttenuation` is disabled, lines maintain a constant CSS-pixel thickness regardless of camera distance:
 
 ```javascript
 const material = new MeshLineNodeMaterial({
-  sizeAttenuation: true,
-  lineWidth: 2 // value in px , the dpr adjustment is automatic 
-  dpr: window.devicePixelRatio // optional, window.devicePixelRatio is already the default value
+  sizeAttenuation: false,
+  lineWidth: 2 // displays as 2 CSS pixels on DPR 1, 2, 3, ...
 });
 ```
+
+Use the canvas CSS size for `resolution`/`resize()` (`renderer.getSize()` or `window.innerWidth/innerHeight`), not the drawing-buffer size. The renderer still allocates more physical pixels on high-DPR screens, so the line remains sharp without changing its visible CSS size.
+
+With the default `sizeAttenuation: true`, `lineWidth` is projected in scene space, so the line gets visually thinner as it moves farther from the camera.
 
 ### Gradients
 

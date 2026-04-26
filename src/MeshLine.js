@@ -37,7 +37,7 @@ const defaultPositions = straightLine( 2 )
  */
 export default class MeshLine extends Mesh {
 
-	constructor() {
+	constructor( options = {} ) {
 
 		super( new MeshLineGeometry(), new MeshLineNodeMaterial() )
 
@@ -65,7 +65,8 @@ export default class MeshLine extends Mesh {
 			dashRatio: null,
 			dashOffset: 0,
 
-			// device pixel ratio scaling for screen-space width
+			// Legacy/custom-hook DPR uniform. CSS-pixel width uses CSS-sized resolution,
+			// so visible size is stable while the canvas still uses more device pixels.
 			dpr: getDefaultDPR(),
 
 			frustumCulled: true,
@@ -92,6 +93,7 @@ export default class MeshLine extends Mesh {
 		}
 		this._built = false
 		this.onBeforeRender = this._onBeforeRender
+		this.configure( options ?? {} )
 	}
 
 	/**
@@ -101,6 +103,8 @@ export default class MeshLine extends Mesh {
 	 * @returns {this}
 	 */
 	configure( options = {} ) {
+		options = options ?? {}
+		if ( options.segments !== undefined ) this.segments( options.segments )
 		if ( options.lines !== undefined || options.closed !== undefined ) {
 			const lines = options.lines ?? this._options.lines
 			const closed = options.closed ?? this._options.closed
@@ -124,13 +128,43 @@ export default class MeshLine extends Mesh {
 		if ( options.frustumCulled !== undefined ) this.setFrustumCulled( options.frustumCulled )
 		if ( options.verbose !== undefined ) this.verbose( options.verbose )
 		if ( options.renderWidth !== undefined || options.renderHeight !== undefined ) this.renderSize( options.renderWidth, options.renderHeight )
-		if ( options.dash ) this.dash( options.dash )
+		if ( options.dash || options.dashCount !== undefined || options.dashRatio !== undefined || options.dashOffset !== undefined ) {
+			this.dash( options.dash ?? {
+				count: options.dashCount ?? this._options.dashCount,
+				ratio: options.dashRatio ?? this._options.dashRatio ?? 0.5,
+				offset: options.dashOffset ?? this._options.dashOffset,
+			} )
+		}
 		if ( options.join ) this.join( options.join )
 		if ( options.smoothSharpBends !== undefined ) this.smoothSharpBends( options.smoothSharpBends )
 		if ( options.smoothSharpBendsAlpha !== undefined ) this.smoothSharpBendsAlpha( options.smoothSharpBendsAlpha )
 		if ( options.smoothSharpBendsThreshold !== undefined ) this.smoothSharpBendsThreshold( options.smoothSharpBendsThreshold )
 		if ( options.dynamic !== undefined ) this.dynamic( options.dynamic )
 		if ( options.autoResize ) this.autoResize( options.autoResize )
+		if ( options.gpuPositionNode !== undefined ) this.gpuPositionNode( options.gpuPositionNode )
+		if ( options.usage !== undefined ) this.usage( options.usage )
+		if ( options.instanceCount !== undefined ) this.instances( options.instanceCount )
+		if ( options.needsUV !== undefined ) this.needsUV( options.needsUV )
+		if ( options.needsWidth !== undefined ) this.needsWidth( options.needsWidth )
+		if ( options.needsProgress !== undefined ) this.needsProgress( options.needsProgress )
+		if ( options.needsPrevious !== undefined ) this.needsPrevious( options.needsPrevious )
+		if ( options.needsNext !== undefined ) this.needsNext( options.needsNext )
+		if ( options.needsSide !== undefined ) this.needsSide( options.needsSide )
+		if ( options.needsVertexColor !== undefined ) this.needsVertexColor( options.needsVertexColor )
+		if ( options.positionFn !== undefined ) this.positionFn( options.positionFn )
+		if ( options.previousFn !== undefined ) this.previousFn( options.previousFn )
+		if ( options.nextFn !== undefined ) this.nextFn( options.nextFn )
+		if ( options.widthFn !== undefined ) this.widthFn( options.widthFn )
+		if ( options.normalFn !== undefined ) this.normalFn( options.normalFn )
+		if ( options.colorFn !== undefined ) this.colorFn( options.colorFn )
+		if ( options.gradientFn !== undefined ) this.gradientFn( options.gradientFn )
+		if ( options.opacityFn !== undefined ) this.opacityFn( options.opacityFn )
+		if ( options.dashFn !== undefined ) this.dashFn( options.dashFn )
+		if ( options.uvFn !== undefined ) this.uvFn( options.uvFn )
+		if ( options.vertexFn !== undefined ) this.vertexFn( options.vertexFn )
+		if ( options.fragmentColorFn !== undefined ) this.fragmentColorFn( options.fragmentColorFn )
+		if ( options.fragmentAlphaFn !== undefined ) this.fragmentAlphaFn( options.fragmentAlphaFn )
+		if ( options.discardFn !== undefined ) this.discardFn( options.discardFn )
 		return this
 	}
 	/**
@@ -141,10 +175,16 @@ export default class MeshLine extends Mesh {
 	 * @returns {this}
 	 */
 	lines( lines, closed = this._options.closed ) {
+		const closedChanged = closed !== this._options.closed
 		this._options.lines = lines
 		this._options.closed = closed
 		if ( this._built ) {
-			this.geometry.setPositions( lines, false )
+			this.geometry.options.closed = closed
+			if ( closedChanged ) {
+				this.geometry.setLines( lines )
+			} else {
+				this.geometry.setPositions( lines, false )
+			}
 		}
 		return this
 	}
@@ -181,7 +221,7 @@ export default class MeshLine extends Mesh {
 
 	/**
 	 * Set the line width. Units depend on `sizeAttenuation`:
-	 * world units when `true`, screen pixels when `false`.
+	 * scene-space projected units when `true`, CSS pixels when `false`.
 	 * Can be updated after build.
 	 * @param {number} lineWidth
 	 * @returns {this}
@@ -207,7 +247,7 @@ export default class MeshLine extends Mesh {
 
 	/**
 	 * Toggle size attenuation. When `true` (default), line width is in world
-	 * units and shrinks with distance. When `false`, width is in screen pixels.
+	 * units and shrinks with distance. When `false`, width is in CSS pixels.
 	 * @param {boolean} sizeAttenuation
 	 * @returns {this}
 	 */
@@ -237,10 +277,11 @@ export default class MeshLine extends Mesh {
 	 */
 	opacity( opacity ) {
 		this._options.opacity = opacity
-		if ( this.material.opacity ) {
-			if ( this.uOpacity && typeof opacity === 'number' ) {
-				this.uOpacity.value = opacity
-			}
+		const opacityUniform = this.material.opacity
+		if ( opacityUniform && typeof opacityUniform === 'object' && 'value' in opacityUniform ) {
+			this.material.opacity.value = opacity
+		} else if ( this._built && opacity < 1 ) {
+			this.rebuild()
 		}
 		return this
 	}
@@ -351,7 +392,11 @@ export default class MeshLine extends Mesh {
 	 * @returns {this}
 	 */
 	gradientColor( gradientColor ) {
+		const hadGradient = !!this.material.gradient
 		this._options.gradientColor = gradientColor
+		if ( this._built && hadGradient !== !!gradientColor ) {
+			return this.rebuild()
+		}
 		if ( this.material.gradient ) {
 			this.material.gradient.value = gradientColor
 		}
@@ -364,7 +409,11 @@ export default class MeshLine extends Mesh {
 	 * @returns {this}
 	 */
 	map( map ) {
+		const hadMap = !!this.material.map
 		this._options.map = map
+		if ( this._built && hadMap !== !!map ) {
+			return this.rebuild()
+		}
 		if ( this.material.map ) {
 			this.material.map.value = map
 		}
@@ -390,7 +439,11 @@ export default class MeshLine extends Mesh {
 	 * @returns {this}
 	 */
 	alphaMap( alphaMap ) {
+		const hadAlphaMap = !!this.material.alphaMap
 		this._options.alphaMap = alphaMap
+		if ( this._built && hadAlphaMap !== !!alphaMap ) {
+			return this.rebuild()
+		}
 		if ( this.material.alphaMap ) {
 			this.material.alphaMap.value = alphaMap
 		}
@@ -404,9 +457,13 @@ export default class MeshLine extends Mesh {
 	 */
 	dash( params ) {
 		const { count, ratio = 0.5, offset = 0 } = params || {}
+		const hadDash = !!this.material.dashCount
 		this._options.dashCount = count
 		this._options.dashRatio = ratio
 		this._options.dashOffset = offset
+		if ( this._built && hadDash !== !!count ) {
+			return this.rebuild()
+		}
 		if ( this._built && this.material.dashCount ) {
 			this.material.dashCount.value = count
 			this.material.dashRatio.value = ratio
@@ -416,7 +473,7 @@ export default class MeshLine extends Mesh {
 	}
 
 	/**
-	 * Set the device pixel ratio used for screen-space width calculation.
+	 * Set the legacy/custom-hook device pixel ratio uniform.
 	 * @param {number} dpr
 	 * @returns {this}
 	 */
@@ -723,11 +780,11 @@ export default class MeshLine extends Mesh {
 		options.lines = lines
 
 		// Computed needs - auto-detect from configuration
-		options.needsWidth = options.needsWidth ?? !!( options.widthCallback || options.widthFn )
+		options.needsWidth = !!( options.needsWidth || options.widthCallback || options.widthFn )
 		options.needsProgress = options.needsProgress ?? true
 		options.needsSide = options.needsSide ?? true
-		options.needsUV = options.needsUV ?? !!( options.map || options.alphaMap || options.uvFn || options.discardFn )
-		options.needsVertexColor = options.needsVertexColor ?? !!options.vertexColors
+		options.needsUV = !!( options.needsUV || options.map || options.alphaMap || options.uvFn || options.discardFn )
+		options.needsVertexColor = !!( options.needsVertexColor || options.vertexColors )
 
 		// If using GPU position node, we don't need previous/next positions
 		options.needsPrevious = options.needsPrevious ?? !options.gpuPositionNode
@@ -895,6 +952,11 @@ export default class MeshLine extends Mesh {
 	ensureBuilt() {
 		if ( !this._built ) this.build()
 		return this
+	}
+
+	rebuild() {
+		this._built = false
+		return this.build()
 	}
 
 	/**
