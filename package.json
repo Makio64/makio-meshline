@@ -9,7 +9,8 @@
     "docs:build": "pnpm --filter docs build",
     "docs:preview": "pnpm --filter docs preview",
     "lint": "eslint src/ demo/src/",
-    "lint:fix": "eslint src/ demo/src/ --fix"
+    "lint:fix": "eslint src/ demo/src/ --fix",
+    "publish:lib": "pnpm --filter ./src publish --access public"
   },
   "devDependencies": {
     "@stylistic/eslint-plugin": "^5.10.0",
