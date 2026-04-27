@@ -32,6 +32,9 @@ class Stage3D {
 
 			if ( import.meta.env.DEV ) {
 				this.renderer.inspector = new Inspector()
+				const style = document.createElement( 'style' )
+				style.textContent = `#profiler-toggle:not(.position-right.panel-open) { right: 56px; }`
+				document.head.appendChild( style )
 			}
 
 			await this.renderer.init()

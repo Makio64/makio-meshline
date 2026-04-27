@@ -24,10 +24,10 @@ const TWO_PI = Math.PI * 2
 const RAYCAST_THRESHOLD = 0.3
 const LASER_LINE_WIDTH = 0.04
 const PICKER_TARGET_SIZE = 18
-const LERP_UP = 0.08
-const LERP_DOWN = 0.04
-const GLOBAL_ALARM_LERP_UP = 0.010
-const GLOBAL_ALARM_LERP_DOWN = 0.004
+const LERP_UP = 0.25
+const LERP_DOWN = 0.15
+const GLOBAL_ALARM_LERP_UP = 0.08
+const GLOBAL_ALARM_LERP_DOWN = 0.05
 
 const _mouseVec = new Vector2()
 
