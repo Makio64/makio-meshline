@@ -1,6 +1,5 @@
 import type {
 	Mesh as ThreeMesh,
-	Intersection,
 	InstancedBufferAttribute,
 	Raycaster,
 	Texture,
@@ -8,17 +7,21 @@ import type {
 	Color,
 	BufferGeometry,
 	BufferAttribute,
-	Usage,
 	Scene,
 	Camera,
+	MeshBasicNodeMaterial,
 	WebGPURenderer
 } from 'three/webgpu'
-
-import type { ShaderNodeObject, Node } from 'three/tsl'
 
 // ---------------------------------------------------------------------------
 // Input types
 // ---------------------------------------------------------------------------
+
+/** TSL node value. Kept intentionally broad because Three's TSL type exports vary by release. */
+export type MeshLineNodeValue = any
+
+/** Three buffer usage constant, such as `DynamicDrawUsage`. */
+export type MeshLineUsage = number
 
 /** Accepted formats for a single polyline's point data. */
 export type LinePoints = Float32Array | number[] | { x: number; y: number; z?: number }[]
@@ -37,107 +40,107 @@ export type MeshLineResizeTarget = Pick<Window, 'addEventListener' | 'removeEven
  * Hook that receives a position (vec3) and progress (float) and returns a modified position (vec3).
  * Applied to current, previous, and next positions simultaneously.
  */
-export type PositionHookFn = ( position: ShaderNodeObject<Node>, progress: ShaderNodeObject<Node> ) => ShaderNodeObject<Node>
+export type PositionHookFn = ( position: MeshLineNodeValue, progress: MeshLineNodeValue ) => MeshLineNodeValue
 
 /**
  * Hook that receives a neighbour position (vec3) and progress (float) and returns a modified position.
  * Used independently for `previous` or `next` point overrides.
  */
-export type NeighbourHookFn = ( position: ShaderNodeObject<Node>, progress: ShaderNodeObject<Node> ) => ShaderNodeObject<Node>
+export type NeighbourHookFn = ( position: MeshLineNodeValue, progress: MeshLineNodeValue ) => MeshLineNodeValue
 
 /**
  * Hook that receives width (float), progress (float), and side (float, +1 or -1)
  * and returns a modified width.
  */
-export type WidthHookFn = ( width: ShaderNodeObject<Node>, progress: ShaderNodeObject<Node>, side: ShaderNodeObject<Node> ) => ShaderNodeObject<Node>
+export type WidthHookFn = ( width: MeshLineNodeValue, progress: MeshLineNodeValue, side: MeshLineNodeValue ) => MeshLineNodeValue
 
 /**
  * Hook that receives the normal (vec4), direction (vec2), dir1 (vec2), dir2 (vec2),
  * progress (float) and side (float) and returns a modified normal.
  */
 export type NormalHookFn = (
-	normal: ShaderNodeObject<Node>,
-	dir: ShaderNodeObject<Node>,
-	dir1: ShaderNodeObject<Node>,
-	dir2: ShaderNodeObject<Node>,
-	progress: ShaderNodeObject<Node>,
-	side: ShaderNodeObject<Node>
-) => ShaderNodeObject<Node>
+	normal: MeshLineNodeValue,
+	dir: MeshLineNodeValue,
+	dir1: MeshLineNodeValue,
+	dir2: MeshLineNodeValue,
+	progress: MeshLineNodeValue,
+	side: MeshLineNodeValue
+) => MeshLineNodeValue
 
 /**
  * Hook that receives a color (vec4), progress (float), and side (float)
  * and returns a modified color.
  */
-export type ColorHookFn = ( color: ShaderNodeObject<Node>, progress: ShaderNodeObject<Node>, side: ShaderNodeObject<Node> ) => ShaderNodeObject<Node>
+export type ColorHookFn = ( color: MeshLineNodeValue, progress: MeshLineNodeValue, side: MeshLineNodeValue ) => MeshLineNodeValue
 
 /**
  * Hook that receives the gradient factor (float) and side (float)
  * and returns a modified gradient factor.
  */
-export type GradientHookFn = ( factor: ShaderNodeObject<Node>, side: ShaderNodeObject<Node> ) => ShaderNodeObject<Node>
+export type GradientHookFn = ( factor: MeshLineNodeValue, side: MeshLineNodeValue ) => MeshLineNodeValue
 
 /**
  * Hook that receives alpha (float), progress (float), and side (float)
  * and returns a modified alpha value.
  */
-export type OpacityHookFn = ( alpha: ShaderNodeObject<Node>, progress: ShaderNodeObject<Node>, side: ShaderNodeObject<Node> ) => ShaderNodeObject<Node>
+export type OpacityHookFn = ( alpha: MeshLineNodeValue, progress: MeshLineNodeValue, side: MeshLineNodeValue ) => MeshLineNodeValue
 
 /**
  * Hook that receives cycle position (float), progress (float), and side (float)
  * and returns a modified cycle position for dash control.
  */
-export type DashHookFn = ( cyclePosition: ShaderNodeObject<Node>, progress: ShaderNodeObject<Node>, side: ShaderNodeObject<Node> ) => ShaderNodeObject<Node>
+export type DashHookFn = ( cyclePosition: MeshLineNodeValue, progress: MeshLineNodeValue, side: MeshLineNodeValue ) => MeshLineNodeValue
 
 /**
  * Hook that receives UV coordinates (vec2), progress (float), and side (float)
  * and returns modified UV coordinates.
  */
-export type UVHookFn = ( uv: ShaderNodeObject<Node>, progress: ShaderNodeObject<Node>, side: ShaderNodeObject<Node> ) => ShaderNodeObject<Node>
+export type UVHookFn = ( uv: MeshLineNodeValue, progress: MeshLineNodeValue, side: MeshLineNodeValue ) => MeshLineNodeValue
 
 /**
  * Hook that receives the final clip-space position (vec4), normal (vec4),
  * progress (float), and side (float) and returns a modified position.
  */
 export type VertexHookFn = (
-	position: ShaderNodeObject<Node>,
-	normal: ShaderNodeObject<Node>,
-	progress: ShaderNodeObject<Node>,
-	side: ShaderNodeObject<Node>
-) => ShaderNodeObject<Node>
+	position: MeshLineNodeValue,
+	normal: MeshLineNodeValue,
+	progress: MeshLineNodeValue,
+	side: MeshLineNodeValue
+) => MeshLineNodeValue
 
 /**
  * Hook that receives color (vec4), UV (vec2), progress (float), and side (float)
  * and returns a modified fragment color.
  */
 export type FragmentColorHookFn = (
-	color: ShaderNodeObject<Node>,
-	uv: ShaderNodeObject<Node>,
-	progress: ShaderNodeObject<Node>,
-	side: ShaderNodeObject<Node>
-) => ShaderNodeObject<Node>
+	color: MeshLineNodeValue,
+	uv: MeshLineNodeValue,
+	progress: MeshLineNodeValue,
+	side: MeshLineNodeValue
+) => MeshLineNodeValue
 
 /**
  * Hook that receives alpha (float), UV (vec2), progress (float), and side (float)
  * and returns a modified alpha value.
  */
 export type FragmentAlphaHookFn = (
-	alpha: ShaderNodeObject<Node>,
-	uv: ShaderNodeObject<Node>,
-	progress: ShaderNodeObject<Node>,
-	side: ShaderNodeObject<Node>
-) => ShaderNodeObject<Node>
+	alpha: MeshLineNodeValue,
+	uv: MeshLineNodeValue,
+	progress: MeshLineNodeValue,
+	side: MeshLineNodeValue
+) => MeshLineNodeValue
 
 /**
  * Hook that receives progress (float), side (float), and UV (vec2)
  * and returns a boolean node controlling fragment discard.
  */
-export type DiscardHookFn = ( progress: ShaderNodeObject<Node>, side: ShaderNodeObject<Node>, uv: ShaderNodeObject<Node> ) => ShaderNodeObject<Node>
+export type DiscardHookFn = ( progress: MeshLineNodeValue, side: MeshLineNodeValue, uv: MeshLineNodeValue ) => MeshLineNodeValue
 
 /**
  * GPU position node function that receives progress (float) and an extra parameter (float)
  * and returns a vec3 position computed entirely on the GPU.
  */
-export type GPUPositionNodeFn = ( progress: ShaderNodeObject<Node>, extra: ShaderNodeObject<Node> ) => ShaderNodeObject<Node>
+export type GPUPositionNodeFn = ( progress: MeshLineNodeValue, extra: MeshLineNodeValue ) => MeshLineNodeValue
 
 // ---------------------------------------------------------------------------
 // Option interfaces
@@ -231,7 +234,7 @@ export interface MeshLineConfigureOptions {
 
 	// gpu / instancing
 	gpuPositionNode?: GPUPositionNodeFn | null
-	usage?: Usage
+	usage?: MeshLineUsage
 	instanceCount?: number
 
 	// optional attributes
@@ -300,7 +303,7 @@ export class MeshLine extends ThreeMesh {
 	renderSize( width?: number, height?: number ): this
 
 	gpuPositionNode( node: GPUPositionNodeFn ): this
-	usage( usage: Usage ): this
+	usage( usage: MeshLineUsage ): this
 	instances( count: number ): this
 
 	// optional attributes toggles
@@ -332,7 +335,7 @@ export class MeshLine extends ThreeMesh {
 	build(): this
 	rebuild(): this
 	ensureBuilt(): this
-	raycast( raycaster: Raycaster, intersects: Array<Intersection & { lineIndex?: number; instanceId?: number }> ): void
+	raycast( raycaster: Raycaster, intersects: Array<Record<string, unknown> & { lineIndex?: number; instanceId?: number }> ): void
 	setPositions( points: MultiLinePoints, updateBounding?: boolean ): void
 	addVertexAttribute( name: string, components?: number ): BufferAttribute
 
@@ -359,7 +362,7 @@ export class MeshLineGeometry extends BufferGeometry {
 // MeshLineNodeMaterial
 // ---------------------------------------------------------------------------
 
-export class MeshLineNodeMaterial {
+export class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 	constructor( options?: Partial<MeshLineConfigureOptions> )
 	buildLine( options?: Partial<MeshLineConfigureOptions> ): void
 	setShadow( enabled: boolean ): void

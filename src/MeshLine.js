@@ -425,13 +425,14 @@ export default class MeshLine extends Mesh {
 
 	/**
 	 * Set the UV offset for the color/alpha map.
-	 * @param {import('three/webgpu').Vector2} mapOffset
+	 * @param {import('three/webgpu').Vector2 | null} mapOffset
 	 * @returns {this}
 	 */
 	mapOffset( mapOffset ) {
 		this._options.mapOffset = mapOffset
-		if ( mapOffset && this.material.mapOffset ) {
-			this.material.mapOffset.value.copy( mapOffset )
+		if ( this.material.mapOffset ) {
+			if ( mapOffset ) this.material.mapOffset.value.copy( mapOffset )
+			else this.material.mapOffset.value.set( 0, 0 )
 		}
 		return this
 	}

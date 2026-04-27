@@ -1,71 +1,210 @@
-import { useRef, useEffect, useImperativeHandle, forwardRef } from 'react'
+import { useEffect, useImperativeHandle, useMemo, useRef, forwardRef } from 'react'
+import { useThree } from '@react-three/fiber'
 import { MeshLine as MeshLineCore } from 'makio-meshline'
+
+function applyBuildOptions( line, options ) {
+	const { dash, join, points, ...configureOptions } = options
+	const linePoints = points ?? configureOptions.lines
+
+	line.configure( {
+		...configureOptions,
+		lines: linePoints,
+		transparent: configureOptions.transparent || configureOptions.opacity < 1,
+	} )
+
+	line.dash( dash )
+	if ( join ) line.join( join )
+	return line
+}
 
 export const MeshLine = forwardRef( function MeshLine( {
 	points,
+	lines,
+	segments,
 	closed = false,
 	lineWidth = 0.1,
 	color = 0xffffff,
+	vertexColors,
+	widthCallback,
 	gradientColor,
 	dash,
 	map,
+	mapOffset,
+	alphaMap,
 	opacity = 1,
+	alphaTest = 0,
 	transparent = false,
+	wireframe = false,
+	shadow = false,
 	sizeAttenuation = true,
+	join,
+	smoothSharpBends = true,
+	smoothSharpBendsAlpha,
+	smoothSharpBendsThreshold,
+	dpr,
+	frustumCulled = true,
+	verbose = false,
+	renderWidth,
+	renderHeight,
+	dynamic,
+	gpuPositionNode,
+	usage,
+	instanceCount,
+	needsUV,
+	needsWidth,
+	needsProgress,
+	needsPrevious,
+	needsNext,
+	needsSide,
+	needsVertexColor,
 	widthFn,
+	normalFn,
 	colorFn,
 	opacityFn,
 	gradientFn,
 	uvFn,
 	dashFn,
 	positionFn,
+	previousFn,
+	nextFn,
 	fragmentColorFn,
 	fragmentAlphaFn,
 	discardFn,
 	vertexFn,
+	updateBounding = false,
+	onReady,
 	...props
 }, ref ) {
-	const groupRef = useRef()
-	const lineRef = useRef()
+	const previousClosedRef = useRef( closed )
+	const size = useThree( state => state.size )
+	const linePoints = points ?? lines
+	const resolvedRenderWidth = renderWidth ?? size.width
+	const resolvedRenderHeight = renderHeight ?? size.height
+
+	const line = useMemo( () => {
+		const line = new MeshLineCore()
+		applyBuildOptions( line, {
+			points: linePoints,
+			segments,
+			closed,
+			vertexColors,
+			color,
+			lineWidth,
+			widthCallback,
+			sizeAttenuation,
+			gradientColor,
+			dash,
+			map,
+			mapOffset,
+			alphaMap,
+			opacity,
+			alphaTest,
+			transparent,
+			wireframe,
+			shadow,
+			join,
+			smoothSharpBends,
+			smoothSharpBendsAlpha,
+			smoothSharpBendsThreshold,
+			dpr,
+			frustumCulled,
+			verbose,
+			renderWidth: resolvedRenderWidth,
+			renderHeight: resolvedRenderHeight,
+			dynamic,
+			gpuPositionNode,
+			usage,
+			instanceCount,
+			needsUV,
+			needsWidth,
+			needsProgress,
+			needsPrevious,
+			needsNext,
+			needsSide,
+			needsVertexColor,
+			positionFn,
+			previousFn,
+			nextFn,
+			widthFn,
+			normalFn,
+			colorFn,
+			gradientFn,
+			opacityFn,
+			dashFn,
+			uvFn,
+			vertexFn,
+			fragmentColorFn,
+			fragmentAlphaFn,
+			discardFn,
+		} )
+		line.build()
+		previousClosedRef.current = closed
+		return line
+	}, [segments, sizeAttenuation, widthCallback, vertexColors, join, smoothSharpBends, smoothSharpBendsAlpha,
+		smoothSharpBendsThreshold, dynamic, gpuPositionNode, usage, instanceCount, needsUV, needsWidth,
+		needsProgress, needsPrevious, needsNext, needsSide, needsVertexColor, positionFn, previousFn, nextFn,
+		widthFn, normalFn, colorFn, gradientFn, opacityFn, dashFn, uvFn, vertexFn, fragmentColorFn,
+		fragmentAlphaFn, discardFn] )
 
 	useEffect( () => {
-		const line = new MeshLineCore()
-			.lines( points )
-			.closed( closed )
-			.lineWidth( lineWidth )
-			.color( color )
-			.sizeAttenuation( sizeAttenuation )
+		return () => line.dispose()
+	}, [line] )
 
-		if ( gradientColor != null ) line.gradientColor( gradientColor )
-		if ( dash ) line.dash( dash )
-		if ( map ) line.map( map )
-		if ( transparent || opacity < 1 ) line.transparent( true ).opacity( opacity )
+	useEffect( () => {
+		onReady?.( line )
+	}, [line, onReady] )
 
-		if ( widthFn ) line.widthFn( widthFn )
-		if ( colorFn ) line.colorFn( colorFn )
-		if ( opacityFn ) line.opacityFn( opacityFn )
-		if ( gradientFn ) line.gradientFn( gradientFn )
-		if ( uvFn ) line.uvFn( uvFn )
-		if ( dashFn ) line.dashFn( dashFn )
-		if ( positionFn ) line.positionFn( positionFn )
-		if ( fragmentColorFn ) line.fragmentColorFn( fragmentColorFn )
-		if ( fragmentAlphaFn ) line.fragmentAlphaFn( fragmentAlphaFn )
-		if ( discardFn ) line.discardFn( discardFn )
-		if ( vertexFn ) line.vertexFn( vertexFn )
+	useEffect( () => {
+		if ( !linePoints ) return
 
-		line.build()
-		lineRef.current = line
-		groupRef.current.add( line )
-
-		return () => {
-			line.dispose()
-			groupRef.current?.remove( line )
-			lineRef.current = null
+		if ( previousClosedRef.current !== closed ) {
+			line.lines( linePoints, closed )
+			previousClosedRef.current = closed
+			return
 		}
-	}, [points, closed, lineWidth, color, gradientColor, dash, map, opacity, transparent, sizeAttenuation,
-		widthFn, colorFn, opacityFn, gradientFn, uvFn, dashFn, positionFn, fragmentColorFn, fragmentAlphaFn, discardFn, vertexFn] )
 
-	useImperativeHandle( ref, () => lineRef.current, [] )
+		line.setPositions( linePoints, updateBounding )
+	}, [line, linePoints, closed, updateBounding] )
 
-	return <group ref={groupRef} {...props} />
+	useEffect( () => {
+		line.lineWidth( lineWidth )
+		line.color( color )
+		line.transparent( transparent || opacity < 1 )
+		line.opacity( opacity )
+		line.alphaTest( alphaTest )
+		line.wireframe( wireframe )
+		line.shadow( shadow )
+		line.setFrustumCulled( frustumCulled )
+		line.verbose( verbose )
+		if ( dpr !== undefined ) line.dpr( dpr )
+	}, [line, lineWidth, color, opacity, alphaTest, transparent, wireframe, shadow, frustumCulled, verbose, dpr] )
+
+	useEffect( () => {
+		line.gradientColor( gradientColor ?? null )
+	}, [line, gradientColor] )
+
+	useEffect( () => {
+		line.map( map ?? null )
+	}, [line, map] )
+
+	useEffect( () => {
+		line.alphaMap( alphaMap ?? null )
+	}, [line, alphaMap] )
+
+	useEffect( () => {
+		line.mapOffset( mapOffset ?? null )
+	}, [line, mapOffset] )
+
+	useEffect( () => {
+		line.dash( dash )
+	}, [line, dash] )
+
+	useEffect( () => {
+		line.renderSize( resolvedRenderWidth, resolvedRenderHeight )
+		line.resize( resolvedRenderWidth, resolvedRenderHeight )
+	}, [line, resolvedRenderWidth, resolvedRenderHeight] )
+
+	useImperativeHandle( ref, () => line, [line] )
+
+	return <primitive {...props} object={line} dispose={null} />
 } )

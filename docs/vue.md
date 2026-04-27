@@ -23,7 +23,7 @@ The example ships a `<MeshLine>` wrapper so you can write declarative Vue templa
 import { ref, shallowRef, onMounted, onUnmounted } from 'vue'
 import * as THREE from 'three/webgpu'
 import { circlePositions } from 'makio-meshline'
-import MeshLine from './MeshLine.vue' // see wrapper below
+import MeshLine from './MeshLine.vue' // wrapper from the example
 
 const canvasRef = ref()
 const group = shallowRef( null )
@@ -74,89 +74,9 @@ onUnmounted( () => {
 
 ## Wrapper Component
 
-Drop this file into your project — it's a renderless component that adds/removes the MeshLine on a Three.js parent object you provide via the `parent` prop and exposes the common MeshLine options and TSL hooks:
+The full wrapper source lives in [`examples/vue/src/MeshLine.vue`](https://github.com/Makio64/makio-meshline/blob/main/examples/vue/src/MeshLine.vue). It is a renderless component that attaches a `MeshLine` to the `parent` Object3D you provide, and it also supports an injected `meshline-parent` for provider-style scene setup.
 
-```vue
-<!-- MeshLine.vue -->
-<script setup>
-import { onMounted, onUnmounted, watch, shallowRef } from 'vue'
-import { MeshLine as MeshLineCore } from 'makio-meshline'
-
-const props = defineProps( {
-  parent: { type: Object, default: null },
-  points: { type: [Array, Float32Array], required: true },
-  closed: { type: Boolean, default: false },
-  lineWidth: { type: Number, default: 0.1 },
-  color: { type: Number, default: 0xffffff },
-  gradientColor: { type: Number, default: null },
-  dash: { type: Object, default: null },
-  map: { type: Object, default: null },
-  opacity: { type: Number, default: 1 },
-  transparent: { type: Boolean, default: false },
-  sizeAttenuation: { type: Boolean, default: true },
-  widthFn: { type: Function, default: null },
-  colorFn: { type: Function, default: null },
-  opacityFn: { type: Function, default: null },
-  gradientFn: { type: Function, default: null },
-  uvFn: { type: Function, default: null },
-  dashFn: { type: Function, default: null },
-  positionFn: { type: Function, default: null },
-  fragmentColorFn: { type: Function, default: null },
-  fragmentAlphaFn: { type: Function, default: null },
-  discardFn: { type: Function, default: null },
-  vertexFn: { type: Function, default: null },
-} )
-
-const emit = defineEmits( ['ready'] )
-const lineRef = shallowRef( null )
-
-function buildAndAdd() {
-  disposeLine()
-  if ( !props.parent ) return
-
-  const line = new MeshLineCore()
-    .lines( props.points ).closed( props.closed ).lineWidth( props.lineWidth )
-    .color( props.color ).sizeAttenuation( props.sizeAttenuation )
-
-  if ( props.gradientColor != null ) line.gradientColor( props.gradientColor )
-  if ( props.dash ) line.dash( props.dash )
-  if ( props.map ) line.map( props.map )
-  if ( props.transparent || props.opacity < 1 ) line.transparent( true ).opacity( props.opacity )
-
-  if ( props.widthFn ) line.widthFn( props.widthFn )
-  if ( props.colorFn ) line.colorFn( props.colorFn )
-  if ( props.opacityFn ) line.opacityFn( props.opacityFn )
-  if ( props.gradientFn ) line.gradientFn( props.gradientFn )
-  if ( props.uvFn ) line.uvFn( props.uvFn )
-  if ( props.dashFn ) line.dashFn( props.dashFn )
-  if ( props.positionFn ) line.positionFn( props.positionFn )
-  if ( props.fragmentColorFn ) line.fragmentColorFn( props.fragmentColorFn )
-  if ( props.fragmentAlphaFn ) line.fragmentAlphaFn( props.fragmentAlphaFn )
-  if ( props.discardFn ) line.discardFn( props.discardFn )
-  if ( props.vertexFn ) line.vertexFn( props.vertexFn )
-
-  line.build()
-  props.parent.add( line )
-  lineRef.value = line
-  emit( 'ready', line )
-}
-
-function disposeLine() {
-  if ( !lineRef.value ) return
-  lineRef.value.parent?.remove( lineRef.value )
-  lineRef.value.dispose()
-  lineRef.value = null
-}
-
-onMounted( buildAndAdd )
-onUnmounted( disposeLine )
-watch( () => [props.points, props.closed, props.sizeAttenuation], buildAndAdd, { flush: 'post' } )
-
-defineExpose( { line: lineRef } )
-</script>
-
-<template><!-- renderless --></template>
-```
+The wrapper accepts either `points` or `lines`, emits `ready` with the created instance, exposes `{ line }` via `defineExpose()`, updates positions in place with `setPositions()`, and live-updates material props such as `lineWidth`, `color`, `opacity`, `gradientColor`, `dash`, `map`, and `alphaMap`. Shader hooks, instancing, GPU positions, optional attributes, and geometry-shaping options are supported as props and trigger a focused rebuild when they change.
 
 ## Next Steps
 

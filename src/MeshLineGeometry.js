@@ -89,7 +89,7 @@ export class MeshLineGeometry extends BufferGeometry {
 	 * buffer attributes based on the `needs*` flags.
 	 * @param {import('./index.d.ts').MeshLineConfigureOptions} options
 	 */
-	buildLine( options ) {
+	buildLine( options = {} ) {
 
 		this.options = {
 			needsPositions: true,
@@ -104,14 +104,14 @@ export class MeshLineGeometry extends BufferGeometry {
 			...options
 		}
 
-		this.widthCallback = options.widthCallback || null
+		this.widthCallback = this.options.widthCallback || null
 		this._attrs = {}
 		this._lineCount = 0
 		this._lines = [] // Store individual line arrays for multi-line mode
 		this._lineLoops = [] // Store loop flag for each line
 		this.boundingBoxes = [] // Bounding box for each line
-		if ( options.lines ) {
-			this.setLines( options.lines )
+		if ( this.options.lines ) {
+			this.setLines( this.options.lines )
 		}
 	}
 

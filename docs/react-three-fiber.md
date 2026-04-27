@@ -27,7 +27,7 @@ import { useRef } from 'react'
 import { Canvas, useFrame } from '@react-three/fiber'
 import { WebGPURenderer } from 'three/webgpu'
 import { circlePositions } from 'makio-meshline'
-import { MeshLine } from './MeshLine' // see wrapper below
+import { MeshLine } from './MeshLine' // wrapper from the example
 
 function RotatingCircle() {
   const ref = useRef()
@@ -64,62 +64,9 @@ export default function App() {
 
 ## Wrapper Component
 
-Drop this file into your project — it exposes the common MeshLine options and TSL hooks as React props:
+The full wrapper source lives in [`examples/react-three-fiber/src/MeshLine.jsx`](https://github.com/Makio64/makio-meshline/blob/main/examples/react-three-fiber/src/MeshLine.jsx). It renders the MeshLine as an R3F `<primitive>`, forwards the actual `MeshLine` instance as the ref, and exposes the MeshLine configuration surface as props.
 
-```jsx
-// MeshLine.jsx
-import { useRef, useEffect, useImperativeHandle, forwardRef } from 'react'
-import { MeshLine as MeshLineCore } from 'makio-meshline'
-
-export const MeshLine = forwardRef( function MeshLine( {
-  points, closed = false, lineWidth = 0.1, color = 0xffffff,
-  gradientColor, dash, map, opacity = 1, transparent = false, sizeAttenuation = true,
-  widthFn, colorFn, opacityFn, gradientFn, uvFn, dashFn, positionFn,
-  fragmentColorFn, fragmentAlphaFn, discardFn, vertexFn,
-  ...props
-}, ref ) {
-  const groupRef = useRef()
-  const lineRef = useRef()
-
-  useEffect( () => {
-    const line = new MeshLineCore()
-      .lines( points ).closed( closed ).lineWidth( lineWidth )
-      .color( color ).sizeAttenuation( sizeAttenuation )
-
-    if ( gradientColor != null ) line.gradientColor( gradientColor )
-    if ( dash ) line.dash( dash )
-    if ( map ) line.map( map )
-    if ( transparent || opacity < 1 ) line.transparent( true ).opacity( opacity )
-
-    if ( widthFn ) line.widthFn( widthFn )
-    if ( colorFn ) line.colorFn( colorFn )
-    if ( opacityFn ) line.opacityFn( opacityFn )
-    if ( gradientFn ) line.gradientFn( gradientFn )
-    if ( uvFn ) line.uvFn( uvFn )
-    if ( dashFn ) line.dashFn( dashFn )
-    if ( positionFn ) line.positionFn( positionFn )
-    if ( fragmentColorFn ) line.fragmentColorFn( fragmentColorFn )
-    if ( fragmentAlphaFn ) line.fragmentAlphaFn( fragmentAlphaFn )
-    if ( discardFn ) line.discardFn( discardFn )
-    if ( vertexFn ) line.vertexFn( vertexFn )
-
-    line.build()
-    lineRef.current = line
-    groupRef.current.add( line )
-
-    return () => {
-      line.dispose()
-      groupRef.current?.remove( line )
-      lineRef.current = null
-    }
-  }, [points, closed, lineWidth, color, gradientColor, dash, map, opacity, transparent, sizeAttenuation,
-    widthFn, colorFn, opacityFn, gradientFn, uvFn, dashFn, positionFn,
-    fragmentColorFn, fragmentAlphaFn, discardFn, vertexFn] )
-
-  useImperativeHandle( ref, () => lineRef.current, [] )
-  return <group ref={groupRef} {...props} />
-} )
-```
+The wrapper accepts either `points` or `lines`, uses the R3F Canvas size for MeshLine resolution by default, updates positions in place with `setPositions()`, live-updates uniforms such as `lineWidth`, `color`, `opacity`, `gradientColor`, `dash`, `map`, and `alphaMap`, and rebuilds only when shader/geometry-shaping props change. It also supports `onReady={line => ...}` when you need direct access after creation.
 
 ## Next Steps
 
