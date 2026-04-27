@@ -74,7 +74,7 @@ onUnmounted( () => {
 
 ## Wrapper Component
 
-Drop this file into your project — it's a renderless component that adds/removes the MeshLine on a Three.js parent object you provide via the `parent` prop:
+Drop this file into your project — it's a renderless component that adds/removes the MeshLine on a Three.js parent object you provide via the `parent` prop and exposes the common MeshLine options and TSL hooks:
 
 ```vue
 <!-- MeshLine.vue -->

@@ -229,7 +229,7 @@ nextFn: (position: Node, progress: Node) => Node<vec3>
 
 // Width/Normal hooks
 widthFn: (width: Node, progress: Node, side: Node) => Node<float>
-normalFn: (normal: Node, dir: Node, dir1: Node, dir2: Node, progress: Node, side: Node) => Node<vec3>
+normalFn: (normal: Node, dir: Node, dir1: Node, dir2: Node, progress: Node, side: Node) => Node<vec4>
 
 // Color hooks
 colorFn: (color: Node, progress: Node, side: Node) => Node<vec4>
@@ -245,7 +245,7 @@ uvFn: (uv: Node, progress: Node, side: Node) => Node<vec2>
 dashFn: (cyclePosition: Node, progress: Node, side: Node) => Node<float>
 
 // Control hooks
-vertexFn: (finalPosition: Node, normal: Node, progress: Node, side: Node) => Node<vec3>
+vertexFn: (finalPosition: Node, normal: Node, progress: Node, side: Node) => Node<vec4>
 discardFn: (progress: Node, side: Node, uv: Node) => Node<bool>
 ```
 
@@ -262,9 +262,8 @@ When you don't want to upload an explicit polyline to the GPU you can let the sh
 Provide a **gpuPositionNode** function that receives the per-vertex progress (ranging from 0→1 along the line) and returns a `vec3` position.
 
 ```javascript
-import { MeshLine, MeshLineNodeMaterial } from 'makio-meshline';
+import { MeshLine } from 'makio-meshline';
 import { Fn, vec3, cos, sin } from 'three/tsl';
-import * as THREE from 'three/webgpu';
 
 // 1. GPU function returning a point on a unit circle
 const circlePosition = Fn( ( [index] ) => {
@@ -277,24 +276,12 @@ const circlePosition = Fn( ( [index] ) => {
   inputs: [ { name: 'index', type: 'float' } ]
 } );
 
-// 2. Placeholder geometry (single vertex – content is ignored)
-const geom = new THREE.BufferGeometry().setAttribute(
-  'position',
-  new THREE.Float32BufferAttribute( new Float32Array( [ 0, 0, 0 ] ), 3 )
-);
-
-// 3. Material using the gpuPositionNode
-const material = new MeshLineNodeMaterial({
-  lineWidth: 4,
-  resolution: new THREE.Vector2( window.innerWidth, window.innerHeight ),
-  gpuPositionNode: circlePosition, // <- inject node here
-  needsProgress: true               // ensure the `progress` attribute is generated
-});
-
-// 4. Create the line and add to the scene
-const line = new MeshLine();
-line.setGeometry( geom ); // geometry size does not matter
-line.material = material;
+// 2. Create the line. Only the segment count matters here; positions are computed by the node.
+const line = new MeshLine()
+  .segments( 256 )
+  .gpuPositionNode( circlePosition )
+  .lineWidth( 4 )
+  .build();
 scene.add( line );
 ```
 

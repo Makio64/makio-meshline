@@ -6,9 +6,9 @@ description: "Performance tips for Makio MeshLine covering instancing, batching,
 
 Makio MeshLine uses TSL core for efficient GPU rendering, supporting both WebGPU and WebGL2 backends. 
 
-The core approach minimizes overhead by generating only necessary vertex attributes and uniforms based on active features—like skipping UVs if no textures are used
+The core approach minimizes overhead by generating only necessary vertex attributes and uniforms based on active features, like skipping UVs if no textures are used.
 
-It also support `Instancing` & optimized `cpu Batching` 
+It also supports `Instancing` and optimized CPU batching.
 
 <svg viewBox="0 0 820 340" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Instancing: 12 draw calls versus 1 draw call" style="max-width:100%;height:auto;display:block;margin:1.5em auto;">
   <defs>
@@ -65,7 +65,7 @@ It also support `Instancing` & optimized `cpu Batching`
 - **Selective Attributes**: Only creates buffers for what's needed (e.g., no 'previous/next' for GPU-driven positions).
 - **Instancing**: Smaller footprint & one drawcall + custom behavior by instance.
 - **Batching**: Draw multiple lines in one call by passing an array to `lines`.
-- **CPU->GPU Fast Updates**: `setPositions()` modifies existing buffers in-place without recreation.
+- **CPU->GPU Fast Updates**: `setPositions()` modifies existing buffers in-place without recreation. Pass `true` as the second argument when movement changes bounds enough for frustum culling to matter.
 - **Miter Clamp + Auto Corner Smoothing**: The shader miter is always on (no branch cost, simpler than the old opt-in path), and sharp corners get an automatic CPU-side subdivision at build time so the shader never has to handle near-hairpin bends. Auto-subdivision only runs when a corner actually needs it, so gentle polylines pay zero overhead.
 
 ## Best Practices
@@ -73,7 +73,7 @@ It also support `Instancing` & optimized `cpu Batching`
 - Use `Float32Array` for initial positions to avoid conversions.
 - Reuse arrays in hot loops to reduce GC pressure.
 - Call `dispose()` on unused lines to free GPU memory.
-- For massive lines, use GPU positions via `gpuPositionNode` to skip CPU uploads & `instancing`.
+- For massive repeated lines, combine `gpuPositionNode` with instancing to skip CPU position uploads.
 - For picking or hover, set `raycaster.params.Line.firstHitOnly = true` when you only need the nearest hit.
 - Test on target devices—WebGPU often yields 2x speedup over WebGL.
 

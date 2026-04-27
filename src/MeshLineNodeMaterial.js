@@ -33,10 +33,11 @@ const vColor = varyingProperty( 'vec4', 'vColor' )
  */
 class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 
-	constructor() {
+	constructor( options = null ) {
 		super()
 		this.type = 'MeshLineNodeMaterial'
 		this.isMeshLineNodeMaterial = true
+		if ( options ) this.buildLine( options )
 	}
 
 	/**
@@ -46,9 +47,18 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 	 */
 	buildLine( options = {} ) {
 
-		this.options = options
+		this.options = { ...options }
 		this._segments = options.segments ?? 100
 		this._needsWidth = options.needsWidth ?? false
+		this.gradient = null
+		this.opacity = null
+		this.map = null
+		this.alphaMap = null
+		this.mapOffset = null
+		this.repeat = null
+		this.dashCount = null
+		this.dashRatio = null
+		this.dashOffset = null
 
 		// classic properties
 		this.depthWrite = options.depthWrite ?? true
@@ -65,12 +75,12 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 		this.dpr = uniform( options.dpr ?? ( ( typeof window !== 'undefined' ) ? window.devicePixelRatio || 1 : 1 ) )
 
 		// Conditional uniforms - only create what is needed
-		if ( options.gradientColor ) {
+		if ( options.gradientColor != null ) {
 			this.gradient = uniform( new Color( options.gradientColor ) )
 		}
 
 		const hasAlphaFeatures = options.alphaMap != null || ( options.opacity ?? 1 ) < 1
-		this.transparent = hasAlphaFeatures || options.transparent
+		this.transparent = hasAlphaFeatures || ( options.transparent ?? false )
 		if ( this.transparent ) {
 			this.opacity = uniform( options.opacity ?? 1 )
 		}
@@ -267,7 +277,7 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 			vColor.assign( color )
 
 			// Only assign vProgress if needed to reduce varying bandwidth
-			if ( this.gradient || this.dashCount || this.gradientFn || this.dashFn ) {
+			if ( this.gradient || this.dashCount || this.gradientFn || this.opacityFn || this.dashFn || this.uvFn || this.fragmentColorFn || this.fragmentAlphaFn || this.discardFn ) {
 				vProgress.assign( progress )
 			}
 
@@ -360,7 +370,7 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 			return finalPosition
 		} )()
 		let uvCoords
-		if ( ( this.map && this.map.value ) || ( this.alphaMap && this.alphaMap.value ) || this.uvFn ) {
+		if ( ( this.map && this.map.value ) || ( this.alphaMap && this.alphaMap.value ) || this.uvFn || this.fragmentColorFn || this.fragmentAlphaFn || this.discardFn ) {
 			uvCoords = uv().mul( this.repeat || vec2( 1, 1 ) ).add( this.mapOffset || vec2( 0, 0 ) ).toVar( 'uvCoords' )
 
 			// Apply UV modifier if provided
@@ -443,6 +453,10 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 	copy( source ) {
 		super.copy( source )
 
+		if ( source.options ) {
+			this.buildLine( { ...source.options } )
+		}
+
 		// Copy classic material properties
 		this.transparent = source.transparent
 		this.depthWrite = source.depthWrite
@@ -454,24 +468,24 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 		this.sizeAttenuation = source.sizeAttenuation
 
 		// Copy uniform values
-		this.lineWidth.value = source.lineWidth.value
+		if ( source.lineWidth && this.lineWidth ) this.lineWidth.value = source.lineWidth.value
 
 		// Copy uniforms (guard on source having the uniform)
-		if ( source.opacity ) this.opacity.value = source.opacity.value
-		if ( source.map ) this.map.value = source.map.value
-		if ( source.alphaMap ) this.alphaMap.value = source.alphaMap.value
-		if ( source.gradient ) this.gradient.value = source.gradient.value
-		if ( source.dashCount ) this.dashCount.value = source.dashCount.value
-		if ( source.dashRatio ) this.dashRatio.value = source.dashRatio.value
-		if ( source.dashOffset ) this.dashOffset.value = source.dashOffset.value
+		if ( source.opacity && this.opacity ) this.opacity.value = source.opacity.value
+		if ( source.map && this.map ) this.map.value = source.map.value
+		if ( source.alphaMap && this.alphaMap ) this.alphaMap.value = source.alphaMap.value
+		if ( source.gradient && this.gradient ) this.gradient.value.copy( source.gradient.value )
+		if ( source.dashCount && this.dashCount ) this.dashCount.value = source.dashCount.value
+		if ( source.dashRatio && this.dashRatio ) this.dashRatio.value = source.dashRatio.value
+		if ( source.dashOffset && this.dashOffset ) this.dashOffset.value = source.dashOffset.value
 		if ( source._miterLimit !== undefined && this._miterThreshold ) {
 			this.miterLimit = source._miterLimit
 		}
-		if ( source.color ) this.color.value.copy( source.color.value )
-		if ( source.resolution ) this.resolution.value.copy( source.resolution.value )
-		if ( source.repeat ) this.repeat.value.copy( source.repeat.value )
-		if ( source.mapOffset ) this.mapOffset.value.copy( source.mapOffset.value )
-		if ( source.dpr ) this.dpr.value = source.dpr.value
+		if ( source.color && this.color ) this.color.value.copy( source.color.value )
+		if ( source.resolution && this.resolution ) this.resolution.value.copy( source.resolution.value )
+		if ( source.repeat && this.repeat ) this.repeat.value.copy( source.repeat.value )
+		if ( source.mapOffset && this.mapOffset ) this.mapOffset.value.copy( source.mapOffset.value )
+		if ( source.dpr && this.dpr ) this.dpr.value = source.dpr.value
 
 		// Copy node hooks
 		this.positionFn = source.positionFn

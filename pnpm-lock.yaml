@@ -125,8 +125,8 @@ importers:
   docs:
     dependencies:
       makio-meshline:
-        specifier: '>=1.2.3'
-        version: 1.2.3(three@0.183.2)
+        specifier: workspace:*
+        version: link:../src
       three:
         specifier: '>=0.183.2'
         version: 0.183.2
@@ -141,8 +141,8 @@ importers:
         specifier: ^9.5.0
         version: 9.5.0(@types/react@19.2.14)(react-dom@19.2.5(react@19.2.5))(react@19.2.5)(three@0.183.2)
       makio-meshline:
-        specifier: ^1.2.3
-        version: 1.2.3(three@0.183.2)
+        specifier: ^1.3.2
+        version: 1.3.2(three@0.183.2)
       react:
         specifier: ^19.2.5
         version: 19.2.5
@@ -163,8 +163,8 @@ importers:
   examples/vue:
     dependencies:
       makio-meshline:
-        specifier: ^1.2.3
-        version: 1.2.3(three@0.183.2)
+        specifier: ^1.3.2
+        version: 1.3.2(three@0.183.2)
       three:
         specifier: ^0.183.2
         version: 0.183.2
@@ -1642,8 +1642,8 @@ packages:
   magic-string@0.30.21:
     resolution: {integrity: sha512-vd2F4YUyEXKGcLHoq+TEyCjxueSeHnFxyyjNp80yg0XV4vUhnDer/lvvlqM/arB5bXQN5K2/3oinyCRyx8T2CQ==}
 
-  makio-meshline@1.2.3:
-    resolution: {integrity: sha512-GwJFaA6zChn0K21iGiIVkQHdurylmag6PL4Wilv83kqnN7er2EPaQF+OkgFxgpPRJSfHeTKpjLDiA/nPBr0zHg==}
+  makio-meshline@1.3.2:
+    resolution: {integrity: sha512-qs3M4QQF7zJwTX4nxIOJOZp7f4h7HgHl6uONX/rXEtG10pq7974EQwhtZTzEW4eq4+GxECqzifpwIaXx3FanPA==}
     peerDependencies:
       three: '>=0.180.0'
 
@@ -3654,7 +3654,7 @@ snapshots:
     dependencies:
       '@jridgewell/sourcemap-codec': 1.5.5
 
-  makio-meshline@1.2.3(three@0.183.2):
+  makio-meshline@1.3.2(three@0.183.2):
     dependencies:
       three: 0.183.2
 

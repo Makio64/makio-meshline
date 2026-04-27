@@ -160,7 +160,7 @@ function animate() {
 }
 ```
 
-If `verbose` is enabled, a console message `[MeshLine] positions updated via setPositions` confirms the lightweight path was used.
+Pass `updateBounding: true` when dynamic edits can move the line outside its previous bounds and frustum culling should stay exact.
 
 ## Usage Examples
 

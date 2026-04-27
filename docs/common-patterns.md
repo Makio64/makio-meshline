@@ -80,7 +80,7 @@ const line = new MeshLine()
   .dash({ count: 12, ratio: 0.3 })
 
 // In render loop:
-line.material.dashOffset -= 0.01 // -= for clockwise movement
+line.material.dashOffset.value -= 0.01 // -= for clockwise movement
 ```
 
 ## 8. Multi-Line Segments
@@ -92,7 +92,7 @@ const lines = [
   [[4,0,0], [5,0,1], [4,1,1]]   // Third segment
 ]
 
-// this will create 3 differents lines
+// this will create 3 different lines
 const meshLine = new MeshLine()
   .lines(lines)
   .color(0xffffff)
@@ -108,11 +108,11 @@ const line = new MeshLine({ lines: positions })
 // Update positions efficiently
 function animate() {
   updatePositions(positions) // Your update logic
-  line.geometry.setPositions(positions) // this is optimized to be fast cpu->gpu
+  line.setPositions(positions) // optimized for fast CPU->GPU updates
   requestAnimationFrame(animate)
 }
 ```
-** Note ** check advanced examples for more performant techniques using full gpu approach : instancing / gpu positionning.
+**Note:** check advanced examples for more performant full-GPU techniques: instancing and GPU positioning.
 
 ## 10. Window Resize Handling
 

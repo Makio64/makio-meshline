@@ -6,7 +6,7 @@ Makio MeshLine provides three core classes. All live in the `makio-meshline` pac
 
 ## `MeshLine`
 
-High-level façade that bundles geometry + material and exposes convenient uniforms (`percent`, `percent2`, `opacity`, …).
+High-level façade that bundles geometry + material and exposes fluent setters for geometry, styling, hooks, instancing, and runtime updates.
 
 ```ts
 import { MeshLine } from 'makio-meshline'
@@ -69,7 +69,7 @@ const mat = new MeshLineNodeMaterial({
 })
 ```
 
-Tip: All uniforms (`lineWidth`, `dashOffset`, `opacity`, …) are mutable at runtime for animation.
+Tip: uniforms such as `lineWidth`, `dashOffset`, and `opacity` are mutable at runtime for animation.
 
 Read the full parameter list on the [material page](/meshline-material).
 

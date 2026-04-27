@@ -18,14 +18,26 @@ function subdivideSharpBends( line, isLooped, dotThreshold = -0.5, alpha = 0.001
 
 	// Clamp alpha so two adjacent sharp bends can't insert overlapping points.
 	const a = Math.max( 0, Math.min( alpha, 0.5 ) )
-	const out = []
+	let out = null
+
+	const pushOriginalPoint = ( x, y, z ) => {
+		if ( out ) out.push( x, y, z )
+	}
+
+	const ensureOutput = beforePointIndex => {
+		if ( out ) return
+		out = []
+		for ( let j = 0; j < beforePointIndex * 3; j++ ) {
+			out.push( line[j] )
+		}
+	}
 
 	for ( let i = 0; i < n; i++ ) {
 		const x = line[i * 3], y = line[i * 3 + 1], z = line[i * 3 + 2]
 
 		// Endpoints of non-looped polylines have no "bend" to subdivide.
 		if ( !isLooped && ( i === 0 || i === n - 1 ) ) {
-			out.push( x, y, z )
+			pushOriginalPoint( x, y, z )
 			continue
 		}
 
@@ -39,23 +51,24 @@ function subdivideSharpBends( line, isLooped, dotThreshold = -0.5, alpha = 0.001
 		const len1 = Math.hypot( dx1, dy1, dz1 )
 		const len2 = Math.hypot( dx2, dy2, dz2 )
 		if ( len1 < 1e-6 || len2 < 1e-6 ) {
-			out.push( x, y, z )
+			pushOriginalPoint( x, y, z )
 			continue
 		}
 
 		const cosAngle = ( dx1 * dx2 + dy1 * dy2 + dz1 * dz2 ) / ( len1 * len2 )
 		if ( cosAngle >= dotThreshold ) {
-			out.push( x, y, z )
+			pushOriginalPoint( x, y, z )
 			continue
 		}
 
+		ensureOutput( i )
 		out.push(
 			x + ( px - x ) * a, y + ( py - y ) * a, z + ( pz - z ) * a,
 			x + ( nx - x ) * a, y + ( ny - y ) * a, z + ( nz - z ) * a,
 		)
 	}
 
-	return new Float32Array( out )
+	return out ? new Float32Array( out ) : line
 }
 
 /**
@@ -64,10 +77,11 @@ function subdivideSharpBends( line, isLooped, dotThreshold = -0.5, alpha = 0.001
  * Supports multi-line batching and efficient in-place position updates.
  */
 export class MeshLineGeometry extends BufferGeometry {
-	constructor() {
+	constructor( options = null ) {
 		super()
 		this.type = 'MeshLine'
 		this.isMeshLine = true
+		if ( options ) this.buildLine( options )
 	}
 
 	/**
@@ -192,8 +206,8 @@ export class MeshLineGeometry extends BufferGeometry {
 	}
 
 	setUsage( usage, name = null ) {
-		for ( const attr of Object.values( this._attrs ) ) {
-			if ( name == null || attr.name === name ) {
+		for ( const [attrName, attr] of Object.entries( this._attrs ) ) {
+			if ( name == null || attrName === name ) {
 				attr.setUsage( usage )
 			}
 		}
@@ -204,6 +218,7 @@ export class MeshLineGeometry extends BufferGeometry {
 		const lines = this._lines
 		const lineLoops = this._lineLoops
 		if ( !lines || lines.length === 0 ) return
+		this._maxWidthMultiplier = 1
 
 		const usage = this.options.usage ?? ( this.options.gpuPositionNode ? StaticDrawUsage : StreamDrawUsage )
 
@@ -294,6 +309,7 @@ export class MeshLineGeometry extends BufferGeometry {
 				// widths
 				if ( widths ) {
 					const w = this.widthCallback ? this.widthCallback( t ) : 1
+					this._maxWidthMultiplier = Math.max( this._maxWidthMultiplier, Math.abs( w ) )
 					widths[vertexOffset] = w
 					widths[vertexOffset + 1] = w
 				}
@@ -473,9 +489,21 @@ export class MeshLineGeometry extends BufferGeometry {
 
 	computeBoundingBoxes() {
 		if ( !this._lines || this._lines.length === 0 ) return
-		this.boundingBoxes = this._lines.map( ( line, idx ) =>
-			( this.boundingBoxes[idx] || new Box3() ).setFromArray( line )
-		)
+		const padding = this.getBoundingPadding()
+		this.boundingBoxes = this._lines.map( ( line, idx ) => {
+			const box = ( this.boundingBoxes[idx] || new Box3() ).setFromArray( line )
+			if ( padding > 0 ) box.expandByScalar( padding )
+			return box
+		} )
+	}
+
+	getBoundingPadding() {
+		if ( this.options?.sizeAttenuation === false ) return 0
+		const lineWidth = Number( this.options?.lineWidth ?? 0 )
+		if ( !Number.isFinite( lineWidth ) || lineWidth <= 0 ) return 0
+		const miterLimit = Number( this.options?.miterLimit ?? 4 )
+		const maxWidth = Number( this._maxWidthMultiplier ?? 1 )
+		return lineWidth * Math.max( 1, miterLimit ) * 0.5 * Math.max( 1, maxWidth )
 	}
 
 	computeBoundingBox() {
@@ -688,12 +716,17 @@ export class MeshLineGeometry extends BufferGeometry {
 
 //------------------------------------------------------ HELPERS
 // normalize various point inputs into a Float32Array
+let warnedNonFloat32 = false
+
 const toFloat32 = pts => {
 	if ( pts instanceof Float32Array ) {
 		return pts
 	}
 
-	console.warn( `[MeshLine] Use Float32Array for positions to avoid array conversion & get optimal performance` )
+	if ( !warnedNonFloat32 ) {
+		console.warn( `[MeshLine] Use Float32Array for positions to avoid array conversion & get optimal performance` )
+		warnedNonFloat32 = true
+	}
 
 	if ( pts instanceof BufferGeometry ) {
 		return pts.getAttribute( 'position' ).array

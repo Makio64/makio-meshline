@@ -348,6 +348,7 @@ export class MeshLine extends ThreeMesh {
 // ---------------------------------------------------------------------------
 
 export class MeshLineGeometry extends BufferGeometry {
+	constructor( options?: Partial<MeshLineConfigureOptions> )
 	buildLine( options?: Partial<MeshLineConfigureOptions> ): void
 	setLines( points: MultiLinePoints ): void
 	setPositions( points: MultiLinePoints, updateBounding?: boolean ): void
@@ -359,7 +360,7 @@ export class MeshLineGeometry extends BufferGeometry {
 // ---------------------------------------------------------------------------
 
 export class MeshLineNodeMaterial {
-	constructor()
+	constructor( options?: Partial<MeshLineConfigureOptions> )
 	buildLine( options?: Partial<MeshLineConfigureOptions> ): void
 	setShadow( enabled: boolean ): void
 	dispose(): void

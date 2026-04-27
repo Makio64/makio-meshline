@@ -24,12 +24,12 @@ A **MeshLine** is not a native GPU line — it's a triangle-strip ribbon that mi
 First, install the package:
 
 ```bash
-pnpm add makio-meshline #or npm/yarn
+pnpm add makio-meshline # or npm/yarn
 ```
 
 ## Basic Setup
 
-Here's a minimal example of how to create a simple circular `Meshline` and add it to your scene
+Here's a minimal example of how to create a simple circular `MeshLine` and add it to your scene:
 
 ```javascript
 import * as THREE from 'three/webgpu'

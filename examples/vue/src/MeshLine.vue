@@ -80,8 +80,11 @@ onUnmounted( disposeLine )
 watch( () => [props.points, props.closed, props.sizeAttenuation], buildAndAdd, { flush: 'post' } )
 
 // Live-update material props without rebuild
-watch( () => props.lineWidth, ( v ) => lineRef.value?.material?.lineWidth?.( v ) )
-watch( () => props.color, ( v ) => lineRef.value?.material?.color?.( v ) )
+watch( () => props.lineWidth, ( v ) => lineRef.value?.lineWidth( v ) )
+watch( () => props.color, ( v ) => lineRef.value?.color( v ) )
+watch( () => props.opacity, ( v ) => lineRef.value?.opacity( v ) )
+watch( () => props.gradientColor, ( v ) => lineRef.value?.gradientColor( v ) )
+watch( () => props.dash, ( v ) => lineRef.value?.dash( v ), { deep: true } )
 
 defineExpose( { line: lineRef } )
 </script>

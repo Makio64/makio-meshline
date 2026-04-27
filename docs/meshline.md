@@ -102,7 +102,7 @@ The hook are used in the TSL Nodes in MeshLineNodeMaterial
 
 These controls are auto-detected from your configuration and rarely need manual override:
 
-- `needsUV(enable: boolean)` - Auto-detected from `map`, `alphaMap`, `uvFn`, `discardFn`
+- `needsUV(enable: boolean)` - Auto-detected from `map`, `alphaMap`, `uvFn`, `fragmentColorFn`, `fragmentAlphaFn`, `discardFn`
 - `needsWidth(enable: boolean)` - Auto-detected from `widthCallback`, `widthFn`
 - `needsProgress(enable: boolean)` - Always enabled
 - `needsSide(enable: boolean)` - Always enabled
@@ -249,7 +249,7 @@ interface MeshLineOptions {
 
 - **`map`** (`THREE.Texture | null`) — Diffuse texture to apply along the line. The texture is mapped using UV coordinates generated along the line length. Default: `null`.
 
-- **`alphaMap`** (`THREE.Texture | null`) — Alpha mask texture for transparency effects. Uses the blue channel of the texture for alpha values. Default: `null`.
+- **`alphaMap`** (`THREE.Texture | null`) — Alpha mask texture for transparency effects. Uses the red channel of the texture for alpha values. Default: `null`.
 
 - **`mapOffset`** (`THREE.Vector2 | null`) — UV offset for both `map` and `alphaMap` textures. Allows shifting texture coordinates. Default: `null` (no offset).
 
@@ -285,9 +285,9 @@ interface MeshLineOptions {
 
 ### Advanced / Internal
 
-- **`needsWidth`** (`boolean`) — Whether the line needs width information. Default: `true`.
+- **`needsWidth`** (`boolean`) — Whether the line needs width information. Auto-enabled by `widthCallback` or `widthFn`. Default: `false`.
 
-- **`needsUV`** (`boolean`) — Whether the line needs UV coordinates. Default: `true`.
+- **`needsUV`** (`boolean`) — Whether the line needs UV coordinates. Auto-enabled by textures, `uvFn`, fragment hooks, or `discardFn`. Default: `false`.
 
 - **`needsProgress`** (`boolean`) — Whether the line needs a progress attribute. Default: `true`.
 
@@ -334,7 +334,7 @@ For lines controled by `cpu` and whose vertices change every frame (e.g. interac
 
 For efficient position updates, see [Dynamic Updates](./common-patterns.md#9-dynamic-updates) in Common Patterns.
 
-When verbose mode is enabled you'll see `[MeshLine] positions updated via setPositions` in the console.
+Use `line.setPositions(positions, true)` or `geometry.setPositions(positions, true)` when dynamic motion changes the bounds enough for frustum culling to matter.
 
 ## Methods
 

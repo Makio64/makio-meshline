@@ -4,7 +4,7 @@ description: "Browse the Makio MeshLine API reference for MeshLine, MeshLineGeom
 
 # API Reference
 
-Makio MeshLine is built with creative coding requirement in mind : **performance**, **customization**, **simplicity** so you can focus on your creativity.
+Makio MeshLine is built with creative coding requirements in mind: **performance**, **customization**, and **simplicity**, so you can focus on your creativity.
 
 It's built for the future, using `TSL` and is compatible only with the new `WebGPURenderer` (But both backend: `WebGPU`/`WebGL2`)
 
@@ -16,15 +16,15 @@ High-level façade – **the class you will use 99 % of the time**.
 new MeshLine(options?: MeshLineOptions)
 ```
 
-For better convenience use the fluent API bellow
+For convenience, use the fluent API below:
 
 ```ts
-new Meshline().color(0xff0000).gradient(0xff00ff) //etc..
+new MeshLine().color(0xff0000).gradientColor(0xff00ff) // etc.
 ```
 
 ## [MeshLineGeometry](/meshline-geometry)
 
-Low-level geometry builder – it's created internally by the `Meshline`, reach for it when you need to **update or add extra buffer attributes**.
+Low-level geometry builder – it's created internally by `MeshLine`; reach for it when you need to **update or add extra buffer attributes**.
 
 ```ts
 new MeshLineGeometry(options?: MeshLineGeometryOptions)
@@ -46,7 +46,7 @@ new MeshLineNodeMaterial(parameters?: MeshLineNodeMaterialParameters)
 ## Implementation Notes
 
 * Only the uniforms / attributes needed are created & uploaded to the GPU.
-* There is many hooks available for customizing the basic behavior / rendering of the lines
+* Many hooks are available for customizing line behavior and rendering
 * Instancing + gpu position will allow you to render thousands of lines like a breeze
-* You can also use batching for performant cpu controled animation or static lines 
+* You can also use batching for performant CPU-controlled animation or static lines 
 * No runtime dependencies beyond `three`

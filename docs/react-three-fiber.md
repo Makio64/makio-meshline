@@ -64,7 +64,7 @@ export default function App() {
 
 ## Wrapper Component
 
-Drop this file into your project — it exposes every MeshLine option as a React prop (including TSL hooks):
+Drop this file into your project — it exposes the common MeshLine options and TSL hooks as React props:
 
 ```jsx
 // MeshLine.jsx

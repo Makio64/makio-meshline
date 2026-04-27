@@ -216,6 +216,9 @@ export default class MeshLine extends Mesh {
 	 */
 	color( color ) {
 		this._options.color = color
+		if ( this.material.color?.value?.set ) {
+			this.material.color.value.set( color )
+		}
 		return this
 	}
 
@@ -394,11 +397,11 @@ export default class MeshLine extends Mesh {
 	gradientColor( gradientColor ) {
 		const hadGradient = !!this.material.gradient
 		this._options.gradientColor = gradientColor
-		if ( this._built && hadGradient !== !!gradientColor ) {
+		if ( this._built && hadGradient !== ( gradientColor != null ) ) {
 			return this.rebuild()
 		}
 		if ( this.material.gradient ) {
-			this.material.gradient.value = gradientColor
+			this.material.gradient.value.set( gradientColor )
 		}
 		return this
 	}
@@ -427,7 +430,7 @@ export default class MeshLine extends Mesh {
 	 */
 	mapOffset( mapOffset ) {
 		this._options.mapOffset = mapOffset
-		if ( this.material.mapOffset ) {
+		if ( mapOffset && this.material.mapOffset ) {
 			this.material.mapOffset.value.copy( mapOffset )
 		}
 		return this
@@ -780,18 +783,19 @@ export default class MeshLine extends Mesh {
 		options.lines = lines
 
 		// Computed needs - auto-detect from configuration
-		options.needsWidth = !!( options.needsWidth || options.widthCallback || options.widthFn )
-		options.needsProgress = options.needsProgress ?? true
-		options.needsSide = options.needsSide ?? true
-		options.needsUV = !!( options.needsUV || options.map || options.alphaMap || options.uvFn || options.discardFn )
-		options.needsVertexColor = !!( options.needsVertexColor || options.vertexColors )
+		const buildOptions = {
+			...options,
+			needsWidth: !!( options.needsWidth || options.widthCallback || options.widthFn ),
+			needsProgress: options.needsProgress ?? true,
+			needsSide: options.needsSide ?? true,
+			needsUV: !!( options.needsUV || options.map || options.alphaMap || options.uvFn || options.fragmentColorFn || options.fragmentAlphaFn || options.discardFn ),
+			needsVertexColor: !!( options.needsVertexColor || options.vertexColors ),
+			needsPrevious: options.needsPrevious ?? !options.gpuPositionNode,
+			needsNext: options.needsNext ?? !options.gpuPositionNode,
+		}
 
-		// If using GPU position node, we don't need previous/next positions
-		options.needsPrevious = options.needsPrevious ?? !options.gpuPositionNode
-		options.needsNext = options.needsNext ?? !options.gpuPositionNode
-
-		this.geometry.buildLine( options )
-		this.material.buildLine( options )
+		this.geometry.buildLine( buildOptions )
+		this.material.buildLine( buildOptions )
 
 		// Apply shadow if enabled
 		if ( options.shadow ) {
@@ -799,13 +803,13 @@ export default class MeshLine extends Mesh {
 			this.castShadow = true
 		}
 
-		if ( options.instanceCount != -1 ) {
-			this.count = options.instanceCount
+		if ( buildOptions.instanceCount != -1 ) {
+			this.count = buildOptions.instanceCount
 		}
 
-		this.frustumCulled = options.frustumCulled
+		this.frustumCulled = buildOptions.frustumCulled
 
-		if ( options.opacity ) {
+		if ( options.opacity !== undefined ) {
 			if ( options.opacity.isNode ) {
 				this.uOpacity = options.opacity
 			} else if ( typeof options.opacity === 'number' ) {
@@ -815,7 +819,7 @@ export default class MeshLine extends Mesh {
 			this.uOpacity = uniform( 1 )
 		}
 
-		this.resize( options.renderWidth, options.renderHeight )
+		this.resize( buildOptions.renderWidth, buildOptions.renderHeight )
 
 		this._built = true
 
@@ -830,10 +834,11 @@ export default class MeshLine extends Mesh {
 	 * Fast in-place position update without rebuilding geometry buffers.
 	 * Falls back to a full rebuild if the point count changes.
 	 * @param {import('./index.d.ts').MultiLinePoints} positions
+	 * @param {boolean} [updateBounding=false]
 	 */
-	setPositions( positions ) {
+	setPositions( positions, updateBounding = false ) {
 		this.ensureBuilt()
-		this.geometry.setPositions( positions )
+		this.geometry.setPositions( positions, updateBounding )
 	}
 
 	/**
