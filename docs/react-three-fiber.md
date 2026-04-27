@@ -29,14 +29,19 @@ import { WebGPURenderer } from 'three/webgpu'
 import { circlePositions } from 'makio-meshline'
 import { MeshLine } from './MeshLine' // wrapper from the example
 
+const circlePoints = circlePositions( 64, 3 )
+
 function RotatingCircle() {
   const ref = useRef()
-  useFrame( ( _, dt ) => { ref.current.rotation.z += dt * 0.3 } )
+  useFrame( ( _, dt ) => {
+    if ( !ref.current ) return
+    ref.current.rotation.z += dt * 0.3
+  } )
 
   return (
     <group ref={ref}>
       <MeshLine
-        points={circlePositions( 64, 3 )}
+        points={circlePoints}
         closed
         lineWidth={0.2}
         color={0xff8800}

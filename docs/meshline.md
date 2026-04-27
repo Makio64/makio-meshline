@@ -55,7 +55,7 @@ See [Common Patterns](./common-patterns.md) for more examples.
 **Textures:**
 - `map(texture: THREE.Texture)` - Set diffuse texture
 - `alphaMap(texture: THREE.Texture)` - Set alpha mask texture
-- `mapOffset(offset: THREE.Vector2)` - Set texture UV offset
+- `mapOffset(offset: THREE.Vector2 | null)` - Set or reset texture UV offset
 
 **Dashes:**
 - `dash({ count: number, ratio?: number, offset?: number })` - Configure dash pattern

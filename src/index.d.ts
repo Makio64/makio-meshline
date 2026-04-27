@@ -293,7 +293,7 @@ export class MeshLine extends ThreeMesh {
 	smoothSharpBendsThreshold( threshold: number ): this
 	gradientColor( color: number | string | Color | null ): this
 	map( tex: Texture | null ): this
-	mapOffset( offset: Vector2 ): this
+	mapOffset( offset: Vector2 | null ): this
 	alphaMap( tex: Texture | null ): this
 	dash( options?: MeshLineDashOptions ): this
 	dpr( value: number ): this
