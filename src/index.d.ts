@@ -4,6 +4,7 @@ import type {
 	Raycaster,
 	Texture,
 	Vector2,
+	Vector3,
 	Color,
 	BufferGeometry,
 	BufferAttribute,
@@ -20,11 +21,22 @@ import type {
 /** TSL node value. Kept intentionally broad because Three's TSL type exports vary by release. */
 export type MeshLineNodeValue = any
 
+/** Uniform-like node value with a mutable `.value`. */
+export interface MeshLineUniform<T> {
+	value: T
+}
+
 /** Three buffer usage constant, such as `DynamicDrawUsage`. */
 export type MeshLineUsage = number
 
+/** Tuple form for one 2D/3D line point. */
+export type LinePointTuple = [x: number, y: number, z?: number]
+
+/** Object form for one 2D/3D line point. */
+export type LinePointObject = Vector2 | Vector3 | { x: number; y: number; z?: number }
+
 /** Accepted formats for a single polyline's point data. */
-export type LinePoints = Float32Array | number[] | { x: number; y: number; z?: number }[]
+export type LinePoints = Float32Array | number[] | BufferGeometry | Array<LinePointTuple | LinePointObject>
 
 /** One or more polylines. */
 export type MultiLinePoints = Array<LinePoints> | LinePoints
@@ -263,6 +275,19 @@ export interface MeshLineConfigureOptions {
 	discardFn?: DiscardHookFn | null
 }
 
+export interface MeshLineGeometryOptions extends Partial<MeshLineConfigureOptions> {
+	needsPositions?: boolean
+}
+
+export interface MeshLineMaterialOptions extends Partial<MeshLineConfigureOptions> {
+	depthWrite?: boolean
+	depthTest?: boolean
+	resolution?: Vector2
+	repeat?: Vector2 | null
+	dashLength?: number | null
+	miterLimit?: number
+}
+
 // ---------------------------------------------------------------------------
 // MeshLine (main facade)
 // ---------------------------------------------------------------------------
@@ -278,7 +303,7 @@ export class MeshLine extends ThreeMesh {
 
 	color( color: number | string | Color ): this
 	lineWidth( width: number ): this
-	widthCallback( fn: ( t: number ) => number ): this
+	widthCallback( fn: ( ( t: number ) => number ) | null ): this
 	sizeAttenuation( enabled: boolean ): this
 	shadow( enabled: boolean ): this
 
@@ -302,7 +327,7 @@ export class MeshLine extends ThreeMesh {
 	verbose( enabled: boolean ): this
 	renderSize( width?: number, height?: number ): this
 
-	gpuPositionNode( node: GPUPositionNodeFn ): this
+	gpuPositionNode( node: GPUPositionNodeFn | null ): this
 	usage( usage: MeshLineUsage ): this
 	instances( count: number ): this
 
@@ -317,20 +342,20 @@ export class MeshLine extends ThreeMesh {
 	vertexColors( colors: Float32Array | number[] ): this
 
 	// node hooks (TSL)
-	positionFn( fn: PositionHookFn ): this
-	previousFn( fn: NeighbourHookFn ): this
-	nextFn( fn: NeighbourHookFn ): this
-	widthFn( fn: WidthHookFn ): this
-	normalFn( fn: NormalHookFn ): this
-	colorFn( fn: ColorHookFn ): this
-	gradientFn( fn: GradientHookFn ): this
-	opacityFn( fn: OpacityHookFn ): this
-	dashFn( fn: DashHookFn ): this
-	uvFn( fn: UVHookFn ): this
-	vertexFn( fn: VertexHookFn ): this
-	fragmentColorFn( fn: FragmentColorHookFn ): this
-	fragmentAlphaFn( fn: FragmentAlphaHookFn ): this
-	discardFn( fn: DiscardHookFn ): this
+	positionFn( fn: PositionHookFn | null ): this
+	previousFn( fn: NeighbourHookFn | null ): this
+	nextFn( fn: NeighbourHookFn | null ): this
+	widthFn( fn: WidthHookFn | null ): this
+	normalFn( fn: NormalHookFn | null ): this
+	colorFn( fn: ColorHookFn | null ): this
+	gradientFn( fn: GradientHookFn | null ): this
+	opacityFn( fn: OpacityHookFn | null ): this
+	dashFn( fn: DashHookFn | null ): this
+	uvFn( fn: UVHookFn | null ): this
+	vertexFn( fn: VertexHookFn | null ): this
+	fragmentColorFn( fn: FragmentColorHookFn | null ): this
+	fragmentAlphaFn( fn: FragmentAlphaHookFn | null ): this
+	discardFn( fn: DiscardHookFn | null ): this
 
 	build(): this
 	rebuild(): this
@@ -351,8 +376,8 @@ export class MeshLine extends ThreeMesh {
 // ---------------------------------------------------------------------------
 
 export class MeshLineGeometry extends BufferGeometry {
-	constructor( options?: Partial<MeshLineConfigureOptions> )
-	buildLine( options?: Partial<MeshLineConfigureOptions> ): void
+	constructor( options?: MeshLineGeometryOptions )
+	buildLine( options?: MeshLineGeometryOptions ): void
 	setLines( points: MultiLinePoints ): void
 	setPositions( points: MultiLinePoints, updateBounding?: boolean ): void
 	dispose(): void
@@ -363,8 +388,15 @@ export class MeshLineGeometry extends BufferGeometry {
 // ---------------------------------------------------------------------------
 
 export class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
-	constructor( options?: Partial<MeshLineConfigureOptions> )
-	buildLine( options?: Partial<MeshLineConfigureOptions> ): void
+	readonly isMeshLineNodeMaterial: true
+	castShadowNode: MeshLineNodeValue | null
+	castShadowPositionNode: MeshLineNodeValue | null
+	maskShadowNode: MeshLineNodeValue | null
+	shadowNode: MeshLineNodeValue | null
+	miterLimit: number
+
+	constructor( options?: MeshLineMaterialOptions )
+	buildLine( options?: MeshLineMaterialOptions ): void
 	setShadow( enabled: boolean ): void
 	dispose(): void
 }
@@ -400,9 +432,11 @@ export interface MeshLinePickerHit {
  */
 export class MeshLinePicker {
 	constructor( renderer: WebGPURenderer, scene: Scene, camera: Camera, options?: MeshLinePickerOptions )
+	readonly debugScene: Scene
 	add( line: MeshLine ): this
 	remove( line: MeshLine ): this
 	pick( x: number, y: number ): Promise<MeshLinePickerHit | null>
+	updateDebug(): void
 	dispose(): void
 }
 

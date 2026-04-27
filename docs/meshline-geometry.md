@@ -20,8 +20,11 @@ new MeshLineGeometry(options?: MeshLineGeometryOptions)
 ### MeshLineGeometryOptions (partial)
 
 ```ts
+type LinePoint = [x: number, y: number, z?: number] | THREE.Vector2 | THREE.Vector3 | { x: number, y: number, z?: number }
+type LinePoints = Float32Array | number[] | THREE.BufferGeometry | LinePoint[]
+
 interface MeshLineGeometryOptions {
-  lines?: Float32Array | number[][]          // Line points (required)
+  lines?: LinePoints | LinePoints[]          // One line or multiple lines
   closed?: boolean | boolean[]               // Close the loop(s)
   widthCallback?: (t: number) => number      // variable width 
   usage?: THREE.Usage                        // Optional buffer usage hint : StaticDrawUsage / DynamicDrawUsage / StreamDrawUsage
@@ -103,19 +106,21 @@ Disable entirely with `smoothSharpBends: false` (or `.smoothSharpBends(false)` o
 
 ```ts
 setLines(
-  lines: Array<Float32Array | Array<[number, number, number]> | THREE.BufferGeometry>
+  lines: LinePoints | LinePoints[]
 ): void
 ```
 
-Replace or initialize the geometry with one or multiple line segments. This method always expects an array of lines, so if you have a single line, wrap it in an array.
+Replace or initialize the geometry with one or multiple line segments. A single line can be passed directly; pass an array of line inputs for multiple disconnected lines.
 
 When a `THREE.BufferGeometry` is provided, the positions are extracted from its 'position' attribute. This allows direct conversion of existing Three.js geometries into MeshLine format.
 
 #### Parameters
 
-- `lines` – Array of line data, where each element represents a separate line. Each element can be:
+- `lines` – A line input, or an array of line inputs for multiple disconnected lines. Each line can be:
   - `Float32Array` of flattened XYZ coordinates
+  - Flat numeric XYZ array
   - Nested number array of `[x,y,z]` coordinates
+  - `Vector2`, `Vector3`, or plain `{ x, y, z? }` point arrays
   - `THREE.BufferGeometry` with a 'position' attribute
 
 ### dispose()
@@ -130,7 +135,7 @@ Releases geometry resources. Call when the geometry is no longer needed.
 
 ```ts
 setPositions(
-  positions: Float32Array | Float32Array[] | Array<Float32Array | number[][]>,
+  positions: LinePoints | LinePoints[],
   updateBounding?: boolean
 ): void
 ```
@@ -139,7 +144,7 @@ Efficiently updates vertex positions **without rebuilding GPU buffers**.  The fu
 
 • `Float32Array` – update a single line.  
 • `Float32Array[]` – update multiple lines (each array must keep its original length).  
-• `number[][][]` – nested arrays are converted under the hood (slower, avoid in hot loops).
+• Arrays of tuples, vectors, or point objects are converted under the hood (slower, avoid in hot loops).
 
 If the line count or point count changes, the geometry falls back to a full rebuild automatically using `setLines()`. This ensures proper buffer allocation but is less efficient than in-place updates. For best performance, maintain consistent line counts and point counts when using `setPositions()`.
 

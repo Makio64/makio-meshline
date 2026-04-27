@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.4.0
+### Added
+- Accept documented convenience point inputs consistently for single and multi-line geometry, including `[x, y, z]` tuples, flat numeric XYZ arrays, `Vector2`/`Vector3` points, plain point objects, and `BufferGeometry` sources. These inputs are normalized internally; use `Float32Array` for hot `setPositions()` updates.
+
+### Fixed
+- Align TypeScript declarations and docs with the public material shadow-node properties and `MeshLinePicker` debug helpers.
+- Avoid generating a redundant per-vertex `width` buffer for lines that only use `widthFn`, keeping instanced WebGPU pipelines under the common eight vertex-buffer limit.
+
 ## 1.3.2
 ### Fixed
 - Normalize `lineWidth` semantics: with `sizeAttenuation: false`, width is a stable CSS-pixel value; with `sizeAttenuation: true`, width is projected in scene space and attenuates with depth.

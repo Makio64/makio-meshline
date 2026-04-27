@@ -170,6 +170,10 @@ Unregisters a MeshLine and disposes its picking material.
 - `x`, `y` — canvas-relative CSS pixels (i.e. `event.clientX - canvas.left`). DPR scaling is handled internally.
 - Returns `Promise<{ line, instanceId } | null>`. `null` means the cursor is over empty space.
 
+### `picker.debugScene` and `picker.updateDebug()`
+
+For debugging, render `picker.debugScene` directly to inspect the ID-colored picking proxies. Call `picker.updateDebug()` before rendering that scene so proxy transforms, visibility, render order, instance count, resolution, DPR, and effective hit width match the live lines.
+
 ### `picker.dispose()`
 
 Disposes the render target and all picking materials. Call on scene teardown.

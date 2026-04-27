@@ -786,7 +786,7 @@ export default class MeshLine extends Mesh {
 		// Computed needs - auto-detect from configuration
 		const buildOptions = {
 			...options,
-			needsWidth: !!( options.needsWidth || options.widthCallback || options.widthFn ),
+			needsWidth: !!( options.needsWidth || options.widthCallback ),
 			needsProgress: options.needsProgress ?? true,
 			needsSide: options.needsSide ?? true,
 			needsUV: !!( options.needsUV || options.map || options.alphaMap || options.uvFn || options.fragmentColorFn || options.fragmentAlphaFn || options.discardFn ),

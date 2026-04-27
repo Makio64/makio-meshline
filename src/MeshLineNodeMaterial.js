@@ -186,7 +186,7 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 	}
 
 	getLineWidth( width, progress, side ) {
-		if ( this._needsWidth || this.widthFn ) {
+		if ( this._needsWidth ) {
 			width = width.mul( aWidth )
 		}
 		if ( this.widthFn ) {

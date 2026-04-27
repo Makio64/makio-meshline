@@ -87,6 +87,15 @@ const material = new MeshLineNodeMaterial({
 
 **Tip for very sharp polylines (zigzags, angular paths):** pair a lower `miterLimit` (e.g. `2`) with the geometry's automatic sharp-bend smoothing (`MeshLine.smoothSharpBends`, enabled by default). The geometry pass subdivides corners whose interior bend drops below ~60°, and the miter clamp catches anything left over. See [MeshLine geometry › Smooth sharp bends](./meshline-geometry.md#smooth-sharp-bends).
 
+### Shadow Nodes
+
+When shadow casting is enabled, `setShadow(true)` creates `castShadowPositionNode` and, for dashed lines, `maskShadowNode`. You can also assign `castShadowNode` after build to customize the shadow color. Use a `vec4` so Three's shadow pass receives both RGB and alpha:
+
+```js
+line.material.castShadowNode = vec4( 0.7, 0.7, 0.7, 1 )
+line.material.needsUpdate = true
+```
+
 ### Textures
 
 Apply textures to lines with UV mapping control:

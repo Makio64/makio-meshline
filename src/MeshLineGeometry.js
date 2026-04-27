@@ -123,10 +123,7 @@ export class MeshLineGeometry extends BufferGeometry {
 
 		if ( !lines ) throw new Error( '[MeshLine] Lines data required' )
 
-		// If lines is not an array, convert it to an array
-		if ( !Array.isArray( lines ) ) {
-			lines = [lines]
-		}
+		lines = normalizeLinesInput( lines )
 
 		// Handle `closed` as boolean or array
 		// If it's a single boolean, we use it for all lines
@@ -542,10 +539,7 @@ export class MeshLineGeometry extends BufferGeometry {
 	setPositions( pts, updateBounding = false ) {
 		if ( !pts ) return
 
-		// Handle single line input for backward compatibility
-		if ( !Array.isArray( pts ) || ( pts.length > 0 && typeof pts[0] === 'number' ) || pts instanceof Float32Array ) {
-			pts = [pts]
-		}
+		pts = normalizeLinesInput( pts )
 
 		// Convert all inputs to Float32Array and apply the same prep pipeline that
 		// setLines() used: subdivide sharp bends, then append the loop duplicate.
@@ -723,13 +717,17 @@ const toFloat32 = pts => {
 		return pts
 	}
 
+	if ( pts instanceof BufferGeometry ) {
+		return pts.getAttribute( 'position' ).array
+	}
+
 	if ( !warnedNonFloat32 ) {
 		console.warn( `[MeshLine] Use Float32Array for positions to avoid array conversion & get optimal performance` )
 		warnedNonFloat32 = true
 	}
 
-	if ( pts instanceof BufferGeometry ) {
-		return pts.getAttribute( 'position' ).array
+	if ( Array.isArray( pts ) && typeof pts[0] === 'number' ) {
+		return new Float32Array( pts )
 	}
 
 	// Pre-allocate assuming all points are valid
@@ -750,6 +748,10 @@ const toFloat32 = pts => {
 			result[offset++] = p[0] ?? 0
 			result[offset++] = p[1] ?? 0
 			result[offset++] = p[2] ?? 0
+		} else if ( p && typeof p === 'object' && typeof p.x === 'number' && typeof p.y === 'number' ) {
+			result[offset++] = p.x
+			result[offset++] = p.y
+			result[offset++] = p.z ?? 0
 		} else {
 			// Invalid points are skipped but warning for the user
 			console.warn( `[MeshLine] Invalid point: ${p}` )
@@ -758,6 +760,23 @@ const toFloat32 = pts => {
 
 	// If we skipped some points, return a correctly sized array
 	return offset === result.length ? result : result.subarray( 0, offset )
+}
+
+const isPointTuple = value => Array.isArray( value ) && typeof value[0] === 'number' && typeof value[1] === 'number' && value.length <= 4
+
+const isPointObject = value => value instanceof Vector3 || value instanceof Vector2 || ( value && typeof value === 'object' && typeof value.x === 'number' && typeof value.y === 'number' )
+
+const isSingleLineArray = value => {
+	if ( !Array.isArray( value ) ) return false
+	if ( value.length === 0 ) return true
+	const first = value[0]
+	return typeof first === 'number' || isPointTuple( first ) || isPointObject( first )
+}
+
+const normalizeLinesInput = lines => {
+	if ( lines instanceof Float32Array || lines instanceof BufferGeometry ) return [lines]
+	if ( isSingleLineArray( lines ) ) return [lines]
+	return lines
 }
 
 export default MeshLineGeometry

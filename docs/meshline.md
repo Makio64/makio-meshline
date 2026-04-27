@@ -34,7 +34,7 @@ const line = new MeshLine()
 See [Common Patterns](./common-patterns.md) for more examples.
 
 **Geometry Configuration:**
-- `lines(lines: Float32Array | number[][], closed?: boolean | boolean[])` - Set line(s) positions and optional close flag
+- `lines(lines: LinePoints | LinePoints[], closed?: boolean | boolean[])` - Set one or more lines and optional close flag
 - `segments(segments: number)` - Set number of segments for auto-generated lines
 - `closed(closed: boolean | boolean[])` - Set whether to close the line loop
 
@@ -147,9 +147,13 @@ Alternatively, you can use the traditional options object approach:
 ### Quick signature
 
 ```ts
+type LinePoint = [x: number, y: number, z?: number] | THREE.Vector2 | THREE.Vector3 | { x: number, y: number, z?: number }
+type LinePoints = Float32Array | number[] | THREE.BufferGeometry | LinePoint[]
+
 interface MeshLineOptions {
   // ***Geometry***
-  lines?: Float32Array | number[][]          // Line points (required)
+  lines?: LinePoints | LinePoints[]          // One line or multiple lines
+  segments?: number                          // Template segments for GPU positions
   closed?: boolean | boolean[]               // Close the loop(s)
 
   // ***Appearance***
@@ -166,9 +170,16 @@ interface MeshLineOptions {
   mapOffset?: THREE.Vector2 | null
 
   // ***Dashes***
+  dash?: { count?: number, ratio?: number, offset?: number }
   dashCount?: number | null
   dashRatio?: number | null
   dashOffset?: number
+
+  // ***Joins and corner smoothing***
+  join?: { type?: 'miter' | 'simple', limit?: number }
+  smoothSharpBends?: boolean
+  smoothSharpBendsAlpha?: number
+  smoothSharpBendsThreshold?: number
 
   // ***Shadow***
   shadow?: boolean
@@ -196,13 +207,17 @@ interface MeshLineOptions {
 
   // Procedural GPU positions
   gpuPositionNode?: Fn< number, THREE.Vector3 > | null
+  usage?: THREE.Usage
 
   // Instancing
   instanceCount?: number                          // Enable instancing with count
 
   // Hook Functions (TSL Fn)
   positionFn?: Fn | null
+  previousFn?: Fn | null
+  nextFn?: Fn | null
   widthFn?: Fn | null
+  normalFn?: Fn | null
   colorFn?: Fn | null
   gradientFn?: Fn | null
   opacityFn?: Fn | null
@@ -225,7 +240,7 @@ interface MeshLineOptions {
 
 ### Geometry
 
-- **`lines`** (`Float32Array | number[][]`) — **Required.** The line points data. Can be an array of `[x, y, z]` coordinate arrays, or a `Float32Array` with XYZ values. Default: `new Float32Array([0,0,0,1,0,0])`.
+- **`lines`** (`LinePoints | LinePoints[]`) — The line point data. A single line can be a flat `Float32Array`, a flat numeric XYZ array, an array of `[x, y, z]` tuples, `Vector2`/`Vector3` points, plain `{ x, y, z? }` points, or a `BufferGeometry` with a `position` attribute. Pass an array of those values for multiple lines. Default: `new Float32Array([0,0,0,1,0,0])`.
 
 > **Procedural alternative:** instead of supplying a `lines` array you can provide a **`gpuPositionNode`** function (TSL `Fn`).  The node receives the per-vertex `progress` (0→1) and must return a `vec3` position.  When set, the geometry sent to the GPU can be minimal – only its length matters so that the `progress` attribute is generated.
 
