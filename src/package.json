@@ -20,6 +20,7 @@
     "MeshLineGeometry.js",
     "MeshLineNodeMaterial.js",
     "MeshLinePicker.js",
+    "MeshLinePickerHelper.js",
     "positions/*.js",
     "README.md",
     "LICENSE",
