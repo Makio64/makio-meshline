@@ -1,5 +1,6 @@
 import type {
 	Mesh as ThreeMesh,
+	Group as ThreeGroup,
 	InstancedBufferAttribute,
 	Raycaster,
 	Texture,
@@ -433,10 +434,45 @@ export interface MeshLinePickerHit {
 export class MeshLinePicker {
 	constructor( renderer: WebGPURenderer, scene: Scene, camera: Camera, options?: MeshLinePickerOptions )
 	readonly debugScene: Scene
+	/** Snapshot of currently registered lines, in registration order. */
+	readonly lines: MeshLine[]
+	/** Hit-zone width multiplier applied to each registered line in the picking pass. */
+	readonly hitRadius: number
 	add( line: MeshLine ): this
 	remove( line: MeshLine ): this
 	pick( x: number, y: number ): Promise<MeshLinePickerHit | null>
 	updateDebug(): void
+	dispose(): void
+}
+
+// ---------------------------------------------------------------------------
+// MeshLinePickerHelper
+// ---------------------------------------------------------------------------
+
+export interface MeshLinePickerHelperOptions {
+	/** Overlay alpha (0..1). Default 0.45. */
+	opacity?: number
+}
+
+/**
+ * Three.js-style visual helper for `MeshLinePicker`. Overlays the picker's
+ * wide hit-zone proxies on the scene with a distinct hue per instance —
+ * lets you see what the GPU picker is actually testing against without
+ * losing the rest of the rendered scene.
+ *
+ * Mirrors `BoxHelper` / `SkeletonHelper` ergonomics: construct from the
+ * picker, add to your scene, call `update()` each frame.
+ */
+export class MeshLinePickerHelper extends ThreeGroup {
+	readonly isMeshLinePickerHelper: true
+	picker: MeshLinePicker
+	constructor( picker: MeshLinePicker, options?: MeshLinePickerHelperOptions )
+	/** Sync proxy transforms / instance counts / widths to the registered lines. Call once per frame. */
+	update(): void
+	/** Set the overlay alpha (0..1). */
+	setOpacity( opacity: number ): void
+	/** Tear down and rebuild proxies from the picker's current registry — call after `picker.add()` / `remove()`. */
+	rebuild(): void
 	dispose(): void
 }
 

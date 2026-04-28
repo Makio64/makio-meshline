@@ -149,6 +149,7 @@ Check out the [documentation site](https://meshline.makio.io/) for detailed inst
 - [Advanced Patterns](https://meshline.makio.io/advanced-patterns.html)
 - [Performance tips](https://meshline.makio.io/performance.html)
 - [Helpers functions](https://meshline.makio.io/helpers.html)
+- [GPU picking & debug helper](https://meshline.makio.io/picking.html)
 - [React Three Fiber integration](https://meshline.makio.io/react-three-fiber.html)
 - [Vue integration](https://meshline.makio.io/vue.html)
 

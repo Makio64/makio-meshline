@@ -2,6 +2,7 @@ import MeshLine from './MeshLine.js'
 import { MeshLineGeometry } from './MeshLineGeometry.js'
 import MeshLineNodeMaterial from './MeshLineNodeMaterial.js'
 import MeshLinePicker from './MeshLinePicker.js'
+import MeshLinePickerHelper from './MeshLinePickerHelper.js'
 import { circlePositions } from './positions/circlePositions.js'
 import { rectanglePositions } from './positions/rectanglePositions.js'
 import { sineWavePositions } from './positions/sineWavePositions.js'
@@ -13,6 +14,7 @@ export {
 	MeshLineGeometry,
 	MeshLineNodeMaterial,
 	MeshLinePicker,
+	MeshLinePickerHelper,
 	circlePositions,
 	squarePositions,
 	rectanglePositions,

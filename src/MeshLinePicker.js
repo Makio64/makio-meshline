@@ -260,6 +260,16 @@ export default class MeshLinePicker {
 		}
 	}
 
+	/**
+	 * Snapshot of the currently registered lines, in registration order.
+	 * @returns {Array<import('./MeshLine.js').default>}
+	 */
+	get lines() {
+		const out = []
+		for ( const entry of this._registry.values() ) out.push( entry.line )
+		return out
+	}
+
 	_syncProxyMaterial( entry ) {
 		const src = entry.line.material
 		entry.material.lineWidth.value = src.lineWidth.value * this.hitRadius

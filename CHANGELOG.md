@@ -3,6 +3,8 @@
 ## 1.4.0
 ### Added
 - Accept documented convenience point inputs consistently for single and multi-line geometry, including `[x, y, z]` tuples, flat numeric XYZ arrays, `Vector2`/`Vector3` points, plain point objects, and `BufferGeometry` sources. These inputs are normalized internally; use `Float32Array` for hot `setPositions()` updates.
+- New `MeshLinePickerHelper` — Three.js-style visual helper for `MeshLinePicker`. Renders the picker's wide hit-zone proxies overlaid on the scene with a distinct hue per instance (golden-ratio cosine palette), so you can see what the GPU picker is actually testing against. `extends Group`; usage matches `BoxHelper` / `SkeletonHelper`: `new MeshLinePickerHelper( picker )`, `scene.add( helper )`, `helper.update()` per frame, `helper.setOpacity( 0..1 )`, `helper.rebuild()` after the picker registry changes, `helper.dispose()`. The Laser Heist demo now uses it for a third "picker debug" P-state (replaces the old `D` ID-debug toggle).
+- New `picker.lines` getter on `MeshLinePicker` returning a snapshot of the registered MeshLines in registration order.
 
 ### Fixed
 - Align TypeScript declarations and docs with the public material shadow-node properties and `MeshLinePicker` debug helpers.

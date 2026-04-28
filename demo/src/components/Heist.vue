@@ -20,22 +20,19 @@ export default {
 	data() {
 		return {
 			pickMode: this.api.pickMode,
-			debugPicker: this.api.debugPicker,
 		}
 	},
 	computed: {
 		color() {
-			if ( this.debugPicker ) return '#ffd24a'
+			if ( this.pickMode === 'picker-debug' ) return '#7cffb2'
 			return this.pickMode === 'raycast' ? '#4ad8ff' : '#ff9368'
 		},
 		label() {
-			if ( this.debugPicker ) return 'Debug: Picker IDs'
+			if ( this.pickMode === 'picker-debug' ) return 'Picker Debug (colored)'
 			return this.pickMode === 'raycast' ? 'Raycast (CPU)' : 'MeshLinePicker (GPU)'
 		},
 		hint() {
-			return this.pickMode === 'picker'
-				? 'P: toggle mode · D: toggle debug view'
-				: 'click or press P to toggle'
+			return 'click or press P to cycle modes'
 		},
 	},
 	mounted() {
@@ -51,14 +48,9 @@ export default {
 		},
 		onKey( key ) {
 			if ( key === 'p' || key === 'P' ) this.togglePickMode()
-			else if ( key === 'd' || key === 'D' ) this.toggleDebugPicker()
 		},
 		togglePickMode() {
 			this.pickMode = this.api.togglePickMode()
-			this.debugPicker = this.api.debugPicker // may auto-disable when leaving picker mode
-		},
-		toggleDebugPicker() {
-			this.debugPicker = this.api.toggleDebugPicker()
 		},
 	},
 }

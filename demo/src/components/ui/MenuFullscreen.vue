@@ -1,6 +1,6 @@
 <!-- Simple MenuFullscreen by @makio64 || David Ronai -->
 <template>
-	<div ref="root" class="MenuFullscreen" :class="{ open: isOpen }">
+	<div ref="root" class="MenuFullscreen" :class="{ open: isOpen }" @wheel.stop @touchmove.stop>
 		<div class="header">
 			<h1>Makio MeshLine</h1>
 			<div class="header-info">
@@ -174,74 +174,72 @@ export default {
 	position absolute
 	user-select none
 	inset 0
-	background rgba( 0, 0, 0, 0.85 )
-	backdrop-filter blur( 4px )
-	// transform translateX(-100%)
+	background radial-gradient( ellipse at 50% 30%, rgba(20, 24, 36, 0.92) 0%, rgba(0, 0, 0, 0.92) 70% )
+	backdrop-filter blur( 10px )
 	display flex
 	flex-direction column
 	align-items center
-	justify-content center
-	gap 2em
-	padding 2rem 1rem
-	overflow hidden
+	justify-content safe center
+	gap 2.25rem
+	padding 3rem 1.5rem
+	overflow auto
+	overscroll-behavior contain
+	box-sizing border-box
 
 	.header
-		position absolute
-		top 2rem
-		left 2rem
-		right 2rem 
+		flex-shrink 0
 		text-align center
 		color white
 		margin 0
 		h1
-			margin 0
-			font-size 30px
-			font-weight 900
+			margin 0 auto 18px
+			font-size 34px
+			font-weight 800
 			font-family 'Space Grotesk', 'Inter', sans-serif
-			letter-spacing -0.03em
-			margin auto
-			margin-bottom 20px
+			letter-spacing -0.035em
+			line-height 1
 		.header-info
 			display inline-block
 			position relative
-			padding-bottom 1rem
+			padding-bottom 1.25rem
 			&::after
 				content ''
 				position absolute
 				bottom 0
-				left 0
-				right 0
+				left 10%
+				right 10%
 				height 2px
+				border-radius 2px
 				background linear-gradient(90deg, #ffd93d, #ff6b6b, #ff6bcb, #6bcbff, #4d7fff)
+				opacity .9
 		.subdesc
-			margin .5rem 0 0
-			opacity .85
-			// max-width 40ch
-			font-size 16px
+			margin .65rem 0 0
+			opacity .9
+			font-size 17px
 			font-weight 400
 			letter-spacing -0.01em
 			line-height 1.5
 		.credit
-			margin .5rem 0 0
+			margin .65rem 0 0
 			opacity .65
-			font-size .925rem
-			// max-width 40ch
+			font-size .95rem
 			font-weight 400
 			letter-spacing -0.005em
 
 	.content
+		flex-shrink 0
 		display grid
-		grid-template-columns repeat( 2, minmax(200px, 280px) )
-		gap 3em 4em
-		max-width 800px
-		width auto
-		margin 0 auto
-		justify-items center
+		grid-template-columns repeat( 2, minmax(240px, 280px) )
+		justify-content center
+		gap 1.25em 4em
+		max-width 760px
+		width 100%
+		justify-items stretch
 
 	.column
 		display flex
 		flex-direction column
-		align-items center
+		align-items stretch
 		text-align center
 		gap 1em
 		h2
@@ -253,25 +251,25 @@ export default {
 			letter-spacing -0.02em
 			text-transform uppercase
 		.desc
-			margin 0
+			margin 0 auto .5em
 			color rgba(255,255,255,.65)
 			font-weight 400
 			max-width 24ch
-			font-size 12px
+			font-size 13px
 			line-height 1.5
 			letter-spacing 0
-			
+
 			&.basic-desc, &.advanced-desc
-				color rgba(255,255,255,.75)
+				color rgba(255,255,255,.78)
 				font-weight 500
 
 	.content .column a
-		background rgba(255,255,255,.045)
-		width 220px
+		background rgba(255,255,255,.04)
+		width 100%
 		min-height 64px
 		color white
 		font-weight 600
-		font-size 1.125rem
+		font-size 1.075rem
 		font-family 'Inter', sans-serif
 		letter-spacing -0.02em
 		text-decoration none
@@ -279,20 +277,21 @@ export default {
 		flex-direction column
 		align-items center
 		justify-content center
-		gap 3px
-		padding 10px 14px
+		gap 4px
+		padding 12px 18px
 		opacity 0
 		box-sizing border-box
 		overflow hidden
-		border-radius 12px
-		border 1px solid rgba(255,255,255,.4)
-		box-sizing border-box
+		border-radius 14px
+		border 1px solid rgba(255,255,255,.12)
+		box-shadow 0 1px 0 rgba(255,255,255,.04) inset
 
-		transition color .25s ease, background .25s ease, border .25s ease
+		transition border-color .25s ease, background .25s ease, box-shadow .25s ease
 
 		&:hover
-			border 1px solid rgba(255,255,255,.8)
-			background rgba(255,255,255,.09)
+			border-color rgba(255,255,255,.45)
+			background rgba(255,255,255,.085)
+			box-shadow 0 8px 24px -10px rgba(0,0,0,.6), 0 1px 0 rgba(255,255,255,.08) inset
 		
 		&.basic-link .link-title
 			background linear-gradient(135deg, #b8e6ce, #d4db8c)
@@ -320,19 +319,19 @@ export default {
 
 	.link-title
 		display block
-		font-size 1.02rem
+		font-size 1.06rem
 		font-weight 600
-		line-height 1.05
+		line-height 1.1
 		color white
 
 	.link-subtitle
 		display block
-		font-size 10px
+		font-size 10.5px
 		font-weight 700
-		letter-spacing 0.18em
+		letter-spacing 0.16em
 		line-height 1.1
 		text-transform uppercase
-		opacity .72
+		opacity .7
 		color rgba(255,255,255,.78)
 	.u-link
 		color white
@@ -376,33 +375,53 @@ export default {
 				transform scaleX(1)
 
 	.footer
-		position absolute
-		bottom 2rem
-		left 0
-		right 0
-		transform none
+		flex-shrink 0
+		margin 0
 		display flex
 		align-items center
 		justify-content center
-		gap .75rem
-		font-size 12px
+		gap 1rem
+		font-size 12.5px
+		opacity .9
 		span
-			color rgba(255,255,255,.4)
+			color rgba(255,255,255,.35)
+
+	@media (max-height: 820px) and (min-width: 721px)
+		gap 1.5rem
+		padding 2.25rem 1.5rem
+		.header
+			h1
+				font-size 26px
+				margin-bottom 12px
+			.header-info
+				padding-bottom .75rem
+			.subdesc
+				font-size 14.5px
+				margin-top .35rem
+			.credit
+				font-size .85rem
+				margin-top .35rem
+		.content
+			gap 1em 3em
+			max-width 700px
+		.column
+			gap .7em
+		.content .column a
+			min-height 56px
+			font-size 1rem
+			padding 10px 14px
 
 	@media (max-width: 720px)
 		justify-content flex-start
-		align-items center
-		padding 5rem 1rem 6rem
-		overflow auto
-		backdrop-filter none
+		gap 1.5rem
+		padding 4.5rem 1rem 2rem
+		backdrop-filter blur( 6px )
 		.header
-			// display none
-			position static
-			top auto
-			left auto
-			margin 0 0 .5rem
-			text-align center
+			h1
+				font-size 26px
+				margin-bottom 14px
 			.subdesc
+				font-size 14.5px
 				max-width 36ch
 				margin-left auto
 				margin-right auto
@@ -411,28 +430,16 @@ export default {
 				margin-left auto
 				margin-right auto
 		.content
-			grid-template-columns 1fr
-			gap 2rem
-			max-width 460px
-			margin 0 auto
+			grid-template-columns minmax(0, 320px)
+			gap 1.5rem
+			max-width 340px
 		.column
-			align-items center
-			text-align center
 			.desc
 				max-width 36ch
-			.content .column a
-				width 200px
-				min-height 58px
-				font-size 1rem
+		.content .column a
+			min-height 58px
+			font-size 1.025rem
 		.footer
-			position relative
-			left auto
-			right auto
-			bottom auto
-			transform none
-			justify-content center
-			padding 1rem 0
-			display flex 
 			flex-direction column
-			background linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,.4) 50%, rgba(0,0,0,.9) 100%)
+			gap .5rem
 </style>

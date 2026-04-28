@@ -1,4 +1,4 @@
-import { MeshLine, MeshLinePicker } from 'makio-meshline'
+import { MeshLine, MeshLinePicker, MeshLinePickerHelper } from 'makio-meshline'
 import { ACESFilmicToneMapping, NoToneMapping } from 'three'
 import { bloom } from 'three/addons/tsl/display/BloomNode.js'
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
@@ -12,7 +12,7 @@ import { stage } from '@/makio/core/stage'
 import OrbitControl from '@/makio/three/controls/OrbitControl'
 import stage3d from '@/makio/three/stage3d'
 import { isMobile } from '@/makio/utils/detect'
-import mouse, { onLeave, onMove } from '@/makio/utils/input/mouse'
+import mouse, { onLeave, onMove, onUp } from '@/makio/utils/input/mouse'
 import random from '@/makio/utils/random'
 import { centerAndScaleModel } from '@/utils/modelUtils'
 
@@ -56,14 +56,12 @@ class HeistExample {
 		this.hoveredLaserId = -1
 		this.isPointerOverCanvas = false
 
-		// Pick mode: 'raycast' (CPU Raycaster) or 'picker' (GPU MeshLinePicker)
+		// Pick mode: 'raycast' (CPU Raycaster), 'picker' (GPU), or 'picker-debug'
+		// (GPU + MeshLinePickerHelper showing thick colored hit-zones)
 		this.pickMode = 'raycast'
 		this.picker = null
+		this.pickerHelper = null
 		this._pickerBusy = false
-		// When true, render the picker's ID scene directly to the canvas
-		this.debugPicker = false
-		this._savedScene = null
-		this._savedPipeline = null
 	}
 
 	async init() {
@@ -95,10 +93,15 @@ class HeistExample {
 		} )
 		this.picker.add( this.line )
 
+		this.pickerHelper = new MeshLinePickerHelper( this.picker, { opacity: 0.45 } )
+		this.pickerHelper.visible = false
+		stage3d.add( this.pickerHelper )
+
 		stage.onUpdate.add( this.update )
 		stage.onResize.add( this.onResize )
 		onMove.add( this.onPointerMove )
 		onLeave.add( this.onPointerLeave )
+		if ( isMobile ) onUp.add( this.onPointerLeave )
 	}
 
 	async initHDR() {
@@ -312,14 +315,12 @@ class HeistExample {
 	}
 
 	update = ( dt ) => {
-		// While debug view is active, the main render draws the picker's ID scene to
-		// the canvas — we need its proxies synced each frame with the live lines.
-		if ( this.debugPicker && this.picker ) this.picker.updateDebug()
-
 		if ( this.isPointerOverCanvas && this.line ) {
-			if ( this.pickMode === 'picker' ) this.runPicker()
-			else this.runRaycast()
+			if ( this.pickMode === 'raycast' ) this.runRaycast()
+			else this.runPicker()
 		}
+
+		if ( this.pickerHelper && this.pickerHelper.visible ) this.pickerHelper.update()
 
 		const alarmAttr = this.line.geometry.getAttribute( 'instanceAlarm' )
 		let alarmDirty = false
@@ -383,46 +384,33 @@ class HeistExample {
 	onResize = () => { this.line?.resize() }
 
 	togglePickMode() {
-		if ( this.debugPicker ) this.toggleDebugPicker() // leaving picker mode → drop debug view
-		this.pickMode = this.pickMode === 'raycast' ? 'picker' : 'raycast'
+		const order = ['raycast', 'picker', 'picker-debug']
+		this.pickMode = order[( order.indexOf( this.pickMode ) + 1 ) % order.length]
+		if ( this.pickerHelper ) this.pickerHelper.visible = this.pickMode === 'picker-debug'
 		this.hoveredLaserId = -1
 		return this.pickMode
-	}
-
-	toggleDebugPicker() {
-		if ( this.pickMode !== 'picker' ) return this.debugPicker
-		this.debugPicker = !this.debugPicker
-		if ( this.debugPicker ) {
-			this._savedScene = stage3d.scene
-			this._savedPipeline = stage3d.renderPipeline
-			stage3d.renderPipeline = null
-			stage3d.scene = this.picker.debugScene
-		} else {
-			stage3d.scene = this._savedScene ?? stage3d.scene
-			stage3d.renderPipeline = this._savedPipeline ?? null
-			this._savedScene = null
-			this._savedPipeline = null
-		}
-		return this.debugPicker
 	}
 
 	show() {}
 	hide( cb ) { if ( cb ) cb() }
 
 	dispose() {
-		// If we left debug mode on, restore stage3d's original scene/pipeline first
-		// so the outer app doesn't render an orphaned scene.
-		if ( this.debugPicker ) this.toggleDebugPicker()
-
 		stage.onUpdate.remove( this.update )
 		stage.onResize.remove( this.onResize )
 		onMove.remove( this.onPointerMove )
 		onLeave.remove( this.onPointerLeave )
+		if ( isMobile ) onUp.remove( this.onPointerLeave )
 
 		stage3d.renderPipeline = null
 		stage3d.renderer.toneMapping = NoToneMapping
 		this.renderPipeline?.dispose()
 		this.renderPipeline = null
+
+		if ( this.pickerHelper ) {
+			stage3d.remove( this.pickerHelper )
+			this.pickerHelper.dispose()
+			this.pickerHelper = null
+		}
 
 		this.picker?.dispose()
 		this.picker = null

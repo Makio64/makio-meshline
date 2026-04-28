@@ -170,22 +170,74 @@ Unregisters a MeshLine and disposes its picking material.
 - `x`, `y` — canvas-relative CSS pixels (i.e. `event.clientX - canvas.left`). DPR scaling is handled internally.
 - Returns `Promise<{ line, instanceId } | null>`. `null` means the cursor is over empty space.
 
+### `picker.lines`
+
+Read-only snapshot of the currently registered MeshLines in registration order. Returns a fresh array each call.
+
 ### `picker.debugScene` and `picker.updateDebug()`
 
-For debugging, render `picker.debugScene` directly to inspect the ID-colored picking proxies. Call `picker.updateDebug()` before rendering that scene so proxy transforms, visibility, render order, instance count, resolution, DPR, and effective hit width match the live lines.
+For *raw* debugging, render `picker.debugScene` directly to inspect the ID-colored picking proxies. Call `picker.updateDebug()` before rendering that scene so proxy transforms, visibility, render order, instance count, resolution, DPR, and effective hit width match the live lines. Colors here are the encoded slot/instance IDs — useful for verifying the picking pipeline, but not visually meaningful. For a *human-readable* overlay, prefer `MeshLinePickerHelper` below.
 
 ### `picker.dispose()`
 
 Disposes the render target and all picking materials. Call on scene teardown.
 
+## `MeshLinePickerHelper` — visualize hit-zones
+
+`MeshLinePickerHelper` is a Three.js-style helper (in the spirit of `BoxHelper` / `SkeletonHelper`) that renders the picker's wide hit-zone proxies *with human-readable colors*, overlaid on your scene. Each registered line / instance gets a distinct hue (golden-ratio cosine palette) so you can see exactly what the GPU picker is testing against without losing the rest of the scene.
+
+It's a `Group` containing one shared-geometry proxy mesh per registered line, sized to `hitRadius × lineWidth` and rendered with a transparent colored material. The helper does **not** participate in picking — it's purely a debug visualization.
+
+```js
+import { MeshLinePicker, MeshLinePickerHelper } from 'makio-meshline'
+
+const picker = new MeshLinePicker( renderer, scene, camera, { hitRadius: 15 } )
+picker.add( meshLine )
+
+const helper = new MeshLinePickerHelper( picker, { opacity: 0.45 } )
+scene.add( helper )
+
+// in your render loop:
+helper.update()
+
+// toggle:
+helper.visible = false
+```
+
+### `new MeshLinePickerHelper( picker, options? )`
+
+- `picker` — an existing `MeshLinePicker` with one or more registered lines.
+- `options.opacity` — overlay alpha (0..1). Default `0.45`.
+
+The helper snapshots the picker's registry at construction. If you call `picker.add()` / `picker.remove()` afterwards, call `helper.rebuild()` to re-snapshot.
+
+### `helper.update()`
+
+Sync each proxy's transform, instance count, and width from its source line. Call once per frame before rendering. Cheap (one matrix copy + a few uniform writes per registered line).
+
+### `helper.setOpacity( value )`
+
+Update the overlay alpha at runtime (e.g. for a fade-in/out). Affects all proxies.
+
+### `helper.rebuild()`
+
+Tear down existing proxies and rebuild from the picker's current registry. Use after `picker.add()` / `picker.remove()` to keep the helper in sync.
+
+### `helper.dispose()`
+
+Dispose all proxy materials and detach them from the helper. Geometries are owned by the source lines and are **not** disposed — so disposing the helper is safe even while the lines are still in use.
+
+See it live in the [Laser Heist demo](https://meshline-demo.makio.io/#/laser-heist) — pressing **P** cycles through `raycast` → `picker` → `picker-debug`, where the third state turns the helper on while picking continues to run through the GPU picker.
+
 ## "Laser Heist" — raycast vs picker, side by side
 
-The bundled [Laser Heist demo](https://meshline-demo.makio.io/#/laser-heist) renders 24 instanced GPU-positioned laser beams and lets you toggle at runtime between the two hover-test strategies (click the pill at the top or press **P**):
+The bundled [Laser Heist demo](https://meshline-demo.makio.io/#/laser-heist) renders 24 instanced GPU-positioned laser beams and cycles through three hover-test modes at runtime (click the pill at the top or press **P**):
 
 - **Raycast mode** uses Three.js's `Raycaster` against the instanced `MeshLine` — it relies on the CPU-known `instanceStart` / `instanceEnd` attributes to test each laser as a line segment. Simple and cheap, but only works because each laser is a straight segment whose endpoints live on the CPU.
 - **MeshLinePicker mode** registers the same `MeshLine` with the GPU picker and calls `picker.pick(x, y)` on pointer move. The picker reads the rendered pixel under the cursor and decodes the instance ID.
+- **Picker debug mode** keeps the GPU picker active and adds a `MeshLinePickerHelper` overlay so you can see each laser's hit-zone (sized to `hitRadius × lineWidth`) painted with a distinct per-instance hue.
 
-Both strategies feed the same `hoveredLaserId`, which drives the alarm-pulse animation. Switching modes live proves they produce the same hit results.
+All three modes feed the same `hoveredLaserId`, which drives the alarm-pulse animation. Switching modes live proves the CPU and GPU strategies produce the same hit results, and the debug overlay makes the GPU picker's hit zones inspectable.
 
 ```js
 this.picker = new MeshLinePicker( renderer, scene, camera, { targetSize: 5 } )
