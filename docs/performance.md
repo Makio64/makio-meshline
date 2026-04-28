@@ -66,7 +66,7 @@ It also supports `Instancing` and optimized CPU batching.
 - **Instancing**: Smaller footprint & one drawcall + custom behavior by instance.
 - **Batching**: Draw multiple lines in one call by passing an array to `lines`.
 - **CPU->GPU Fast Updates**: `setPositions()` modifies existing buffers in-place without recreation. Pass `true` as the second argument when movement changes bounds enough for frustum culling to matter.
-- **Miter Clamp + Auto Corner Smoothing**: The shader miter is always on (no branch cost, simpler than the old opt-in path), and sharp corners get an automatic CPU-side subdivision at build time so the shader never has to handle near-hairpin bends. Auto-subdivision only runs when a corner actually needs it, so gentle polylines pay zero overhead.
+- **Miter Clamp + Optional Corner Smoothing**: The shader miter is always on (no branch cost, simpler than the old opt-in path). For static sharp polylines, opt into `smoothSharpBends` to split near-hairpin corners on the CPU before they reach the shader. Leave it off for dynamic lines or custom per-vertex attributes that need stable topology.
 
 ## Best Practices
 - Use Instancing when all your lines have the same number of segments.

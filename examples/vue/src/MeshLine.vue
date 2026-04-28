@@ -24,7 +24,7 @@ const props = defineProps( {
 	shadow: { type: Boolean, default: false },
 	sizeAttenuation: { type: Boolean, default: true },
 	join: { type: Object, default: null },
-	smoothSharpBends: { type: Boolean, default: true },
+	smoothSharpBends: { type: Boolean, default: false },
 	smoothSharpBendsAlpha: { type: Number, default: undefined },
 	smoothSharpBendsThreshold: { type: Number, default: undefined },
 	dpr: { type: Number, default: undefined },

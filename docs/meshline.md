@@ -66,7 +66,7 @@ See [Common Patterns](./common-patterns.md) for more examples.
 **Advanced:**
 
 - `join({ limit?: number })` - Set the miter clamp; lower values flatten sharp corners sooner. Defaults to `4`. (The `type` field is retained for back-compat but has no effect — miter is always applied.)
-- `smoothSharpBends(enabled: boolean)` - Toggle the automatic CPU-side splitting of polyline corners that are too sharp for the screen-space miter to render cleanly. Defaults to `true`. Disable to keep GPU buffers aligned 1:1 with your input points.
+- `smoothSharpBends(enabled: boolean)` - Toggle CPU-side splitting of polyline corners that are too sharp for the screen-space miter to render cleanly. Defaults to `false` so GPU buffers stay aligned 1:1 with your input points. Enable for static sharp polylines when cleaner corners matter more than exact input topology.
 - `smoothSharpBendsAlpha(alpha: number)` - Cutoff fraction used when `smoothSharpBends` is on: each sharp corner is replaced by two points sitting `alpha` of the way back along each adjacent segment. Smaller values preserve the pointy look; larger values flatten the tip more. Defaults to `0.001` (visually imperceptible but enough to stabilise the shader miter math).
 - `smoothSharpBendsThreshold(threshold: number)` - `dot(dir_in, dir_out)` cutoff below which a vertex is considered sharp enough to subdivide. Defaults to `-0.5` (≈ 60° interior bend). Lower (more negative) values subdivide only the very sharpest corners.
 - `dpr(ratio: number)` - Set the legacy/custom-hook DPR uniform

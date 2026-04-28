@@ -117,7 +117,7 @@ class SandboxExample {
 			// Advanced
 			wireframe: false,
 			miterLimit: 4,
-			smoothSharpBends: true,
+			smoothSharpBends: false,
 			smoothSharpBendsAlpha: 0.001,
 			
 			// Generated code
@@ -218,6 +218,7 @@ class SandboxExample {
 				useDashes: false,
 				animateDashes: false,
 				miterLimit: 4,
+				smoothSharpBends: true,
 			} )
 			return
 		}
@@ -228,6 +229,7 @@ class SandboxExample {
 				closed: false,
 				useDashes: false,
 				animateDashes: false,
+				smoothSharpBends: preset === 'zigzag',
 			} )
 		}
 	}
@@ -242,6 +244,10 @@ class SandboxExample {
 
 		if ( value === 'strongAngle' ) {
 			this.config.useGradient = true
+		}
+
+		if ( value === 'zigzag' || value === 'strongAngle' ) {
+			this.config.smoothSharpBends = true
 		}
 	}
 	
@@ -469,9 +475,11 @@ class SandboxExample {
 			code += `\t.join({ limit: ${this.config.miterLimit} })\n`
 		}
 
-		if ( this.config.smoothSharpBends === false ) {
-			code += `\t.smoothSharpBends( false )\n`
-		} else if ( this.config.smoothSharpBendsAlpha !== 0.001 ) {
+		if ( this.config.smoothSharpBends ) {
+			code += `\t.smoothSharpBends( true )\n`
+		}
+
+		if ( this.config.smoothSharpBends && this.config.smoothSharpBendsAlpha !== 0.001 ) {
 			code += `\t.smoothSharpBendsAlpha( ${this.config.smoothSharpBendsAlpha} )\n`
 		}
 		

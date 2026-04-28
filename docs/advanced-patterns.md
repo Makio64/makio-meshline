@@ -65,15 +65,16 @@ No buffers recreated, only a sub-data upload.
 
 ## 4. Sharp Corners
 
-Two-layer approach: CPU-side geometry smoothing splits any corner sharper than ~60° interior bend into two cutoff points (on by default); the shader-side miter clamp caps any residual spike. Both are tunable per line.
+Two-layer approach: the shader-side miter clamp caps spikes by default, and optional CPU-side geometry smoothing can split any corner sharper than ~60° interior bend into two cutoff points. Enable smoothing when corner quality matters more than exact input-to-GPU vertex mapping.
 
 ```js
 const sharp = new MeshLine()
   .lines(myPolyline)
   .lineWidth(0.8)
+	.smoothSharpBends(true)      // opt in: changes topology at sharp corners
   .join({ limit: 2 })          // tighter cap = bevel-like residual spikes
   .build()
-// Default smoothSharpBendsAlpha (0.001) is already near-imperceptible.
+// Default smoothSharpBendsAlpha (0.001) is near-imperceptible once enabled.
 // Raise it (e.g. .smoothSharpBendsAlpha(0.05)) if you want a visible bevel cap.
 ```
 

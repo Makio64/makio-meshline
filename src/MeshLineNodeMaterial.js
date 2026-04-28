@@ -290,8 +290,8 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 			// Direction vectors in aspect-corrected NDC (post perspective divide).
 			// This is the space the miter math measures pixel-accurate offsets in.
 			// Sharp CPU-side polyline corners that could otherwise collapse the
-			// bisector under oblique perspective are handled upstream by the
-			// geometry's `smoothSharpBends` pass (on by default).
+			// bisector under oblique perspective can be handled upstream by opting
+			// into the geometry's `smoothSharpBends` pass.
 			// At open endpoints, reuse the real segment direction instead of the
 			// extrapolated neighbour direction; this keeps single-segment GPU lines
 			// from tapering when the extrapolated point projects badly.

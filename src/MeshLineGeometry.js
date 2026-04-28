@@ -100,6 +100,7 @@ export class MeshLineGeometry extends BufferGeometry {
 			needsProgress: true,
 			needsWidth: false,
 			needsVertexColor: false,
+			smoothSharpBends: false,
 			verbose: false,
 			...options
 		}
@@ -140,7 +141,7 @@ export class MeshLineGeometry extends BufferGeometry {
 		// the vertex/progress grid, and a `closed: true` straight line reads as
 		// a hairpin at both endpoints to the subdivision pass. Subdividing would
 		// shift the progress mapping that the GPU node samples against.
-		const smooth = this.options.smoothSharpBends !== false && !this.options.gpuPositionNode
+		const smooth = this.options.smoothSharpBends === true && !this.options.gpuPositionNode
 		const dotThreshold = this.options.smoothSharpBendsThreshold ?? -0.5
 		const alpha = this.options.smoothSharpBendsAlpha ?? 0.001
 
@@ -549,7 +550,7 @@ export class MeshLineGeometry extends BufferGeometry {
 		// the vertex/progress grid, and a `closed: true` straight line reads as
 		// a hairpin at both endpoints to the subdivision pass. Subdividing would
 		// shift the progress mapping that the GPU node samples against.
-		const smooth = this.options.smoothSharpBends !== false && !this.options.gpuPositionNode
+		const smooth = this.options.smoothSharpBends === true && !this.options.gpuPositionNode
 		const dotThreshold = this.options.smoothSharpBendsThreshold ?? -0.5
 		const alpha = this.options.smoothSharpBendsAlpha ?? 0.001
 		const newLines = pts.map( ( line, i ) => {

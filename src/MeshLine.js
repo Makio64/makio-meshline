@@ -86,10 +86,9 @@ export default class MeshLine extends Mesh {
 
 			shadow: false,
 
-			// Auto-subdivide polyline corners that are too sharp for the screen-space
-			// miter to render cleanly. Preserves the user's original point list when
-			// the bends are gentle; splits problematic corners into two cutoff points.
-			smoothSharpBends: true,
+			// Opt-in CPU subdivision for sharp corners. Disabled by default so dynamic
+			// updates and custom per-vertex attributes preserve a stable topology.
+			smoothSharpBends: false,
 		}
 		this._built = false
 		this.onBeforeRender = this._onBeforeRender
@@ -338,9 +337,9 @@ export default class MeshLine extends Mesh {
 	}
 
 	/**
-	 * Enable or disable automatic subdivision of polyline corners that are too
-	 * sharp for the screen-space miter to render cleanly. On by default. Disable
-	 * when you need the GPU buffers to match your input point list exactly.
+	 * Enable or disable CPU subdivision of polyline corners that are too sharp
+	 * for the screen-space miter to render cleanly. Off by default so GPU buffers
+	 * match your input point list exactly unless explicitly enabled.
 	 * @param {boolean} enabled
 	 * @returns {this}
 	 */

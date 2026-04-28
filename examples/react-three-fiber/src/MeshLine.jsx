@@ -38,7 +38,7 @@ export const MeshLine = forwardRef( function MeshLine( {
 	shadow = false,
 	sizeAttenuation = true,
 	join,
-	smoothSharpBends = true,
+	smoothSharpBends = false,
 	smoothSharpBendsAlpha,
 	smoothSharpBendsThreshold,
 	dpr,

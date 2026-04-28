@@ -85,7 +85,7 @@ const material = new MeshLineNodeMaterial({
 
 `miterLimit` defaults to **4.0**, which keeps sharp corners visually clean while leaving gentler bends fully mitered. Lower values clamp earlier (more bevel-like at sharp bends); higher values allow longer spikes.
 
-**Tip for very sharp polylines (zigzags, angular paths):** pair a lower `miterLimit` (e.g. `2`) with the geometry's automatic sharp-bend smoothing (`MeshLine.smoothSharpBends`, enabled by default). The geometry pass subdivides corners whose interior bend drops below ~60°, and the miter clamp catches anything left over. See [MeshLine geometry › Smooth sharp bends](./meshline-geometry.md#smooth-sharp-bends).
+**Tip for very sharp static polylines (zigzags, angular paths):** pair a lower `miterLimit` (e.g. `2`) with opt-in geometry sharp-bend smoothing (`MeshLine.smoothSharpBends(true)`). The geometry pass subdivides corners whose interior bend drops below ~60°, and the miter clamp catches anything left over. See [MeshLine geometry › Smooth sharp bends](./meshline-geometry.md#smooth-sharp-bends).
 
 ### Shadow Nodes
 

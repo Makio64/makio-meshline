@@ -30,8 +30,8 @@ interface MeshLineGeometryOptions {
   usage?: THREE.Usage                        // Optional buffer usage hint : StaticDrawUsage / DynamicDrawUsage / StreamDrawUsage
   verbose?: boolean                          // Console logging
 
-  // Automatic CPU-side corner smoothing (see "Smooth sharp bends" below)
-  smoothSharpBends?: boolean                 // default true; auto-disabled under gpuPositionNode
+  // Optional CPU-side corner smoothing (see "Smooth sharp bends" below)
+  smoothSharpBends?: boolean                 // default false; skipped under gpuPositionNode
   smoothSharpBendsAlpha?: number             // default 0.001
   smoothSharpBendsThreshold?: number         // default -0.5 (dot(dir_in, dir_out) cutoff)
 
@@ -52,7 +52,7 @@ interface MeshLineGeometryOptions {
 
 Screen-space meshlines fundamentally can't render a ribbon cleanly through a single vertex whose two adjacent segments diverge at a near-hairpin angle — the bisector collapses and the ribbon picks up spikes or bowtie artifacts at oblique camera views. Industrial wide-line libraries (Mapbox GL, Cesium, Spite's original MeshLine) all sidestep this by subdividing sharp corners on the CPU before handing vertices to the shader.
 
-`MeshLineGeometry` does the same automatically:
+`MeshLineGeometry` can do the same when `smoothSharpBends` is enabled:
 
 <svg viewBox="0 0 820 280" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Sharp-bend smoothing: before and after" style="max-width:100%;height:auto;display:block;margin:1.5em auto;">
   <text x="40" y="30" class="ssb-label">Without smoothing</text>
@@ -81,24 +81,24 @@ Screen-space meshlines fundamentally can't render a ribbon cleanly through a sin
   <text x="560" y="112" class="ssb-alpha">α · segment</text>
 </svg>
 
-- **Default on.** Every vertex whose interior bend is sharper than ~60° (i.e. `dot(dir_in, dir_out) < -0.5`) is replaced by two cutoff points sitting `smoothSharpBendsAlpha` of the way back along each adjacent segment.
-- **`smoothSharpBendsAlpha`** (default `0.001`) controls how much of the peak you sacrifice. The default is small enough that the cutoff is visually imperceptible while keeping the shader miter math stable; larger values flatten the tip into a bevel-like cap. The bend *angles* at the new vertices are fixed by the original corner angle — `α` only controls how visible the cutoff is.
+- **Default off.** GPU buffers match your input points unless you enable `smoothSharpBends`. When enabled, every vertex whose interior bend is sharper than ~60° (i.e. `dot(dir_in, dir_out) < -0.5`) is replaced by two cutoff points sitting `smoothSharpBendsAlpha` of the way back along each adjacent segment.
+- **`smoothSharpBendsAlpha`** (default `0.001` once smoothing is enabled) controls how much of the peak you sacrifice. The default is small enough that the cutoff is visually imperceptible while keeping the shader miter math stable; larger values flatten the tip into a bevel-like cap. The bend *angles* at the new vertices are fixed by the original corner angle — `α` only controls how visible the cutoff is.
 - **`smoothSharpBendsThreshold`** (default `-0.5`) is the `dot(dir_in, dir_out)` cutoff below which a vertex is considered "too sharp". Lower (more negative) values subdivide only the very sharpest corners.
 
 ```js
 new MeshLine({
   lines: myZigzag,
-  smoothSharpBends: true,          // default
-  smoothSharpBendsAlpha: 0.001,    // default — near-imperceptible cutoff
+  smoothSharpBends: true,          // opt in: changes topology at sharp corners
+  smoothSharpBendsAlpha: 0.001,    // default once enabled — near-imperceptible cutoff
 })
   .join({ limit: 2 })              // pair with a tighter miter clamp for zigzag-style polylines
 ```
 
-**Tuning for very sharp polylines:** the default `α` is usually fine. If you want a visibly flatter bevel at the tip, raise `α` to `0.05`–`0.1`. Pair a small `α` with a lower `miterLimit` (around `2`): the geometry pass handles sharp corners below the threshold and the tighter miter clamp flattens any residual spikes above it into clean bevels.
+**Tuning for very sharp polylines:** the default `α` is usually fine once smoothing is enabled. If you want a visibly flatter bevel at the tip, raise `α` to `0.05`–`0.1`. Pair a small `α` with a lower `miterLimit` (around `2`): the geometry pass handles sharp corners below the threshold and the tighter miter clamp flattens any residual spikes above it into clean bevels.
 
-Disable entirely with `smoothSharpBends: false` (or `.smoothSharpBends(false)` on `MeshLine`) when you need the GPU vertex count to match your input polyline exactly — e.g. if you're animating per-vertex data and rely on a stable index mapping.
+Leave `smoothSharpBends` off when you need the GPU vertex count to match your input polyline exactly — e.g. if you're animating per-vertex data, using custom per-vertex attributes, or relying on a stable index mapping.
 
-> ℹ️ **GPU-positioned lines**: when `gpuPositionNode` is set, the CPU polyline is a straight-line template whose point count drives the progress grid the GPU samples against. Auto-smoothing is skipped in that case — subdividing the template would shift progress values and break GPU position lookups. If you need corner smoothing for a GPU-positioned line, do it inside your position node.
+> ℹ️ **GPU-positioned lines**: when `gpuPositionNode` is set, the CPU polyline is a straight-line template whose point count drives the progress grid the GPU samples against. CPU smoothing is skipped in that case — subdividing the template would shift progress values and break GPU position lookups. If you need corner smoothing for a GPU-positioned line, do it inside your position node.
 
 ## Methods
 

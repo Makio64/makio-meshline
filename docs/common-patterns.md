@@ -129,25 +129,25 @@ window.addEventListener('resize', () => {
 
 Two knobs work together to keep polylines with sharp corners looking clean at every camera angle:
 
-1. **Automatic corner smoothing** (geometry): `smoothSharpBends` (default `true`) subdivides any corner whose interior bend is sharper than ~60°, splitting it into two cutoff points `smoothSharpBendsAlpha` of the way back along each adjacent segment (default `0.001` — visually imperceptible). Raise `α` if you want a visibly flatter bevel cap at the tip.
+1. **Optional corner smoothing** (geometry): `smoothSharpBends` (default `false`) subdivides any corner whose interior bend is sharper than ~60°, splitting it into two cutoff points `smoothSharpBendsAlpha` of the way back along each adjacent segment (default `0.001` once enabled — visually imperceptible). Enable it when cleaner static sharp corners matter more than exact input topology.
 2. **Miter clamp** (shader): `.join({ limit })` caps how far the miter offset can extend. Lower values flatten spikes earlier, higher values allow long pointy miters.
 
 ```js
-// Default combo — handles most polylines cleanly
+// Default combo — stable topology, miter clamp only
 const line = new MeshLine()
   .lines(squarePositions(16), true)
   .lineWidth(2)
-// Implicit: smoothSharpBends=true, α=0.001, miterLimit=4
+// Implicit: smoothSharpBends=false, miterLimit=4
 
-// Very sharp polyline (zigzag-style) — tighten the miter clamp
+// Very sharp static polyline (zigzag-style) — opt into smoothing
 const zigzag = new MeshLine()
   .lines(myZigzagPoints)
   .lineWidth(2)
+  .smoothSharpBends(true)       // subdivides sharp corners
   .join({ limit: 2 })            // bevel residual spikes at very sharp bends
 
 // Exact 1:1 GPU buffer mapping (animation pinned to input indices)
 const exact = new MeshLine()
   .lines(myPoints)
-  .smoothSharpBends(false)       // no auto-subdivision
   .join({ limit: 4 })
 ``` 

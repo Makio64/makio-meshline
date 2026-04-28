@@ -218,9 +218,10 @@ export interface MeshLineConfigureOptions {
 	dashOffset?: number
 	join?: MeshLineJoinOptions
 	/**
-	 * Auto-subdivide polyline corners that are too sharp for the screen-space
-	 * miter to render cleanly. Defaults to `true`. Set to `false` to keep the
-	 * GPU buffers aligned exactly with your input points.
+	 * CPU-subdivide polyline corners that are too sharp for the screen-space
+	 * miter to render cleanly. Defaults to `false` so GPU buffers stay aligned
+	 * exactly with your input points. Enable for static sharp polylines when you
+	 * prefer cleaner corner rendering over exact input topology.
 	 */
 	smoothSharpBends?: boolean
 	/**
