@@ -35,3 +35,4 @@ stats.html
 docs/.vitepress/dist/404.html
 docs/.vitepress/dist/api.html
 docs/.vitepress/dist/guide.html
+.claude/settings.json
