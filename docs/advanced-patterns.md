@@ -171,7 +171,35 @@ for ( let i = 0; i < 100; i++ ) {
 }
 ```
 
-## 8. Material Hooks for Custom Effects
+## 8. Compute Curves
+
+`MeshLineCompute` keeps autonomous curve points in WebGPU storage buffers and renders them through the normal MeshLine material path.
+
+```js
+import { MeshLineCompute } from 'makio-meshline'
+
+const curves = new MeshLineCompute( {
+	curveCount: 180,
+	pointsPerCurve: 42,
+	lineWidth: 0.14,
+	color: 0x47f7ff,
+	gradientColor: 0xff4bd8,
+	transparent: true,
+	opacity: 0.82,
+} ).build()
+
+scene.add( curves )
+
+function animate( delta ) {
+	curves.step( renderer, delta )
+}
+```
+
+Use this when point state can stay on the GPU across frames. For small CPU-owned trails, `setPositions()` remains simpler.
+
+For animated compute curves, use `curves.arcLengthNode( progress )` inside material hooks when an effect needs real distance along the current curve. That avoids tying dash spacing or shimmer bands to the normalized point index.
+
+## 9. Material Hooks for Custom Effects
 
 Use material hooks to create custom shader effects:
 

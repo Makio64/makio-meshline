@@ -432,7 +432,61 @@ export default {
 			transform none
 			justify-content center
 			padding 1rem 0
-			display flex 
+			display flex
 			flex-direction column
 			background linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,.4) 50%, rgba(0,0,0,.9) 100%)
+
+	@media (max-height: 1000px) and (min-width: 721px)
+		justify-content flex-start
+		padding 4rem 1rem 1.5rem
+		overflow auto
+		gap .75rem
+		.header
+			position static
+			top auto
+			left auto
+			right auto
+			margin 0 0 .5rem
+			h1
+				font-size 22px
+				margin-bottom 8px
+			.header-info
+				padding-bottom .5rem
+			.subdesc
+				font-size 14px
+				margin-top .25rem
+			.credit
+				font-size .825rem
+				margin-top .25rem
+		.content
+			grid-template-columns 200px 200px 200px
+			max-width 900px
+			gap 1em
+			align-items start
+		.column
+			gap .6em
+		.column:nth-child(2)
+			grid-column 2 / 4
+			display grid
+			grid-template-columns 1fr 1fr
+			column-gap 1em
+			row-gap .6em
+			align-items start
+			.advanced-desc
+				grid-column 1 / -1
+				margin-bottom 0
+		.content .column a
+			min-height 50px
+			width 100%
+			font-size 1rem
+			padding 8px 10px
+			gap 2px
+		.footer
+			position relative
+			bottom auto
+			left auto
+			right auto
+			margin-top .75rem
+			padding-bottom .5rem
+			font-size 11px
 </style>

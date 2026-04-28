@@ -1,5 +1,5 @@
 ---
-description: "Performance tips for Makio MeshLine covering instancing, batching, dynamic position updates, GPU positioning, and sharp-corner rendering."
+description: "Performance tips for Makio MeshLine covering instancing, batching, dynamic position updates, GPU positioning, compute curves, and sharp-corner rendering."
 ---
 
 # Performance Guide
@@ -66,6 +66,7 @@ It also supports `Instancing` and optimized CPU batching.
 - **Instancing**: Smaller footprint & one drawcall + custom behavior by instance.
 - **Batching**: Draw multiple lines in one call by passing an array to `lines`.
 - **CPU->GPU Fast Updates**: `setPositions()` modifies existing buffers in-place without recreation. Pass `true` as the second argument when movement changes bounds enough for frustum culling to matter.
+- **WebGPU Compute Curves**: `MeshLineCompute` stores point positions and velocities in storage buffers and dispatches `renderer.compute()` each frame, avoiding per-frame JavaScript point uploads for autonomous curve fields.
 - **Miter Clamp + Auto Corner Smoothing**: The shader miter is always on (no branch cost, simpler than the old opt-in path), and sharp corners get an automatic CPU-side subdivision at build time so the shader never has to handle near-hairpin bends. Auto-subdivision only runs when a corner actually needs it, so gentle polylines pay zero overhead.
 
 ## Best Practices
@@ -74,6 +75,7 @@ It also supports `Instancing` and optimized CPU batching.
 - Reuse arrays in hot loops to reduce GC pressure.
 - Call `dispose()` on unused lines to free GPU memory.
 - For massive repeated lines, combine `gpuPositionNode` with instancing to skip CPU position uploads.
+- For autonomous trails or flow-field curves on WebGPU, use `MeshLineCompute` so point state stays on the GPU. Keep plain `gpuPositionNode` for deterministic parametric curves like circles and waves.
 - For picking or hover, set `raycaster.params.Line.firstHitOnly = true` when you only need the nearest hit.
 - Test on target devices—WebGPU often yields 2x speedup over WebGL.
 

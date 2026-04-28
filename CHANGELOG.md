@@ -1,5 +1,10 @@
 # Changelog
 
+## v2.0.0-alpha (in progress)
+### Added
+- Add `MeshLineCompute`, an experimental WebGPU-only storage-buffer curve engine that updates autonomous curve point fields with TSL compute and renders them through the existing MeshLine ribbon material.
+- Add a Compute Curves demo with autonomous, follow, and field-style motion modes, dashed/glowing/textured ribbons, and live simulation controls.
+
 ## 1.4.0
 ### Added
 - Accept documented convenience point inputs consistently for single and multi-line geometry, including `[x, y, z]` tuples, flat numeric XYZ arrays, `Vector2`/`Vector3` points, plain point objects, and `BufferGeometry` sources. These inputs are normalized internally; use `Float32Array` for hot `setPositions()` updates.

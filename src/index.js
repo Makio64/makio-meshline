@@ -1,4 +1,5 @@
 import MeshLine from './MeshLine.js'
+import MeshLineCompute from './MeshLineCompute.js'
 import { MeshLineGeometry } from './MeshLineGeometry.js'
 import MeshLineNodeMaterial from './MeshLineNodeMaterial.js'
 import MeshLinePicker from './MeshLinePicker.js'
@@ -10,6 +11,7 @@ import { straightLine, straightLineBetween } from './positions/straightLine.js'
 
 export {
 	MeshLine,
+	MeshLineCompute,
 	MeshLineGeometry,
 	MeshLineNodeMaterial,
 	MeshLinePicker,

@@ -1,5 +1,5 @@
 ---
-description: "Browse the Makio MeshLine API reference for MeshLine, MeshLineGeometry, MeshLineNodeMaterial, hooks, helpers, and rendering options."
+description: "Browse the Makio MeshLine API reference for MeshLine, MeshLineCompute, MeshLineGeometry, MeshLineNodeMaterial, hooks, helpers, and rendering options."
 ---
 
 # API Reference
@@ -21,6 +21,16 @@ For convenience, use the fluent API below:
 ```ts
 new MeshLine().color(0xff0000).gradientColor(0xff00ff) // etc.
 ```
+
+## [MeshLineCompute](/meshline-compute)
+
+Experimental WebGPU-only curve engine. It stores autonomous curve points in GPU storage buffers, updates them with a compute pass, and renders the result through MeshLine's ribbon material.
+
+```ts
+new MeshLineCompute(options?: MeshLineComputeOptions)
+```
+
+Call `step(renderer, deltaSeconds)` once per frame to dispatch the compute pass.
 
 ## [MeshLineGeometry](/meshline-geometry)
 
@@ -48,5 +58,6 @@ new MeshLineNodeMaterial(parameters?: MeshLineNodeMaterialParameters)
 * Only the uniforms / attributes needed are created & uploaded to the GPU.
 * Many hooks are available for customizing line behavior and rendering
 * Instancing + gpu position will allow you to render thousands of lines like a breeze
+* `MeshLineCompute` keeps animated curve point state on the GPU for WebGPU-only simulation workflows
 * You can also use batching for performant CPU-controlled animation or static lines 
 * No runtime dependencies beyond `three`

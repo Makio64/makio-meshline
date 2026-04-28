@@ -12,15 +12,20 @@ import { resolveDemoMeta } from '@/demoMeta'
 import baguettes from '@/demos/baguettes'
 import bambooGrove from '@/demos/bambooGrove'
 import basic from '@/demos/basic'
+import curlStreams from '@/demos/curlStreams'
 import drawlines from '@/demos/drawlines'
 import follow from '@/demos/follow'
 import gpuCircle from '@/demos/gpuCircle'
 import gpuInstance from '@/demos/gpuInstance'
+import hairBall from '@/demos/hairBall'
 import heist from '@/demos/heist'
+import lorenzTrails from '@/demos/lorenzTrails'
+import meshlineCompute from '@/demos/meshlineCompute'
 import ricefield from '@/demos/ricefield'
 import sandbox from '@/demos/sandbox'
 import shadow from '@/demos/shadow'
 import venus from '@/demos/venus'
+import verletRopes from '@/demos/verletRopes'
 import vertexColors from '@/demos/vertexColors'
 import waves from '@/demos/waves'
 import { contentLoaded } from '@/store'
@@ -43,6 +48,11 @@ export default {
 			drawlines,
 			'gpu-circle': gpuCircle,
 			'gpu-instance': gpuInstance,
+			'compute-curves': meshlineCompute,
+			'lorenz-trails': lorenzTrails,
+			'verlet-ropes': verletRopes,
+			'hair-ball': hairBall,
+			'curl-streams': curlStreams,
 			'bamboooo': bambooGrove,
 			shadow,
 			ricefield,

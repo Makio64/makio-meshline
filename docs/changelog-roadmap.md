@@ -8,13 +8,18 @@ A quick look at where Makio MeshLine has been and where it's headed. We're just 
 
 ## Roadmap
 
+- **v2 compute exploration**:
+  - Add `MeshLineCompute`, an experimental WebGPU-only curve engine that stores point positions, velocities, base positions, and seeds in storage buffers
+  - Add a compute-maintained arc-length buffer so animated storage-buffer curves can drive distance-based effects such as stable dash spacing
+  - Add the Compute Curves demo with autonomous, follow, and field modes rendered as glowing textured MeshLine ribbons with distance-based dash modulation
+  - Next: neighbour constraints, texture/audio/depth-driven force passes, and compute-based segment picking
 - **Mid-term**:
   - Make a cool tutorial website
   - Add receiveShadow support
   - Add a static road or track geometry mode with precomputed tangents, normals, arc-length UVs, and explicit join modes (`bevel`, `round`) for cleaner wide lines with much less shader work
 - **Long-term**: 
   - Explore more WebGPU performance opportunities
-  - Add an optional compute pre-pass for dynamic polylines to resample curves and compute tangents, offsets, join decisions, and arc-length data before rendering
+  - Add optional compute pre-passes for dynamic polylines to resample curves and compute tangents, offsets, join decisions, and arc-length data before rendering
   - Split rendering profiles between a flexible MeshLine material for stylized effects and a lean road material for static extruded paths
 
 ## Changelog

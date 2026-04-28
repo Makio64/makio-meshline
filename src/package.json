@@ -19,6 +19,7 @@
     "MeshLine.js",
     "MeshLineGeometry.js",
     "MeshLineNodeMaterial.js",
+    "MeshLineCompute.js",
     "MeshLinePicker.js",
     "positions/*.js",
     "README.md",

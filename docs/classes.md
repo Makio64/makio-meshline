@@ -1,6 +1,6 @@
 # Classes
 
-Makio MeshLine provides three core classes. All live in the `makio-meshline` package and work with both WebGPU and WebGL2 back-ends.
+Makio MeshLine provides three stable core classes plus an experimental WebGPU compute facade. All live in the `makio-meshline` package; `MeshLineCompute` requires WebGPU compute support.
 
 ---
 
@@ -45,6 +45,25 @@ Important API:
 * `setPositions( lines, updateBounding? )` – super-fast in-place update when point counts stay constant.
 
 See the dedicated [geometry page](/meshline-geometry) for all details.
+
+---
+
+## `MeshLineCompute`
+
+Experimental WebGPU-only facade for autonomous curves. It owns storage buffers for point positions, velocities, base positions, and seeds, dispatches a TSL compute pass with `step(renderer, delta)`, then renders through MeshLine's material pipeline.
+
+```ts
+import { MeshLineCompute } from 'makio-meshline'
+
+const curves = new MeshLineCompute( {
+  curveCount: 180,
+  pointsPerCurve: 42,
+  lineWidth: 0.14,
+  dash: { count: 72, ratio: 0.58 }
+} ).build()
+```
+
+Use `MeshLine` for ordinary WebGPU/WebGL2 lines. Use `MeshLineCompute` when curve state should live and evolve on the GPU.
 
 ---
 

@@ -4,19 +4,20 @@ const SITE_URL = 'https://meshline.makio.io'
 const REPO_URL = 'https://github.com/Makio64/makio-meshline'
 const DEMO_URL = 'https://meshline-demo.makio.io/'
 const SITE_TITLE = 'Makio MeshLine'
-const DEFAULT_DESCRIPTION = 'TSL-powered MeshLine for Three.js with wide lines, gradients, dashes, textures, shadows, GPU positions, and instancing for WebGPU and WebGL2.'
+const DEFAULT_DESCRIPTION = 'TSL-powered MeshLine for Three.js with wide lines, gradients, dashes, textures, shadows, GPU positions, compute curves, and instancing for WebGPU and WebGL2.'
 const SITE_IMAGE = `${SITE_URL}/og-image.svg`
 const X_HANDLE = '@makio64'
 const PAGE_DESCRIPTIONS = {
   'index.md': 'Makio MeshLine is a TSL-powered MeshLine library for Three.js with wide lines, gradients, dashes, textures, shadows, GPU positions, and instancing.',
   'guide.md': 'Get started with Makio MeshLine for Three.js, from installation to your first wide, dashed, gradient, or textured line in WebGPU.',
-  'api.md': 'Browse the Makio MeshLine API reference for MeshLine, MeshLineGeometry, MeshLineNodeMaterial, hooks, helpers, and rendering options.',
+  'api.md': 'Browse the Makio MeshLine API reference for MeshLine, MeshLineCompute, MeshLineGeometry, MeshLineNodeMaterial, hooks, helpers, and rendering options.',
   'why-makio-meshline.md': 'Learn why Makio MeshLine is a modern THREE.MeshLine alternative for Three.js with TSL, WebGPU, instancing, and GPU-driven workflows.',
   'common-patterns.md': 'Copy practical Makio MeshLine recipes for circles, dashed lines, gradients, textures, dynamic updates, and sharp-corner handling in Three.js.',
   'advanced-patterns.md': 'Explore advanced Makio MeshLine patterns for GPU positions, instancing, batching, animated dashes, and custom TSL material hooks.',
   'performance.md': 'Performance tips for Makio MeshLine covering instancing, batching, dynamic position updates, GPU positioning, and sharp-corner rendering.',
   'helpers.md': 'Reference helper functions like circlePositions, squarePositions, sineWavePositions, and straightLine for building Three.js MeshLine paths.',
   'meshline.md': 'Reference the main MeshLine class for Three.js wide lines, including styling, dashes, textures, hooks, instancing, and GPU positions.',
+  'meshline-compute.md': 'Reference MeshLineCompute, the experimental WebGPU storage-buffer curve engine for autonomous MeshLine ribbons.',
   'meshline-geometry.md': 'Reference MeshLineGeometry for efficient line mesh generation, attribute control, batching, and fast position updates in Makio MeshLine.',
   'meshline-material.md': 'Reference MeshLineNodeMaterial for Makio MeshLine, including gradients, dashes, textures, opacity, hooks, and miter join settings.',
   'changelog-roadmap.md': 'Track Makio MeshLine releases, rendering improvements, roadmap items, and upcoming work across WebGPU, joins, and geometry workflows.',
@@ -27,6 +28,7 @@ const PAGE_DESCRIPTIONS = {
   'examples/sandbox.md': 'Use the Makio MeshLine interactive sandbox to tune line shapes, joins, dashes, gradients, and exported Three.js code snippets.',
   'examples/instancing.md': 'Render many repeated lines with one draw call using Makio MeshLine instancing, per-instance attributes, and custom TSL hooks.',
   'examples/gpucircle.md': 'Use GPU-driven positions with Makio MeshLine and Three.js TSL to animate parametric circles and curves without CPU vertex uploads.',
+  'examples/compute-curves.md': 'Render autonomous WebGPU storage-buffer curves with MeshLineCompute, glowing dashes, textures, and mouse-driven flow forces.',
   'examples/vertex-colors.md': 'Color each point in a Makio MeshLine with per-vertex RGB values for gradients, data-driven color ramps, and stylized trails.',
   'examples/shadow.md': 'See how Makio MeshLine lines cast shadows in Three.js, including dashed shadow behavior, spotlights, and custom shadow appearance.',
   'examples/bamboo.md': 'Build a procedural bamboo grove with Makio MeshLine instancing, custom TSL transforms, and shadow-casting line templates.',
@@ -193,6 +195,7 @@ export default defineConfig( {
           { text: 'Vertex Colors', link: '/examples/vertex-colors' },
           { text: 'Follow', link: '/examples/follow' },
           { text: 'GPU position', link: '/examples/gpucircle' },
+          { text: 'Compute Curves', link: '/examples/compute-curves' },
           { text: 'Instancing', link: '/examples/instancing' },
           { text: 'Shadow', link: '/examples/shadow' },
           { text: 'Bamboo Grove', link: '/examples/bamboo' },
@@ -207,6 +210,7 @@ export default defineConfig( {
         items: [
           { text: 'Overview', link: '/api' },
           { text: 'MeshLine', link: '/meshline' },
+          { text: 'MeshLineCompute (WebGPU)', link: '/meshline-compute' },
           { text: 'MeshLineGeometry', link: '/meshline-geometry' },
           { text: 'MeshLineNodeMaterial', link: '/meshline-material' },
           { text: 'MeshLinePicker (GPU)', link: '/picking' },
