@@ -3,7 +3,7 @@ import { useThree } from '@react-three/fiber'
 import { MeshLine as MeshLineCore } from 'makio-meshline'
 
 function applyBuildOptions( line, options ) {
-	const { dash, join, points, ...configureOptions } = options
+	const { cap, dash, join, points, surface, ...configureOptions } = options
 	const linePoints = points ?? configureOptions.lines
 
 	line.configure( {
@@ -12,8 +12,15 @@ function applyBuildOptions( line, options ) {
 		transparent: configureOptions.transparent || configureOptions.opacity < 1,
 	} )
 
+	if ( surface ) {
+		if ( typeof line.surface !== 'function' ) {
+			throw new Error( '[MeshLine] The surface prop requires a makio-meshline version with road/ribbon support.' )
+		}
+		line.surface( surface === true ? {} : surface )
+	}
 	line.dash( dash )
 	if ( join ) line.join( join )
+	if ( cap ) line.cap( cap )
 	return line
 }
 
@@ -23,6 +30,7 @@ export const MeshLine = forwardRef( function MeshLine( {
 	segments,
 	closed = false,
 	lineWidth = 0.1,
+	surface = false,
 	color = 0xffffff,
 	vertexColors,
 	widthCallback,
@@ -38,6 +46,7 @@ export const MeshLine = forwardRef( function MeshLine( {
 	shadow = false,
 	sizeAttenuation = true,
 	join,
+	cap,
 	smoothSharpBends = false,
 	smoothSharpBendsAlpha,
 	smoothSharpBendsThreshold,
@@ -87,6 +96,7 @@ export const MeshLine = forwardRef( function MeshLine( {
 			points: linePoints,
 			segments,
 			closed,
+			surface,
 			vertexColors,
 			color,
 			lineWidth,
@@ -103,6 +113,7 @@ export const MeshLine = forwardRef( function MeshLine( {
 			wireframe,
 			shadow,
 			join,
+			cap,
 			smoothSharpBends,
 			smoothSharpBendsAlpha,
 			smoothSharpBendsThreshold,
@@ -140,7 +151,7 @@ export const MeshLine = forwardRef( function MeshLine( {
 		line.build()
 		previousClosedRef.current = closed
 		return line
-	}, [segments, sizeAttenuation, widthCallback, vertexColors, join, smoothSharpBends, smoothSharpBendsAlpha,
+	}, [segments, surface, sizeAttenuation, widthCallback, vertexColors, join, cap, smoothSharpBends, smoothSharpBendsAlpha,
 		smoothSharpBendsThreshold, dynamic, gpuPositionNode, usage, instanceCount, needsUV, needsWidth,
 		needsProgress, needsPrevious, needsNext, needsSide, needsVertexColor, positionFn, previousFn, nextFn,
 		widthFn, normalFn, colorFn, gradientFn, opacityFn, dashFn, uvFn, vertexFn, fragmentColorFn,

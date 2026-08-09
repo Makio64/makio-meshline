@@ -2,6 +2,7 @@ import type {
 	Mesh as ThreeMesh,
 	Group as ThreeGroup,
 	InstancedBufferAttribute,
+	Intersection,
 	Raycaster,
 	Texture,
 	Vector2,
@@ -12,6 +13,8 @@ import type {
 	Scene,
 	Camera,
 	MeshBasicNodeMaterial,
+	MeshStandardNodeMaterial,
+	Object3D,
 	WebGPURenderer
 } from 'three/webgpu'
 
@@ -161,13 +164,52 @@ export type GPUPositionNodeFn = ( progress: MeshLineNodeValue, extra: MeshLineNo
 
 export interface MeshLineJoinOptions {
 	/**
-	 * Join type. Retained for back-compat; only `'miter'` is implemented —
-	 * `'simple'` now renders identically to `'miter'`.
-	 * @deprecated The field has no effect; thickness is uniform at all angles.
+	 * The regular billboard profile uses bounded miters (`'simple'` remains an
+	 * alias). Surface geometry and the optional GPU path emit true bevel and
+	 * round topology.
 	 */
-	type?: 'miter' | 'simple'
+	type?: 'miter' | 'simple' | 'bevel' | 'round'
 	/** Maximum miter expansion factor at sharp bends. Defaults to 4. */
 	limit?: number
+	/** Maximum round-join subdivisions per 180-degree turn. Defaults to 8. */
+	segments?: number
+}
+
+export type MeshLineCapType = 'butt' | 'square' | 'round'
+
+export interface MeshLineCapOptions {
+	/** Open-path endpoint shape. Defaults to `butt`. */
+	type?: MeshLineCapType
+	/** Semicircle tessellation count for round caps; round requires at least 2. Defaults to 8. */
+	segments?: number
+}
+
+export type MeshLineSurfaceBank =
+	| number
+	| Float32Array
+	| number[]
+	| Array<Float32Array | number[]>
+	| ( ( progress: number, pointIndex: number, lineIndex: number ) => number )
+
+/** World-space ribbon/road profile. Angles are in radians. */
+export interface MeshLineSurfaceOptions {
+	/** Rotation-minimizing frames by default; fixed-up is useful for terrain roads. */
+	frame?: 'transport' | 'fixed-up'
+	/** Preferred surface normal/up direction. Defaults to `[0, 1, 0]`. */
+	up?: Vector3 | [number, number, number] | { x: number; y: number; z: number }
+	/** Constant, per-point, per-line, or callback banking angle in radians. */
+	bank?: MeshLineSurfaceBank
+	/** Distance repeats physical UVs; stretch maps each path to U=0..1. */
+	uvMode?: 'distance' | 'stretch'
+	/** World units represented by one U repeat in distance mode. Defaults to 1. */
+	uvScale?: number
+	normalMap?: Texture | null
+	roughnessMap?: Texture | null
+	metalnessMap?: Texture | null
+	roughness?: number
+	metalness?: number
+	/** Three.js material side constant. Defaults to FrontSide. */
+	side?: number
 }
 
 export interface MeshLineDashOptions {
@@ -181,6 +223,8 @@ export interface MeshLineConfigureOptions {
 	lines?: MultiLinePoints
 	segments?: number
 	closed?: boolean | boolean[]
+	/** Enable camera-independent world-space road/ribbon geometry. */
+	surface?: boolean | MeshLineSurfaceOptions
 
 	// appearance
 	color?: number | string | Color
@@ -191,7 +235,7 @@ export interface MeshLineConfigureOptions {
 	 * stable across DPR while the renderer uses more physical pixels.
 	 */
 	lineWidth?: number
-	widthCallback?: ( t: number ) => number
+	widthCallback?: ( t: number, pointIndex?: number, lineIndex?: number ) => number
 	/**
 	 * When `false`, `lineWidth` is a constant CSS-pixel width. When `true`
 	 * (default), `lineWidth` is projected in scene space and attenuates with depth.
@@ -217,6 +261,7 @@ export interface MeshLineConfigureOptions {
 	/** @deprecated Prefer `dash: { offset }` or `.dash({ offset })`. */
 	dashOffset?: number
 	join?: MeshLineJoinOptions
+	cap?: MeshLineCapType | MeshLineCapOptions
 	/**
 	 * CPU-subdivide polyline corners that are too sharp for the screen-space
 	 * miter to render cleanly. Defaults to `false` so GPU buffers stay aligned
@@ -290,6 +335,25 @@ export interface MeshLineMaterialOptions extends Partial<MeshLineConfigureOption
 	miterLimit?: number
 }
 
+export interface MeshLineSurfaceGeometryOptions extends Partial<MeshLineConfigureOptions> {
+	surface?: MeshLineSurfaceOptions
+	/** Emit tangents even when no normal map currently needs them. */
+	needsTangents?: boolean
+}
+
+export interface MeshLineSurfaceMaterialOptions extends Partial<MeshLineConfigureOptions> {
+	surface?: MeshLineSurfaceOptions
+	depthWrite?: boolean
+	depthTest?: boolean
+}
+
+export interface MeshLinePositionRangeOptions {
+	/** Zero-based source line within a batched geometry. Defaults to 0. */
+	lineIndex?: number
+	/** Recompute aggregate bounds after the edit. Defaults to false. */
+	updateBounding?: boolean
+}
+
 // ---------------------------------------------------------------------------
 // MeshLine (main facade)
 // ---------------------------------------------------------------------------
@@ -302,10 +366,11 @@ export class MeshLine extends ThreeMesh {
 	lines( points: MultiLinePoints, closed?: boolean | boolean[] ): this
 	segments( segments: number ): this
 	closed( closed: boolean | boolean[] ): this
+	surface( options?: boolean | MeshLineSurfaceOptions ): this
 
 	color( color: number | string | Color ): this
 	lineWidth( width: number ): this
-	widthCallback( fn: ( ( t: number ) => number ) | null ): this
+	widthCallback( fn: ( ( progress: number, pointIndex?: number, lineIndex?: number ) => number ) | null ): this
 	sizeAttenuation( enabled: boolean ): this
 	shadow( enabled: boolean ): this
 
@@ -315,6 +380,7 @@ export class MeshLine extends ThreeMesh {
 	wireframe( enabled: boolean ): this
 
 	join( options?: MeshLineJoinOptions ): this
+	cap( options?: MeshLineCapType | MeshLineCapOptions ): this
 	smoothSharpBends( enabled: boolean ): this
 	smoothSharpBendsAlpha( alpha: number ): this
 	smoothSharpBendsThreshold( threshold: number ): this
@@ -362,12 +428,14 @@ export class MeshLine extends ThreeMesh {
 	build(): this
 	rebuild(): this
 	ensureBuilt(): this
-	raycast( raycaster: Raycaster, intersects: Array<Record<string, unknown> & { lineIndex?: number; instanceId?: number }> ): void
+	raycast( raycaster: Raycaster, intersects: Array<Intersection<Object3D> & { lineIndex?: number; instanceId?: number }> ): void
 	setPositions( points: MultiLinePoints, updateBounding?: boolean ): void
+	setPositionRange( points: ArrayLike<number> | Array<LinePointTuple | LinePointObject>, startPoint: number, options?: MeshLinePositionRangeOptions ): this
 	addVertexAttribute( name: string, components?: number ): BufferAttribute
 
 	addInstanceAttribute( name: string, components?: number ): InstancedBufferAttribute
 	setInstanceValue( name: string, index: number, value: number | number[] | { x: number; y: number; z?: number; w?: number } ): void
+	setInstanceValues( name: string, values: ArrayLike<number>, startInstance?: number ): this
 	resize( width?: number, height?: number ): void
 	autoResize( target?: MeshLineResizeTarget ): this
 	dispose(): void
@@ -378,10 +446,13 @@ export class MeshLine extends ThreeMesh {
 // ---------------------------------------------------------------------------
 
 export class MeshLineGeometry extends BufferGeometry {
+	readonly isMeshLine: true
 	constructor( options?: MeshLineGeometryOptions )
 	buildLine( options?: MeshLineGeometryOptions ): void
 	setLines( points: MultiLinePoints ): void
 	setPositions( points: MultiLinePoints, updateBounding?: boolean ): void
+	setPositionRange( points: ArrayLike<number> | Array<LinePointTuple | LinePointObject>, startPoint: number, options?: MeshLinePositionRangeOptions ): this
+	setUsage( usage: MeshLineUsage, name?: string | null ): void
 	dispose(): void
 }
 
@@ -391,6 +462,19 @@ export class MeshLineGeometry extends BufferGeometry {
 
 export class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 	readonly isMeshLineNodeMaterial: true
+	lineWidth: MeshLineUniform<number>
+	resolution: MeshLineUniform<Vector2>
+	dpr: MeshLineUniform<number>
+	gradient: MeshLineNodeValue | null
+	color: MeshLineNodeValue
+	opacity: MeshLineNodeValue | null
+	map: MeshLineNodeValue | null
+	alphaMap: MeshLineNodeValue | null
+	mapOffset: MeshLineNodeValue | null
+	repeat: MeshLineNodeValue | null
+	dashCount: MeshLineUniform<number> | null
+	dashRatio: MeshLineUniform<number> | null
+	dashOffset: MeshLineUniform<number> | null
 	castShadowNode: MeshLineNodeValue | null
 	castShadowPositionNode: MeshLineNodeValue | null
 	maskShadowNode: MeshLineNodeValue | null
@@ -401,6 +485,27 @@ export class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 	buildLine( options?: MeshLineMaterialOptions ): void
 	setShadow( enabled: boolean ): void
 	dispose(): void
+}
+
+// ---------------------------------------------------------------------------
+// MeshLine world-space surface profile
+// ---------------------------------------------------------------------------
+
+export class MeshLineSurfaceGeometry extends BufferGeometry {
+	readonly isMeshLineSurfaceGeometry: true
+	constructor( options?: MeshLineSurfaceGeometryOptions )
+	buildLine( options?: MeshLineSurfaceGeometryOptions ): void
+	setLines( points: MultiLinePoints ): void
+	setPositions( points: MultiLinePoints ): void
+	setUsage( usage: MeshLineUsage, name?: string | null ): void
+	dispose(): void
+}
+
+export class MeshLineSurfaceNodeMaterial extends MeshStandardNodeMaterial {
+	readonly isMeshLineSurfaceNodeMaterial: true
+	constructor( options?: MeshLineSurfaceMaterialOptions )
+	buildLine( options?: MeshLineSurfaceMaterialOptions ): void
+	setShadow( enabled: boolean ): void
 }
 
 // ---------------------------------------------------------------------------

@@ -9,6 +9,7 @@ const props = defineProps( {
 	segments: { type: Number, default: undefined },
 	closed: { type: [Boolean, Array], default: false },
 	lineWidth: { type: Number, default: 0.1 },
+	surface: { type: [Boolean, Object], default: false },
 	color: { type: [Number, String, Object], default: 0xffffff },
 	vertexColors: { type: [Array, Float32Array], default: null },
 	widthCallback: { type: Function, default: null },
@@ -24,6 +25,7 @@ const props = defineProps( {
 	shadow: { type: Boolean, default: false },
 	sizeAttenuation: { type: Boolean, default: true },
 	join: { type: Object, default: null },
+	cap: { type: [String, Object], default: null },
 	smoothSharpBends: { type: Boolean, default: false },
 	smoothSharpBendsAlpha: { type: Number, default: undefined },
 	smoothSharpBendsThreshold: { type: Number, default: undefined },
@@ -78,6 +80,7 @@ function getBuildOptions() {
 		lines: resolveLines(),
 		segments: props.segments,
 		closed: props.closed,
+		surface: props.surface,
 		vertexColors: props.vertexColors,
 		color: props.color,
 		lineWidth: props.lineWidth,
@@ -94,6 +97,7 @@ function getBuildOptions() {
 		wireframe: props.wireframe,
 		shadow: props.shadow,
 		join: props.join,
+		cap: props.cap,
 		smoothSharpBends: props.smoothSharpBends,
 		smoothSharpBendsAlpha: props.smoothSharpBendsAlpha,
 		smoothSharpBendsThreshold: props.smoothSharpBendsThreshold,
@@ -131,10 +135,17 @@ function getBuildOptions() {
 }
 
 function applyBuildOptions( line ) {
-	const { dash, join, ...options } = getBuildOptions()
+	const { cap, dash, join, surface, ...options } = getBuildOptions()
 	line.configure( options )
+	if ( surface ) {
+		if ( typeof line.surface !== 'function' ) {
+			throw new Error( '[MeshLine] The surface prop requires a makio-meshline version with road/ribbon support.' )
+		}
+		line.surface( surface === true ? {} : surface )
+	}
 	line.dash( dash )
 	if ( join ) line.join( join )
+	if ( cap ) line.cap( cap )
 	return line
 }
 
@@ -155,7 +166,6 @@ function applyLiveOptions() {
 	line.dash( props.dash )
 	line.setFrustumCulled( props.frustumCulled )
 	line.verbose( props.verbose )
-	line.join( props.join ?? undefined )
 
 	line.mapOffset( props.mapOffset ?? null )
 	if ( props.dpr !== undefined ) line.dpr( props.dpr )
@@ -218,7 +228,6 @@ watch( () => [
 	props.sizeAttenuation,
 	props.widthCallback,
 	props.vertexColors,
-	props.join,
 	props.smoothSharpBends,
 	props.smoothSharpBendsAlpha,
 	props.smoothSharpBendsThreshold,
@@ -248,6 +257,8 @@ watch( () => [
 	props.fragmentAlphaFn,
 	props.discardFn,
 ], buildAndAdd, { flush: 'post' } )
+
+watch( [() => props.surface, () => props.join, () => props.cap], buildAndAdd, { deep: true, flush: 'post' } )
 
 watch( () => [
 	props.lineWidth,

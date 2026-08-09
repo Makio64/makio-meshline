@@ -1,8 +1,9 @@
-import { uniform } from "three/tsl"
 import { InstancedBufferAttribute, Matrix4, Mesh, Ray, Sphere, StaticDrawUsage, StreamDrawUsage, Vector3 } from "three/webgpu"
 
 import MeshLineGeometry from "./MeshLineGeometry.js"
 import MeshLineNodeMaterial from "./MeshLineNodeMaterial.js"
+import MeshLineSurfaceGeometry from './MeshLineSurfaceGeometry.js'
+import MeshLineSurfaceNodeMaterial from './MeshLineSurfaceNodeMaterial.js'
 import { straightLine } from "./positions/straightLine.js"
 
 // Pre-allocated temporaries for raycast (avoid GC)
@@ -44,6 +45,9 @@ export default class MeshLine extends Mesh {
 		this._options = {
 			segments: 1,
 			closed: false,
+			surface: false,
+			join: { type: 'miter', limit: 4, segments: 8 },
+			cap: { type: 'butt', segments: 8 },
 			
 			color: 0xffffff,
 			lineWidth: 0.3,
@@ -91,6 +95,9 @@ export default class MeshLine extends Mesh {
 			smoothSharpBends: false,
 		}
 		this._built = false
+		this._frustumCulledExplicit = false
+		this._renderedInstanceAttributes = new WeakSet()
+		this._pendingInstanceAttributes = new Set()
 		this.onBeforeRender = this._onBeforeRender
 		this.configure( options ?? {} )
 	}
@@ -103,6 +110,7 @@ export default class MeshLine extends Mesh {
 	 */
 	configure( options = {} ) {
 		options = options ?? {}
+		if ( options.surface !== undefined ) this.surface( options.surface )
 		if ( options.segments !== undefined ) this.segments( options.segments )
 		if ( options.lines !== undefined || options.closed !== undefined ) {
 			const lines = options.lines ?? this._options.lines
@@ -135,6 +143,7 @@ export default class MeshLine extends Mesh {
 			} )
 		}
 		if ( options.join ) this.join( options.join )
+		if ( options.cap !== undefined ) this.cap( options.cap )
 		if ( options.smoothSharpBends !== undefined ) this.smoothSharpBends( options.smoothSharpBends )
 		if ( options.smoothSharpBendsAlpha !== undefined ) this.smoothSharpBendsAlpha( options.smoothSharpBendsAlpha )
 		if ( options.smoothSharpBendsThreshold !== undefined ) this.smoothSharpBendsThreshold( options.smoothSharpBendsThreshold )
@@ -189,11 +198,28 @@ export default class MeshLine extends Mesh {
 	}
 
 	/**
+	 * Select the camera-independent world-space surface profile used for roads,
+	 * tracks, and ribbons. Pass `false` to return to the billboard profile.
+	 * @param {boolean | import('./index.d.ts').MeshLineSurfaceOptions} [options]
+	 * @returns {this}
+	 */
+	surface( options = {} ) {
+		this._options.surface = options === false || options == null
+			? false
+			: { ...( options === true ? {} : options ) }
+		if ( this._built ) this.rebuild()
+		return this
+	}
+
+	/**
 	 * Set the number of segments for GPU-generated positions.
 	 * @param {number} segments
 	 * @returns {this}
 	 */
 	segments( segments ) {
+		if ( !Number.isInteger( segments ) || segments < 1 ) {
+			throw new Error( 'MeshLine: segments must be a positive integer' )
+		}
 		this._options.segments = segments
 		return this
 	}
@@ -204,6 +230,7 @@ export default class MeshLine extends Mesh {
 	 * @returns {this}
 	 */
 	closed( closed ) {
+		if ( this._built && this._options.lines ) return this.lines( this._options.lines, closed )
 		this._options.closed = closed
 		return this
 	}
@@ -215,7 +242,9 @@ export default class MeshLine extends Mesh {
 	 */
 	color( color ) {
 		this._options.color = color
-		if ( this.material.color?.value?.set ) {
+		if ( this.material.isMeshLineSurfaceNodeMaterial ) {
+			this.material.color.set( color )
+		} else if ( this.material.color?.value?.set ) {
 			this.material.color.value.set( color )
 		}
 		return this
@@ -229,9 +258,19 @@ export default class MeshLine extends Mesh {
 	 * @returns {this}
 	 */
 	lineWidth( lineWidth ) {
+		if ( !Number.isFinite( lineWidth ) || !Number.isFinite( Math.fround( lineWidth ) ) || lineWidth < 0 ) {
+			throw new Error( 'MeshLine: lineWidth must be a finite, non-negative number' )
+		}
 		this._options.lineWidth = lineWidth
-		if ( this.material.lineWidth ) {
+		if ( this._built && this.geometry.isMeshLineSurfaceGeometry ) {
+			this.geometry.buildLine( this._getBuildOptions() )
+		} else if ( this.material.lineWidth ) {
 			this.material.lineWidth.value = lineWidth
+			if ( this.geometry.options ) {
+				this.geometry.options.lineWidth = lineWidth
+				this.geometry.computeBoundingBoxes()
+				this.geometry.computeBoundingSphere()
+			}
 		}
 		return this
 	}
@@ -243,7 +282,18 @@ export default class MeshLine extends Mesh {
 	 * @returns {this}
 	 */
 	widthCallback( widthCallback ) {
+		if ( widthCallback != null && typeof widthCallback !== 'function' ) {
+			throw new Error( 'MeshLine: widthCallback must be a function or null' )
+		}
+		const hadWidthCallback = !!this._options.widthCallback
 		this._options.widthCallback = widthCallback
+		if ( this._built && this.geometry.isMeshLineSurfaceGeometry ) {
+			this.geometry.buildLine( this._getBuildOptions() )
+		} else if ( this._built && hadWidthCallback !== !!widthCallback ) {
+			this.rebuild()
+		} else if ( this._built ) {
+			this.geometry.buildLine( { widthCallback } )
+		}
 		return this
 	}
 
@@ -255,6 +305,18 @@ export default class MeshLine extends Mesh {
 	 */
 	sizeAttenuation( sizeAttenuation ) {
 		this._options.sizeAttenuation = sizeAttenuation
+		if ( sizeAttenuation === false ) {
+			// Pixel padding has no camera-independent world-space bound.
+			this._options.frustumCulled = false
+			this.frustumCulled = false
+		}
+		if ( this._built && this.material.isMeshLineNodeMaterial ) {
+			this.material.sizeAttenuation = sizeAttenuation
+			this.material.needsUpdate = true
+			this.geometry.options.sizeAttenuation = sizeAttenuation
+			this.geometry.computeBoundingBoxes()
+			this.geometry.computeBoundingSphere()
+		}
 		return this
 	}
 
@@ -278,7 +340,21 @@ export default class MeshLine extends Mesh {
 	 * @returns {this}
 	 */
 	opacity( opacity ) {
+		if ( !Number.isFinite( opacity ) || !Number.isFinite( Math.fround( opacity ) ) || opacity < 0 || opacity > 1 ) {
+			throw new Error( 'MeshLine: opacity must be a Float32-representable number within [0, 1]' )
+		}
 		this._options.opacity = opacity
+		if ( this.material.isMeshLineSurfaceNodeMaterial ) {
+			const previousTransparent = this.material.transparent
+			const previousDepthWrite = this.material.depthWrite
+			this.material.opacity = opacity
+			this.material.transparent = this._options.transparent || opacity < 1 || this.material.alphaMap != null
+			this.material.depthWrite = this._options.depthWrite ?? !this.material.transparent
+			if ( previousTransparent !== this.material.transparent || previousDepthWrite !== this.material.depthWrite ) {
+				this.material.needsUpdate = true
+			}
+			return this
+		}
 		const opacityUniform = this.material.opacity
 		if ( opacityUniform && typeof opacityUniform === 'object' && 'value' in opacityUniform ) {
 			this.material.opacity.value = opacity
@@ -294,6 +370,9 @@ export default class MeshLine extends Mesh {
 	 * @returns {this}
 	 */
 	alphaTest( alphaTest ) {
+		if ( !Number.isFinite( alphaTest ) || alphaTest < 0 || alphaTest > 1 ) {
+			throw new Error( 'MeshLine: alphaTest must be within [0, 1]' )
+		}
 		this._options.alphaTest = alphaTest
 		this.material.alphaTest = alphaTest
 		return this
@@ -306,7 +385,15 @@ export default class MeshLine extends Mesh {
 	 */
 	transparent( transparent ) {
 		this._options.transparent = transparent
+		const changed = this.material.transparent !== transparent
 		this.material.transparent = transparent
+		if ( this.material.isMeshLineSurfaceNodeMaterial ) {
+			const previousDepthWrite = this.material.depthWrite
+			this.material.depthWrite = this._options.depthWrite ?? !transparent
+			if ( changed || previousDepthWrite !== this.material.depthWrite ) this.material.needsUpdate = true
+		} else if ( changed ) {
+			this.material.needsUpdate = true
+		}
 		return this
 	}
 
@@ -317,21 +404,65 @@ export default class MeshLine extends Mesh {
 	 */
 	wireframe( wireframe ) {
 		this._options.wireframe = wireframe
+		const changed = this.material.wireframe !== wireframe
 		this.material.wireframe = wireframe
+		if ( changed ) this.material.needsUpdate = true
 		return this
 	}
 
 	/**
-	 * Configure miter limit at sharp corners. The `type` field is accepted for
-	 * back-compat; only miter joins are implemented — every value behaves as
-	 * `'miter'`. `limit` caps the miter extension at sharp bends (default 4).
+	 * Configure the join policy at sharp corners. The regular billboard profile
+	 * keeps its bounded fixed-strip miter; world surfaces and the optional GPU
+	 * path emit true bevel/round topology. `simple` aliases `miter`.
 	 * @param {import('./index.d.ts').MeshLineJoinOptions} [options]
 	 * @returns {this}
 	 */
-	join( { type: _type = 'miter', limit = 4 } = {} ) {
+	join( { type = 'miter', limit = 4, segments = 8 } = {} ) {
+		const normalizedType = type === 'simple' ? 'miter' : type
+		if ( !['miter', 'bevel', 'round'].includes( normalizedType ) ) {
+			throw new Error( `MeshLine: unsupported join type: ${type}` )
+		}
+		if ( !Number.isFinite( limit ) || limit < 1 ) {
+			throw new Error( 'MeshLine: join.limit must be finite and at least 1' )
+		}
+		if ( !Number.isInteger( segments ) || segments < 1 ) {
+			throw new Error( 'MeshLine: join.segments must be a positive integer' )
+		}
+		this._options.join = { type: normalizedType, limit, segments }
 		this._options.miterLimit = limit
-		if ( this._built && this.material ) {
+		if ( this._built && this.geometry.isMeshLineSurfaceGeometry ) {
+			this.geometry.buildLine( this._getBuildOptions() )
+		} else if ( this._built && this.material ) {
 			this.material.miterLimit = limit
+			this.geometry.options.miterLimit = this.material.miterLimit
+			this.geometry.computeBoundingBoxes()
+			this.geometry.computeBoundingSphere()
+		}
+		return this
+	}
+
+	/**
+	 * Configure open-path end caps. Surface geometry and the optional GPU path
+	 * emit true square/round topology; the fixed billboard profile remains butt.
+	 * @param {'butt' | 'square' | 'round' | import('./index.d.ts').MeshLineCapOptions} [options]
+	 * @returns {this}
+	 */
+	cap( options = {} ) {
+		if ( options == null ) options = {}
+		if ( typeof options === 'string' ) options = { type: options }
+		const { type = 'butt', segments = 8 } = options
+		if ( !['butt', 'square', 'round'].includes( type ) ) {
+			throw new Error( `MeshLine: unsupported cap type: ${type}` )
+		}
+		if ( !Number.isInteger( segments ) || segments < 1 ) {
+			throw new Error( 'MeshLine: cap.segments must be a positive integer' )
+		}
+		if ( type === 'round' && segments < 2 ) {
+			throw new Error( 'MeshLine: round caps require cap.segments of at least 2' )
+		}
+		this._options.cap = { type, segments }
+		if ( this._built && this.geometry.isMeshLineSurfaceGeometry ) {
+			this.geometry.buildLine( this._getBuildOptions() )
 		}
 		return this
 	}
@@ -362,6 +493,9 @@ export default class MeshLine extends Mesh {
 	 * @returns {this}
 	 */
 	smoothSharpBendsAlpha( alpha ) {
+		if ( !Number.isFinite( alpha ) || alpha < 0 || alpha > 0.5 ) {
+			throw new Error( 'MeshLine: smoothSharpBendsAlpha must be within [0, 0.5]' )
+		}
 		this._options.smoothSharpBendsAlpha = alpha
 		if ( this._built ) {
 			this.geometry.options.smoothSharpBendsAlpha = alpha
@@ -379,6 +513,9 @@ export default class MeshLine extends Mesh {
 	 * @returns {this}
 	 */
 	smoothSharpBendsThreshold( threshold ) {
+		if ( !Number.isFinite( threshold ) || threshold < -1 || threshold > 1 ) {
+			throw new Error( 'MeshLine: smoothSharpBendsThreshold must be within [-1, 1]' )
+		}
 		this._options.smoothSharpBendsThreshold = threshold
 		if ( this._built ) {
 			this.geometry.options.smoothSharpBendsThreshold = threshold
@@ -411,6 +548,16 @@ export default class MeshLine extends Mesh {
 	 * @returns {this}
 	 */
 	map( map ) {
+		if ( this.material.isMeshLineSurfaceNodeMaterial ) {
+			this._options.map = map
+			const topologyChanged = !!this.material.map !== !!map
+			this.material.map = map
+			if ( topologyChanged ) {
+				this.geometry.buildLine( this._getBuildOptions() )
+				this.material.needsUpdate = true
+			}
+			return this
+		}
 		const hadMap = !!this.material.map
 		this._options.map = map
 		if ( this._built && hadMap !== !!map ) {
@@ -442,6 +589,22 @@ export default class MeshLine extends Mesh {
 	 * @returns {this}
 	 */
 	alphaMap( alphaMap ) {
+		if ( this.material.isMeshLineSurfaceNodeMaterial ) {
+			this._options.alphaMap = alphaMap
+			const previousTransparent = this.material.transparent
+			const previousDepthWrite = this.material.depthWrite
+			const topologyChanged = !!this.material.alphaMap !== !!alphaMap
+			this.material.alphaMap = alphaMap
+			this.material.transparent = this._options.transparent || this._options.opacity < 1 || alphaMap != null
+			this.material.depthWrite = this._options.depthWrite ?? !this.material.transparent
+			if (
+				topologyChanged ||
+				previousTransparent !== this.material.transparent ||
+				previousDepthWrite !== this.material.depthWrite
+			) this.material.needsUpdate = true
+			if ( topologyChanged ) this.geometry.buildLine( this._getBuildOptions() )
+			return this
+		}
 		const hadAlphaMap = !!this.material.alphaMap
 		this._options.alphaMap = alphaMap
 		if ( this._built && hadAlphaMap !== !!alphaMap ) {
@@ -460,6 +623,15 @@ export default class MeshLine extends Mesh {
 	 */
 	dash( params ) {
 		const { count, ratio = 0.5, offset = 0 } = params || {}
+		if ( count != null && ( !Number.isFinite( count ) || !Number.isFinite( Math.fround( count ) ) || count < 0 ) ) {
+			throw new Error( 'MeshLine: dash.count must be a Float32-representable non-negative number or null' )
+		}
+		if ( !Number.isFinite( ratio ) || ratio < 0 || ratio > 1 ) {
+			throw new Error( 'MeshLine: dash.ratio must be within [0, 1]' )
+		}
+		if ( !Number.isFinite( offset ) || !Number.isFinite( Math.fround( offset ) ) ) {
+			throw new Error( 'MeshLine: dash.offset must be Float32-representable' )
+		}
 		const hadDash = !!this.material.dashCount
 		this._options.dashCount = count
 		this._options.dashRatio = ratio
@@ -481,6 +653,7 @@ export default class MeshLine extends Mesh {
 	 * @returns {this}
 	 */
 	dpr( dpr ) {
+		if ( !Number.isFinite( dpr ) || dpr <= 0 ) throw new Error( 'MeshLine: dpr must be greater than zero' )
 		this._options.dpr = dpr
 		if ( this.material.dpr ) {
 			this.material.dpr.value = dpr
@@ -496,9 +669,7 @@ export default class MeshLine extends Mesh {
 	 */
 	dynamic( enable ) {
 		this._options.usage = enable ? StreamDrawUsage : StaticDrawUsage
-		if ( this._built && this.geometry?.setUsage ) {
-			this.geometry.setUsage( this._options.usage )
-		}
+		if ( this._built && this.geometry.setUsage ) this.geometry.setUsage( this._options.usage )
 		return this
 	}
 
@@ -509,6 +680,7 @@ export default class MeshLine extends Mesh {
 	 */
 	setFrustumCulled( frustumCulled ) {
 		this._options.frustumCulled = frustumCulled
+		this._frustumCulledExplicit = true
 		this.frustumCulled = frustumCulled
 		return this
 	}
@@ -530,8 +702,14 @@ export default class MeshLine extends Mesh {
 	 * @returns {this}
 	 */
 	renderSize( width, height ) {
-		this._options.renderWidth = width
-		this._options.renderHeight = height
+		if ( width !== undefined ) {
+			if ( !Number.isFinite( width ) || width <= 0 ) throw new Error( 'MeshLine: render width must be greater than zero' )
+			this._options.renderWidth = width
+		}
+		if ( height !== undefined ) {
+			if ( !Number.isFinite( height ) || height <= 0 ) throw new Error( 'MeshLine: render height must be greater than zero' )
+			this._options.renderHeight = height
+		}
 		return this
 	}
 
@@ -543,6 +721,11 @@ export default class MeshLine extends Mesh {
 	 */
 	gpuPositionNode( gpuPositionNode ) {
 		this._options.gpuPositionNode = gpuPositionNode
+		if ( gpuPositionNode && !this._frustumCulledExplicit ) {
+			// The CPU template cannot bound arbitrary shader-generated positions.
+			this._options.frustumCulled = false
+			this.frustumCulled = false
+		}
 		return this
 	}
 
@@ -777,22 +960,22 @@ export default class MeshLine extends Mesh {
 	 */
 	build() {
 		const options = this._options
+		const surfaceProfile = options.surface !== false
+
+		if ( surfaceProfile && options.gpuPositionNode ) {
+			throw new Error( 'MeshLine: surface mode requires CPU centerline points; gpuPositionNode is only supported by billboard lines' )
+		}
+		if ( surfaceProfile && options.instanceCount !== -1 ) {
+			throw new Error( 'MeshLine: surface mode does not support facade instancing yet' )
+		}
+
+		this._ensureGeometryProfile( surfaceProfile )
 
 		let lines = options.lines ?? ( options.segments ? straightLine( 1, options.segments ) : defaultPositions )
 
 		options.lines = lines
 
-		// Computed needs - auto-detect from configuration
-		const buildOptions = {
-			...options,
-			needsWidth: !!( options.needsWidth || options.widthCallback ),
-			needsProgress: options.needsProgress ?? true,
-			needsSide: options.needsSide ?? true,
-			needsUV: !!( options.needsUV || options.map || options.alphaMap || options.uvFn || options.fragmentColorFn || options.fragmentAlphaFn || options.discardFn ),
-			needsVertexColor: !!( options.needsVertexColor || options.vertexColors ),
-			needsPrevious: options.needsPrevious ?? !options.gpuPositionNode,
-			needsNext: options.needsNext ?? !options.gpuPositionNode,
-		}
+		const buildOptions = this._getBuildOptions()
 
 		this.geometry.buildLine( buildOptions )
 		this.material.buildLine( buildOptions )
@@ -803,21 +986,11 @@ export default class MeshLine extends Mesh {
 			this.castShadow = true
 		}
 
-		if ( buildOptions.instanceCount != -1 ) {
+		if ( !surfaceProfile && buildOptions.instanceCount != -1 ) {
 			this.count = buildOptions.instanceCount
 		}
 
 		this.frustumCulled = buildOptions.frustumCulled
-
-		if ( options.opacity !== undefined ) {
-			if ( options.opacity.isNode ) {
-				this.uOpacity = options.opacity
-			} else if ( typeof options.opacity === 'number' ) {
-				this.uOpacity = uniform( options.opacity )
-			}
-		} else {
-			this.uOpacity = uniform( 1 )
-		}
 
 		this.resize( buildOptions.renderWidth, buildOptions.renderHeight )
 
@@ -826,8 +999,72 @@ export default class MeshLine extends Mesh {
 		return this
 	}
 
+	_getBuildOptions() {
+		const options = this._options
+		const needsProgress = !!(
+			options.needsProgress ||
+			options.gpuPositionNode ||
+			options.widthCallback ||
+			options.gradientColor != null ||
+			options.dashCount ||
+			options.positionFn ||
+			options.previousFn ||
+			options.nextFn ||
+			options.widthFn ||
+			options.normalFn ||
+			options.colorFn ||
+			options.gradientFn ||
+			options.opacityFn ||
+			options.dashFn ||
+			options.uvFn ||
+			options.vertexFn ||
+			options.fragmentColorFn ||
+			options.fragmentAlphaFn ||
+			options.discardFn
+		)
+		return {
+			...options,
+			needsWidth: !!( options.needsWidth || options.widthCallback ),
+			needsProgress,
+			needsSide: options.needsSide ?? false,
+			needsUV: !!( options.needsUV || options.map || options.alphaMap || options.uvFn || options.fragmentColorFn || options.fragmentAlphaFn || options.discardFn ),
+			needsVertexColor: !!( options.needsVertexColor || options.vertexColors ),
+			needsPrevious: options.needsPrevious ?? !options.gpuPositionNode,
+			needsNext: options.needsNext ?? !options.gpuPositionNode,
+			needsEndpointMetadata: !!(
+				options.gpuPositionNode ||
+				options.positionFn ||
+				options.previousFn ||
+				options.nextFn
+			),
+		}
+	}
+
+	_ensureGeometryProfile( surfaceProfile ) {
+		const geometryMatches = surfaceProfile
+			? this.geometry?.isMeshLineSurfaceGeometry
+			: this.geometry?.isMeshLine
+		const materialMatches = surfaceProfile
+			? this.material?.isMeshLineSurfaceNodeMaterial
+			: this.material?.isMeshLineNodeMaterial
+
+		if ( !geometryMatches ) {
+			const previous = this.geometry
+			this.geometry = surfaceProfile ? new MeshLineSurfaceGeometry() : new MeshLineGeometry()
+			previous?.dispose()
+		}
+		if ( !materialMatches ) {
+			const previous = this.material
+			this.material = surfaceProfile ? new MeshLineSurfaceNodeMaterial() : new MeshLineNodeMaterial()
+			previous?.dispose()
+		}
+	}
+
 	_onBeforeRender() {
 		this.ensureBuilt()
+		if ( this._pendingInstanceAttributes.size === 0 ) return
+		for ( const attribute of this._pendingInstanceAttributes ) this._renderedInstanceAttributes.add( attribute )
+		this._pendingInstanceAttributes.clear()
 	}
 
 	/**
@@ -839,6 +1076,24 @@ export default class MeshLine extends Mesh {
 	setPositions( positions, updateBounding = false ) {
 		this.ensureBuilt()
 		this.geometry.setPositions( positions, updateBounding )
+	}
+
+	/**
+	 * Update a fixed-size range of CPU billboard points and upload only the
+	 * affected position/neighbor components. Surface transport frames and
+	 * smoothed screen topology require a full `setPositions()` update instead.
+	 * @param {ArrayLike<number> | Array<import('three').Vector2 | import('three').Vector3 | number[]>} positions
+	 * @param {number} startPoint
+	 * @param {{lineIndex?: number, updateBounding?: boolean}} [options]
+	 * @returns {this}
+	 */
+	setPositionRange( positions, startPoint, options ) {
+		this.ensureBuilt()
+		if ( !this.geometry.isMeshLine || typeof this.geometry.setPositionRange !== 'function' ) {
+			throw new Error( 'MeshLine: setPositionRange() is only available for CPU billboard lines; use setPositions() for surfaces' )
+		}
+		this.geometry.setPositionRange( positions, startPoint, options )
+		return this
 	}
 
 	/**
@@ -866,6 +1121,7 @@ export default class MeshLine extends Mesh {
 		const array = new Float32Array( this.count * components )
 		const attribute = new InstancedBufferAttribute( array, components )
 		this.geometry.setAttribute( name, attribute )
+		this._pendingInstanceAttributes.add( attribute )
 		return attribute
 	}
 
@@ -909,7 +1165,56 @@ export default class MeshLine extends Mesh {
 			if ( 'w' in value && attribute.itemSize > 3 ) array[ offset + 3 ] = value.w
 		}
 		
-		attribute.needsUpdate = true
+		this._markInstanceAttributeUpdate( attribute, offset, attribute.itemSize )
+	}
+
+	/**
+	 * Upload a flat block of values to an instance attribute with one version
+	 * change instead of calling `setInstanceValue()` for every instance.
+	 * @param {string} name
+	 * @param {ArrayLike<number>} values
+	 * @param {number} [startInstance=0]
+	 * @returns {this}
+	 */
+	setInstanceValues( name, values, startInstance = 0 ) {
+		const attribute = this.geometry.getAttribute( name )
+		if ( !attribute?.isInstancedBufferAttribute ) {
+			throw new Error( `MeshLine: Instance attribute ${name} not found` )
+		}
+		if ( !Number.isInteger( startInstance ) || startInstance < 0 ) {
+			throw new Error( 'MeshLine: startInstance must be a non-negative integer' )
+		}
+		const offset = startInstance * attribute.itemSize
+		const valueCount = values?.length ?? 0
+		if ( offset + valueCount > attribute.array.length ) {
+			throw new Error( `MeshLine: Instance values exceed ${name} capacity` )
+		}
+
+		attribute.array.set( values, offset )
+		this._markInstanceAttributeUpdate( attribute, offset, valueCount )
+		return this
+	}
+
+	_markInstanceAttributeUpdate( attribute, start, count ) {
+		// Before the line's first draw, new attributes upload their current CPU
+		// arrays directly. Avoid a redundant version change during that setup.
+		if ( !this._renderedInstanceAttributes.has( attribute ) || count === 0 ) return
+
+		const ranges = attribute.updateRanges
+		const hadPendingRange = ranges.length > 0
+		const last = ranges[ranges.length - 1]
+		if ( last && start <= last.start + last.count && start + count >= last.start ) {
+			const end = Math.max( last.start + last.count, start + count )
+			last.start = Math.min( last.start, start )
+			last.count = end - last.start
+		} else if ( ranges.length < 16 ) {
+			attribute.addUpdateRange( start, count )
+		} else {
+			// Too many small writes cost more queue submissions than one upload.
+			attribute.clearUpdateRanges()
+			attribute.addUpdateRange( 0, attribute.array.length )
+		}
+		if ( !hadPendingRange ) attribute.needsUpdate = true
 	}
 
 	/**
@@ -919,7 +1224,9 @@ export default class MeshLine extends Mesh {
 	 */
 	resize( width = getDefaultWidth(), height = getDefaultHeight() ) {
 		if ( this.material && this.material.resolution ) {
-			this.material.resolution.value.set( width, height )
+			const safeWidth = Number.isFinite( width ) ? Math.max( 1, width ) : 1
+			const safeHeight = Number.isFinite( height ) ? Math.max( 1, height ) : 1
+			this.material.resolution.value.set( safeWidth, safeHeight )
 		}
 	}
 
@@ -982,6 +1289,10 @@ export default class MeshLine extends Mesh {
 	raycast( raycaster, intersects ) {
 
 		this.ensureBuilt()
+		if ( this.geometry.isMeshLineSurfaceGeometry ) {
+			Mesh.prototype.raycast.call( this, raycaster, intersects )
+			return
+		}
 
 		const geometry = this.geometry
 		const matrixWorld = this.matrixWorld
@@ -1038,6 +1349,7 @@ export default class MeshLine extends Mesh {
 			if ( distanceSq < nearSq || distanceSq > farSq ) return
 
 			const distance = Math.sqrt( distanceSq )
+			if ( firstHitOnly && distance >= closestDistance ) return
 			const hit = {
 				distance,
 				point: _interSegment.clone().applyMatrix4( matrixWorld ),
@@ -1051,7 +1363,6 @@ export default class MeshLine extends Mesh {
 			if ( instanceId !== undefined ) hit.instanceId = instanceId
 
 			if ( firstHitOnly ) {
-				if ( distance >= closestDistance ) return
 				closestDistance = distance
 				closestHit = hit
 				return
