@@ -135,6 +135,10 @@ export default class MeshLinePicker {
 		}
 
 		if ( typeof line.ensureBuilt === 'function' ) line.ensureBuilt()
+		if ( line.geometry?.isMeshLineSurfaceGeometry ) {
+			console.warn( 'MeshLinePicker.add: world-space surfaces use standard triangle raycasting; call raycaster.intersectObject( surface ) instead.' )
+			return this
+		}
 
 		const slot = this._nextSlot++
 		const material = new MeshLinePickingMaterial()

@@ -1,5 +1,20 @@
-import { attribute, cameraProjectionMatrix, cameraWorldMatrix, Discard, float, Fn, max, mix, mod, modelViewMatrix, modelWorldMatrixInverse, normalize, positionGeometry, step, texture, uniform, uv, varying, varyingProperty, vec2, vec3, vec4 } from 'three/tsl'
+import { attribute, cameraProjectionMatrix, cameraWorldMatrix, Discard, float, Fn, max, mix, mod, modelViewMatrix, modelWorldMatrixInverse, positionGeometry, step, texture, uint, uniform, uv, varying, varyingProperty, vec2, vec3, vec4, vertexIndex } from 'three/tsl'
 import { Color, DoubleSide, MeshBasicNodeMaterial, Vector2 } from 'three/webgpu'
+
+const DEFAULT_MITER_LIMIT = 4
+const MAX_MITER_LIMIT = 1e6
+// Aspect-corrected NDC is already post-projection. A 1e-4 cutoff is roughly
+// 0.04 CSS pixels on a 720px viewport and incorrectly classifies valid dense
+// path segments as degenerate. Keep only a Float32-scale guard here: exact
+// duplicate projections still take the finite fallback, while subpixel
+// segments retain their real direction and stay connected.
+export const SCREEN_DIRECTION_EPSILON = 1e-7
+
+const sanitizeMiterLimit = value => {
+	const limit = Number( value ?? DEFAULT_MITER_LIMIT )
+	if ( !Number.isFinite( limit ) ) return DEFAULT_MITER_LIMIT
+	return Math.max( 1, Math.min( limit, MAX_MITER_LIMIT ) )
+}
 
 // Map a clip-space vec4 into aspect-corrected NDC (xy/w with the X axis
 // stretched by aspect). Directions measured in this space correspond 1:1 to
@@ -7,7 +22,12 @@ import { Color, DoubleSide, MeshBasicNodeMaterial, Vector2 } from 'three/webgpu'
 const fix = Fn( ( [i_immutable, aspect_immutable] ) => {
 	const aspect = float( aspect_immutable ).toVar()
 	const i = vec4( i_immutable ).toVar()
-	const ndc = vec2( i.xy.div( i.w ) ).toVar( 'ndc' )
+	// A centerline point can touch/cross the camera plane before raster clipping.
+	// Keep the shader finite there; exact segment trimming needs variable segment
+	// topology, but a signed epsilon prevents NaN/Inf from contaminating the join.
+	const signedEpsilon = mix( float( -1e-6 ), float( 1e-6 ), step( float( 0 ), i.w ) ).toVar( 'signedEpsilon' )
+	const safeW = mix( signedEpsilon, i.w, step( float( 1e-6 ), i.w.abs() ) ).toVar( 'safeW' )
+	const ndc = vec2( i.xy.div( safeW ) ).toVar( 'ndc' )
 	const res = vec2( ndc.x.mul( aspect ), ndc.y ).toVar( 'res' )
 	return res
 } ).setLayout( {
@@ -22,9 +42,9 @@ const aSide = attribute( 'side', 'float' )
 const aProgress = attribute( 'progress', 'float' )
 const aColor = attribute( 'vertexColor', 'vec3' )
 const aWidth = attribute( 'width', 'float' )
-const vWidth = varyingProperty( 'float', 'vWidth' )
 const vProgress = varyingProperty( 'float', 'vProgress' )
 const vColor = varyingProperty( 'vec4', 'vColor' )
+const vertexSide = float( 1 ).sub( float( vertexIndex.bitAnd( uint( 1 ) ) ).mul( 2 ) )
 
 /**
  * TSL-based NodeMaterial for GPU line rendering. Extends `MeshBasicNodeMaterial`
@@ -46,10 +66,43 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 	 * @param {import('./index.d.ts').MeshLineConfigureOptions} options
 	 */
 	buildLine( options = {} ) {
+		const lineWidth = Number( options.lineWidth ?? 1 )
+		if ( !Number.isFinite( lineWidth ) || !Number.isFinite( Math.fround( lineWidth ) ) || lineWidth < 0 ) {
+			throw new Error( '[MeshLineNodeMaterial] lineWidth must be a Float32-representable non-negative number' )
+		}
+		const resolution = options.resolution ?? new Vector2( 1, 1 )
+		if ( !Number.isFinite( resolution.x ) || !Number.isFinite( resolution.y ) || resolution.x <= 0 || resolution.y <= 0 ) {
+			throw new Error( '[MeshLineNodeMaterial] resolution must contain finite dimensions greater than zero' )
+		}
+		if ( typeof options.opacity === 'number' && ( !Number.isFinite( options.opacity ) || options.opacity < 0 || options.opacity > 1 ) ) {
+			throw new Error( '[MeshLineNodeMaterial] opacity must be within [0, 1]' )
+		}
+		if ( options.alphaTest !== undefined && ( !Number.isFinite( options.alphaTest ) || options.alphaTest < 0 || options.alphaTest > 1 ) ) {
+			throw new Error( '[MeshLineNodeMaterial] alphaTest must be within [0, 1]' )
+		}
+		if ( options.dpr !== undefined && ( !Number.isFinite( options.dpr ) || options.dpr <= 0 ) ) {
+			throw new Error( '[MeshLineNodeMaterial] dpr must be greater than zero' )
+		}
+		if ( options.dashCount != null && ( !Number.isFinite( options.dashCount ) || options.dashCount < 0 ) ) {
+			throw new Error( '[MeshLineNodeMaterial] dashCount must be a finite non-negative number or null' )
+		}
+		if ( options.dashRatio != null && ( !Number.isFinite( options.dashRatio ) || options.dashRatio < 0 || options.dashRatio > 1 ) ) {
+			throw new Error( '[MeshLineNodeMaterial] dashRatio must be within [0, 1]' )
+		}
 
 		this.options = { ...options }
 		this._segments = options.segments ?? 100
 		this._needsWidth = options.needsWidth ?? false
+		this._needsProgress = options.needsProgress ?? true
+		this._needsVaryingColor = !!( options.needsVertexColor || options.colorFn )
+		this._needsEndpointMetadata = !!(
+			options.needsEndpointMetadata ||
+			options.gpuPositionNode ||
+			options.positionFn ||
+			options.previousFn ||
+			options.nextFn
+		)
+		this._endpointAttribute = this._needsEndpointMetadata ? attribute( 'endpoint', 'vec4' ) : null
 		this.gradient = null
 		this.opacity = null
 		this.map = null
@@ -69,8 +122,8 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 		this.sizeAttenuation = options.sizeAttenuation ?? true
 
 		// Can be changed dynamically
-		this.resolution = uniform( options.resolution ?? new Vector2( 1, 1 ) )
-		this.lineWidth = uniform( options.lineWidth ?? 1 )
+		this.resolution = uniform( resolution )
+		this.lineWidth = uniform( lineWidth )
 		this.color = uniform( new Color( options.color ?? 0xffffff ) )
 		this.dpr = uniform( options.dpr ?? ( ( typeof window !== 'undefined' ) ? window.devicePixelRatio || 1 : 1 ) )
 
@@ -104,7 +157,7 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 
 		// Miter is always on. The shader reads `_miterThreshold` (= 2/miterLimit),
 		// the lower bound on |dir1+dir2| below which the offset magnitude plateaus.
-		this._miterLimit = options.miterLimit ?? 4.0
+		this._miterLimit = sanitizeMiterLimit( options.miterLimit )
 		this._miterThreshold = uniform( 2 / this._miterLimit )
 
 		// GPU position node (optional)
@@ -129,6 +182,7 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 		this.fragmentAlphaFn = options.fragmentAlphaFn ?? null
 		this.discardFn = options.discardFn ?? null
 
+		if ( this._shadowEnabled ) this.buildShadowPositionNode()
 		this.needsUpdate = true
 	}
 
@@ -141,9 +195,10 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 	}
 
 	set miterLimit( value ) {
-		this._miterLimit = value
+		this._miterLimit = sanitizeMiterLimit( value )
+		if ( this.options ) this.options.miterLimit = this._miterLimit
 		if ( this._miterThreshold ) {
-			this._miterThreshold.value = 2 / value
+			this._miterThreshold.value = 2 / this._miterLimit
 		}
 	}
 
@@ -167,20 +222,31 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 		this.needsUpdate = true
 	}
 
-	getLinePositions( progress ) {
+	getLinePositions( progress, endpoint ) {
+		let previousProgress = progress
+		let nextProgress = progress
+		if ( this._needsEndpointMetadata ) {
+			const previousProgressOpen = progress.sub( endpoint.z ).clamp( 0, 1 )
+			const nextProgressOpen = progress.add( endpoint.w ).clamp( 0, 1 )
+			const previousProgressClosed = mod( progress.sub( endpoint.z ).add( 1 ), float( 1 ) )
+			const nextProgressClosed = mod( progress.add( endpoint.w ), float( 1 ) )
+			previousProgress = mix( previousProgressOpen, previousProgressClosed, endpoint.y ).toVar( 'previousProgress' )
+			nextProgress = mix( nextProgressOpen, nextProgressClosed, endpoint.y ).toVar( 'nextProgress' )
+		}
+
 		// Get base positions
 		let pos = this.gpuPositionNode ? this.gpuPositionNode( progress, float( 0 ) ) : positionGeometry
-		let previous = this.gpuPositionNode ? this.gpuPositionNode( progress.sub( 1 / this._segments ), float( 0 ) ) : attribute( 'previous', 'vec3' )
-		let next = this.gpuPositionNode ? this.gpuPositionNode( progress.add( 1 / this._segments ), float( 0 ) ) : attribute( 'next', 'vec3' )
+		let previous = this.gpuPositionNode ? this.gpuPositionNode( previousProgress, float( 0 ) ) : attribute( 'previous', 'vec3' )
+		let next = this.gpuPositionNode ? this.gpuPositionNode( nextProgress, float( 0 ) ) : attribute( 'next', 'vec3' )
 		// Apply position modifiers
 		if ( this.positionFn ) {
 			pos = this.positionFn( pos, progress )
-			previous = this.positionFn( previous, progress )
-			next = this.positionFn( next, progress )
+			previous = this.positionFn( previous, previousProgress )
+			next = this.positionFn( next, nextProgress )
 		}
 
-		if ( this.previousFn ) { previous = this.previousFn( previous, progress ) }
-		if ( this.nextFn ) { next = this.nextFn( next, progress ) }
+		if ( this.previousFn ) { previous = this.previousFn( previous, previousProgress ) }
+		if ( this.nextFn ) { next = this.nextFn( next, nextProgress ) }
 
 		return { pos, previous, next }
 	}
@@ -198,27 +264,58 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 	buildShadowPositionNode() {
 
 		this.castShadowPositionNode = Fn( () => {
-			const progress = aProgress
-			const side = aSide
+			const progress = this._needsProgress ? aProgress : float( 0 )
+			const side = this.options.needsSide ? aSide : vertexSide
+			const endpoint = this._endpointAttribute ?? float( 0 )
+			const endpointMarker = this._needsEndpointMetadata ? endpoint.x : float( 0 )
 
 			// Get base positions in LOCAL space
-			const { pos, previous, next } = this.getLinePositions( progress )
+			const { pos, previous, next } = this.getLinePositions( progress, endpoint )
 
 			// Transform to VIEW space
 			const posView = modelViewMatrix.mul( vec4( pos, 1.0 ) ).xyz
 			const prevView = modelViewMatrix.mul( vec4( previous, 1.0 ) ).xyz
 			const nextView = modelViewMatrix.mul( vec4( next, 1.0 ) ).xyz
 
-			// Calculate line direction in VIEW space
-			const dir1 = normalize( posView.sub( prevView ) )
-			const dir2 = normalize( nextView.sub( posView ) )
-			const dir = normalize( dir1.add( dir2 ) )
+			// Calculate a finite line direction in VIEW space. Open endpoints reuse
+			// their real segment direction, matching the visible pass.
+			const delta1Raw = posView.sub( prevView ).toVar( 'shadowDelta1Raw' )
+			const delta2Raw = nextView.sub( posView ).toVar( 'shadowDelta2Raw' )
+			const atStart = max( endpointMarker.negate(), float( 0 ) ).toVar( 'shadowAtStart' )
+			const atEnd = max( endpointMarker, float( 0 ) ).toVar( 'shadowAtEnd' )
+			const delta1 = mix( delta1Raw, delta2Raw, atStart ).toVar( 'shadowDelta1' )
+			const delta2 = mix( delta2Raw, delta1Raw, atEnd ).toVar( 'shadowDelta2' )
+			const minimumLength = float( 0.0001 )
+			const delta1Length = delta1.length().toVar( 'shadowDelta1Length' )
+			const delta2Length = delta2.length().toVar( 'shadowDelta2Length' )
+			const directionFallback = vec3( 1, 0, 0 ).toVar( 'shadowDirectionFallback' )
+			const dir1Raw = delta1.div( max( delta1Length, minimumLength ) ).toVar( 'shadowDir1Raw' )
+			const dir2Raw = delta2.div( max( delta2Length, minimumLength ) ).toVar( 'shadowDir2Raw' )
+			const dir1 = mix(
+				mix( directionFallback, dir2Raw, step( minimumLength, delta2Length ) ),
+				dir1Raw,
+				step( minimumLength, delta1Length )
+			).toVar( 'shadowDir1' )
+			const dir2 = mix( dir1, dir2Raw, step( minimumLength, delta2Length ) ).toVar( 'shadowDir2' )
+			const directionSum = dir1.add( dir2 ).toVar( 'shadowDirectionSum' )
+			const directionSumLength = directionSum.length().toVar( 'shadowDirectionSumLength' )
+			const dir = mix(
+				dir1,
+				directionSum.div( max( directionSumLength, minimumLength ) ),
+				step( minimumLength, directionSumLength )
+			).toVar( 'shadowDir' )
 
 			// Calculate perpendicular in VIEW space (billboard to camera)
 			// In View space, camera is at (0,0,0) looking down -Z
 			// We want the vector perpendicular to the line and the view direction (Z axis)
 			// This is effectively the 2D normal in the XY plane
-			const perp = normalize( vec3( dir.y.negate(), dir.x, 0 ) )
+			const perpendicularRaw = vec3( dir.y.negate(), dir.x, 0 ).toVar( 'shadowPerpendicularRaw' )
+			const perpendicularLength = perpendicularRaw.length().toVar( 'shadowPerpendicularLength' )
+			const perp = mix(
+				vec3( 1, 0, 0 ),
+				perpendicularRaw.div( max( perpendicularLength, minimumLength ) ),
+				step( minimumLength, perpendicularLength )
+			).toVar( 'shadowPerpendicular' )
 
 			const w = this.getLineWidth( this.lineWidth.mul( 0.5 ), progress, side )
 
@@ -239,7 +336,7 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 				let cyclePosition = mod( vProg.mul( this.dashCount ).add( this.dashOffset ), float( 1 ) ).toVar( 'cyclePosition' )
 
 				if ( this.dashFn ) {
-					cyclePosition.assign( this.dashFn( cyclePosition, vProg, varying( aSide ) ) )
+					cyclePosition.assign( this.dashFn( cyclePosition, vProg, varying( side ) ) )
 				}
 
 				const dashMask = step( cyclePosition, this.dashRatio )
@@ -256,25 +353,33 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 	setupShaders( { } ) {
 
 		// Cache frequently-used attributes to prevent duplicate GPU computation
-		const progress = aProgress.toVar( 'varProgress' )
-		const side = aSide.toVar( 'varSide' )
+		const progress = ( this._needsProgress ? aProgress : float( 0 ) ).toVar( 'varProgress' )
+		const lineSide = this.options.needsSide ? aSide : vertexSide
+		const side = lineSide.toVar( 'varSide' )
+		// Fragment hooks need an interpolated float. Reusing the IndexNode there
+		// would expose the provoking vertex's integer index for the whole triangle.
+		const fragmentSide = varying( lineSide, 'vSide' )
+		const endpoint = this._endpointAttribute ? this._endpointAttribute.toVar( 'varEndpoint' ) : float( 0 )
+		const endpointMarker = this._needsEndpointMetadata ? endpoint.x : float( 0 )
 
 		// Get base positions first
-		const { pos, previous, next } = this.getLinePositions( progress )
+		const { pos, previous, next } = this.getLinePositions( progress, endpoint )
 
 		this.vertexNode = Fn( () => {
 
-			let color = vec4( this.color, 1 ).toVar( 'color' )
+			if ( this._needsVaryingColor ) {
+				const color = vec4( this.color, 1 ).toVar( 'color' )
 
-			if ( this.options.needsVertexColor ) {
-				color.rgb.mulAssign( aColor )
+				if ( this.options.needsVertexColor ) {
+					color.rgb.mulAssign( aColor )
+				}
+
+				if ( this.colorFn ) {
+					color.assign( this.colorFn( color, progress, side ) )
+				}
+
+				vColor.assign( color )
 			}
-
-			if ( this.colorFn ) {
-				color.assign( this.colorFn( color, progress, side ) )
-			}
-
-			vColor.assign( color )
 
 			// Only assign vProgress if needed to reduce varying bandwidth
 			if ( this.gradient || this.dashCount || this.gradientFn || this.opacityFn || this.dashFn || this.uvFn || this.fragmentColorFn || this.fragmentAlphaFn || this.discardFn ) {
@@ -300,20 +405,18 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 			const nextP = fix( nextPos, aspect ).toVar( 'nextP' )
 			const delta1Raw = currentP.sub( prevP ).toVar( 'delta1Raw' )
 			const delta2Raw = nextP.sub( currentP ).toVar( 'delta2Raw' )
-			const atStart = float( 1 ).sub( step( float( 0.0001 ), progress ) ).toVar( 'atStart' )
-			const atEnd = step( float( 0.9999 ), progress ).toVar( 'atEnd' )
+			const atStart = max( endpointMarker.negate(), float( 0 ) ).toVar( 'atStart' )
+			const atEnd = max( endpointMarker, float( 0 ) ).toVar( 'atEnd' )
 			const delta1 = mix( delta1Raw, delta2Raw, atStart ).toVar( 'delta1' )
 			const delta2 = mix( delta2Raw, delta1Raw, atEnd ).toVar( 'delta2' )
 
 			const w = this.getLineWidth( this.lineWidth, progress, side ).toVar( 'w' )
 
-			vWidth.assign( w )
-
 			// Miter offset. |dir1+dir2| = 2·cos(α/2) for interior bend α.
-			// Magnitude: w/max(|dir1+dir2|, 2/miterLimit) — monotonic, plateaus at
-			// miterLimit·w/2 for sharp bends. Direction: unit perpendicular of the
-			// bisector, with perp(dir1) as a fallback for near-180° reversals.
-			const minDirectionLength = float( 0.0001 )
+			// Once a miter would exceed the configured limit, fixed strip topology
+			// cannot represent a real bevel wedge. Fall back to the incoming segment's
+			// bounded half-width instead, preventing spikes and exact-reversal NaNs.
+			const minDirectionLength = float( SCREEN_DIRECTION_EPSILON )
 			const delta1Len = delta1.length().toVar( 'delta1Len' )
 			const delta2Len = delta2.length().toVar( 'delta2Len' )
 			const dirFallback = vec2( 1, 0 ).toVar( 'dirFallback' )
@@ -330,13 +433,27 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 
 			const perpRaw = vec2( dirSum.y.negate(), dirSum.x ).toVar( 'perpRaw' )
 			const perpFallback = vec2( dir1.y.negate(), dir1.x ).toVar( 'perpFallback' )
-			const unitPerp = mix(
+			const miterBlend = dirSumLen.smoothstep(
+				this._miterThreshold.mul( 0.75 ),
+				this._miterThreshold
+			).toVar( 'miterBlend' )
+			const blendedPerp = mix(
 				perpFallback,
 				perpRaw.div( max( dirSumLen, float( 0.0001 ) ) ),
-				step( float( 0.001 ), dirSumLen )
+				miterBlend
+			).toVar( 'blendedPerp' )
+			const blendedPerpLength = blendedPerp.length().toVar( 'blendedPerpLength' )
+			const unitPerp = mix(
+				perpFallback,
+				blendedPerp.div( max( blendedPerpLength, float( 0.0001 ) ) ),
+				step( float( 0.0001 ), blendedPerpLength )
 			).toVar( 'unitPerp' )
 
-			const miterHalfWidth = w.div( max( dirSumLen, this._miterThreshold ) ).toVar( 'miterHalfWidth' )
+			const miterHalfWidth = mix(
+				w.mul( 0.5 ),
+				w.div( max( dirSumLen, this._miterThreshold ) ),
+				miterBlend
+			).toVar( 'miterHalfWidth' )
 
 			const normal = vec4( 0, 0, 0, 1 ).toVar( 'normal' )
 			normal.xy.assign( unitPerp.mul( miterHalfWidth ) )
@@ -375,18 +492,18 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 
 			// Apply UV modifier if provided
 			if ( this.uvFn ) {
-				uvCoords = this.uvFn( uvCoords, vProgress, side )
+				uvCoords = this.uvFn( uvCoords, vProgress, fragmentSide )
 			}
 		}
 		// Color node
 		this.colorNode = Fn( () => {
-			let color = vColor.toVar( 'color' )
+			let color = ( this._needsVaryingColor ? vColor : vec4( this.color, 1 ) ).toVar( 'color' )
 			if ( this.gradient ) {
 				let gradientFactor = vProgress.toVar( 'gradientFactor' )
 
 				// Apply gradient modifier if provided
 				if ( this.gradientFn ) {
-					gradientFactor.assign( this.gradientFn( gradientFactor, side ) )
+					gradientFactor.assign( this.gradientFn( gradientFactor, fragmentSide ) )
 				}
 
 				color.rgb.assign( mix( color.rgb, this.gradient, gradientFactor ) )
@@ -398,7 +515,7 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 
 			// Apply fragment color modifier if provided
 			if ( this.fragmentColorFn ) {
-				color.assign( this.fragmentColorFn( color, uvCoords, vProgress, side ) )
+				color.assign( this.fragmentColorFn( color, uvCoords, vProgress, fragmentSide ) )
 			}
 
 			return color
@@ -418,17 +535,15 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 
 			// Apply opacity modifier if provided
 			if ( this.opacityFn ) {
-				alpha.assign( this.opacityFn( alpha, vProgress, side ) )
+				alpha.assign( this.opacityFn( alpha, vProgress, fragmentSide ) )
 			}
-
-			Discard( alpha.lessThan( this.alphaTest ) )
 
 			if ( this.dashCount ) {
 				let cyclePosition = mod( vProgress.mul( this.dashCount ).add( this.dashOffset ), float( 1 ) ).toVar( 'cyclePosition' )
 
 				// Apply dash modifier if provided
 				if ( this.dashFn ) {
-					cyclePosition.assign( this.dashFn( cyclePosition, vProgress, side ) )
+					cyclePosition.assign( this.dashFn( cyclePosition, vProgress, fragmentSide ) )
 				}
 
 				// dashRatio represents a dash portion: 0.1 = 10% dash, 90% gap
@@ -437,12 +552,12 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 			}
 
 			if ( this.discardFn ) {
-				Discard( this.discardFn( vProgress, side, uvCoords ) )
+				Discard( this.discardFn( vProgress, fragmentSide, uvCoords ) )
 			}
 
 			// Apply fragment alpha modifier if provided
 			if ( this.fragmentAlphaFn ) {
-				alpha.assign( this.fragmentAlphaFn( alpha, uvCoords, vProgress, side ) )
+				alpha.assign( this.fragmentAlphaFn( alpha, uvCoords, vProgress, fragmentSide ) )
 			}
 
 			return alpha
