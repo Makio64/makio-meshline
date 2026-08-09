@@ -5,11 +5,19 @@
   "main": "index.js",
   "module": "index.js",
   "types": "index.d.ts",
-  "description": "TSL-powered wide-line and MeshLine renderer for Three.js with gradients, dashes, textures, shadows, GPU positions, and instancing.",
+  "description": "TSL-powered wide-line and road/ribbon surface renderer for Three.js with gradients, textures, GPU positions, and instancing.",
   "exports": {
     ".": {
       "types": "./index.d.ts",
       "import": "./index.js"
+    },
+    "./gpu-culling": {
+      "types": "./gpu-culling.d.ts",
+      "import": "./MeshLineCullingSystem.js"
+    },
+    "./gpu-path": {
+      "types": "./gpu-path.d.ts",
+      "import": "./MeshLineGPUPath.js"
     },
     "./package.json": "./package.json"
   },
@@ -19,8 +27,14 @@
     "MeshLine.js",
     "MeshLineGeometry.js",
     "MeshLineNodeMaterial.js",
+    "MeshLineSurfaceGeometry.js",
+    "MeshLineSurfaceNodeMaterial.js",
     "MeshLinePicker.js",
     "MeshLinePickerHelper.js",
+    "MeshLineCullingSystem.js",
+    "MeshLineGPUPath.js",
+    "gpu-culling.d.ts",
+    "gpu-path.d.ts",
     "positions/*.js",
     "README.md",
     "LICENSE",
@@ -28,7 +42,13 @@
   ],
   "sideEffects": false,
   "peerDependencies": {
+    "@types/three": ">=0.180.0",
     "three": ">=0.180.0"
+  },
+  "peerDependenciesMeta": {
+    "@types/three": {
+      "optional": true
+    }
   },
   "keywords": [
     "three.js",
@@ -41,6 +61,8 @@
     "wide-line",
     "polyline",
     "thick-line",
+    "ribbon",
+    "road",
     "line-rendering",
     "nodeMaterial",
     "node-material",
@@ -66,5 +88,9 @@
   "homepage": "https://meshline.makio.io",
   "scripts": {
     "prepublishOnly": "pnpm -w run lint"
+  },
+  "devDependencies": {
+    "@types/three": "0.183.1",
+    "three": "0.183.2"
   }
 }
