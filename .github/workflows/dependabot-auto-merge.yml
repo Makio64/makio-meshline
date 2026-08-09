@@ -15,9 +15,16 @@ jobs:
     if: github.actor == 'dependabot[bot]' && contains(github.event.pull_request.labels.*.name, 'security')
     runs-on: ubuntu-latest
     steps:
-      - uses: hmarr/auto-approve-action@v4      # 1. mark the PR as approved
+      - uses: actions/github-script@v9      # 1. mark the PR as approved
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            await github.rest.pulls.createReview({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number,
+              event: "APPROVE"
+            })
 
       - uses: peter-evans/enable-pull-request-automerge@v3  # 2. turn on auto-merge
         with:
