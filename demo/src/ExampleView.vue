@@ -12,14 +12,20 @@ import { resolveDemoMeta } from '@/demoMeta'
 import baguettes from '@/demos/baguettes'
 import bambooGrove from '@/demos/bambooGrove'
 import basic from '@/demos/basic'
+import computePrototype from '@/demos/computePrototype'
 import drawlines from '@/demos/drawlines'
 import follow from '@/demos/follow'
 import gpuCircle from '@/demos/gpuCircle'
+import gpuCulling from '@/demos/gpuCulling'
 import gpuInstance from '@/demos/gpuInstance'
+import gpuPath from '@/demos/gpuPath'
+import gpuSimplificationPrototype from '@/demos/gpuSimplificationPrototype'
 import heist from '@/demos/heist'
 import ricefield from '@/demos/ricefield'
 import sandbox from '@/demos/sandbox'
 import shadow from '@/demos/shadow'
+import surfaceRoad from '@/demos/surfaceRoad'
+import variableTopology from '@/demos/variableTopology'
 import venus from '@/demos/venus'
 import vertexColors from '@/demos/vertexColors'
 import waves from '@/demos/waves'
@@ -38,11 +44,17 @@ export default {
 		const id = this.$router.params.id
 		const mapping = {
 			basic,
+			'compute-prototype': computePrototype,
+			'surface-road': surfaceRoad,
+			'variable-topology': variableTopology,
 			waves,
 			follow,
 			drawlines,
 			'gpu-circle': gpuCircle,
+			'gpu-culling': gpuCulling,
 			'gpu-instance': gpuInstance,
+			'gpu-path': gpuPath,
+			'gpu-simplification': gpuSimplificationPrototype,
 			'bamboooo': bambooGrove,
 			shadow,
 			ricefield,

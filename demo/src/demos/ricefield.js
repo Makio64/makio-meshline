@@ -3,7 +3,7 @@ import { MeshLine, rectanglePositions } from 'makio-meshline'
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
 import { add, attribute, clamp, cos, float, Fn, fract, If, instanceIndex, length, mix, mul, reflector, sin, smoothstep as tslSmoothstep, storage, sub, texture, textureBicubic, time, uniform, uv, vec2, vec3, vec4 } from 'three/tsl'
 import { Group, MathUtils, Mesh, MeshBasicMaterial, Plane, PlaneGeometry, Raycaster, RepeatWrapping, SRGBColorSpace, StaticDrawUsage, StorageBufferAttribute, TextureLoader, Vector2, Vector3 } from 'three/webgpu'
-import { DynamicDrawUsage, MeshStandardNodeMaterial, PMREMGenerator } from 'three/webgpu'
+import { MeshStandardNodeMaterial, PMREMGenerator } from 'three/webgpu'
 
 import { stage } from '@/makio/core/stage'
 import QuadTree from '@/makio/generative/QuadTree'
@@ -325,19 +325,24 @@ class RicefieldExample {
 				// Return transformed position
 				return vec3( finalX, finalY, finalZ )
 			} ) )
-			.usage( DynamicDrawUsage ) // Use dynamic usage for instancing
 		
 		// Add instance attributes for transform (xyz position + w scale) and parcel darkness
-		this.lines.addInstanceAttribute( 'instanceTransform', 4 )
-		this.lines.addInstanceAttribute( 'instanceDarkness', 1 )
-		
-		// Set instance data
-		this.riceInstances.forEach( ( instance, i ) => {
-			const transform = [instance.position[0], instance.position[1], instance.position[2], instance.scale]
-			this.lines.setInstanceValue( 'instanceTransform', i, transform )
-			this.lines.setInstanceValue( 'instanceDarkness', i, instance.darkness )
-		} )
+		const transformAttribute = this.lines.addInstanceAttribute( 'instanceTransform', 4 )
+		const darknessAttribute = this.lines.addInstanceAttribute( 'instanceDarkness', 1 )
 
+		// Fill each returned CPU buffer directly before its first upload. This avoids
+		// duplicate staging arrays and per-stalk method/version churn.
+		const transforms = transformAttribute.array
+		const darkness = darknessAttribute.array
+		for ( let i = 0; i < this.riceInstances.length; i++ ) {
+			const instance = this.riceInstances[i]
+			const offset = i * 4
+			transforms[offset] = instance.position[0]
+			transforms[offset + 1] = instance.position[1]
+			transforms[offset + 2] = instance.position[2]
+			transforms[offset + 3] = instance.scale
+			darkness[i] = instance.darkness
+		}
 		stage3d.add( this.lines )
 		
 		// Create field borders around each quadtree cell - batch into single MeshLine
@@ -580,6 +585,7 @@ class RicefieldExample {
 
 		this.noiseTexture?.dispose()
 		this.noiseTexture = null
+		this.computeUpdate?.dispose()
 		this.scaleStorageBuffer = null
 		this.computeUpdate = null
 		this.cells = []
@@ -633,4 +639,4 @@ class RicefieldExample {
 	
 }
 
-export default new RicefieldExample() 
+export default new RicefieldExample()

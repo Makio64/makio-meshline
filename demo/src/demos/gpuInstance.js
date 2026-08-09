@@ -29,8 +29,7 @@ class InstancedGpuExample {
 
 		const gpuPositionNode = Fn( ( [progress] ) => {
 			const offset = attribute( 'instanceOffset', 'vec3' )
-			let radius = float( 1 )// attribute( 'instanceRadius', 'float' )
-			radius = radius.mul( sin( time.add( float( instanceIndex ).div( 3 ) ) ) )
+			const radius = sin( time.add( float( instanceIndex ).div( 3 ) ) )
 			const angle = progress.mul( Math.PI * 2 ).add( time.negate() )
 			return vec3( cos( angle ), sin( angle ), 0 ).mul( radius ).add( offset ) 
 		} )
@@ -49,22 +48,19 @@ class InstancedGpuExample {
 			} ) )
 
 		// Add custom instance attributes
-		this.line.addInstanceAttribute( 'instanceOffset', 3 )
-		this.line.addInstanceAttribute( 'instanceRadius', 1 )
+		const offsetAttribute = this.line.addInstanceAttribute( 'instanceOffset', 3 )
 
-		// Set per-instance data
+		// Fill the returned CPU buffer before its first upload. This avoids a
+		// second staging array while still producing one initial GPU transfer.
+		const offsets = offsetAttribute.array
 		for ( let i = 0; i < instanceCount; i++ ) {
 			const col = i % 10
 			const row = Math.floor( i / 10 )
-			const x = ( col - 4.5 ) * 3
-			const y = ( row - 4.5 ) * 3
-			const z = 0
-			this.line.setInstanceValue( 'instanceOffset', i, [x, y, z] )
-
-			const radius = 0.1 + ( col / 9 ) * 1
-			this.line.setInstanceValue( 'instanceRadius', i, radius )
+			const offset = i * 3
+			offsets[offset] = ( col - 4.5 ) * 3
+			offsets[offset + 1] = ( row - 4.5 ) * 3
+			offsets[offset + 2] = 0
 		}
-
 		stage3d.add( this.line )
 	}
 
@@ -83,4 +79,4 @@ class InstancedGpuExample {
 	hide( cb ) { if ( cb ) cb() }
 }
 
-export default new InstancedGpuExample() 
+export default new InstancedGpuExample()
