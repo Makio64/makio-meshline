@@ -11,14 +11,15 @@ A quick look at where Makio MeshLine has been and where it's headed. We're just 
 - **Mid-term**:
   - Make a cool tutorial website
   - Add receiveShadow support
-  - Add a static road or track geometry mode with precomputed tangents, normals, arc-length UVs, and explicit join modes (`bevel`, `round`) for cleaner wide lines with much less shader work
+  - Promote the optional GPU path's variable topology after multi-line/closed, shadows, XR, and picking gates
 - **Long-term**: 
   - Explore more WebGPU performance opportunities
-  - Add an optional compute pre-pass for dynamic polylines to resample curves and compute tangents, offsets, join decisions, and arc-length data before rendering
-  - Split rendering profiles between a flexible MeshLine material for stylized effects and a lean road material for static extruded paths
+  - Extend the experimental point-centric GPU path with integrated segment-run culling, screen-error LOD, closed/multi-line topology, shadows/XR, and transported road frames
+  - Add advanced PBR surface customization and instancing without coupling it to billboard-only TSL hooks
 
 ## Changelog
 
+- **V2 foundation (unreleased)**: Robust finite screen joins and endpoint metadata, arc-length progress, corrected buffer lifecycle, optional native-WebGPU chunk culling, a lit road/ribbon profile with true variable-topology joins/caps/reversal splits, an experimental point-centric GPU path with homogeneous clipping and advanced screen topology, adversarial tests, benchmarks, and framework examples.
 - **v1.4.0**: New `MeshLinePickerHelper` (Three.js-style helper that overlays the GPU picker's hit-zones with a distinct hue per instance), new `picker.lines` snapshot getter, aligned point-array input handling, TypeScript declarations, material shadow-node docs, and `smoothSharpBends` now defaults to `false` to preserve stable input topology unless explicitly enabled.
 - **v1.3.2**: Normalize `lineWidth` semantics, stabilize GPU-positioned endpoint tangents, fix pre-build `.opacity()`, and expand options-object configuration.
 - **v1.3.1**: Corner rendering overhaul — uniform thickness at every bend, stable miter at oblique camera angles, and CPU-side smoothing (`smoothSharpBends`) for very sharp polylines. `useMiterLimit` option removed; miter is always on.

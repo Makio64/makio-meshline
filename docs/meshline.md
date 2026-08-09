@@ -1,5 +1,5 @@
 ---
-description: "Reference the main MeshLine class for Three.js wide lines, including styling, dashes, textures, hooks, instancing, and GPU positions."
+description: "Reference the MeshLine facade for camera-facing strokes and world-space road surfaces, including styling, hooks, instancing, and GPU positions."
 ---
 
 # MeshLine Class
@@ -37,11 +37,12 @@ See [Common Patterns](./common-patterns.md) for more examples.
 - `lines(lines: LinePoints | LinePoints[], closed?: boolean | boolean[])` - Set one or more lines and optional close flag
 - `segments(segments: number)` - Set number of segments for auto-generated lines
 - `closed(closed: boolean | boolean[])` - Set whether to close the line loop
+- `surface(options?: MeshLineSurfaceOptions | boolean)` - Select the camera-independent surface profile for roads and ribbons; `true` uses defaults and `false` returns to the screen profile
 
 **Appearance:**
 - `color(color: number | THREE.Color)` - Set line color
 - `lineWidth(lineWidth: number)` - Set the full line width. With `sizeAttenuation(false)` this is CSS pixels; with the default `sizeAttenuation(true)` it is projected as a scene-space width.
-- `widthCallback(callback: (t: number) => number)` - Set variable width function
+- `widthCallback(callback: (progress: number, pointIndex?: number, lineIndex?: number) => number)` - Set an arc-length-based variable width multiplier
 - `sizeAttenuation(enable: boolean)` - Enable scene-space projected width. Disable it for constant CSS-pixel width.
 - `gradientColor(color: number | THREE.Color)` - Set gradient end color
 - `vertexColors(colors: Float32Array | number[])` - Set per-vertex RGB colors
@@ -65,7 +66,8 @@ See [Common Patterns](./common-patterns.md) for more examples.
 
 **Advanced:**
 
-- `join({ limit?: number })` - Set the miter clamp; lower values flatten sharp corners sooner. Defaults to `4`. (The `type` field is retained for back-compat but has no effect — miter is always applied.)
+- `join({ type?: 'miter' | 'bevel' | 'round', limit?: number, segments?: number })` - Configure joins. The regular billboard profile keeps its bounded fixed-strip miter. World surfaces emit true bevel wedges and round fans; over-limit miters switch to bounded bevel topology.
+- `cap('butt' | 'square' | 'round')` or `cap({ type, segments })` - Configure open-path endpoints. World surfaces and the optional native-WebGPU path emit true square/round cap topology; the regular billboard profile remains butt-capped.
 - `smoothSharpBends(enabled: boolean)` - Toggle CPU-side splitting of polyline corners that are too sharp for the screen-space miter to render cleanly. Defaults to `false` so GPU buffers stay aligned 1:1 with your input points. Enable for static sharp polylines when cleaner corners matter more than exact input topology.
 - `smoothSharpBendsAlpha(alpha: number)` - Cutoff fraction used when `smoothSharpBends` is on: each sharp corner is replaced by two points sitting `alpha` of the way back along each adjacent segment. Smaller values preserve the pointy look; larger values flatten the tip more. Defaults to `0.001` (visually imperceptible but enough to stabilise the shader miter math).
 - `smoothSharpBendsThreshold(threshold: number)` - `dot(dir_in, dir_out)` cutoff below which a vertex is considered sharp enough to subdivide. Defaults to `-0.5` (≈ 60° interior bend). Lower (more negative) values subdivide only the very sharpest corners.
@@ -104,8 +106,8 @@ These controls are auto-detected from your configuration and rarely need manual 
 
 - `needsUV(enable: boolean)` - Auto-detected from `map`, `alphaMap`, `uvFn`, `fragmentColorFn`, `fragmentAlphaFn`, `discardFn`
 - `needsWidth(enable: boolean)` - Auto-detected from `widthCallback`, `widthFn`
-- `needsProgress(enable: boolean)` - Always enabled
-- `needsSide(enable: boolean)` - Always enabled
+- `needsProgress(enable: boolean)` - Force the progress attribute on; the facade otherwise allocates it only when an active feature consumes path progress
+- `needsSide(enable: boolean)` - Force a physical side attribute (also useful before converting geometry to non-indexed); the default indexed shader derives side from the paired vertex index
 - `needsPrevious(enable: boolean)` - Auto-detected (disabled when using `gpuPositionNode`)
 - `needsNext(enable: boolean)` - Auto-detected (disabled when using `gpuPositionNode`)
 - `needsVertexColor(enable: boolean)` - Auto-detected from `vertexColors`
@@ -155,11 +157,12 @@ interface MeshLineOptions {
   lines?: LinePoints | LinePoints[]          // One line or multiple lines
   segments?: number                          // Template segments for GPU positions
   closed?: boolean | boolean[]               // Close the loop(s)
+  surface?: boolean | MeshLineSurfaceOptions // `true` uses the default world-space surface profile
 
   // ***Appearance***
   color?: number | THREE.Color
   lineWidth?: number                         // Line width (default: 0.3)
-  widthCallback?: (t: number) => number      // variable width modifier
+  widthCallback?: (progress: number, pointIndex?: number, lineIndex?: number) => number
   sizeAttenuation?: boolean
   gradientColor?: number | null              // End-gradient colour
   vertexColors?: Float32Array | number[]     // Per-vertex RGB colors
@@ -176,7 +179,15 @@ interface MeshLineOptions {
   dashOffset?: number
 
   // ***Joins and corner smoothing***
-  join?: { type?: 'miter' | 'simple', limit?: number }
+  join?: {
+    type?: 'miter' | 'bevel' | 'round'
+    limit?: number
+    segments?: number
+  }
+  cap?: 'butt' | 'square' | 'round' | {
+    type?: 'butt' | 'square' | 'round'
+    segments?: number
+  }
   smoothSharpBends?: boolean
   smoothSharpBendsAlpha?: number
   smoothSharpBendsThreshold?: number
@@ -234,6 +245,20 @@ interface MeshLineOptions {
   // Debugging
   verbose?: boolean
 }
+
+interface MeshLineSurfaceOptions {
+  frame?: 'transport' | 'fixed-up'
+  up?: THREE.Vector3 | [number, number, number]
+  bank?: number | ArrayLike<number> | ((progress: number, pointIndex: number, lineIndex: number) => number)
+  uvMode?: 'distance' | 'stretch'
+  uvScale?: number
+  roughness?: number
+  metalness?: number
+  normalMap?: THREE.Texture | null
+  roughnessMap?: THREE.Texture | null
+  metalnessMap?: THREE.Texture | null
+  side?: THREE.Side
+}
 ```
 
 ## MeshLineOptions
@@ -246,13 +271,15 @@ interface MeshLineOptions {
 
 - **`closed`** (`boolean | boolean[]`) — Whether to close the line loop(s). If `true`, connects the last point back to the first. For multiple lines, can be an array of booleans. Default: `false`.
 
+- **`surface`** (`MeshLineSurfaceOptions | boolean`) — Selects camera-independent world-space geometry. Pass `true` or call `.surface()` for defaults; pass `false` to restore the camera-facing screen profile. Width is measured in world units and the material uses standard PBR shading. See [World-Space Surfaces](/surface) for frames, banking, UVs, joins, and current topology limits. Default: `false`.
+
 ### Appearance
 
 - **`color`** (`number | THREE.Color`) — Base color of the line. Can be a hex number (`0xff0000`) or `THREE.Color` instance. Default: `0xffffff` (white).
 
 - **`lineWidth`** (`number`) — Full width of the line. When `sizeAttenuation` is `false`, this is a constant CSS-pixel width. When `true`, it is projected as a scene-space width and attenuates with distance. Default: `0.3`.
 
-- **`widthCallback`** (`(t: number) => number | null`) — A function that receives the line progress (`t`, from 0 to 1) and returns a width multiplier. Allows for variable line width. Default: `null`.
+- **`widthCallback`** (`(progress: number, pointIndex?: number, lineIndex?: number) => number | null`) — Receives normalized arc-length progress plus the optional source point and line indices, and returns a width multiplier. Default: `null`.
 
 - **`sizeAttenuation`** (`boolean`) — Whether `lineWidth` is projected in scene space. When `false`, lines maintain constant CSS-pixel width regardless of distance. Default: `true`.
 
@@ -292,7 +319,7 @@ interface MeshLineOptions {
 
 - **`wireframe`** (`boolean`) — Render the line geometry as wireframe. Mainly useful for debugging. Default: `false`.
 
-- **`frustumCulled`** (`boolean`) — Whether the line should be frustum culled by Three.js. Set to `false` for lines that might extend outside the view. Default: `true`.
+- **`frustumCulled`** (`boolean`) — Whether the line should be frustum culled by Three.js. Default: `true` for CPU paths. It defaults to `false` after `gpuPositionNode()` because the synthetic CPU template cannot bound arbitrary shader-generated positions; call `setFrustumCulled( true )` only when you provide a conservative bound yourself.
 
 ### Device Pixel Ratio
 
@@ -304,13 +331,13 @@ interface MeshLineOptions {
 
 - **`needsUV`** (`boolean`) — Whether the line needs UV coordinates. Auto-enabled by textures, `uvFn`, fragment hooks, or `discardFn`. Default: `false`.
 
-- **`needsProgress`** (`boolean`) — Whether the line needs a progress attribute. Default: `true`.
+- **`needsProgress`** (`boolean`) — Force a progress attribute for a custom low-level consumer. The facade otherwise enables it only for gradients, dashes, width callbacks, GPU positions, or hooks that consume progress.
 
 - **`needsPrevious`** (`boolean`) — Whether the line needs previous point information. Default: `true`.
 
 - **`needsNext`** (`boolean`) — Whether the line needs next point information. Default: `true`.
 
-- **`needsSide`** (`boolean`) — Whether the line needs side information. Default: `true`.
+- **`needsSide`** (`boolean`) — Force a physical side attribute for a custom low-level consumer or before `toNonIndexed()`. The default indexed line shader derives its `+1/-1` side from paired vertex indices, so the facade default is `false`; when enabled, the built-in material reads the attribute.
 
 - **`renderWidth`** (`number`) — Width of the rendered line. Default: `1024`.
 
@@ -322,7 +349,7 @@ interface MeshLineOptions {
 
 - **`instanceCount`** (`number`) — When set to a positive number, enables instanced rendering for the specified number of instances. Each instance renders the same line geometry but can have different transformations, colors, and other per-instance properties via custom attributes. Default: `-1` (instancing disabled).
 
-> **Instance Attributes:** Use `addInstanceAttribute(name, components)` to create per-instance attributes and `setInstanceValue(name, index, value)` to set data for specific instances. Instance attributes can be accessed in hook functions using `attribute(name, type)`.
+> **Instance Attributes:** Use `addInstanceAttribute(name, components)` to create per-instance attributes. Use `setInstanceValues(name, typedArray)` for initial or bulk data and `setInstanceValue(name, index, value)` for occasional edits. Instance attributes can be accessed in hook functions using `attribute(name, type)`.
 
 ### Hook Functions
 
@@ -344,12 +371,14 @@ Hook functions allow custom TSL (Three.js Shading Language) code to modify vario
 
 ### Updating geometry efficiently
 
-For lines controled by `cpu` and whose vertices change every frame (e.g. interactive trails) you can avoid rebuilding the full geometry by calling **`geometry.setPositions( positionsF32 )`**.  
+For lines controlled by the CPU whose vertices change every frame (for example interactive trails), avoid rebuilding the full geometry by calling **`line.setPositions( positionsF32 )`**.
 `positionsF32` must be the same length as the original `lines` array (and ideally the same Float32Array reused each frame).  Only the `position`, `previous` and `next` buffers are updated in-place, so no new GPU buffers are created.
 
 For efficient position updates, see [Dynamic Updates](./common-patterns.md#9-dynamic-updates) in Common Patterns.
 
 Use `line.setPositions(positions, true)` or `geometry.setPositions(positions, true)` when dynamic motion changes the bounds enough for frustum culling to matter.
+
+When only a fixed span changes, `line.setPositionRange(patch, startPoint, { lineIndex, updateBounding })` avoids rewriting and uploading the whole position/neighbor buffers. The range cannot introduce duplicate points or change topology. Arc-length-dependent progress, UV, endpoint metadata, and callback widths still refresh for the affected line. Surface transport frames and `smoothSharpBends` use `setPositions()` because a local edit can affect derived topology or frames beyond the edited span.
 
 ## Methods
 
@@ -412,6 +441,16 @@ line.setInstanceValue('instanceOffset', 0, [1, 2, 3])
 
 // Set scale for instance 0
 line.setInstanceValue('instanceScale', 0, 1.5)
+```
+
+**`setInstanceValues(name: string, values: ArrayLike<number>, startInstance = 0): MeshLine`**
+
+Writes a contiguous block to an instance attribute. Prefer this for initial data and large updates because the typed array copy and GPU version change happen once.
+
+```js
+const offsets = new Float32Array( instanceCount * 3 )
+fillOffsets( offsets )
+line.setInstanceValues( 'instanceOffset', offsets )
 ```
 
 For advanced instancing examples, see:

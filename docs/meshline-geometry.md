@@ -98,7 +98,7 @@ new MeshLine({
 
 Leave `smoothSharpBends` off when you need the GPU vertex count to match your input polyline exactly — e.g. if you're animating per-vertex data, using custom per-vertex attributes, or relying on a stable index mapping.
 
-> ℹ️ **GPU-positioned lines**: when `gpuPositionNode` is set, the CPU polyline is a straight-line template whose point count drives the progress grid the GPU samples against. CPU smoothing is skipped in that case — subdividing the template would shift progress values and break GPU position lookups. If you need corner smoothing for a GPU-positioned line, do it inside your position node.
+> ℹ️ **GPU-positioned lines**: when `gpuPositionNode` is set, the CPU polyline is a straight-line template whose point count drives the progress grid the GPU samples against. CPU smoothing is skipped in that case — subdividing the template would shift progress values and break GPU position lookups. The facade also disables frustum culling by default because this template is not a valid bound for arbitrary generated positions. If you need corner smoothing, do it inside your position node.
 
 ## Methods
 
@@ -167,6 +167,26 @@ function animate() {
 
 Pass `updateBounding: true` when dynamic edits can move the line outside its previous bounds and frustum culling should stay exact.
 
+### setPositionRange()
+
+```ts
+setPositionRange(
+  positions: ArrayLike<number> | PointLike[],
+  startPoint: number,
+  options?: { lineIndex?: number; updateBounding?: boolean }
+): MeshLineGeometry
+```
+
+Updates a fixed-size span of an existing CPU billboard line. Only the changed position components and the one-point `previous`/`next` dependency halo are marked for GPU upload. `startPoint` addresses canonical source points; `lineIndex` defaults to `0` for a single line.
+
+```js
+const patch = new Float32Array( 128 * 3 )
+updateBrushStroke( patch )
+geometry.setPositionRange( patch, 2048, { updateBounding: true } )
+```
+
+The edit must keep topology stable: it cannot add/remove points, create consecutive duplicates, or run with `smoothSharpBends`. If a feature uses normalized arc length, its progress/UV/endpoint/width data is recomputed for the affected line because moving one point changes downstream distances. Use `setPositions()` for surface geometry or any topology-changing edit.
+
 ## Usage Examples
 
 For practical examples, see:
@@ -228,4 +248,4 @@ The geometry generates these vertex attributes:
 - `uv` - Texture coordinates
 - `progress` - Position along line (0-1) for effects
 
-These attributes work together with the MeshLineNodeMaterial to create smooth, thick lines. 
+These attributes work together with the MeshLineNodeMaterial to create smooth, thick lines.

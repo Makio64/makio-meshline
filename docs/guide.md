@@ -73,6 +73,8 @@ If you're building with React or Vue, jump to a ready-to-run example with a decl
 ## Next Steps
 
 - Start with [Basic Examples](./examples/basic.md) to see one option change at a time
+- Build a camera-independent road with the [Road Surface example](./examples/road.md)
+- Inspect the [Variable Topology gallery](https://meshline-demo.makio.io/examples/variable-topology) for wireframed joins, caps, reversals, and native-WebGPU clipping
 - Check [Follow](./examples/follow.md) and [Draw Lines](./examples/drawlines.md) for dynamic updates
 - Use the [Sandbox](./examples/sandbox.md) to tune parameters and copy the generated line
 - Move to [Instancing](./examples/instancing.md) and [GPU Circle](./examples/gpucircle.md) once the basics are clear

@@ -1,5 +1,7 @@
 # MeshLinePicker — GPU Picking
 
+World-space road/ribbon surfaces are real triangles and use ordinary `raycaster.intersectObject( surface )` picking. `MeshLinePicker` is the camera-facing screen-line picker and intentionally rejects the surface profile.
+
 `MeshLinePicker` answers one question efficiently: **"which line (or instance) is under the cursor right now?"**
 
 It renders your registered MeshLines with unique ID colors to a 1×1 offscreen render target centred on the cursor, then reads back that single pixel and decodes the ID. Because it reads what was actually rendered, it works for cases where `raycast()` cannot:

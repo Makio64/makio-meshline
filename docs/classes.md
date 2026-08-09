@@ -1,6 +1,6 @@
 # Classes
 
-Makio MeshLine provides three core classes. All live in the `makio-meshline` package and work with both WebGPU and WebGL2 back-ends.
+Makio MeshLine provides a high-level façade, a screen-profile geometry/material pair, and a surface-profile geometry/material pair. All live in the `makio-meshline` package and work with both WebGPU and WebGL2 back-ends.
 
 ---
 
@@ -43,6 +43,7 @@ Important API:
 
 * `setLines( lines[] )` – replace poly-lines (rebuilds all buffers).
 * `setPositions( lines, updateBounding? )` – super-fast in-place update when point counts stay constant.
+* `setPositionRange( patch, startPoint, options? )` – update and upload only a fixed local span plus its neighbor halo.
 
 See the dedicated [geometry page](/meshline-geometry) for all details.
 
@@ -54,7 +55,7 @@ A specialized Three.js `NodeMaterial` that renders the line buffers with:
 
 * Screen-space thickness or size-attenuation
 * Optional gradients, textures, dashes
-* Always-on clamped miter join, tuned via `miterLimit` — works in tandem with the geometry's automatic sharp-bend smoothing
+* Always-on bounded miter join, tuned via `miterLimit`, with optional sharp-bend subdivision for static paths
 
 ```ts
 import { MeshLineNodeMaterial } from 'makio-meshline'
@@ -75,7 +76,66 @@ Read the full parameter list on the [material page](/meshline-material).
 
 ---
 
-## Architecture Recap
+## `MeshLineSurfaceGeometry`
+
+Camera-independent ribbon geometry for roads and tracks. It builds rotation-minimizing or fixed-up frames and normals from one or more centerline paths, adding arc-length progress, UVs, and tangents only for active consumers.
+
+```ts
+import { MeshLineSurfaceGeometry } from 'makio-meshline'
+
+const geometry = new MeshLineSurfaceGeometry( {
+  lines: roadPoints,
+  lineWidth: 4,
+  surface: { frame: 'transport', uvMode: 'distance', uvScale: 5 },
+  join: { type: 'round', limit: 3, segments: 8 },
+  cap: { type: 'round', segments: 8 }
+} )
+```
+
+Ordinary miter/butt roads retain the compact two-row strip. Bevels, round joins, non-butt caps, over-limit miters, and reversals emit extra triangles only where needed.
+
+---
+
+## `MeshLineSurfaceNodeMaterial`
+
+Standard PBR node material for surface geometry. It supports base and alpha maps through the normal `MeshLine` methods, plus `normalMap`, `roughnessMap`, `metalnessMap`, `roughness`, `metalness`, and `side` in the surface options.
+
+```ts
+import { MeshLineSurfaceNodeMaterial } from 'makio-meshline'
+
+const material = new MeshLineSurfaceNodeMaterial( {
+  color: 0xffffff,
+  map: roadTexture,
+  surface: { roughness: 0.9, metalness: 0 }
+} )
+```
+
+Read [World-Space Surfaces](/surface) before using the low-level classes directly.
+
+---
+
+## `MeshLineCullingSystem`
+
+Optional native-WebGPU chunk AABB culling and index compaction for a very large opaque `MeshLine`. It lives in a separate Three.js r183+ entry point:
+
+```ts
+import MeshLineCullingSystem from 'makio-meshline/gpu-culling'
+
+const culling = MeshLineCullingSystem.attach( renderer, scene, { mode: 'auto' } )
+const handle = culling.add( line )
+```
+
+See [GPU Culling](/gpu-culling) for automatic thresholds, explicit bounds, lifecycle, and fail-open behavior.
+
+---
+
+## `MeshLineGPUPath`
+
+Experimental native-WebGPU point-centric path renderer from the optional `makio-meshline/gpu-path` entry point. It owns a complete CPU `MeshLine` fallback and one non-indexed indirect draw. Its untouched miter/butt fast path derives topology without compute; advanced mode uses compact segment/triangle records for true bevel/round joins, caps, reversal splits, and homogeneous clipping. See [GPU Path](/gpu-path) for its LOD and fallback contracts.
+
+---
+
+## Screen-Profile Architecture Recap
 
 <svg viewBox="0 0 800 320" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="MeshLine architecture" style="max-width:100%;height:auto;display:block;margin:1.5em auto;">
   <defs>
@@ -97,7 +157,7 @@ Read the full parameter list on the [material page](/meshline-material).
   <text x="280" y="178" text-anchor="middle" class="arc-title" font-size="14">MeshLineGeometry</text>
   <text x="280" y="202" text-anchor="middle" class="arc-sub">vertex buffers</text>
   <text x="280" y="220" text-anchor="middle" class="arc-sub">position · previous · next</text>
-  <text x="280" y="238" text-anchor="middle" class="arc-sub">side · progress · uv · width</text>
+  <text x="280" y="238" text-anchor="middle" class="arc-sub">optional progress · uv · width</text>
   <rect x="410" y="130" width="220" height="125" rx="10" ry="10" class="arc-class"/>
   <text x="520" y="154" text-anchor="middle" class="arc-role">MATERIAL</text>
   <text x="520" y="178" text-anchor="middle" class="arc-title" font-size="14">MeshLineNodeMaterial</text>
@@ -107,4 +167,4 @@ Read the full parameter list on the [material page](/meshline-material).
   <circle class="arc-pulse" r="4" cx="0" cy="0"/>
 </svg>
 
-Use the façade for convenience or compose the underlying classes yourself for advanced scenarios. Hover either inner class to highlight it.
+Use the façade for convenience or compose the profile-specific classes yourself for advanced scenarios. The diagram above shows the default screen profile; `.surface()` swaps in the world-space surface pair.

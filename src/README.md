@@ -1,9 +1,9 @@
 # Makio MeshLine
 
-A modern MeshLine library for Three.js wide lines, gradients, dashes, textures, shadows, GPU positions, and instancing.
+A modern MeshLine library for Three.js wide screen strokes and world-space road/ribbon surfaces, with gradients, dashes, textures, shadows, GPU positions, and instancing.
 
 - Supports: Three.js r180+, `WebGPURenderer` (WebGPU and WebGL2 backends)
-- Features: gradients, dashes, textures, vertex colors, shadows, GPU positions, instancing, TSL hooks
+- Features: gradients, dashes, textures, vertex colors, shadows, GPU positions, instancing, TSL hooks, lit road/ribbon surfaces, optional native-WebGPU chunk culling, and an experimental point-centric GPU path
 
 ## Install
 
@@ -32,6 +32,45 @@ scene.add(line)
 renderer.setAnimationLoop(() => renderer.render(scene, camera))
 ```
 
+For a camera-independent road or ribbon, select the surface profile:
+
+```js
+const road = new MeshLine()
+  .lines(roadPoints)
+  .lineWidth(4)
+  .surface({ frame: 'transport', uvMode: 'distance', uvScale: 5 })
+  .join({ type: 'round', limit: 3, segments: 8 })
+  .cap({ type: 'round', segments: 8 })
+  .build()
+```
+
+For a very large opaque path on Three.js r183+, the optional entry point can compact visible chunks into one indirect draw:
+
+```js
+import MeshLineCullingSystem from 'makio-meshline/gpu-culling'
+
+const culling = MeshLineCullingSystem.attach(renderer, scene, { mode: 'auto' })
+culling.add(line)
+```
+
+For one very large static open path, the experimental r183+ point-centric entry point emits stable segment records and an indirect draw while retaining a full CPU fallback:
+
+```js
+import MeshLineGPUPath from 'makio-meshline/gpu-path'
+
+const path = new MeshLineGPUPath(
+  {
+    lines: points,
+    lineWidth: 0.35,
+    join: { type: 'round', segments: 8 },
+    cap: { type: 'round', segments: 8 }
+  },
+  { simplify: false }
+)
+scene.add(path)
+await path.prepare(renderer, camera)
+```
+
 ## Framework Quickstart
 
 Ready-to-run examples with a declarative `<MeshLine>` wrapper:
@@ -49,6 +88,7 @@ Ready-to-run examples with a declarative `<MeshLine>` wrapper:
 - Wide and thick lines for creative coding and motion design
 - Interactive trails and drawing tools in Three.js
 - GPU-driven curves and instanced line scenes
+- Roads, tracks, and textured world-space ribbons
 
 ## License
 

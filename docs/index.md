@@ -62,6 +62,7 @@ It is designed around Three.js TSL and `WebGPURenderer`, so the same line system
 - Instanced vegetation, ropes, and wire sculptures
 - Gradient, dashed, and textured lines for motion design
 - Shadow-casting line meshes for stylized environments
+- Camera-independent road, track, and ribbon surfaces with true joins and caps
 
 ## Why It Stands Out
 
@@ -88,4 +89,8 @@ It is designed around Three.js TSL and `WebGPURenderer`, so the same line system
 | GPU-driven positions | Yes |
 | Instancing | Yes |
 | Shadow casting | Yes |
+| World-space road surfaces | Yes |
+| Surface bevel/round joins and caps | Yes |
 | WebGPU and WebGL2 via `WebGPURenderer` | Yes |
+| Native-WebGPU chunk culling | Optional |
+| Point-centric indirect GPU path + screen topology | Experimental |

@@ -3,7 +3,7 @@
 [![license](https://img.shields.io/npm/l/makio-meshline)](./LICENSE)
 [![three.js](https://img.shields.io/badge/three.js-r180%2B-blue)](https://threejs.org/)
 
-*A modern MeshLine library for Three.js wide lines, gradients, dashes, textures, shadows, GPU positions, and instancing.*
+*A modern MeshLine library for Three.js wide screen strokes and world-space road/ribbon surfaces, with gradients, dashes, textures, shadows, GPU positions, and instancing.*
 
 [
 ![demo](https://github.com/user-attachments/assets/4f1c7cee-0f8f-4c21-a720-531eb26bf485)
@@ -19,7 +19,9 @@ Makio MeshLine is built for creative coding, interactive trails, data visualizat
 - **14 GPU hooks** — Customize position, color, width, opacity, dash, UV and more in the shader
 - **Gradients, dashes, textures** — Built-in support for common line styles
 - **Variable width** — Per-vertex width control via callback or GPU hook
-- **Line joins** — Always-on clamped miter with automatic CPU-side corner smoothing for very sharp polylines (opt-out available)
+- **Bounded line joins** — Finite miter fallback at sharp projected turns, with optional CPU subdivision for static paths
+- **Road and ribbon surfaces** — Camera-independent geometry with transport frames, banking, normals, tangents, and distance UVs
+- **Hybrid GPU culling** — Optional native-WebGPU chunk compaction and one indirect draw for very large opaque paths
 - **Shadow support** — Cast shadows from lines
 - **GPU positions** — Procedural line generation entirely on the GPU
 - **Tree-shakeable** — ESM-only, `sideEffects: false`, import only what you need
@@ -30,7 +32,7 @@ Makio MeshLine is built for creative coding, interactive trails, data visualizat
 
 - Replace older `THREE.MeshLine` style workflows with a WebGPU-ready Three.js line renderer.
 - Use the same API for one-off wide lines, repeated batches, or thousands of instanced lines.
-- Keep CPU uploads low with `setPositions()`, batching, and GPU position nodes.
+- Keep CPU uploads low with `setPositions()`, local `setPositionRange()` edits, bulk instance writes, batching, and GPU position nodes.
 - Add styling and motion with gradients, dashes, textures, vertex colors, opacity, and TSL hooks instead of maintaining multiple line systems.
 
 ## Use Cases
@@ -39,6 +41,7 @@ Makio MeshLine is built for creative coding, interactive trails, data visualizat
 - Motion design, sci-fi wireframes, stylized ropes, and decorative outlines
 - Data visualization, flow fields, and parametric curves
 - Large repeated scenes such as vegetation, hair-like structures, or wire sculptures
+- Roads, tracks, and textured world-space ribbons
 
 ## Support Matrix
 
@@ -88,6 +91,58 @@ scene.add(line)
 // 3. Render loop ---------------------------------------------------------------
 renderer.setAnimationLoop(() => renderer.render(scene, camera))
 ```
+
+### Road / Ribbon Surface
+
+Use the separate surface profile when the width and orientation must live in world space:
+
+```javascript
+const road = new MeshLine()
+  .lines(roadPoints)
+  .lineWidth(4)
+  .surface({
+    frame: 'transport',
+    up: [0, 1, 0],
+    uvMode: 'distance',
+    uvScale: 5
+  })
+  .join({ type: 'round', limit: 3, segments: 8 })
+  .cap({ type: 'round', segments: 8 })
+  .build()
+```
+
+The ordinary miter/butt case stays on the compact two-row path. Bevels, round fans, caps, over-limit miters, and reversal splits add topology only where required. See [World-space surfaces](https://meshline.makio.io/surface.html) for banking, PBR maps, join policies, and precision guidance.
+
+### Optional GPU Culling
+
+Very large opaque paths can opt into native-WebGPU chunk compaction (Three.js r183+ for this optional entry point):
+
+```javascript
+import MeshLineCullingSystem from 'makio-meshline/gpu-culling'
+
+const culling = MeshLineCullingSystem.attach(renderer, scene, { mode: 'auto' })
+const handle = culling.add(line)
+```
+
+Unsupported backends, cameras, materials, or bounds draw the complete geometry. See [GPU culling](https://meshline.makio.io/gpu-culling.html) for the bounds contract and profiling guidance.
+
+### Experimental GPU Path
+
+Very large static open paths can instead use the point-centric native-WebGPU renderer (Three.js r183+):
+
+```javascript
+import MeshLineGPUPath from 'makio-meshline/gpu-path'
+
+const path = new MeshLineGPUPath( { lines: points, lineWidth: 0.35 }, {
+  chunkSegments: 128,
+  simplify: { localTolerance: 0.05 },
+} )
+
+scene.add( path )
+await path.prepare( renderer, camera )
+```
+
+It emits stable segment records and one non-indexed indirect draw while retaining a complete CPU `MeshLine` fallback. See [GPU path](https://meshline.makio.io/gpu-path.html) for its deliberately narrow local-space guarantee and current unsupported profiles.
 
 ## Framework Quickstart
 
@@ -148,6 +203,10 @@ Check out the [documentation site](https://meshline.makio.io/) for detailed inst
 - [Common Patterns](https://meshline.makio.io/common-patterns.html)
 - [Advanced Patterns](https://meshline.makio.io/advanced-patterns.html)
 - [Performance tips](https://meshline.makio.io/performance.html)
+- [World-space roads and ribbons](https://meshline.makio.io/surface.html)
+- [GPU culling](https://meshline.makio.io/gpu-culling.html)
+- [Experimental GPU path](https://meshline.makio.io/gpu-path.html)
+- [V2 design contract](https://meshline.makio.io/v2-design.html)
 - [Helpers functions](https://meshline.makio.io/helpers.html)
 - [GPU picking & debug helper](https://meshline.makio.io/picking.html)
 - [React Three Fiber integration](https://meshline.makio.io/react-three-fiber.html)
