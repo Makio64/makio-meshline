@@ -1,15 +1,28 @@
 <script setup>
-import { inject, onMounted, onUnmounted, shallowRef, unref, watch } from 'vue'
 import { MeshLine as MeshLineCore } from 'makio-meshline'
+import { BufferGeometry } from 'three/webgpu'
+import { inject, onMounted, onUnmounted, shallowRef, unref, watch } from 'vue'
+
+const DEFAULT_JOIN = Object.freeze( { type: 'miter', limit: 4, segments: 8 } )
+const DEFAULT_CAP = Object.freeze( { type: 'butt', segments: 8 } )
 
 const props = defineProps( {
+	// Scene and geometry
 	parent: { type: Object, default: null },
-	points: { type: [Array, Float32Array], default: null },
-	lines: { type: [Array, Float32Array], default: null },
+	points: { type: [Array, Float32Array, BufferGeometry], default: null },
+	lines: { type: [Array, Float32Array, BufferGeometry], default: null },
 	segments: { type: Number, default: undefined },
 	closed: { type: [Boolean, Array], default: false },
-	lineWidth: { type: Number, default: 0.1 },
 	surface: { type: [Boolean, Object], default: false },
+	join: { type: Object, default: null },
+	cap: { type: [String, Object], default: null },
+	smoothSharpBends: { type: Boolean, default: false },
+	smoothSharpBendsAlpha: { type: Number, default: undefined },
+	smoothSharpBendsThreshold: { type: Number, default: undefined },
+	updateBounding: { type: Boolean, default: false },
+
+	// Appearance
+	lineWidth: { type: Number, default: 0.3 },
 	color: { type: [Number, String, Object], default: 0xffffff },
 	vertexColors: { type: [Array, Float32Array], default: null },
 	widthCallback: { type: Function, default: null },
@@ -24,13 +37,10 @@ const props = defineProps( {
 	wireframe: { type: Boolean, default: false },
 	shadow: { type: Boolean, default: false },
 	sizeAttenuation: { type: Boolean, default: true },
-	join: { type: Object, default: null },
-	cap: { type: [String, Object], default: null },
-	smoothSharpBends: { type: Boolean, default: false },
-	smoothSharpBendsAlpha: { type: Number, default: undefined },
-	smoothSharpBendsThreshold: { type: Number, default: undefined },
+
+	// Renderer and buffers
 	dpr: { type: Number, default: undefined },
-	frustumCulled: { type: Boolean, default: true },
+	frustumCulled: { type: Boolean, default: undefined },
 	verbose: { type: Boolean, default: false },
 	renderWidth: { type: Number, default: undefined },
 	renderHeight: { type: Number, default: undefined },
@@ -45,6 +55,8 @@ const props = defineProps( {
 	needsNext: { type: Boolean, default: undefined },
 	needsSide: { type: Boolean, default: undefined },
 	needsVertexColor: { type: Boolean, default: undefined },
+
+	// TSL hooks
 	widthFn: { type: Function, default: null },
 	normalFn: { type: Function, default: null },
 	colorFn: { type: Function, default: null },
@@ -59,13 +71,14 @@ const props = defineProps( {
 	fragmentAlphaFn: { type: Function, default: null },
 	discardFn: { type: Function, default: null },
 	vertexFn: { type: Function, default: null },
-	updateBounding: { type: Boolean, default: false },
 } )
 
 const emit = defineEmits( ['ready'] )
 const lineRef = shallowRef( null )
 const injectedParent = inject( 'meshline-parent', null )
+let mounted = false
 let previousClosed = props.closed
+let hadLinePoints = resolveLines() != null
 
 function resolveParent() {
 	return unref( props.parent ) || unref( injectedParent )
@@ -75,19 +88,47 @@ function resolveLines() {
 	return props.points ?? props.lines
 }
 
+function defaultDpr() {
+	return typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1
+}
+
+function defaultRenderWidth() {
+	return typeof window === 'undefined' ? 1024 : window.innerWidth
+}
+
+function defaultRenderHeight() {
+	return typeof window === 'undefined' ? 768 : window.innerHeight
+}
+
+function resolveFrustumCulled() {
+	if ( props.frustumCulled !== undefined ) return props.frustumCulled
+	return props.sizeAttenuation !== false &&
+		!props.gpuPositionNode &&
+		!props.positionFn &&
+		!props.previousFn &&
+		!props.nextFn &&
+		!props.widthFn &&
+		!props.normalFn &&
+		!props.vertexFn
+}
+
 function getBuildOptions() {
 	return {
 		lines: resolveLines(),
-		segments: props.segments,
+		segments: props.segments ?? 1,
 		closed: props.closed,
 		surface: props.surface,
+		join: props.join ?? DEFAULT_JOIN,
+		cap: props.cap ?? DEFAULT_CAP,
+		smoothSharpBends: props.smoothSharpBends,
+		smoothSharpBendsAlpha: props.smoothSharpBendsAlpha ?? 0.001,
+		smoothSharpBendsThreshold: props.smoothSharpBendsThreshold ?? -0.5,
 		vertexColors: props.vertexColors,
 		color: props.color,
 		lineWidth: props.lineWidth,
 		widthCallback: props.widthCallback,
 		sizeAttenuation: props.sizeAttenuation,
 		gradientColor: props.gradientColor,
-		dash: props.dash,
 		map: props.map,
 		mapOffset: props.mapOffset,
 		alphaMap: props.alphaMap,
@@ -96,27 +137,22 @@ function getBuildOptions() {
 		transparent: props.transparent || props.opacity < 1,
 		wireframe: props.wireframe,
 		shadow: props.shadow,
-		join: props.join,
-		cap: props.cap,
-		smoothSharpBends: props.smoothSharpBends,
-		smoothSharpBendsAlpha: props.smoothSharpBendsAlpha,
-		smoothSharpBendsThreshold: props.smoothSharpBendsThreshold,
-		dpr: props.dpr,
-		frustumCulled: props.frustumCulled,
+		dpr: props.dpr ?? defaultDpr(),
+		frustumCulled: resolveFrustumCulled(),
 		verbose: props.verbose,
-		renderWidth: props.renderWidth,
-		renderHeight: props.renderHeight,
-		dynamic: props.dynamic,
+		renderWidth: props.renderWidth ?? defaultRenderWidth(),
+		renderHeight: props.renderHeight ?? defaultRenderHeight(),
+		dynamic: props.dynamic ?? false,
 		gpuPositionNode: props.gpuPositionNode,
 		usage: props.usage,
-		instanceCount: props.instanceCount,
-		needsUV: props.needsUV,
-		needsWidth: props.needsWidth,
-		needsProgress: props.needsProgress,
-		needsPrevious: props.needsPrevious,
-		needsNext: props.needsNext,
-		needsSide: props.needsSide,
-		needsVertexColor: props.needsVertexColor,
+		instanceCount: props.instanceCount ?? -1,
+		needsUV: props.needsUV ?? false,
+		needsWidth: props.needsWidth ?? false,
+		needsProgress: props.needsProgress ?? false,
+		needsPrevious: props.needsPrevious ?? !props.gpuPositionNode,
+		needsNext: props.needsNext ?? !props.gpuPositionNode,
+		needsSide: props.needsSide ?? false,
+		needsVertexColor: props.needsVertexColor ?? false,
 		positionFn: props.positionFn,
 		previousFn: props.previousFn,
 		nextFn: props.nextFn,
@@ -134,18 +170,12 @@ function getBuildOptions() {
 	}
 }
 
-function applyBuildOptions( line ) {
-	const { cap, dash, join, surface, ...options } = getBuildOptions()
-	line.configure( options )
-	if ( surface ) {
-		if ( typeof line.surface !== 'function' ) {
-			throw new Error( '[MeshLine] The surface prop requires a makio-meshline version with road/ribbon support.' )
-		}
-		line.surface( surface === true ? {} : surface )
-	}
-	line.dash( dash )
-	if ( join ) line.join( join )
-	if ( cap ) line.cap( cap )
+function configureLine( line ) {
+	// Mark the current node pipeline dirty before applying all build-time options.
+	// This lets configure() finish before rebuild() creates the next pipeline.
+	line.positionFn( props.positionFn )
+	line.configure( getBuildOptions() )
+	line.dash( props.dash )
 	return line
 }
 
@@ -155,68 +185,99 @@ function applyLiveOptions() {
 
 	line.lineWidth( props.lineWidth )
 	line.color( props.color )
-	line.transparent( props.transparent || props.opacity < 1 )
+	line.transparent( props.transparent || props.opacity < 1 || props.alphaMap != null )
 	line.opacity( props.opacity )
 	line.alphaTest( props.alphaTest )
 	line.wireframe( props.wireframe )
 	line.shadow( props.shadow )
 	line.gradientColor( props.gradientColor ?? null )
 	line.map( props.map ?? null )
+	line.mapOffset( props.mapOffset ?? null )
 	line.alphaMap( props.alphaMap ?? null )
 	line.dash( props.dash )
-	line.setFrustumCulled( props.frustumCulled )
+	line.setFrustumCulled( resolveFrustumCulled() )
 	line.verbose( props.verbose )
-
-	line.mapOffset( props.mapOffset ?? null )
-	if ( props.dpr !== undefined ) line.dpr( props.dpr )
-	if ( props.renderWidth !== undefined || props.renderHeight !== undefined ) {
-		line.renderSize( props.renderWidth, props.renderHeight )
-		line.resize( props.renderWidth, props.renderHeight )
-	}
+	line.dpr( props.dpr ?? defaultDpr() )
 }
 
-function buildAndAdd() {
-	disposeLine()
-	const parent = resolveParent()
-	if ( !parent ) return
+function applyRenderSize() {
+	const line = lineRef.value
+	if ( !line ) return
 
-	const line = applyBuildOptions( new MeshLineCore() )
-	line.build()
-	parent.add( line )
+	const width = props.renderWidth ?? defaultRenderWidth()
+	const height = props.renderHeight ?? defaultRenderHeight()
+	line.renderSize( width, height )
+	line.resize( width, height )
+}
+
+function attachLine() {
+	if ( !mounted ) return
+
+	const parent = resolveParent()
+	if ( !parent ) {
+		lineRef.value?.parent?.remove( lineRef.value )
+		return
+	}
+
+	if ( !lineRef.value ) {
+		const line = configureLine( new MeshLineCore() ).build()
+		lineRef.value = line
+		previousClosed = props.closed
+		hadLinePoints = resolveLines() != null
+		parent.add( line )
+		emit( 'ready', line )
+		return
+	}
+
+	if ( lineRef.value.parent !== parent ) parent.add( lineRef.value )
+}
+
+function rebuildLine() {
+	const line = lineRef.value
+	if ( !line ) return
+
+	configureLine( line ).rebuild()
 	previousClosed = props.closed
-	lineRef.value = line
-	emit( 'ready', line )
 }
 
 function disposeLine() {
-	if ( !lineRef.value ) return
-	lineRef.value.parent?.remove( lineRef.value )
-	lineRef.value.dispose()
+	lineRef.value?.parent?.remove( lineRef.value )
+	lineRef.value?.dispose()
 	lineRef.value = null
 }
 
-onMounted( buildAndAdd )
-onUnmounted( disposeLine )
+function replaceLine() {
+	disposeLine()
+	attachLine()
+}
 
-watch( resolveParent, buildAndAdd, { flush: 'post' } )
+onMounted( () => {
+	mounted = true
+	attachLine()
+} )
 
+onUnmounted( () => {
+	mounted = false
+	disposeLine()
+} )
+
+watch( resolveParent, attachLine, { flush: 'post' } )
+
+// Point buffers and option objects are watched by identity. Replace their
+// reference to trigger an update; use the exposed line for per-frame mutation.
 watch( () => [resolveLines(), props.closed, props.updateBounding], () => {
 	const line = lineRef.value
-	if ( !line ) {
-		buildAndAdd()
-		return
-	}
-
 	const lines = resolveLines()
-	if ( lines == null ) {
-		line.closed( props.closed ).rebuild()
-		previousClosed = props.closed
+	const hasLinePoints = lines != null
+	if ( hadLinePoints !== hasLinePoints ) {
+		hadLinePoints = hasLinePoints
+		replaceLine()
 		return
 	}
+	if ( !line ) return
 
 	if ( previousClosed !== props.closed ) {
-		line.lines( lines, props.closed )
-		previousClosed = props.closed
+		rebuildLine()
 		return
 	}
 
@@ -225,6 +286,9 @@ watch( () => [resolveLines(), props.closed, props.updateBounding], () => {
 
 watch( () => [
 	props.segments,
+	props.surface,
+	props.join,
+	props.cap,
 	props.sizeAttenuation,
 	props.widthCallback,
 	props.vertexColors,
@@ -256,9 +320,8 @@ watch( () => [
 	props.fragmentColorFn,
 	props.fragmentAlphaFn,
 	props.discardFn,
-], buildAndAdd, { flush: 'post' } )
-
-watch( [() => props.surface, () => props.join, () => props.cap], buildAndAdd, { deep: true, flush: 'post' } )
+	props.frustumCulled,
+], rebuildLine, { flush: 'post' } )
 
 watch( () => [
 	props.lineWidth,
@@ -274,15 +337,15 @@ watch( () => [
 	props.mapOffset,
 	props.alphaMap,
 	props.dpr,
-	props.frustumCulled,
 	props.verbose,
-	props.renderWidth,
-	props.renderHeight,
-], applyLiveOptions, { deep: true, flush: 'post' } )
+], applyLiveOptions, { flush: 'post' } )
+
+watch( () => [props.renderWidth, props.renderHeight], applyRenderSize, { flush: 'post' } )
 
 defineExpose( { line: lineRef } )
 </script>
 
 <template>
-  <span v-if="false" />
+	<!-- Renderless: MeshLineCore is attached directly to the Three.js scene. -->
+	<span v-if="false" />
 </template>

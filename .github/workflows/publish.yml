@@ -4,17 +4,17 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: Version to publish, for example 1.2.2
+        description: Version to publish, for example 2.0.0
         required: true
         type: string
       npm_tag:
-        description: npm dist-tag to use for the publish
+        description: Optional npm dist-tag. Leave empty to auto-select latest or next
         required: false
-        default: latest
+        default: ''
         type: string
 
 concurrency:
-  group: publish-${{ inputs.version }}
+  group: publish-makio-meshline
   cancel-in-progress: false
 
 jobs:
@@ -25,7 +25,10 @@ jobs:
       id-token: write
     steps:
       - uses: actions/checkout@v6
-      - name: Validate publish ref
+        with:
+          persist-credentials: false
+      - name: Validate publish request
+        id: plan
         run: |
           if [[ "$GITHUB_REF_TYPE" != "tag" ]]; then
             echo "Publish workflow must run from a git tag ref."
@@ -36,15 +39,34 @@ jobs:
             echo "Publish ref $GITHUB_REF_NAME does not match version v$VERSION."
             exit 1
           fi
+
+          if [[ -n "$NPM_TAG_INPUT" ]]; then
+            NPM_TAG="$NPM_TAG_INPUT"
+          elif [[ "${VERSION%%+*}" == *-* ]]; then
+            NPM_TAG="next"
+          else
+            NPM_TAG="latest"
+          fi
+
+          PLAN=$(node scripts/validate-release.mjs \
+            --version "$VERSION" \
+            --tag "$NPM_TAG" \
+            --allow-published)
+          ALREADY_PUBLISHED=$(node -p 'JSON.parse(process.argv[1]).alreadyPublished' "$PLAN")
+
+          echo "$PLAN"
+          echo "already_published=$ALREADY_PUBLISHED" >> "$GITHUB_OUTPUT"
+          echo "npm_tag=$NPM_TAG" >> "$GITHUB_OUTPUT"
         env:
           VERSION: ${{ inputs.version }}
+          NPM_TAG_INPUT: ${{ inputs.npm_tag }}
       - uses: pnpm/action-setup@v4.4.0
       - uses: actions/setup-node@v6
         with:
           node-version: 24
           registry-url: 'https://registry.npmjs.org'
-          cache: 'pnpm'
       - run: pnpm i --frozen-lockfile
+      - run: pnpm -w run release:check
       - name: Publish package
         id: publish_package
         run: |
@@ -56,23 +78,17 @@ jobs:
             exit 1
           fi
 
-          if npm view "$PACKAGE_NAME@$VERSION" version >/dev/null 2>&1; then
+          if [[ "$ALREADY_PUBLISHED" == "true" ]]; then
             echo "$PACKAGE_NAME@$VERSION is already published, skipping npm publish."
-            echo "already_published=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
-          PUBLISH_ARGS=(publish --access public)
-          if [[ "$NPM_TAG" != "latest" ]]; then
-            PUBLISH_ARGS+=(--tag "$NPM_TAG")
-          fi
-
-          npm "${PUBLISH_ARGS[@]}"
-          echo "already_published=false" >> "$GITHUB_OUTPUT"
+          npm publish --access public --provenance --tag "$NPM_TAG"
         working-directory: src
         env:
           VERSION: ${{ inputs.version }}
-          NPM_TAG: ${{ inputs.npm_tag }}
+          NPM_TAG: ${{ steps.plan.outputs.npm_tag }}
+          ALREADY_PUBLISHED: ${{ steps.plan.outputs.already_published }}
       - name: Create GitHub release
         run: |
           if gh release view "v$VERSION" >/dev/null 2>&1; then
@@ -81,7 +97,7 @@ jobs:
           fi
 
           RELEASE_ARGS=(release create "v$VERSION" --verify-tag --title "v$VERSION" --generate-notes)
-          if [[ "$VERSION" == *-* ]]; then
+          if [[ "${VERSION%%+*}" == *-* ]]; then
             RELEASE_ARGS+=(--prerelease)
           fi
 
@@ -89,4 +105,3 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ inputs.version }}
-

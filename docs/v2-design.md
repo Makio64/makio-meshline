@@ -23,6 +23,7 @@ For finite accepted input, V2 enforces these invariants within each profile's do
 - open endpoints and closed cyclic joins are explicit topology, never inferred from a fuzzy progress threshold;
 - projected coordinates are guarded or clipped before perspective division;
 - miter length is finite and bounded, with a real bevel, round, or split fallback at a cusp;
+- advanced GPU joins retain an exact projected inner intersection only when both finite incident legs support it, otherwise they use a bounded center-pivot fallback;
 - distance along the path drives progress, dashes, and road UVs;
 - closed surface frames and seam positions match, with residual frame twist distributed around the loop;
 - surface tangents, normals, and side vectors remain orthonormal and sign-continuous;
@@ -42,6 +43,8 @@ At sharp projected turns, the renderer chooses one of these explicit policies:
 - `bevel`: emit separate incoming and outgoing outer vertices plus fill geometry;
 - `round`: tessellate the outer arc with a bounded segment count;
 - reversal fallback: split and cap the two incident segments, or emit a defined semicircular turnaround.
+
+Advanced GPU joins also validate the exact inner setback against both clipped incident legs in projected space. A supported join retains the shared offset-line intersection. An unsupported join pivots its bounded replacement geometry at the projected center point, preventing a near-reversal from launching an inner vertex across the viewport. The check is local: fallback regions from adjacent corners may still overlap on a short, wide zigzag, and the experimental renderer does not claim a complete polygon union or transparent depth ordering for those overlaps.
 
 Because projection can turn a harmless 3D bend into a screen-space cusp, classifying corners only once on the CPU cannot guarantee stable camera-facing joins. Advanced GPU topology therefore stays full detail: local-space simplification is disabled for bevel/round/cap modes until a camera-dependent mandatory-break pass runs before LOD selection.
 
@@ -79,14 +82,14 @@ The optional `makio-meshline/gpu-path` entry now implements the first point-cent
 
 The separate native-WebGPU culling module compacts visible opaque chunk indices into one indirect draw; WebGL2 and ambiguous bounds fail open to the CPU/full-draw reference path. Camera-facing clip-space expansion remains in the draw path because it depends on the active camera, shadow pass, picker view, and XR eye.
 
-The included compute prototype is deliberately narrower: one fixed-capacity, fixed-up world-space ribbon dispatch with GPU-resident position output. Side is derived from paired vertex indices instead of occupying another storage buffer. It includes a deterministic axis fallback for vertical tangents and proves Three.js storage-to-vertex plumbing on native WebGPU; it does not yet implement transport frames, bounds, picking, or a WebGL2 compute fallback.
+The included compute prototype is deliberately narrower: one fixed-capacity dispatch writes a GPU-resident centerline for a camera-facing `MeshLine` and paired positions for a fixed-up world-space ribbon. Screen expansion stays in the line's draw stage, where it can follow the active camera, while the ribbon proves storage-to-vertex plumbing; both profiles share the same source points and compute submission. Ribbon side is derived from paired vertex indices instead of occupying another storage buffer. The prototype includes a deterministic axis fallback for vertical tangents, but it does not yet implement transport frames, bounds, picking, or a WebGL2 compute fallback.
 
-The GPU simplification stress demo is deliberately labelled as a sampled bounded-gap heuristic. It proves stable workgroup scan/scatter and adaptive indirect counts at 262,144 points, but it does not claim a pixel/world tolerance guarantee. The production optional path uses the narrower local dyadic contract; an exact screen-space hierarchy remains a later promotion gate.
+The GPU simplification lab now runs Taubin relaxation followed by exact Douglas-Peucker, rather than a sampled bounded-gap heuristic. Relaxation is a filter, not a subdivision: it keeps the point count and eases each point toward its neighbours, with the λ/μ pair keeping closed rings from deflating. Chunk edges are then pinned, each open interval is owned by its left endpoint so the refinement passes need no atomics, and an exact flush covers anything the pass budget leaves unresolved — so the world-space tolerance is a guarantee. Chunk length follows the tolerance: a pinned edge is unremovable, so a fixed short lattice puts a hard floor under the retained count and eventually becomes the entire output, while a long lattice is expensive exactly where the recursion is deepest. Deriving it from the tolerance keeps the emitted result within 1.36x of an unchunked Douglas-Peucker across every dataset and slider position. Relaxing first both multiplies the reduction and removes the pathological recursion depth that a staircase provokes, which is why the settled GPU result matches the CPU oracle exactly once relaxation is on. It proves stable workgroup scan/scatter and adaptive indirect counts on real vector datasets. Screen-space LOD remains opt-in inside the lab. The production optional path still uses the narrower local dyadic contract; promoting the exact hierarchy into `MeshLineGPUPath` remains a later gate.
 
 The culling module is likewise an accelerator rather than a geometry policy. It chunks an already-built index stream, requires conservative bounds, reuses unchanged visibility results, and draws the complete geometry for unprepared secondary cameras. Hi-Z occlusion and stable transparent compaction are intentionally outside the first implementation.
 
 ## Verification gates
 
-Every V2 change is checked against adversarial paths: duplicates, unequal sampling, sharp and exact reversals, open and closed seams, vertical segments, non-planar loops, large coordinates, near-plane crossings, extreme camera FOV/aspect, and 16/32-bit index boundaries.
+Every V2 change is checked against adversarial paths: duplicates, unequal sampling, sharp and exact reversals, short projected incident legs, adjacent fallback regions, open and closed seams, vertical segments, non-planar loops, large coordinates, near-plane crossings, extreme camera FOV/aspect, and 16/32-bit index boundaries.
 
 Performance comparisons use identical path counts, point counts, cameras, viewport, sampling duration, and backend. Static build time, dynamic update time, buffer memory, frame-time distribution, and visual output are reported separately; a compute dispatch is not considered an optimization merely because it moves CPU work to the GPU.

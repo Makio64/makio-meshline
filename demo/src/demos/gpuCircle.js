@@ -5,18 +5,18 @@ import { cos, Fn, mix, sin, time, uniform, vec3 } from 'three/tsl'
 import OrbitControl from '@/makio/three/controls/OrbitControl'
 import stage3d from '@/makio/three/stage3d'
 
-const segments = 128
+const SEGMENTS = 128
+const TWO_PI = Math.PI * 2
 
-// TSL function generating a circle in the XZ plane from the per-vertex progress (0-1)
+// Generate a circle in the XY plane from normalized per-vertex progress.
 const circlePosition = Fn( ( [progress] ) => {
-	const angle = progress.add( time.negate() ).mul( Math.PI )
-	return vec3( cos( angle ), sin( angle ), 0  )
+	const angle = progress.add( time.negate() ).mul( TWO_PI )
+	return vec3( cos( angle ), sin( angle ), 0 )
 } )
 
-// TSL function generating a wavy line in the XZ plane from the per-vertex progress (0-1)
+// Generate a wave in the XY plane from the same normalized progress.
 const wavePosition = Fn( ( [progress] ) => {
-	// make a wavy line
-	const y = sin( progress.mul( Math.PI * 4  ).add( time.negate().mul( 4 ) ) )
+	const y = sin( progress.mul( Math.PI * 4 ).add( time.negate().mul( 4 ) ) )
 	return vec3( progress.oneMinus().mul( 2 ).sub( 1 ), y.mul( 0.5 ), 0 )
 } )
 
@@ -24,13 +24,15 @@ class GpuCircleExample {
 	constructor() {
 		this.line = null
 		this.gui = null
+		this.control = null
 	}
 
 	async init() {
 		await stage3d.initRender()
-		stage3d.control = new OrbitControl( stage3d.camera, 4 )
-		stage3d.control.maxRadius = 10
-		stage3d.control.minRadius = 2
+		this.control = new OrbitControl( stage3d.camera, 4 )
+		this.control.maxRadius = 10
+		this.control.minRadius = 2
+		stage3d.control = this.control
 		this.initScene()
 		window.addEventListener( 'resize', this.onResize )
 	}
@@ -45,9 +47,10 @@ class GpuCircleExample {
 		const positionNode = Fn( ( [progress] ) => {
 			return mix( circlePosition( progress ), wavePosition( progress ), useWave )
 		} )
-		
+
 		this.line = new MeshLine()
-			.segments( segments )
+			.segments( SEGMENTS )
+			.closed( true )
 			.gpuPositionNode( positionNode )
 			.lineWidth( 0.1 )
 			.gradientColor( 0x0000ff )
@@ -55,10 +58,9 @@ class GpuCircleExample {
 
 		stage3d.add( this.line )
 
-		// GUI slider
 		const urlParams = new URLSearchParams( window.location.search )
 		const hasNoMenu = urlParams.has( 'noUI' )
-		
+
 		this.gui = new GUI( { width: hasNoMenu ? 220 : 300 } )
 		this.gui.domElement.style.right = hasNoMenu ? '0' : '60px'
 		this.gui.add( { blend: 0 }, 'blend', 0, 1, 0.01 ).name( 'Wave ⇆ Circle' ).onChange( v => {
@@ -74,12 +76,14 @@ class GpuCircleExample {
 		this.gui?.destroy()
 		window.removeEventListener( 'resize', this.onResize )
 		stage3d.remove( this.line )
-		this.line.dispose()
-		stage3d.control.dispose()
+		this.line?.dispose()
+		this.control?.dispose()
+		if ( stage3d.control === this.control ) stage3d.control = null
+
+		this.line = null
+		this.control = null
 	}
 
-	show() {}
-	hide( cb ) { if ( cb ) cb() }
 }
 
-export default new GpuCircleExample() 
+export default GpuCircleExample

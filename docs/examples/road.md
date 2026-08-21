@@ -8,6 +8,10 @@ pageClass: example-page
 
 This example turns one centerline into a lit, textured road with real world-space width. Orbiting the camera does not change its frame or thickness.
 
+In the live demo, drag the orange control points freely across the ground, double-click the ground to add one, and double-click or right-click a point to remove it. The road always drives through every authored point at a constant width. Corners are never cut: the planner lengthens the tangent at each knot so the route swings wide through the bend, the way a real road does, which keeps the centerline curvature above the half width where an extruded ribbon would otherwise fold its inner edge over itself. A cubic through three points can only swing so far, so a corner it cannot hold becomes an explicit fixed-radius turn: an arc that still passes exactly through the control point and is entered and left tangentially, sized so it does not eat the leg the approach needs (its handle turns blue). That is what a real switchback is, and it works at any angle — at a full reversal the arc is simply a half circle around the point. The construction view starts visible: click its badge or press **D** to compare the orange authored controls, the straight route between them, and the cyan planned centerline.
+
+Every band of the road — the graded earth verge, the gravel shoulders, the worn wheel tracks, the solid edge lines and the dashed centre — is painted in one fragment node from the surface UVs. The whole road is a single ribbon, so there are no stacked overlay meshes to z-fight, no second geometry to rebuild on every drag, and nothing that can slip under the terrain or lag a frame behind the road it belongs to.
+
 <iframe title="Makio MeshLine Road Surface demo" src="https://meshline-demo.makio.io/examples/surface-road?noUI" width="100%" height="600" style="border: 1px solid #ddd; border-radius: 8px;"></iframe>
 
 [Open the full Road Surface demo](https://meshline-demo.makio.io/examples/surface-road)
@@ -86,7 +90,7 @@ const road = new MeshLine()
 	.color( 0xffffff )
 	.map( roadTexture )
 	.surface( {
-		frame: 'transport',
+		frame: 'fixed-up',
 		up: [0, 1, 0],
 		bank: progress => Math.sin( progress * Math.PI * 2 ) * 0.045,
 		uvMode: 'distance',
@@ -94,7 +98,8 @@ const road = new MeshLine()
 		roughness: 0.88,
 		metalness: 0,
 	} )
-	.join( { type: 'miter', limit: 3, segments: 8 } )
+	.join( { type: 'round', limit: 3, segments: 12, inner: 'clip' } )
+	.cap( { type: 'round', segments: 12 } )
 	.build()
 
 scene.add( road )
@@ -115,4 +120,6 @@ addEventListener( 'resize', () => {
 
 `uvMode: 'distance'` makes the lane texture repeat by traveled distance, so adding more centerline samples does not stretch the markings. The small `bank` callback rotates the complete surface frame around the path tangent.
 
-Ordinary miter/butt sections stay on the compact two-row topology. Select `join: { type: 'round', segments: 8 }` for true outer fans and `cap: { type: 'round', segments: 8 }` for round endpoints. A wide road can still overlap itself at a zero-radius hairpin, so model a finite-radius turn when that overlap is not desired. See [World-Space Surfaces](../surface.md) for the exact corner policy and low-level API.
+Ordinary miter/butt sections stay on the compact two-row topology. Select `join: { type: 'round', segments: 8 }` for true outer fans and `cap: { type: 'round', segments: 8 }` for round endpoints. The opt-in `inner: 'clip'` policy trims an infeasible inner join instead of rejecting the entire ribbon; the default remains exact.
+
+The clip is exact right down to a radius equal to the half width, where the inner edge reaches the centre of the turn; below that the ribbon has to start giving up width. So the fix belongs to the centerline, not the ribbon: keep the curvature radius above the half width everywhere — by widening the curve where that is enough, and by inserting a fixed-radius turn where it is not. That is all the interactive demo's planner does, and it is why no width narrowing, corner cutting, or fallback geometry is needed. Authored controls are never rolled back or silently bypassed. See [World-Space Surfaces](../surface.md) for the low-level API.

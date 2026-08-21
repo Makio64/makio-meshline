@@ -81,7 +81,7 @@ Screen-space meshlines fundamentally can't render a ribbon cleanly through a sin
   <text x="560" y="112" class="ssb-alpha">α · segment</text>
 </svg>
 
-- **Default off.** GPU buffers match your input points unless you enable `smoothSharpBends`. When enabled, every vertex whose interior bend is sharper than ~60° (i.e. `dot(dir_in, dir_out) < -0.5`) is replaced by two cutoff points sitting `smoothSharpBendsAlpha` of the way back along each adjacent segment.
+- **Default off.** The authored logical points stay unchanged unless you enable `smoothSharpBends`. Regular billboard geometry expands every logical point into four physical GPU vertices; when smoothing is enabled, every point whose interior bend is sharper than ~60° (i.e. `dot(dir_in, dir_out) < -0.5`) is first replaced by two cutoff points sitting `smoothSharpBendsAlpha` of the way back along each adjacent segment.
 - **`smoothSharpBendsAlpha`** (default `0.001` once smoothing is enabled) controls how much of the peak you sacrifice. The default is small enough that the cutoff is visually imperceptible while keeping the shader miter math stable; larger values flatten the tip into a bevel-like cap. The bend *angles* at the new vertices are fixed by the original corner angle — `α` only controls how visible the cutoff is.
 - **`smoothSharpBendsThreshold`** (default `-0.5`) is the `dot(dir_in, dir_out)` cutoff below which a vertex is considered "too sharp". Lower (more negative) values subdivide only the very sharpest corners.
 
@@ -96,11 +96,19 @@ new MeshLine({
 
 **Tuning for very sharp polylines:** the default `α` is usually fine once smoothing is enabled. If you want a visibly flatter bevel at the tip, raise `α` to `0.05`–`0.1`. Pair a small `α` with a lower `miterLimit` (around `2`): the geometry pass handles sharp corners below the threshold and the tighter miter clamp flattens any residual spikes above it into clean bevels.
 
-Leave `smoothSharpBends` off when you need the GPU vertex count to match your input polyline exactly — e.g. if you're animating per-vertex data, using custom per-vertex attributes, or relying on a stable index mapping.
+Leave `smoothSharpBends` off when you need a stable mapping from authored points to physical vertices — for example, when animating custom vertex attributes. The regular billboard mapping is four physical rows per logical point, not one row per point.
 
-> ℹ️ **GPU-positioned lines**: when `gpuPositionNode` is set, the CPU polyline is a straight-line template whose point count drives the progress grid the GPU samples against. CPU smoothing is skipped in that case — subdividing the template would shift progress values and break GPU position lookups. The facade also disables frustum culling by default because this template is not a valid bound for arbitrary generated positions. If you need corner smoothing, do it inside your position node.
+> ℹ️ **GPU-deformed lines**: when `gpuPositionNode` is set, the CPU polyline is a straight-line template whose point count drives the progress grid the GPU samples against. CPU smoothing is skipped in that case — subdividing the template would shift progress values and break GPU position lookups. The facade also disables frustum culling by default for `gpuPositionNode` and for geometry-deforming `positionFn`, `previousFn`, `nextFn`, `widthFn`, `normalFn`, and `vertexFn`, because CPU bounds cannot predict arbitrary shader deformation. If you need culling, provide conservative bounds and explicitly enable it.
 
 ## Methods
+
+### buildLine()
+
+```ts
+buildLine(options?: MeshLineGeometryOptions): void
+```
+
+Applies geometry options and rebuilds the managed attributes. Options omitted from a later call keep their previous values, and same-sized managed buffers are reused where possible. Custom vertex attributes are preserved while the line/point topology is unchanged. If topology changes, they are removed because their old vertex mapping is invalid; recreate and refill them after the rebuild. Instanced attributes are not removed by this topology guard.
 
 ### setLines()
 
@@ -146,7 +154,7 @@ Efficiently updates vertex positions **without rebuilding GPU buffers**.  The fu
 • `Float32Array[]` – update multiple lines (each array must keep its original length).  
 • Arrays of tuples, vectors, or point objects are converted under the hood (slower, avoid in hot loops).
 
-If the line count or point count changes, the geometry falls back to a full rebuild automatically using `setLines()`. This ensures proper buffer allocation but is less efficient than in-place updates. For best performance, maintain consistent line counts and point counts when using `setPositions()`.
+If the line count or point count changes, the geometry falls back to a full rebuild automatically using `setLines()`. This ensures proper buffer allocation but is less efficient than in-place updates. It also removes custom vertex attributes whose mapping is no longer valid. For best performance, maintain consistent line counts and point counts when using `setPositions()` and recreate custom attributes after an intentional topology change.
 
 • `positions` – Must match the original line(s) vertex count exactly.  Re-use the same typed arrays each frame for best performance.  
 • `updateBounding` – Recomputes bounding volumes when `true` (default `false`).  Skip when the line stays roughly inside view.
@@ -165,13 +173,13 @@ function animate() {
 }
 ```
 
-Pass `updateBounding: true` when dynamic edits can move the line outside its previous bounds and frustum culling should stay exact.
+Pass `true` as the second argument when dynamic edits can move the line outside its previous bounds and frustum culling should stay exact.
 
 ### setPositionRange()
 
 ```ts
 setPositionRange(
-  positions: ArrayLike<number> | PointLike[],
+  positions: ArrayLike<number> | LinePoint[],
   startPoint: number,
   options?: { lineIndex?: number; updateBounding?: boolean }
 ): MeshLineGeometry
@@ -187,19 +195,48 @@ geometry.setPositionRange( patch, 2048, { updateBounding: true } )
 
 The edit must keep topology stable: it cannot add/remove points, create consecutive duplicates, or run with `smoothSharpBends`. If a feature uses normalized arc length, its progress/UV/endpoint/width data is recomputed for the affected line because moving one point changes downstream distances. Use `setPositions()` for surface geometry or any topology-changing edit.
 
+### setUsage()
+
+```ts
+setUsage(usage: THREE.Usage, name?: string | null): void
+```
+
+Changes the Three.js usage hint on managed buffer attributes. Omit `name` to update every managed attribute, or pass an attribute name such as `'position'` to target one. Existing attributes are replaced with clones carrying the requested usage, so call this before retaining direct attribute references.
+
 ## Usage Examples
 
 For practical examples, see:
-- [Basic Line Creation](./common-patterns.md#1-basic-line) in Common Patterns
+- [Basic Line Creation](./common-patterns.md#1-basic-white-line) in Common Patterns
 - [Multi-Line Segments](./common-patterns.md#8-multi-line-segments) for multiple disconnected lines
 - [Dynamic Updates](./common-patterns.md#9-dynamic-updates) for efficient position updates
-- [From BufferGeometry](./common-patterns.md#12-from-buffergeometry) for converting existing geometries
+- [`BufferGeometry` input](#setlines) for converting an existing geometry through its `position` attribute
+
+## Bevel joins
+
+The billboard profile expands a polyline into four vertices per point — `incoming +/-` then `outgoing +/-` — but by default it only wires the segment bodies, six indices per segment. While a corner's miter is within `join.limit` both role pairs land on the same pixels; past the limit they separate toward their own incident segments, which blunts the corner and leaves an unfilled notch on the outside of the turn.
+
+Opting into a bevel join fills that notch:
+
+```js
+line.join( { type: 'bevel', limit: 2 } )
+```
+
+This adds **no vertices**. It emits six more indices per interior join, bridging each point's already-allocated incoming cross-section to its outgoing one. The two triangles of that bridge are antipodal pairs about the join, so they always wind oppositely and front-face culling keeps exactly the one covering the outer notch, whichever way the corner turns. While the miter is supported both triangles are exactly zero-area, so a bevel join costs nothing on corners that did not need it.
+
+It is opt-in because it changes `index.count` — from `(points - 1) * 6` to `(points - 1) * 6 + joins * 6`, where `joins` is `points - 2` for an open line and `points - 1` for a closed one — which callers, `toNonIndexed()` expansion order, and GPU chunk culling can all observe.
+
+Two caveats:
+
+- The bridge covers the outer notch and also re-covers ground the two bodies already hold on the inner side. That is free for an opaque line and double-blends for a transparent or additively blended one.
+- It is a bevel, not a round join: the corner is cut flat rather than swept. For true round fans and caps, use the world-space [surface profile](./surface.md) or the optional [GPU path](./gpu-path.md).
+
+The alternative for very sharp static polylines remains [smooth sharp bends](#smooth-sharp-bends), which subdivides the corner on the CPU instead of filling it on the GPU. The two are independent and can be combined.
 
 ## Internal Structure
 
-The geometry generates these vertex attributes:
+`MeshLineGeometry` manages the following attributes. They are allocated only when the corresponding `needs*` flag or active feature requires them. Direct low-level construction enables the core strip attributes by default; the high-level `MeshLine` facade prunes attributes that its current configuration does not consume.
 
-<svg viewBox="0 0 820 260" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Vertex expansion: polyline to triangle strip" style="max-width:100%;height:auto;display:block;margin:1.5em auto;">
+<svg viewBox="0 0 820 260" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Vertex expansion: every logical polyline point becomes incoming and outgoing side pairs" style="max-width:100%;height:auto;display:block;margin:1.5em auto;">
   <defs>
     <marker id="vex-arr" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
       <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
@@ -214,7 +251,7 @@ The geometry generates these vertex attributes:
   <text x="40" y="240" class="vex-sub">CPU points</text>
   <line x1="365" y1="155" x2="415" y2="155" class="vex-arrow" marker-end="url(#vex-arr)"/>
   <text x="380" y="140" class="vex-sub" style="font-size:10px">expand</text>
-  <text x="440" y="30" class="vex-label">GPU triangle strip · 2N vertices</text>
+  <text x="440" y="30" class="vex-label">Indexed segment bodies · 4N vertices</text>
   <path d="M 440 140 L 520 70 L 620 170 L 720 90 L 720 150 L 620 230 L 520 130 L 440 200 Z" class="vex-strip-fill"/>
   <g class="vex-strip-diag">
     <line x1="440" y1="200" x2="520" y2="70"/>
@@ -227,25 +264,37 @@ The geometry generates these vertex attributes:
   <line x1="520" y1="70"  x2="520" y2="130" class="vex-strip-edge"/>
   <line x1="620" y1="170" x2="620" y2="230" class="vex-strip-edge"/>
   <line x1="720" y1="90"  x2="720" y2="150" class="vex-strip-edge"/>
-  <circle cx="440" cy="140" r="3.5" class="vex-dot"/>
-  <circle cx="520" cy="70"  r="3.5" class="vex-dot"/>
-  <circle cx="620" cy="170" r="3.5" class="vex-dot"/>
-  <circle cx="720" cy="90"  r="3.5" class="vex-dot"/>
-  <circle cx="440" cy="200" r="3.5" class="vex-dot"/>
-  <circle cx="520" cy="130" r="3.5" class="vex-dot"/>
-  <circle cx="620" cy="230" r="3.5" class="vex-dot"/>
-  <circle cx="720" cy="150" r="3.5" class="vex-dot"/>
+  <circle cx="440" cy="140" r="5.5" class="vex-dot" opacity="0.35"/>
+  <circle cx="520" cy="70"  r="5.5" class="vex-dot" opacity="0.35"/>
+  <circle cx="620" cy="170" r="5.5" class="vex-dot" opacity="0.35"/>
+  <circle cx="720" cy="90"  r="5.5" class="vex-dot" opacity="0.35"/>
+  <circle cx="440" cy="200" r="5.5" class="vex-dot" opacity="0.35"/>
+  <circle cx="520" cy="130" r="5.5" class="vex-dot" opacity="0.35"/>
+  <circle cx="620" cy="230" r="5.5" class="vex-dot" opacity="0.35"/>
+  <circle cx="720" cy="150" r="5.5" class="vex-dot" opacity="0.35"/>
+  <circle cx="440" cy="140" r="3" class="vex-dot"/>
+  <circle cx="520" cy="70"  r="3" class="vex-dot"/>
+  <circle cx="620" cy="170" r="3" class="vex-dot"/>
+  <circle cx="720" cy="90"  r="3" class="vex-dot"/>
+  <circle cx="440" cy="200" r="3" class="vex-dot"/>
+  <circle cx="520" cy="130" r="3" class="vex-dot"/>
+  <circle cx="620" cy="230" r="3" class="vex-dot"/>
+  <circle cx="720" cy="150" r="3" class="vex-dot"/>
   <text x="745" y="94" class="vex-side-label">side = +1</text>
   <text x="745" y="154" class="vex-side-label">side = -1</text>
-  <text x="440" y="240" class="vex-sub">each CPU point → pair of GPU vertices, offset perpendicular by `lineWidth`</text>
+  <text x="440" y="240" class="vex-sub">each point → incoming +/- and outgoing +/-; role pairs overlap at regular joins</text>
 </svg>
 
-- `position` - Vertex positions
-- `previous` - Previous point for direction calculation
-- `next` - Next point for direction calculation  
-- `side` - Side indicator (-1 or 1) for line thickness
-- `width` - Width multiplier per vertex
-- `uv` - Texture coordinates
-- `progress` - Position along line (0-1) for effects
+For logical point `i`, physical rows `4i + 0…3` are ordered `[incoming+, incoming-, outgoing+, outgoing-]`. Segment `i` connects the outgoing pair of point `i` to the incoming pair of point `i + 1`. At an ordinary projected join the shader welds both role pairs to the same bounded miter. Near a projected reversal, or when a segment points almost directly at the camera, it reconstructs each incident body from its own valid direction instead. Keeping those roles topologically separate prevents the two sides from crossing into a bowtie or unbounded wedge.
 
-These attributes work together with the MeshLineNodeMaterial to create smooth, thick lines.
+- `position` — expanded vertex positions; enabled by default for CPU billboard geometry.
+- `previous` / `next` — neighbours used for direction calculation; the facade omits them for a fully GPU-positioned path unless explicitly requested.
+- `side` — optional explicit `+1` or `-1` body-side data. Direct geometry enables it by default; the facade allocates it only when `needsSide` is enabled because the built-in material can decode side from `joinRole`.
+- `joinRole` — managed internal packed metadata in `[-1, -2, +1, +2]` order for `[incoming+, incoming-, outgoing+, outgoing-]`. Its sign owns the incoming/outgoing body and its magnitude encodes the `+/-` side (`1` is `+`, `2` is `-`). It is always present, so both properties survive `toNonIndexed()` without a separate `side` attribute; do not reuse this name for a custom attribute.
+- `width` — per-vertex width multiplier, allocated for `widthCallback` or `needsWidth`.
+- `uv` — texture coordinates, allocated for textures and UV/fragment hooks or `needsUV`.
+- `progress` — normalized arc-length progress, allocated when gradients, dashes, callbacks, GPU positions, or hooks consume it, or when `needsProgress` is enabled.
+- `endpoint` — internal endpoint/progress metadata allocated for GPU-position and position/neighbour hook paths.
+- `vertexColor` — per-vertex RGB data allocated when vertex colors are active.
+
+The exact attribute set is intentionally configuration-dependent; inspect `geometry.attributes` after `buildLine()` or `line.ensureBuilt()` instead of assuming every optional attribute exists.

@@ -53,8 +53,8 @@ export interface MeshLineGPUPathStatus {
 	join: 'miter' | 'bevel' | 'round'
 	cap: MeshLineCapType
 	topology: 'fixed-strip' | 'variable-triangles'
-	/** Variable topology keeps exact inner intersections but does not validate finite projected leg support. */
-	topologySafety: 'not-required' | 'finite-legs-unverified'
+	/** Advanced topology preserves full-width bodies while bounding unsupported projected join wedges to a center pivot. */
+	topologySafety: 'not-required' | 'projected-join-guarded'
 	topologySafetyReason: string | null
 	/** Simplified mode can classify only the points retained by its local-space LOD. */
 	reversalSplitting: 'source-and-projected' | 'retained-points-only'
@@ -78,7 +78,10 @@ export interface MeshLineGPUPathChunk {
  * unsupported features, or failures. `lineOptions.join` selects true bevel or
  * round outer topology and `lineOptions.cap` selects butt, square, or round
  * open-run caps. Advanced topology remains full detail because local-space LOD
- * cannot prove that a removed point will not become a projected cusp.
+ * cannot prove that a removed point will not become a projected cusp. Exact
+ * projected inner joins are retained only while both incident legs support
+ * them; unsupported joins preserve each incident body's local half-width and
+ * use a bounded center pivot only for the join wedge.
  */
 export class MeshLineGPUPath extends Group {
 	constructor( lineOptions?: MeshLineConfigureOptions, gpuOptions?: MeshLineGPUPathOptions )
@@ -161,6 +164,31 @@ export interface MeshLineGPUPathInternals {
 		outgoing: ArrayLike<number>,
 		halfWidth: number
 	): { offset: [number, number], side: number, fallback: boolean }
+	/** Resolve an exact projected inner join or a full-width-body, bounded-pivot fallback against both finite legs. */
+	resolveProjectedJoin(
+		incomingDelta: ArrayLike<number>,
+		outgoingDelta: ArrayLike<number>,
+		projectedHalfWidth: number
+	): {
+		fallback: 'exact' | 'center' | 'reversal' | 'degenerate'
+		offset: [number, number]
+		pivotOffset: [number, number]
+		incomingBodyInnerOffset: [number, number] | null
+		outgoingBodyInnerOffset: [number, number] | null
+		exactOffset: [number, number]
+		side: number
+		incomingDemand: number
+		outgoingDemand: number
+		incomingLength: number
+		outgoingLength: number
+		turnDot: number
+		turnCross: number
+		demand: number
+		available: number
+		reversal: boolean
+		defined: boolean
+		supported: boolean
+	}
 	validateInnerJoinSupport(
 		lengths: ArrayLike<number>,
 		startDemands: ArrayLike<number>,

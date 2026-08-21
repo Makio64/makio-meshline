@@ -1,5 +1,5 @@
 import { MeshLine } from 'makio-meshline'
-import { BufferAttribute, CatmullRomCurve3, Fog, SRGBColorSpace, TextureLoader, Vector3 } from 'three'
+import { CatmullRomCurve3, Fog, SRGBColorSpace, TextureLoader, Vector3 } from 'three'
 import { attribute, Fn } from 'three/tsl'
 
 import { stage } from '@/makio/core/stage'
@@ -9,19 +9,21 @@ import random from '@/makio/utils/random'
 
 const BAGUETTE_COUNT = 30
 const SEGMENTS = 64
+const BILLBOARD_VERTICES_PER_POINT = 4
 const PATH_POINTS = 8
 const SPREAD = 40
-const BAGUETTE_LENGTH = 10  // Absolute length in world units
-const BAGUETTE_SPEED = 0.03  // Speed for all baguettes
+const BAGUETTE_LENGTH = 10
+const BAGUETTE_SPEED = 0.03
 
-class FlyingBaguettes {
+class FlyingBaguettesExample {
 	constructor() {
 		this.curves = []
 		this.baguettes = []
 		this.lineArrays = []
-		this.lineIndices = new Float32Array( SEGMENTS * 2 * BAGUETTE_COUNT )
+		this.lineIndices = new Float32Array( SEGMENTS * BILLBOARD_VERTICES_PER_POINT * BAGUETTE_COUNT )
 		this.line = null
 		this.texture = null
+		this.samplePoint = new Vector3()
 
 		let vertexOffset = 0
 		for ( let lineIndex = 0; lineIndex < BAGUETTE_COUNT; lineIndex++ ) {
@@ -35,14 +37,14 @@ class FlyingBaguettes {
 				positions: new Float32Array( SEGMENTS * 3 ),
 				progress: random( 0, 1 ),
 				speed: BAGUETTE_SPEED,
-				curveLength: curve.getLength()
+				curveLength: curve.getLength(),
 			}
 
 			this.curves.push( curve )
 			this.baguettes.push( baguette )
 			this.lineArrays.push( baguette.positions )
 
-			for ( let i = 0; i < SEGMENTS * 2; i++ ) {
+			for ( let i = 0; i < SEGMENTS * BILLBOARD_VERTICES_PER_POINT; i++ ) {
 				this.lineIndices[vertexOffset++] = lineIndex
 			}
 		}
@@ -64,23 +66,26 @@ class FlyingBaguettes {
 	}
 
 	createLine() {
+		this.updatePositions( 0 )
+
 		this.line = new MeshLine()
 			.lines( this.lineArrays, false )
 			.lineWidth( 1.4 )
 			.map( this.texture )
 			.alphaTest( 0.1 )
+			.colorFn( Fn( ( [color] ) => {
+				const lineIndex = attribute( 'lineIndex', 'float' )
+				const brightness = lineIndex.div( BAGUETTE_COUNT ).mul( 0.7 ).add( 0.3 )
+				return color.mul( brightness )
+			} ) )
 
-		this.line.geometry.setAttribute( 'lineIndex', new BufferAttribute( this.lineIndices, 1 ) )
-		this.line.colorFn( Fn( ( [color] ) => {
-			const lineIdx = attribute( 'lineIndex', 'float' )
-			const brightness = lineIdx.div( BAGUETTE_COUNT ).mul( 0.7 ).add( 0.3 )
-			return color.mul( brightness )
-		} ) )
+		this.line.addVertexAttribute( 'lineIndex', 1 )
+		this.line.setVertexValues( 'lineIndex', this.lineIndices )
 
 		stage3d.add( this.line )
 	}
 
-	update = ( dt ) => {
+	updatePositions( dt ) {
 		this.baguettes.forEach( ( baguette, baguetteIndex ) => {
 			const curve = this.curves[baguetteIndex]
 			baguette.progress += baguette.speed * dt * 0.001
@@ -95,14 +100,18 @@ class FlyingBaguettes {
 				if ( pointDistance > baguette.curveLength ) pointDistance -= baguette.curveLength
 
 				const pathProgress = pointDistance / baguette.curveLength
-				const position = curve.getPoint( pathProgress )
+				const position = curve.getPoint( pathProgress, this.samplePoint )
+				const offset = i * 3
 
-				baguette.positions[i * 3] = position.x
-				baguette.positions[i * 3 + 1] = position.y
-				baguette.positions[i * 3 + 2] = position.z
+				baguette.positions[offset] = position.x
+				baguette.positions[offset + 1] = position.y
+				baguette.positions[offset + 2] = position.z
 			}
 		} )
+	}
 
+	update = ( dt ) => {
+		this.updatePositions( dt )
 		this.line.setPositions( this.lineArrays )
 	}
 
@@ -122,8 +131,6 @@ class FlyingBaguettes {
 		this.texture.dispose()
 	}
 
-	show() {}
-	hide( cb ) { if ( cb ) cb() }
 }
 
-export default new FlyingBaguettes()
+export default FlyingBaguettesExample

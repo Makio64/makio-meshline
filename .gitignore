@@ -1,5 +1,6 @@
 .DS_Store
 node_modules
+.pnpm-store
 src/node_modules
 demo/node_modules
 /dist

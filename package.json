@@ -1,5 +1,5 @@
 {
-  "name": "makio-meshline",
+  "name": "makio-meshline-workspace",
   "private": true,
   "type": "module",
   "scripts": {
@@ -7,26 +7,44 @@
     "build": "pnpm --filter demo build",
     "test": "node --test test/*.test.js",
     "test:types": "tsc --project tsconfig.types.json",
-		"bench:v2": "node benchmarks/v2-geometry.mjs",
-		"bench:hotpaths": "node benchmarks/meshline-geometry-hotpaths.mjs",
-		"bench:surface-topology": "node --expose-gc benchmarks/surface-variable-topology.mjs",
+    "bench:v2": "node benchmarks/v2-geometry.mjs",
+    "bench:hotpaths": "node benchmarks/meshline-geometry-hotpaths.mjs",
+    "bench:surface-topology": "node --expose-gc benchmarks/surface-variable-topology.mjs",
     "preview": "pnpm --filter demo preview",
     "docs:dev": "pnpm --filter docs dev",
     "docs:build": "pnpm --filter docs build",
     "docs:preview": "pnpm --filter docs preview",
-    "lint": "eslint src/ demo/src/",
-    "lint:fix": "eslint src/ demo/src/ --fix",
-    "publish:lib": "pnpm --filter ./src publish --access public"
+    "lint": "eslint src/ demo/src/ examples/ scripts/",
+    "lint:fix": "eslint src/ demo/src/ examples/ scripts/ --fix",
+    "verify:package": "node scripts/verify-package.mjs",
+    "verify:compat": "node scripts/verify-compatibility.mjs",
+    "verify:compat:canary": "node scripts/verify-compatibility.mjs --dev-canary-only",
+    "release:check": "pnpm lint && pnpm test && pnpm test:types && pnpm build && pnpm docs:build && pnpm --filter makio-meshline-vanilla-example build && pnpm --filter makio-meshline-r3f-example build && pnpm --filter makio-meshline-vue-example build && pnpm verify:package && pnpm verify:compat"
+  },
+  "meshlineCompatibility": {
+    "coreMinimum": {
+      "three": "0.180.0",
+      "types": "0.180.0"
+    },
+    "optionalMinimum": {
+      "three": "0.183.0",
+      "types": "0.183.0"
+    }
   },
   "devDependencies": {
     "@stylistic/eslint-plugin": "^5.10.0",
-    "@types/three": "0.183.1",
-    "eslint": "^10.2.1",
-    "eslint-plugin-simple-import-sort": "^13.0.0",
+    "@types/three": "0.185.4",
+    "eslint": "^10.8.1",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-simple-import-sort": "^14.0.0",
     "eslint-plugin-unused-imports": "^4.4.1",
-    "eslint-plugin-vue": "^10.9.0",
-    "three": "0.183.2",
-    "typescript": "^6.0.3"
+    "eslint-plugin-vue": "^10.10.0",
+    "makio-meshline": "workspace:*",
+    "three": "0.185.1",
+    "typescript": "^7.0.2"
   },
-  "packageManager": "pnpm@10.33.2"
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "packageManager": "pnpm@11.21.0"
 }

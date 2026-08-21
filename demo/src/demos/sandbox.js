@@ -6,6 +6,7 @@ import { markRaw, reactive, watch } from 'vue'
 import stage from '@/makio/core/stage'
 import OrbitControl from '@/makio/three/controls/OrbitControl'
 import stage3d from '@/makio/three/stage3d'
+import { generateSandboxCode } from '@/utils/sandboxCode'
 import SandboxView from '@/views/SandboxView.vue'
 
 const STRONG_ANGLE_POINTS = [
@@ -87,6 +88,14 @@ class SandboxExample {
 		this.animationHandler = null
 		this.highlighter = null
 		this.hasNoMenu = false
+		this.animatedDashOffset = 0
+		this.stopWatchers = []
+		this.copyFeedbackTimer = null
+		this.uiState = reactive( {
+			compact: false,
+			activePanel: 'preview',
+			copyState: 'idle',
+		} )
 		
 		// Reactive configuration
 		this.config = reactive( {
@@ -116,9 +125,12 @@ class SandboxExample {
 			
 			// Advanced
 			wireframe: false,
+			bevelJoins: false,
+			antialias: false,
 			miterLimit: 4,
 			smoothSharpBends: false,
 			smoothSharpBendsAlpha: 0.001,
+			smoothSharpBendsThreshold: -0.5,
 			
 			// Generated code
 			generatedCode: '',
@@ -156,7 +168,9 @@ class SandboxExample {
 	}
 	
 	initGUI() {
-		this.gui = new GUI( { width: this.hasNoMenu ? 220 : 350 } )
+		this.gui = new GUI( { title: 'Line controls', width: this.hasNoMenu ? 220 : 350 } )
+		this.gui.domElement.id = 'sandbox-controls'
+		this.gui.domElement.classList.add( 'SandboxControls' )
 		this.gui.domElement.style.right = this.hasNoMenu ? '0' : '60px'
 		
 		// Line Shape folder
@@ -196,11 +210,29 @@ class SandboxExample {
 		// Advanced folder
 		const advancedFolder = this.gui.addFolder( 'Advanced' )
 		advancedFolder.add( this.config, 'miterLimit', 1, 10, 0.1 ).name( 'Miter Limit' )
+		advancedFolder.add( this.config, 'bevelJoins' ).name( 'Bevel Joins' )
+		advancedFolder.add( this.config, 'antialias' ).name( 'Analytic AA' )
 		advancedFolder.add( this.config, 'smoothSharpBends' ).name( 'Smooth Sharp Bends' )
 		advancedFolder.add( this.config, 'smoothSharpBendsAlpha', 0.001, 0.5, 0.001 ).name( 'Smooth Cutoff' )
+		advancedFolder.add( this.config, 'smoothSharpBendsThreshold', -1, 1, 0.05 ).name( 'Sharp Threshold' )
 		
-		// Actions
-		this.gui.add( { copyCode: () => this.copyCode() }, 'copyCode' ).name( '📋 Copy Code' )
+		this.syncUiLayout()
+	}
+
+	setMobilePanel( panel ) {
+		if ( !['preview', 'controls', 'code'].includes( panel ) ) return
+		this.uiState.activePanel = panel
+		this.syncUiLayout()
+	}
+
+	syncUiLayout() {
+		const compact = stage.width <= 768
+		if ( compact && !this.uiState.compact ) this.uiState.activePanel = 'preview'
+		this.uiState.compact = compact
+
+		if ( !this.gui ) return
+		if ( compact && this.uiState.activePanel !== 'controls' ) this.gui.hide()
+		else this.gui.show()
 	}
 
 	applyUrlPreset( urlParams ) {
@@ -253,13 +285,13 @@ class SandboxExample {
 	
 	setupWatchers() {
 		// Watch for geometry changes that require recreation
-		watch(
+		this.stopWatchers.push( watch(
 			() => ( { lineType: this.config.lineType, segments: this.config.segments, closed: this.config.closed } ),
 			() => this.createLine()
-		)
+		) )
 		
 		// Watch for material changes
-		watch(
+		this.stopWatchers.push( watch(
 			() => ( {
 				color: this.config.color,
 				lineWidth: this.config.lineWidth,
@@ -272,12 +304,15 @@ class SandboxExample {
 				dashOffset: this.config.dashOffset,
 				sizeAttenuation: this.config.sizeAttenuation,
 				wireframe: this.config.wireframe,
+				bevelJoins: this.config.bevelJoins,
+				antialias: this.config.antialias,
 				miterLimit: this.config.miterLimit,
 				smoothSharpBends: this.config.smoothSharpBends,
 				smoothSharpBendsAlpha: this.config.smoothSharpBendsAlpha,
+				smoothSharpBendsThreshold: this.config.smoothSharpBendsThreshold,
 			} ),
 			() => this.updateMaterial()
-		)
+		) )
 	}
 	
 	getLinePositions() {
@@ -320,6 +355,7 @@ class SandboxExample {
 		}
 		
 		const positions = this.getLinePositions()
+		this.animatedDashOffset = this.config.dashOffset
 		
 		this.line = new MeshLine()
 			.lines( positions )
@@ -329,6 +365,7 @@ class SandboxExample {
 			.opacity( this.config.opacity )
 			.transparent( this.config.opacity < 1 )
 			.sizeAttenuation( this.config.sizeAttenuation )
+			.antialias( this.config.antialias )
 			.wireframe( this.config.wireframe )
 			.renderSize( stage.width, stage.height )
 			.dpr( stage.devicePixelRatio )
@@ -341,9 +378,13 @@ class SandboxExample {
 			this.line.dash( { count: this.config.dashCount, ratio: this.config.dashRatio, offset: this.config.dashOffset } )
 		}
 		
-		this.line.join( { limit: this.config.miterLimit } )
+		this.line.join( {
+			type: this.config.bevelJoins ? 'bevel' : 'miter',
+			limit: this.config.miterLimit,
+		} )
 		this.line.smoothSharpBends( this.config.smoothSharpBends )
 		this.line.smoothSharpBendsAlpha( this.config.smoothSharpBendsAlpha )
+		this.line.smoothSharpBendsThreshold( this.config.smoothSharpBendsThreshold )
 
 		this.line.build()
 		stage3d.add( this.line )
@@ -358,140 +399,7 @@ class SandboxExample {
 	}
 	
 	generateCode() {
-		let code = `import { MeshLine`
-		
-		// Add position helper import if needed
-		const inlineTypes = ['strongAngle', 'zigzag', 'snake']
-		if ( this.config.lineType === 'straight' ) {
-			code += `, straightLine`
-		} else if ( !inlineTypes.includes( this.config.lineType ) ) {
-			code += `, ${this.config.lineType}Positions`
-		}
-		code += ` } from 'makio-meshline'\n\n`
-
-		// Position generation
-		if ( this.config.lineType === 'zigzag' ) {
-			code += `// Irregular sawtooth with per-tooth amplitude variation\n`
-			code += `const teeth = 14, width = 20, baseAmp = 5\n`
-			code += `const positions = new Float32Array( ( teeth + 1 ) * 3 )\n`
-			code += `for ( let i = 0; i <= teeth; i++ ) {\n`
-			code += `\tconst ampMod = 0.35 + 0.9 * Math.abs( Math.sin( i * 1.37 ) )\n`
-			code += `\tpositions[i * 3] = -width / 2 + i * ( width / teeth )\n`
-			code += `\tpositions[i * 3 + 1] = ( i % 2 === 0 ? -1 : 1 ) * baseAmp * ampMod\n`
-			code += `}\n\n`
-		} else if ( this.config.lineType === 'snake' ) {
-			code += `// Serpentine path with swelling amplitude — smooth varied curves\n`
-			code += `const segments = 240, width = 22\n`
-			code += `const positions = new Float32Array( ( segments + 1 ) * 3 )\n`
-			code += `for ( let i = 0; i <= segments; i++ ) {\n`
-			code += `\tconst t = i / segments\n`
-			code += `\tconst envelope = 0.3 + 0.7 * Math.sin( t * Math.PI )\n`
-			code += `\tpositions[i * 3] = -width / 2 + width * t\n`
-			code += `\tpositions[i * 3 + 1] = 5 * envelope * Math.sin( t * Math.PI * 5 )\n`
-			code += `}\n\n`
-		} else if ( this.config.lineType === 'strongAngle' ) {
-			code += `const controlPoints = [\n`
-			code += `\t[-0.8, -0.45, 0],\n`
-			code += `\t[-0.22, -0.12, 0],\n`
-			code += `\t[-0.04, 0.78, 0],\n`
-			code += `\t[0.03, -0.82, 0],\n`
-			code += `\t[0.22, 0.1, 0],\n`
-			code += `\t[0.8, 0.46, 0],\n`
-			code += `]\n\n`
-			code += `function createStrongAnglePositions( segments = 72, width = 18 ) {\n`
-			code += `\tconst edgeCount = controlPoints.length - 1\n`
-			code += `\tconst stepsPerEdge = Math.max( 1, Math.ceil( segments / edgeCount ) )\n`
-			code += `\tconst positions = []\n\n`
-			code += `\tfor ( let i = 0; i < edgeCount; i++ ) {\n`
-			code += `\t\tconst start = controlPoints[i]\n`
-			code += `\t\tconst end = controlPoints[i + 1]\n`
-			code += `\t\tconst maxStep = i === edgeCount - 1 ? stepsPerEdge : stepsPerEdge - 1\n\n`
-			code += `\t\tfor ( let step = 0; step <= maxStep; step++ ) {\n`
-			code += `\t\t\tconst t = step / stepsPerEdge\n`
-			code += `\t\t\tpositions.push(\n`
-			code += `\t\t\t\t( start[0] + ( end[0] - start[0] ) * t ) * width,\n`
-			code += `\t\t\t\t( start[1] + ( end[1] - start[1] ) * t ) * width,\n`
-			code += `\t\t\t\t( start[2] + ( end[2] - start[2] ) * t ) * width\n`
-			code += `\t\t\t)\n`
-			code += `\t\t}\n`
-			code += `\t}\n\n`
-			code += `\treturn new Float32Array( positions )\n`
-			code += `}\n\n`
-			code += `const positions = createStrongAnglePositions( ${this.config.segments}, 18 )\n\n`
-		} else if ( this.config.lineType === 'straight' ) {
-			code += `const positions = straightLine( 20, ${this.config.segments} )\n\n`
-		} else {
-			code += `const positions = ${this.config.lineType}Positions( `
-			if ( this.config.lineType === 'circle' ) {
-				code += `${this.config.segments}, 10`
-			} else if ( this.config.lineType === 'sine' ) {
-				code += `2, ${this.config.segments}, 1, 4`
-			} else if ( this.config.lineType === 'square' ) {
-				code += `20, ${this.config.segments}`
-			}
-			code += ` )\n\n`
-		}
-		
-		// MeshLine creation
-		code += `const line = new MeshLine()\n`
-		code += `\t.lines( positions )\n`
-		
-		if ( this.config.closed ) {
-			code += `\t.closed( true )\n`
-		}
-		
-		code += `\t.color( 0x${this.config.color.substring( 1 )} )\n`
-		code += `\t.lineWidth( ${this.config.lineWidth} )\n`
-		
-		if ( this.config.opacity !== 1 ) {
-			code += `\t.opacity( ${this.config.opacity} )\n`
-		}
-		
-		if ( this.config.opacity < 1 ) {
-			code += `\t.transparent( true )\n`
-		}
-		
-		if ( this.config.sizeAttenuation ) {
-			code += `\t.sizeAttenuation( true )\n`
-		}
-		
-		if ( this.config.useGradient ) {
-			code += `\t.gradientColor( 0x${this.config.gradientColor.substring( 1 )} )\n`
-		}
-		
-		if ( this.config.useDashes ) {
-			code += `\t.dash( { count: ${this.config.dashCount}, ratio: ${this.config.dashRatio}`
-			if ( this.config.dashOffset !== 0 ) {
-				code += `, ${this.config.dashOffset}`
-			}
-			code += ` )\n`
-		}
-		
-		if ( this.config.wireframe ) {
-			code += `\t.wireframe( true )\n`
-		}
-		
-		if ( this.config.miterLimit !== 4 ) {
-			code += `\t.join({ limit: ${this.config.miterLimit} })\n`
-		}
-
-		if ( this.config.smoothSharpBends ) {
-			code += `\t.smoothSharpBends( true )\n`
-		}
-
-		if ( this.config.smoothSharpBends && this.config.smoothSharpBendsAlpha !== 0.001 ) {
-			code += `\t.smoothSharpBendsAlpha( ${this.config.smoothSharpBendsAlpha} )\n`
-		}
-		
-		code += `\t.build()\n\n`
-		code += `scene.add( line )`
-		
-		if ( this.config.animateDashes && this.config.useDashes ) {
-			code += `\n\n// Animation loop\nfunction animate() {\n`
-			code += `\tline.material.dashOffset.value -= 0.01\n`
-			code += `\trequestAnimationFrame( animate )\n}`
-		}
-		
+		const code = generateSandboxCode( this.config )
 		this.config.generatedCode = code
 		
 		// Apply syntax highlighting
@@ -532,31 +440,43 @@ class SandboxExample {
 		}
 	}
 	
-	copyCode() {
-		navigator.clipboard.writeText( this.config.generatedCode ).then( () => {
-			// Show success feedback
-			const button = this.gui.controllers.find( c => c.property === 'copyCode' )
-			if ( button ) {
-				const originalText = button._name
-				button.name( '✅ Copied!' )
-				setTimeout( () => button.name( originalText ), 2000 )
-			}
-		} )
+	async copyCode() {
+		clearTimeout( this.copyFeedbackTimer )
+		try {
+			await navigator.clipboard.writeText( this.config.generatedCode )
+			this.uiState.copyState = 'copied'
+		} catch ( error ) {
+			console.error( 'Failed to copy generated code:', error )
+			this.uiState.copyState = 'failed'
+		}
+		this.copyFeedbackTimer = setTimeout( () => {
+			this.uiState.copyState = 'idle'
+		}, 2000 )
 	}
 	
 	updateDashes = ( dt ) => {
-		if ( this.config.animateDashes && this.config.useDashes && this.line && this.line.material.dashOffset ) {
-			this.line.material.dashOffset.value -= ( dt / 8 ) * 0.02
-		}
+		if ( !this.config.animateDashes || !this.config.useDashes || !this.line ) return
+
+		this.animatedDashOffset -= ( dt / 8 ) * 0.02
+		this.line.dash( {
+			count: this.config.dashCount,
+			ratio: this.config.dashRatio,
+			offset: this.animatedDashOffset,
+		} )
 	}
 	
 	onResize = () => {
+		this.syncUiLayout()
 		this.line?.resize( stage.width, stage.height )
 	}
 
 	dispose() {
 		stage.onUpdate.remove( this.updateDashes )
 		stage.onResize.remove( this.onResize )
+		this.stopWatchers.forEach( stop => stop() )
+		this.stopWatchers = []
+		clearTimeout( this.copyFeedbackTimer )
+		this.copyFeedbackTimer = null
 
 		if ( this.line ) {
 			stage3d.remove( this.line )
@@ -573,13 +493,6 @@ class SandboxExample {
 		stage3d.control?.dispose()
 	}
 
-	show() {
-		// Animation is already running
-	}
-
-	hide( cb ) {
-		if ( cb ) cb()
-	}
 }
 
-export default new SandboxExample()
+export default SandboxExample

@@ -1,9 +1,20 @@
 import { animate } from 'animejs'
 import { MeshLine, rectanglePositions } from 'makio-meshline'
-import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
-import { add, attribute, clamp, cos, float, Fn, fract, If, instanceIndex, length, mix, mul, reflector, sin, smoothstep as tslSmoothstep, storage, sub, texture, textureBicubic, time, uniform, uv, vec2, vec3, vec4 } from 'three/tsl'
-import { Group, MathUtils, Mesh, MeshBasicMaterial, Plane, PlaneGeometry, Raycaster, RepeatWrapping, SRGBColorSpace, StaticDrawUsage, StorageBufferAttribute, TextureLoader, Vector2, Vector3 } from 'three/webgpu'
-import { MeshStandardNodeMaterial, PMREMGenerator } from 'three/webgpu'
+import { add, cameraPosition, clamp, color, cos, dot, float, Fn, fract, If, instanceIndex, length, max, mix, mul, normalize, positionWorld, positionWorldDirection, pow, reflector, sin, smoothstep as tslSmoothstep, storage, sub, texture, time, uniform, uv, vec2, vec3, vec4, viewportSize } from 'three/tsl'
+import {
+	MathUtils,
+	Mesh,
+	MeshBasicNodeMaterial,
+	Plane,
+	PlaneGeometry,
+	Raycaster,
+	RepeatWrapping,
+	StaticDrawUsage,
+	StorageBufferAttribute,
+	TextureLoader,
+	Vector2,
+	Vector3,
+} from 'three/webgpu'
 
 import { stage } from '@/makio/core/stage'
 import QuadTree from '@/makio/generative/QuadTree'
@@ -14,24 +25,26 @@ import { mouse, onClick, onMove } from '@/makio/utils/input/mouse'
 import { smoothstep } from '@/makio/utils/math'
 import random from '@/makio/utils/random'
 
-const FIELD_WIDTH = 64 // Total width of the rice field
-const FIELD_HEIGHT = 64 // Total height of the rice field
-const spacing = 0.3 // Distance between stalks
-const jitter = 0.1
-const lineSegments = 3 // number of segments per line
-const waterPadding = 8 // Extra padding for water plane
-const intersectPoint = new Vector3()
+const FIELD_WIDTH = 64
+const FIELD_HEIGHT = 64
+const STALK_SPACING = 0.3
+const STALK_JITTER = 0.1
+const STALK_SEGMENTS = 3
+const WATER_PADDING = 8
+const WATER_HEIGHT = -0.02
+const REFLECTION_DESKTOP_DENSITY = 1.25
+const REFLECTION_DESKTOP_SCALE = 1
+const REFLECTION_MOBILE_DENSITY = 0.75
+const REFLECTION_MOBILE_SCALE = 0.5
+const WATER_BASE_REFLECTIVITY = 0.08
+const WATER_DISTORTION = 0.002
+const _intersectPoint = new Vector3()
 
 class RicefieldExample {
 	constructor() {
 		this.lines = null
-		this.time = 0
-		this.lineArrays = []
-		this.quadTreeGroup = null
-		this.fieldBorders = []
 		this.raycaster = new Raycaster()
 		this.mouse = new Vector2()
-		this.mouseWorldPos = new Vector3()
 		this.groundPlane = new Plane( new Vector3( 0, 1, 0 ), 0 ) // Y-up plane at Y=0
 		this.mouseUniform = uniform( new Vector3( 1000, 0, 1000 ) ) // Initialize far away
 		this.cutDistMin = uniform( 0 ) // Inner radius of shockwave
@@ -44,10 +57,9 @@ class RicefieldExample {
 		this.centerOffsetX = FIELD_WIDTH / 2
 		this.centerOffsetZ = FIELD_HEIGHT / 2
 		this.water = null
+		this.reflection = null
 		this.reflectionTarget = null
 		this.noiseTexture = null
-		this.params = {}
-		// Mouse speed tracking
 		this.mouseSpeed = 0
 		this.targetMouseSpeed = 0
 	}
@@ -63,7 +75,6 @@ class RicefieldExample {
 		stage3d.control.maxPhi = Math.PI * 0.45
 		stage3d.camera.far = 200
 		stage3d.camera.updateProjectionMatrix()
-		await this.initHDR()
 		this.initScene()
 		stage.onResize.add( this.onResize )
 		onMove.add( this.onMouseMove )
@@ -76,7 +87,6 @@ class RicefieldExample {
 		this.noiseTexture = textureLoader.load( '/textures/noises/perlin/rgb-256x256.png' )
 		this.noiseTexture.wrapS = RepeatWrapping
 		this.noiseTexture.wrapT = RepeatWrapping
-		this.noiseTexture.colorSpace = SRGBColorSpace
 		
 		this.initQuadtree()
 		this.initWater()
@@ -85,27 +95,17 @@ class RicefieldExample {
 		this.initSky()
 	}
 
-	async initHDR() {
-		const env = new RoomEnvironment()
-		const pmrem = new PMREMGenerator( stage3d.	renderer )
-		pmrem.compileCubemapShader()
-		const envMap = await pmrem.fromScene( env ).texture
-		stage3d.scene.environment = envMap
-		env.dispose()
-		pmrem.dispose()
-	}
-
 	initSky() {
 		stage3d.scene.backgroundNode = Fn( () => {
-			const skyColor = vec3( 0, 0, 0.05 ) // Light blue sky
-			const groundColor = vec3( 0 ) // Greenish ground
-			const gradientFactor = uv().y//.add( .5 ).div( 2 ) // Vertical gradient based on screen UV
+			const skyColor = vec3( 0, 0, 0.05 )
+			const groundColor = vec3( 0 )
+			const gradientFactor = positionWorldDirection.y.mul( 0.5 ).add( 0.5 )
 			return vec4( mix( groundColor, skyColor, gradientFactor ), 1 )
 		} )()
 	}
 
 	initQuadtree() {
-		let quadtree = new QuadTree( FIELD_WIDTH, FIELD_HEIGHT, {
+		const quadtree = new QuadTree( FIELD_WIDTH, FIELD_HEIGHT, {
 			maxDepth: 8,
 			minSize: 1,
 			jitter: 0.4,
@@ -116,76 +116,89 @@ class RicefieldExample {
 		} )
 
 		this.cells = quadtree.compute()
-		console.log( 'Quadtree cells:', this.cells.length )
 	}
 
 	initWater() {
-		// water - size based on quadtree + padding
-		const reflection = reflector( { resolutionScale: isMobile ? 0.5 : 1, bounces: false, generateMipmaps: true } ) // 0.5 is half of the rendering view
+		// Keep the reflection at or below CSS-pixel resolution. This avoids the
+		// quadratic render-target cost of mirroring the full high-DPI backbuffer.
+		const maxResolutionScale = isMobile ? REFLECTION_MOBILE_SCALE : REFLECTION_DESKTOP_SCALE
+		const pixelDensity = isMobile ? REFLECTION_MOBILE_DENSITY : REFLECTION_DESKTOP_DENSITY
+		const resolutionScale = Math.min( maxResolutionScale, pixelDensity / stage.devicePixelRatio )
+		const reflection = reflector( {
+			resolutionScale,
+			bounces: false,
+			generateMipmaps: false,
+			samples: 0,
+		} )
+		this.reflection = reflection
 		this.reflectionTarget = reflection.target
-		this.reflectionTarget.rotateX( - Math.PI / 2 )
-		stage3d.add( this.reflectionTarget )
 
-		// Animated UV for water ripples
-		const animatedUV = uv().mul( 3 ).add( vec2( time.mul( 0.05 ), time.mul( 0.03 ) ) )
-		const roughness = texture( this.noiseTexture, animatedUV ).r
+		const geo = new PlaneGeometry( FIELD_WIDTH + WATER_PADDING, FIELD_HEIGHT + WATER_PADDING, 1, 1 )
+		const material = new MeshBasicNodeMaterial()
 
-		let geo = new PlaneGeometry( FIELD_WIDTH + waterPadding, FIELD_HEIGHT + waterPadding, 1, 1 )
-		let material = new MeshStandardNodeMaterial()
-		material.transparent = true
-		material.metalness = 0.2
-		material.roughnessNode = 0.4
+		// Adapt the dual-flow normal treatment from Three.js' WebGPU water example.
+		// Sampling the shared noise map in two coordinate frames avoids a visibly
+		// repeating scroll without adding another texture to memory.
+		const waterUV = uv()
+		const flowTime = time.mul( 0.025 )
+		const waveUV0 = waterUV.mul( vec2( 5, 7 ) ).add( vec2( flowTime, flowTime.mul( 0.7 ) ) )
+		const waveUV1 = vec2( waterUV.y, waterUV.x.negate() )
+			.mul( vec2( 8, 5 ) )
+			.add( vec2( flowTime.mul( -0.55 ), flowTime.mul( 0.9 ) ) )
+		const wave0 = texture( this.noiseTexture, waveUV0 ).rg.mul( 2 ).sub( 1 )
+		const wave1 = texture( this.noiseTexture, waveUV1 ).gb.mul( 2 ).sub( 1 )
+		const waterWave = wave0.add( wave1.mul( 0.6 ) ).mul( 0.625 ).toVar( 'waterWave' )
+
 		material.colorNode = Fn( () => {
-			// Blur reflection based on roughness
-			const dirtyReflection = textureBicubic( reflection, roughness )
-			return vec4( dirtyReflection.rgb, 1 )
+			const surfaceNormal = normalize( vec3( waterWave.x.mul( 0.14 ), 1, waterWave.y.mul( 0.14 ) ) )
+			const toEye = normalize( cameraPosition.sub( positionWorld ) )
+			const theta = max( dot( toEye, surfaceNormal ), 0 )
+			const fresnel = pow( float( 1 ).sub( theta ), 5 )
+				.mul( 1 - WATER_BASE_REFLECTIVITY )
+				.add( WATER_BASE_REFLECTIVITY )
+
+			// Resolve across adjacent reflector texels. This hides the CSS-resolution
+			// pixel grid while keeping the reflection sharper and cheaper than the old
+			// eight-fetch bicubic path.
+			const reflectionUV = reflection.uvNode.add( waterWave.mul( WATER_DISTORTION ) )
+			let softenedReflection
+			if ( isMobile ) {
+				softenedReflection = reflection.sample( reflectionUV ).rgb
+			} else {
+				const reflectionTexel = vec2( 1 ).div( viewportSize.mul( resolutionScale ) )
+				const softRadius = float( 0.75 ).add( float( 1 ).sub( theta ).mul( 0.75 ) )
+				const softOffsetX = reflectionTexel.x.mul( 0.85 ).mul( softRadius )
+				const softOffsetY = reflectionTexel.y.mul( 0.55 ).mul( softRadius )
+				const reflectionA = reflection.sample( reflectionUV.add( vec2( softOffsetX, softOffsetY ) ) ).rgb
+				const reflectionB = reflection.sample( reflectionUV.add( vec2( softOffsetX, softOffsetY.negate() ) ) ).rgb
+				const reflectionC = reflection.sample( reflectionUV.add( vec2( softOffsetX.negate(), softOffsetY ) ) ).rgb
+				const reflectionD = reflection.sample( reflectionUV.sub( vec2( softOffsetX, softOffsetY ) ) ).rgb
+				softenedReflection = reflectionA.add( reflectionB ).add( reflectionC ).add( reflectionD ).mul( 0.25 )
+			}
+			const facingTint = clamp( theta.mul( 0.8 ), 0, 1 )
+			const waterTint = mix(
+				vec3( 0.035, 0.055, 0.09 ),
+				vec3( 0.095, 0.13, 0.155 ),
+				facingTint
+			)
+			const reflectedWater = softenedReflection.mul( vec3( 0.82, 0.92, 1 ) )
+			const reflectionWeight = fresnel.mul( 0.68 ).add( 0.28 )
+
+			return vec4( mix( waterTint, reflectedWater, reflectionWeight ), 1 )
 		} )()
 
 		this.water = new Mesh( geo, material )
 		this.water.rotation.x = - Math.PI / 2
+		this.water.position.y = WATER_HEIGHT
+		this.water.add( this.reflectionTarget )
 		stage3d.add( this.water )
 	}
 
 	initRicefield() {
-		// Create quadtree visualization group
-		this.quadTreeGroup = new Group()
-		this.quadTreeGroup.position.y = 0.01 // Slightly above the water
-		stage3d.add( this.quadTreeGroup )
-
-		// Create colored planes for each cell
-		const colors = [
-			0x4a9eff, // blue
-			0xff6b6b, // red
-			0x51cf66, // green
-			0xffd43b, // yellow
-			0xc084fc, // purple
-			0xfb8500, // orange
-			0x06ffa5, // cyan
-			0xff006e  // pink
-		]
-
 		// Calculate total rice stalks needed
 		this.riceInstances = []
 
-		this.cells.forEach( ( cell, index ) => {
-			// Visualize cells with colored planes
-			const geometry = new PlaneGeometry( cell.width * 0.98, cell.height * 0.98 ) // Slightly smaller to show gaps
-			const color = colors[index % colors.length]
-			const material = new MeshBasicMaterial( { 
-				color: color,
-				opacity: 0.2,
-				transparent: true,
-				side: 2 // DoubleSide
-			} )
-			
-			const plane = new Mesh( geometry, material )
-			plane.rotation.x = -Math.PI / 2
-			plane.position.set(
-				cell.x + cell.width / 2 - this.centerOffsetX,
-				0,
-				cell.y + cell.height / 2 - this.centerOffsetZ
-			)
-
+		this.cells.forEach( ( cell ) => {
 			// Generate rice positions within this cell
 			const cellPadding = cell.padding || 0.3 // Use cell's padding or default
 			const borderOffset = 0.5 // Same as border offset
@@ -196,24 +209,24 @@ class RicefieldExample {
 			const availableHeight = cell.height - totalPadding * 2
 			
 			// Only generate rice if there's enough space
-			if ( availableWidth > spacing && availableHeight > spacing ) {
-				const riceCountX = Math.max( 1, Math.floor( availableWidth / spacing ) )
-				const riceCountZ = Math.max( 1, Math.floor( availableHeight / spacing ) )
+			if ( availableWidth > STALK_SPACING && availableHeight > STALK_SPACING ) {
+				const riceCountX = Math.max( 1, Math.floor( availableWidth / STALK_SPACING ) )
+				const riceCountZ = Math.max( 1, Math.floor( availableHeight / STALK_SPACING ) )
 				
 				// Center the rice grid within the available space
-				const startX = cell.x + totalPadding + ( availableWidth - riceCountX * spacing ) / 2
-				const startZ = cell.y + totalPadding + ( availableHeight - riceCountZ * spacing ) / 2
+				const startX = cell.x + totalPadding + ( availableWidth - riceCountX * STALK_SPACING ) / 2
+				const startZ = cell.y + totalPadding + ( availableHeight - riceCountZ * STALK_SPACING ) / 2
 				
 				// Per-parcel darkness : We keep ~half of the ricefield with the "basic color" the rest is multiply by 0.4 -> 1.2
-				const cellDarkness = Math.random() > .5 ? random( 0.4, 1.2 ) : 1
+				const cellDarkness = random() > 0.5 ? random( 0.4, 1.2 ) : 1
 				
 				for ( let x = 0; x < riceCountX; x++ ) {
 					for ( let z = 0; z < riceCountZ; z++ ) {
 						// Constrain jitter to prevent rice from going outside boundaries
-						const maxJitter = Math.min( jitter, spacing * 0.4 ) // Limit jitter to 40% of spacing
-						const baseX = startX + x * spacing + spacing / 2 + ( Math.random() - 0.5 ) * maxJitter - this.centerOffsetX
-						const baseZ = startZ + z * spacing + spacing / 2 + ( Math.random() - 0.5 ) * maxJitter - this.centerOffsetZ
-						const height = 2.5 + Math.random() * 1.5
+						const maxJitter = Math.min( STALK_JITTER, STALK_SPACING * 0.4 )
+						const baseX = startX + x * STALK_SPACING + STALK_SPACING / 2 + random( -0.5, 0.5 ) * maxJitter - this.centerOffsetX
+						const baseZ = startZ + z * STALK_SPACING + STALK_SPACING / 2 + random( -0.5, 0.5 ) * maxJitter - this.centerOffsetZ
+						const height = random( 2.5, 4 )
 						
 						// Store instance data: position and scale
 						this.riceInstances.push( {
@@ -226,90 +239,99 @@ class RicefieldExample {
 			}
 		} )
 		
-		console.log( 'Total rice stalks:', this.riceInstances.length )
-
 		// Create storage buffer BEFORE MeshLine (moved from initCompute)
 		// Three.js r181+ requires storage buffers to exist when shader hooks reference them
-		this.scaleStorageBuffer = new StorageBufferAttribute( this.riceInstances.length, 1 )
+		this.scaleStorageBuffer = new StorageBufferAttribute( this.riceInstances.length, 2 )
+		this.transformStorageBuffer = new StorageBufferAttribute( this.riceInstances.length, 4 )
 		for ( let i = 0; i < this.riceInstances.length; i++ ) {
-			this.scaleStorageBuffer.setX( i, 1.0 )
+			const instance = this.riceInstances[i]
+			this.scaleStorageBuffer.setXY( i, 1, instance.darkness )
+			this.transformStorageBuffer.setXYZW(
+				i,
+				instance.position[0],
+				instance.position[1],
+				instance.position[2],
+				instance.scale
+			)
 		}
 		this.scaleStorageBuffer.needsUpdate = true
+		this.transformStorageBuffer.needsUpdate = true
 
 		// Create a single rice stalk template (vertical line)
-		const templatePositions = new Float32Array( lineSegments * 3 )
-		for ( let i = 0; i < lineSegments; i++ ) {
-			const t = i / ( lineSegments - 1 )
+		const templatePositions = new Float32Array( STALK_SEGMENTS * 3 )
+		for ( let i = 0; i < STALK_SEGMENTS; i++ ) {
+			const t = i / ( STALK_SEGMENTS - 1 )
 			templatePositions[i * 3] = 0      // x
 			templatePositions[i * 3 + 1] = t * 3  // y (base height of 3)
 			templatePositions[i * 3 + 2] = 0      // z
 		}
+
+		// These values are invariant for the current/previous/next samples that
+		// MeshLine evaluates for each vertex. Share them so wind and storage reads
+		// are emitted once instead of three times in the vertex shader.
+		const transformStorage = storage( this.transformStorageBuffer, 'vec4', this.riceInstances.length )
+		const instanceTransform = transformStorage.element( instanceIndex ).toVar( 'riceInstanceTransform' )
+		const instanceStateStorage = storage( this.scaleStorageBuffer, 'vec2', this.riceInstances.length )
+		const instanceState = instanceStateStorage.element( instanceIndex ).toVar( 'riceInstanceState' )
+		const storageScale = instanceState.x
+		const parcelDarkness = instanceState.y
+		const finalScale = instanceTransform.w.mul( storageScale ).toVar( 'riceFinalScale' )
+		const colorVariation = fract( sin( float( instanceIndex ).mul( 12.9898 ) ).mul( 43758.5453 ) )
+			.toVar( 'riceColorVariation' )
+		// Static low-frequency noise creates broad, coherent green patches. Unlike
+		// the wind sample below, this UV never moves, so each parcel keeps its tint.
+		const fieldTintUV = vec2(
+			instanceTransform.x.div( FIELD_WIDTH ).mul( 2.15 ).add( 0.37 ),
+			instanceTransform.z.div( FIELD_HEIGHT ).mul( 1.75 ).add( 0.19 )
+		).toVar( 'riceFieldTintUV' )
+		const fieldTintSample = texture( this.noiseTexture, fieldTintUV ).rgb.toVar( 'riceFieldTintSample' )
+		const fieldTint = tslSmoothstep(
+			0.32,
+			0.68,
+			fieldTintSample.r.mul( 0.75 ).add( fieldTintSample.g.mul( 0.25 ) )
+		).toVar( 'riceFieldTint' )
+		const windTime = time.mul( 0.2 ).toVar( 'riceWindTime' )
+		const windUV = vec2(
+			instanceTransform.x.div( FIELD_WIDTH ).add( sin( windTime ).mul( 0.5 ) ),
+			instanceTransform.z.div( FIELD_HEIGHT ).add( cos( windTime.mul( 0.7 ) ).mul( 0.5 ) )
+		).toVar( 'riceWindUV' )
+		const windSample = texture( this.noiseTexture, windUV ).rg.toVar( 'riceWindSample' )
+		const windDirection = windSample.mul( windSample ).toVar( 'riceWindDirection' )
+		const windStrength = sin( time.mul( 0.5 ) ).abs().add( 0.7 ).toVar( 'riceWindStrength' )
+		const widthMultiplier = tslSmoothstep( 0.1, 1, storageScale ).mul( 0.7 ).add( 0.3 )
 		
 		// Create instanced MeshLine without width variation to reduce attributes
 		this.lines = new MeshLine()
 			.lines( templatePositions, false )
 			.instances( this.riceInstances.length )
-			.color( 0x493c1a )
-			.gradientColor( 0xbfc53d )
-			.lineWidth( 0.08 )
+			.color( 0x29330c )
+			.lineWidth( 0.1 )
 			.widthCallback( ( t ) => ( 1 - smoothstep( 0.4, 1, t ) ) )
-			// Add colorFn to apply random color variation
-			.colorFn( Fn( ( [color, progress, side] ) => {
-				const rand = fract( sin( float( instanceIndex ).mul( 12.9898 ) ).mul( 43758.5453 ) )
-				const colorScale = rand.mul( 1.1 ).add( .5 )
-				const parcelDarkness = attribute( 'instanceDarkness', 'float' )
-				return vec4( color.rgb.mul( colorScale ).mul( parcelDarkness ), color.a )
-			} ) )
-			.gradientFn( Fn( ( [gradientFactor, side] ) => {
-				const rand = fract( sin( float( instanceIndex ).mul( 12.9898 ) ).mul( 43758.5453 ) )
-				const colorScale = rand.mul( 1.1 ).add( .5 )
-				const parcelDarkness = attribute( 'instanceDarkness', 'float' )
-				return vec4( gradientFactor.rgb.mul( colorScale ).mul( parcelDarkness ), gradientFactor.a )
+			.colorFn( Fn( ( [lineColor, progress, side] ) => {
+				// Blend a cooler and a warmer green palette with the coherent field
+				// noise, then retain only a trace of individual-stalk variation.
+				const rootColor = mix( color( 0x143121 ), color( 0x303d0f ), fieldTint )
+				const bodyColor = mix( color( 0x2b653f ), color( 0x6d8424 ), fieldTint )
+				const tipColor = mix( color( 0x659955 ), color( 0x9eaa42 ), fieldTint )
+				const bladeBody = mix( rootColor, bodyColor, tslSmoothstep( 0, 0.58, progress ) )
+				const bladeColor = mix( bladeBody, tipColor, tslSmoothstep( 0.5, 1, progress ) )
+				const sideShade = side.mul( 0.075 ).add( 0.925 )
+				const parcelShade = parcelDarkness.mul( 0.18 ).add( 0.82 )
+				const noiseShade = fieldTintSample.b.mul( 0.12 ).add( 0.9 )
+				const stalkShade = colorVariation.mul( 0.06 ).add( 0.97 )
+
+				return vec4(
+					bladeColor.mul( sideShade ).mul( parcelShade ).mul( noiseShade ).mul( stalkShade ),
+					lineColor.a
+				)
 			} ) )
 			// Add width function that varies with scale
-			.widthFn( Fn( ( [width, progress] ) => {
-				// Access storage buffer to get current scale
-				const scaleStorage = storage( this.scaleStorageBuffer, 'float', this.riceInstances.length )
-				const storageScale = scaleStorage.element( instanceIndex )
-				
-				// Make width proportional to scale (thinner when growing)
-				// Scale from 0.3 (at scale 0.01) to 1.0 (at scale 1.0)
-				const widthMultiplier = tslSmoothstep( 0.1, 1.0, storageScale ).mul( 0.7 ).add( 0.3 )
-				
+			.widthFn( Fn( ( [width] ) => {
 				return width.mul( widthMultiplier )
 			} ) )
-			.positionFn( Fn( ( [position, progress] ) => {
-				// Get combined instance attributes: xyz = position, w = scale
-				const instanceTr = attribute( 'instanceTransform', 'vec4' )
-				
-				// Access storage buffer directly
-				const scaleStorage = storage( this.scaleStorageBuffer, 'float', this.riceInstances.length )
-				const storageScale = scaleStorage.element( instanceIndex )
-				
-				// Calculate world position
-				const worldX = position.x.add( instanceTr.x )
-				const worldZ = position.z.add( instanceTr.z )
-				
-				// Combine instance scale with storage scale
-				const finalScale = instanceTr.w.mul( storageScale )
-				
+			.positionFn( Fn( ( [position] ) => {
 				// Apply scale to height
 				const scaledY = position.y.mul( finalScale )
-				
-				// Wind effect
-				// Sample wind texture using world position and animated time
-				// Create rotating wind pattern by using sin/cos
-				const windTime = time.mul( 0.2 ).toVar()
-				const windUV = vec2( 
-					worldX.div( 64 ).add( sin( windTime ).mul( 0.5 ) ),
-					worldZ.div( 64 ).add( cos( windTime.mul( 0.7 ) ).mul( 0.5 ) )
-				).toVar()
-				const windSample = texture( this.noiseTexture, windUV ).toVar()
-				
-				// Extract wind direction and strength from texture channels
-				const windDirX = windSample.r.toVar() // -1 to 1
-				const windDirZ = windSample.g.toVar() // -1 to 1
-				const windStrength = sin( time.mul( 0.5 ) ).abs().add( 0.7 ).toVar() // 0.5 to 1.5
 				
 				// Apply wind displacement based on height (more at top) and scale (small rice less affected)
 				const heightFactor = position.y.div( 3 ) // 0 to 1 along height
@@ -318,31 +340,14 @@ class RicefieldExample {
 				const windDisplacement = heightFactor.mul( heightFactor ).mul( windStrength ).mul( scaleInfluence )
 								
 				// Final position with wind
-				const finalX = worldX.add( windDirX.mul( windDisplacement ) )
-				const finalZ = worldZ.add( windDirZ.mul( windDisplacement ) )
+				const finalX = instanceTransform.x.add( windDirection.x.mul( windDisplacement ) )
+				const finalZ = instanceTransform.z.add( windDirection.y.mul( windDisplacement ) )
 				const finalY = scaledY
 				
 				// Return transformed position
 				return vec3( finalX, finalY, finalZ )
 			} ) )
 		
-		// Add instance attributes for transform (xyz position + w scale) and parcel darkness
-		const transformAttribute = this.lines.addInstanceAttribute( 'instanceTransform', 4 )
-		const darknessAttribute = this.lines.addInstanceAttribute( 'instanceDarkness', 1 )
-
-		// Fill each returned CPU buffer directly before its first upload. This avoids
-		// duplicate staging arrays and per-stalk method/version churn.
-		const transforms = transformAttribute.array
-		const darkness = darknessAttribute.array
-		for ( let i = 0; i < this.riceInstances.length; i++ ) {
-			const instance = this.riceInstances[i]
-			const offset = i * 4
-			transforms[offset] = instance.position[0]
-			transforms[offset + 1] = instance.position[1]
-			transforms[offset + 2] = instance.position[2]
-			transforms[offset + 3] = instance.scale
-			darkness[i] = instance.darkness
-		}
 		stage3d.add( this.lines )
 		
 		// Create field borders around each quadtree cell - batch into single MeshLine
@@ -350,8 +355,8 @@ class RicefieldExample {
 		const borderLoops = []
 		
 		// Add water border as first segment
-		const borderWidth = FIELD_WIDTH + waterPadding
-		const borderHeight = FIELD_HEIGHT + waterPadding
+		const borderWidth = FIELD_WIDTH + WATER_PADDING
+		const borderHeight = FIELD_HEIGHT + WATER_PADDING
 		const waterBorderPositions = rectanglePositions( borderWidth, borderHeight, 8 )
 		
 		// Convert to XZ plane and create Float32Array
@@ -397,7 +402,6 @@ class RicefieldExample {
 		
 		// Create single MeshLine with all borders
 		if ( allBorderPositions.length > 0 ) {
-			console.log( 'Total border segments:', allBorderPositions.length )
 			this.fieldBorder = new MeshLine()
 				.lines( allBorderPositions, borderLoops )
 				.color( 0x8b7355 ) // Brown color for field borders
@@ -425,10 +429,10 @@ class RicefieldExample {
 		} )
 		
 		// Storage attributes
-		const scaleAttribute = storage( this.scaleStorageBuffer, 'float', count )
+		const scaleAttribute = storage( this.scaleStorageBuffer, 'vec2', count )
 		const positionAttribute = storage( positionBuffer, 'vec3', count )
 		
-		const currentScale = scaleAttribute.element( instanceIndex )
+		const currentScale = scaleAttribute.element( instanceIndex ).x
 		const instancePos = positionAttribute.element( instanceIndex )
 		
 		// Create compute update function
@@ -495,12 +499,8 @@ class RicefieldExample {
 		this.raycaster.setFromCamera( this.mouse, stage3d.camera )
 		
 		// Calculate intersection with ground plane
-		intersectPoint.set( 0, 0, 0 )
-		this.raycaster.ray.intersectPlane( this.groundPlane, intersectPoint )
-		if ( intersectPoint && !( intersectPoint.x == 0 && intersectPoint.z == 0 && intersectPoint.y == 0 ) ) {
-			// Update the uniform with the world position
-			this.mouseUniform.value.set( intersectPoint.x, 0, intersectPoint.z )
-		}
+		const intersection = this.raycaster.ray.intersectPlane( this.groundPlane, _intersectPoint )
+		if ( intersection ) this.mouseUniform.value.copy( intersection )
 	}
 	
 	onMouseClick = ( mouseData ) => {
@@ -512,12 +512,8 @@ class RicefieldExample {
 		
 		// Calculate intersection with ground plane
 		const clickPoint = new Vector3()
-		this.raycaster.ray.intersectPlane( this.groundPlane, clickPoint )
-		
-		if ( clickPoint && !( clickPoint.x == 0 && clickPoint.z == 0 && clickPoint.y == 0 ) ) {
-			// Trigger shockwave animation
-			this.createShockwave( clickPoint )
-		}
+		const intersection = this.raycaster.ray.intersectPlane( this.groundPlane, clickPoint )
+		if ( intersection ) this.createShockwave( intersection )
 	}
 	
 	createShockwave( clickPoint ) {
@@ -550,6 +546,8 @@ class RicefieldExample {
 
 	dispose() {
 		stage.onResize.remove( this.onResize )
+		stage.onUpdate.remove( this.updateCompute )
+		stage.onUpdate.remove( this.updateMouseSpeed )
 		onMove.remove( this.onMouseMove )
 		onClick.remove( this.onMouseClick )
 
@@ -569,31 +567,19 @@ class RicefieldExample {
 			this[k] = disposeObj( this[k] )
 		}
 
-		if ( this.reflectionTarget ) {
-			stage3d.remove( this.reflectionTarget )
-			this.reflectionTarget = null
-		}
-
-		if ( this.quadTreeGroup ) {
-			stage3d.remove( this.quadTreeGroup )
-			this.quadTreeGroup.traverse( ( child ) => {
-				child.geometry?.dispose()
-				child.material?.dispose()
-			} )
-			this.quadTreeGroup = null
-		}
-
+		this.reflectionTarget?.removeFromParent()
+		this.reflectionTarget = null
+		this.reflection?.dispose()
+		this.reflection = null
 		this.noiseTexture?.dispose()
 		this.noiseTexture = null
 		this.computeUpdate?.dispose()
 		this.scaleStorageBuffer = null
+		this.transformStorageBuffer = null
 		this.computeUpdate = null
 		this.cells = []
 		this.riceInstances = []
-		this.lineArrays = []
-
 		stage3d.control?.dispose()
-		stage3d.scene.environment = null
 		stage3d.scene.backgroundNode = null
 	}
 
@@ -627,7 +613,7 @@ class RicefieldExample {
 		this.mouseSpeedUniform.value = MathUtils.clamp( 1 + this.mouseSpeed * 0.1, 1, 3 )
 		
 		// Update area of effect based on mouse movement
-		let isMouseMoving = distance > 1 // Threshold to detect if mouse is moving
+		const isMouseMoving = distance > 1 // Threshold to detect if mouse is moving
 
 		if ( isMouseMoving ) {
 			this.areaOfEffectUniform.value += ( 1 - this.areaOfEffectUniform.value ) * 0.15
@@ -639,4 +625,4 @@ class RicefieldExample {
 	
 }
 
-export default new RicefieldExample()
+export default RicefieldExample

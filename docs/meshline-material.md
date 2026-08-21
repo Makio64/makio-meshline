@@ -14,29 +14,7 @@ The `MeshLineNodeMaterial` class is a specialized Three.js NodeMaterial that imp
 ## Constructor
 
 ```ts
-new MeshLineNodeMaterial(
-  parameters?: {
-    transparent?: boolean,
-    depthWrite?: boolean,
-    depthTest?: boolean,
-    wireframe?: boolean,
-    alphaTest?: number,
-    sizeAttenuation?: boolean,
-    resolution?: THREE.Vector2,
-    lineWidth?: number,
-    color?: number | THREE.Color,
-    gradientColor?: number | THREE.Color | null,
-    opacity?: number,
-    map?: THREE.Texture | null,
-    alphaMap?: THREE.Texture | null,
-    mapOffset?: THREE.Vector2,
-    repeat?: THREE.Vector2,
-    dashCount?: number | null,
-    dashRatio?: number | null,
-    dashOffset?: number,
-    miterLimit?: number
-  }
-)
+new MeshLineNodeMaterial(options?: MeshLineMaterialOptions)
 ```
 
 Creates a new MeshLineNodeMaterial with the specified parameters.
@@ -46,7 +24,7 @@ Creates a new MeshLineNodeMaterial with the specified parameters.
 ### Rendering Properties
 
 - `transparent` (boolean) — whether the material is rendered with transparency. Default: auto-detected (true if `alphaMap` is set, `opacity < 1`, or `transparent` flag is true).
-- `depthWrite` (boolean) — whether to write depth. Default: `true`.
+- `depthWrite` (boolean) — whether to write depth. By default it is `false` when the material is transparent and `true` otherwise.
 - `depthTest` (boolean) — whether to perform depth testing. Default: `true`.
 - `wireframe` (boolean) — render line as wireframe. Default: `false`.
 - `alphaTest` (number) — alpha threshold for discarding fragments. Default: `0`.
@@ -71,7 +49,10 @@ Creates a new MeshLineNodeMaterial with the specified parameters.
 
 - `dashCount` (number | null) — number of dash cycles along the line. Default: `null`.
 - `dashRatio` (number | null) — ratio of dash length to gap length (0 to 1). `dashLength` can be used as an alias. Default: `null`.
+- `dashLength` (number | null) — compatibility alias for `dashRatio`. Default: `null`.
 - `dashOffset` (number) — offset into the dash cycle. Default: `0`.
+
+These names are the low-level material fields. When using the recommended `MeshLine` facade, configure dashes with `dash: { count, ratio, offset }` or `.dash( options )`; the facade creates these material uniforms for you.
 
 ### Miter Limit (advanced)
 
@@ -86,6 +67,54 @@ const material = new MeshLineNodeMaterial({
 `miterLimit` defaults to **4.0**, which keeps sharp corners visually clean while leaving gentler bends fully mitered. Lower values clamp earlier (more bevel-like at sharp bends); higher values allow longer spikes.
 
 **Tip for very sharp static polylines (zigzags, angular paths):** pair a lower `miterLimit` (e.g. `2`) with opt-in geometry sharp-bend smoothing (`MeshLine.smoothSharpBends(true)`). The geometry pass subdivides corners whose interior bend drops below ~60°, and the miter clamp catches anything left over. See [MeshLine geometry › Smooth sharp bends](./meshline-geometry.md#smooth-sharp-bends).
+
+### lineCoord
+
+`lineCoord` is a normalized stroke coordinate for the billboard profile, importable from the package root and usable inside any TSL hook:
+
+```js
+import { lineCoord } from 'makio-meshline'
+
+line.fragmentColorFn( color => color.mul( lineCoord.y.abs().oneMinus() ) )
+```
+
+| Channel | Meaning |
+| --- | --- |
+| `lineCoord.y` | Position across the emitted cross-section. `-1` and `+1` sit exactly on the two silhouette edges, `0` on the mid-line between them. |
+| `lineCoord.x` | Position inside an end cap. The billboard profile emits no cap topology, so this is currently always `0` and is reserved for future caps. |
+
+It costs nothing extra: `y` is the `side` value the material already interpolates, so reading `lineCoord` does not require `needsUV( true )` the way recovering the same number from `uv().y` does.
+
+**It is a silhouette coordinate, not a distance.** `|lineCoord.y| == 1` means "on the emitted edge". That edge sits at `lineWidth / 2` only on a straight run: at a bend of interior deviation α the miter pushes it out to `lineWidth / ( 2·cos( α / 2 ) )` — 1.41x the half-width at a plain 90° corner — capped at `miterLimit · lineWidth / 2`, so 4x the half-width at the default `miterLimit` of 4. Past the limit the join falls back to a butt cross-section and the edge returns to `lineWidth / 2`. Treat `lineCoord` as a shading parameter, not as a metric offset in pixels. Likewise `y == 0` is the mid-line rather than the centerline whenever a `widthFn` or `normalFn` hook makes the cross-section asymmetric, since both hooks receive `side`.
+
+The idea, and the name, come from [rreusser/webgpu-instanced-lines](https://github.com/rreusser/webgpu-instanced-lines).
+
+#### Building a tube normal from it
+
+The [Metallic Tube demo](https://meshline-demo.makio.io/examples/metallic-tube) treats `lineCoord.y` as the tube's across-axis and reconstructs the bulge analytically:
+
+```js
+const across = lineCoord.y
+const arch = float( 1 ).sub( across.mul( across ) ).max( 0 ).sqrt()
+material.normalNode = vec3( perpendicular.mul( across ), arch ).normalize()
+```
+
+`lineCoord` carries no direction, so the screen-space `perpendicular` still has to come across from a `normalFn` hook.
+
+### Antialiasing
+
+`antialias` is off by default. MSAA already antialiases a billboard line, because the silhouette *is* the emitted geometry — so enable this only when you are rendering without multisampling, or when sub-pixel line widths are dropping out.
+
+```js
+line.antialias( true )
+```
+
+When on, the vertex stage pads the stroke outward by half a device pixel measured perpendicular to the stroke, and the fragment stage fades that padding by real edge coverage, so the edge is smoothed instead of eroded. Strokes thinner than one device pixel are widened to one pixel and dimmed by their true coverage, which keeps them continuous instead of breaking into dashes.
+
+Two consequences worth knowing:
+
+- Coverage is written into alpha, so `antialias` forces `transparent = true`. Expect the usual transparent-draw ordering.
+- The emitted geometry grows by half a device pixel on each side. Because the pad is applied along the miter bisector, a sharp corner grows further along that bisector — bounded, like the miter itself, by `join.limit`. That is invisible for ordinary strokes but is a real change if you are matching a line against a pixel grid.
 
 ### Shadow Nodes
 
@@ -267,32 +296,30 @@ discardFn: (progress: Node, side: Node, uv: Node) => Node<bool>
 
 ## Dynamic GPU-Driven Positions (gpuPositionNode)
 
-When you don't want to upload an explicit polyline to the GPU you can let the shader compute each vertex position.  
-Provide a **gpuPositionNode** function that receives the per-vertex progress (ranging from 0→1 along the line) and returns a `vec3` position.
+When you do not want to upload an explicit polyline, let the shader compute each vertex position. Provide a `gpuPositionNode` function that receives normalized template progress and returns a `vec3` position.
 
 ```javascript
-import { MeshLine } from 'makio-meshline';
-import { Fn, vec3, cos, sin } from 'three/tsl';
+import { MeshLine } from 'makio-meshline'
+import { Fn, vec3, cos, sin } from 'three/tsl'
 
 // 1. GPU function returning a point on a unit circle
-const circlePosition = Fn( ( [index] ) => {
-  // index is in [0,1]. Turn it into an angle and build XZ coordinates
-  const angle = index.mul( Math.PI * 2.0 );
-  return vec3( cos( angle ), 0.0, sin( angle ) );
+const circlePosition = Fn( ( [progress] ) => {
+  const angle = progress.mul( Math.PI * 2 )
+  return vec3( cos( angle ), 0, sin( angle ) )
 } ).setLayout( {
   name: 'circlePosition',
   type: 'vec3',
-  inputs: [ { name: 'index', type: 'float' } ]
-} );
+  inputs: [ { name: 'progress', type: 'float' } ]
+} )
 
 // 2. Create the line. Only the segment count matters here; positions are computed by the node.
 const line = new MeshLine()
   .segments( 256 )
   .gpuPositionNode( circlePosition )
   .lineWidth( 4 )
-  .build();
-scene.add( line );
+  .build()
+
+scene.add( line )
 ```
 
-`progress` is automatically incremented for every segment so **index** travels smoothly from 0 to 1.  
-Combine this technique with uniforms (time, mouse, etc.) to build fully procedural, animated lines on the GPU.
+With no CPU centerline to measure, procedural template progress is evenly sampled from `0` to `1` by point index. This differs from explicit CPU paths, whose V2 progress follows cumulative arc length. Combine the node with uniforms such as time or pointer state to animate the line without per-frame position uploads.

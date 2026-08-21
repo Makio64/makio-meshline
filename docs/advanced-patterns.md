@@ -17,11 +17,12 @@ const circleNode = Fn(( [progress] ) => {
   return vec3( cos(angle), sin(angle), 0 )
 })
 
-const segments = 256 // only length matters when gpuPositionNode is used
+const segments = 256
 
 const line = new MeshLine()
-  .lines(new Float32Array( segments * 3 )) // placeholder
+  .segments(segments)
   .gpuPositionNode(circleNode)
+  .closed(true)
   .lineWidth(0.3)
   .gradientColor(0xffff00)
   .build()
@@ -100,10 +101,16 @@ Render thousands of lines efficiently with instancing:
 
 ```js
 import { MeshLine } from 'makio-meshline'
-import { Fn, vec3, cos, sin, attribute, instanceIndex } from 'three/tsl'
+import { Fn, attribute } from 'three/tsl'
 
 const instanceCount = 1000
 const segments = 32
+
+const transformInstance = Fn( ( [position] ) => {
+	const offset = attribute( 'instanceOffset', 'vec3' )
+	const scale = attribute( 'instanceScale', 'float' )
+	return position.mul( scale ).add( offset )
+} )
 
 // Create instanced line
 const instancedLine = new MeshLine()
@@ -111,22 +118,29 @@ const instancedLine = new MeshLine()
 	.segments(segments) // Segments per line instance
 	.lineWidth(0.1)
 	.color(0xffffff)
+	.positionFn(transformInstance)
 	.build()
 
 // Add custom instance attributes
-instancedLine.addInstanceAttribute( 'instanceOffset', 3 )
-instancedLine.addInstanceAttribute( 'instanceScale', 1 )
+instancedLine.addInstanceAttributes( {
+	instanceOffset: 3,
+	instanceScale: 1,
+} )
 
-// Set per-instance data
+// Fill packed data, then upload each attribute once
+const offsets = new Float32Array( instanceCount * 3 )
+const scales = new Float32Array( instanceCount )
+
 for ( let i = 0; i < instanceCount; i++ ) {
-	const x = ( Math.random() - 0.5 ) * 20
-	const y = ( Math.random() - 0.5 ) * 20
-	const z = ( Math.random() - 0.5 ) * 20
-	instancedLine.setInstanceValue( 'instanceOffset', i, [x, y, z] )
-	
-	const scale = 0.5 + Math.random() * 1.5
-	instancedLine.setInstanceValue( 'instanceScale', i, scale )
+	const offset = i * 3
+	offsets[offset] = ( Math.random() - 0.5 ) * 20
+	offsets[offset + 1] = ( Math.random() - 0.5 ) * 20
+	offsets[offset + 2] = ( Math.random() - 0.5 ) * 20
+	scales[i] = 0.5 + Math.random() * 1.5
 }
+
+instancedLine.setInstanceValues( 'instanceOffset', offsets )
+instancedLine.setInstanceValues( 'instanceScale', scales )
 
 scene.add( instancedLine )
 ```
@@ -158,8 +172,10 @@ const instancedCircles = new MeshLine()
 	.build()
 
 // Setup instance attributes
-instancedCircles.addInstanceAttribute( 'instanceOffset', 3 )
-instancedCircles.addInstanceAttribute( 'instanceRadius', 1 )
+instancedCircles.addInstanceAttributes( {
+	instanceOffset: 3,
+	instanceRadius: 1,
+} )
 
 // Position instances in a grid
 for ( let i = 0; i < 100; i++ ) {
@@ -226,4 +242,4 @@ const customDashes = new MeshLine()
 		return mod( cyclePos.mul( variation ), float( 1 ) )
 	} ))
 	.build()
-``` 
+```

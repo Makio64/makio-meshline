@@ -97,7 +97,10 @@ export default class QuadTree {
 			this.records[this.records.length - 1] = [...this.newCells.toArray(), ...this.lockCells.toArray()]
 		}
 
-		return [...this.cells.toArray(), ...this.newCells.toArray(), ...this.lockCells.toArray()]
+		// `cells` already contains the latest `newCells` objects. Returning both
+		// lists duplicates every active leaf and makes consumers render the same
+		// geometry twice in exactly the same place.
+		return [...this.cells.toArray(), ...this.lockCells.toArray()]
 	}
 
 	quadtree( iteration, cell, forced ) {

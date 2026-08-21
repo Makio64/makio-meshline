@@ -1,10 +1,10 @@
 {
   "name": "makio-meshline",
-  "version": "1.4.0",
+  "version": "2.0.0",
   "type": "module",
-  "main": "index.js",
-  "module": "index.js",
-  "types": "index.d.ts",
+  "main": "./index.js",
+  "module": "./index.js",
+  "types": "./index.d.ts",
   "description": "TSL-powered wide-line and road/ribbon surface renderer for Three.js with gradients, textures, GPU positions, and instancing.",
   "exports": {
     ".": {
@@ -86,11 +86,14 @@
     "url": "https://github.com/Makio64/makio-meshline/issues"
   },
   "homepage": "https://meshline.makio.io",
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
-    "prepublishOnly": "pnpm -w run lint"
+    "prepublishOnly": "pnpm -w run lint && pnpm -w run test && pnpm -w run test:types && pnpm -w run verify:package"
   },
   "devDependencies": {
-    "@types/three": "0.183.1",
-    "three": "0.183.2"
+    "@types/three": "0.185.4",
+    "three": "0.185.1"
   }
 }

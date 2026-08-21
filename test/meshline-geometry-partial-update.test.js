@@ -36,25 +36,25 @@ test( 'setPositionRange updates only the selected multi-line vertices and neighb
 
 	geometry.setPositionRange( new Float32Array( [11, 1, 0, 12, 1, 0] ), 1, { lineIndex: 1 } )
 
-	const lineVertexOffset = 6
+	const lineVertexOffset = 12
 	const position = geometry.getAttribute( 'position' )
 	const previous = geometry.getAttribute( 'previous' )
 	const next = geometry.getAttribute( 'next' )
 	assert.deepEqual(
-		[position.getX( lineVertexOffset + 2 ), position.getY( lineVertexOffset + 2 )],
+		[position.getX( lineVertexOffset + 4 ), position.getY( lineVertexOffset + 4 )],
 		[11, 1]
 	)
 	assert.deepEqual(
-		[previous.getX( lineVertexOffset + 6 ), previous.getY( lineVertexOffset + 6 )],
+		[previous.getX( lineVertexOffset + 12 ), previous.getY( lineVertexOffset + 12 )],
 		[12, 1]
 	)
 	assert.deepEqual(
 		[next.getX( lineVertexOffset ), next.getY( lineVertexOffset )],
 		[11, 1]
 	)
-	assertRange( position, 24, 12 )
-	assertRange( previous, 18, 24 )
-	assertRange( next, 18, 24 )
+	assertRange( position, 48, 24 )
+	assertRange( previous, 36, 48 )
+	assertRange( next, 36, 48 )
 	assert.equal( index.version, indexVersion )
 	assert.equal( side.version, sideVersion )
 } )
@@ -74,15 +74,15 @@ test( 'setPositionRange refreshes arc-length progress, UV, and endpoint metadata
 	const uv = geometry.getAttribute( 'uv' )
 	const endpoint = geometry.getAttribute( 'endpoint' )
 	for ( const [point, expected] of [0, 0.4, 0.8, 1].entries() ) {
-		assertClose( progress.getX( point * 2 ), expected )
-		assertClose( uv.getX( point * 2 ), expected )
+		assertClose( progress.getX( point * 4 ), expected )
+		assertClose( uv.getX( point * 4 ), expected )
 	}
-	assertClose( endpoint.getZ( 4 ), 0.4 )
-	assertClose( endpoint.getW( 4 ), 0.2 )
-	assertRange( geometry.getAttribute( 'position' ), 6, 6 )
-	assertRange( progress, 0, 8 )
-	assertRange( uv, 0, 16 )
-	assertRange( endpoint, 0, 32 )
+	assertClose( endpoint.getZ( 8 ), 0.4 )
+	assertClose( endpoint.getW( 8 ), 0.2 )
+	assertRange( geometry.getAttribute( 'position' ), 12, 12 )
+	assertRange( progress, 0, 16 )
+	assertRange( uv, 0, 32 )
+	assertRange( endpoint, 0, 64 )
 } )
 
 test( 'setPositionRange keeps a closed CPU seam and wrapped neighbors coherent', () => {
@@ -105,11 +105,11 @@ test( 'setPositionRange keeps a closed CPU seam and wrapped neighbors coherent',
 	const next = geometry.getAttribute( 'next' )
 	assert.deepEqual( Array.from( geometry._lines[0].slice( -3 ) ), [-1, 0, 0] )
 	assert.deepEqual( [position.getX( 0 ), position.getY( 0 )], [-1, 0] )
-	assert.deepEqual( [position.getX( 8 ), position.getY( 8 )], [-1, 0] )
+	assert.deepEqual( [position.getX( 16 ), position.getY( 16 )], [-1, 0] )
 	assert.deepEqual( [previous.getX( 0 ), previous.getY( 0 )], [0, 1] )
-	assert.deepEqual( [next.getX( 6 ), next.getY( 6 )], [-1, 0] )
-	assert.deepEqual( [next.getX( 8 ), next.getY( 8 )], [1, 0] )
-	assert.deepEqual( position.updateRanges, [{ start: 0, count: 6 }, { start: 24, count: 6 }] )
+	assert.deepEqual( [next.getX( 12 ), next.getY( 12 )], [-1, 0] )
+	assert.deepEqual( [next.getX( 16 ), next.getY( 16 )], [1, 0] )
+	assert.deepEqual( position.updateRanges, [{ start: 0, count: 12 }, { start: 48, count: 12 }] )
 } )
 
 test( 'setPositionRange refreshes both wrapped neighbors for closed procedural templates', () => {
@@ -195,7 +195,7 @@ test( 'pending full uploads subsume range updates and identical topology preserv
 
 	clearUpdateRanges( geometry )
 	geometry.setPositionRange( new Float32Array( [2, 2, 0] ), 2 )
-	assertRange( position, 12, 6 )
+	assertRange( position, 24, 12 )
 } )
 
 test( 'same totals with different per-line point counts regenerate connectivity', () => {
@@ -213,9 +213,9 @@ test( 'same totals with different per-line point counts regenerate connectivity'
 	assert.equal( index.version, version + 1 )
 	assert.notDeepEqual( index.array, original )
 	assert.deepEqual( Array.from( index.array ), [
-		0, 1, 2, 2, 1, 3,
 		2, 3, 4, 4, 3, 5,
 		6, 7, 8, 8, 7, 9,
-		8, 9, 10, 10, 9, 11,
+		14, 15, 16, 16, 15, 17,
+		18, 19, 20, 20, 19, 21,
 	] )
 } )

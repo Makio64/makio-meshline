@@ -1,4 +1,4 @@
-import { attribute, cameraProjectionMatrix, cameraWorldMatrix, Discard, float, Fn, max, mix, mod, modelViewMatrix, modelWorldMatrixInverse, positionGeometry, step, texture, uint, uniform, uv, varying, varyingProperty, vec2, vec3, vec4, vertexIndex } from 'three/tsl'
+import { attribute, cameraProjectionMatrix, cameraWorldMatrix, dFdx, dFdy, Discard, dot, float, Fn, max, min, mix, mod, modelViewMatrix, modelWorldMatrixInverse, positionGeometry, step, texture, uint, uniform, uv, varying, varyingProperty, vec2, vec3, vec4, vertexIndex } from 'three/tsl'
 import { Color, DoubleSide, MeshBasicNodeMaterial, Vector2 } from 'three/webgpu'
 
 const DEFAULT_MITER_LIMIT = 4
@@ -9,6 +9,7 @@ const MAX_MITER_LIMIT = 1e6
 // duplicate projections still take the finite fallback, while subpixel
 // segments retain their real direction and stay connected.
 export const SCREEN_DIRECTION_EPSILON = 1e-7
+export const SCREEN_REVERSAL_DOT_THRESHOLD = Math.fround( -Math.cos( Math.PI / 180 ) )
 
 const sanitizeMiterLimit = value => {
 	const limit = Number( value ?? DEFAULT_MITER_LIMIT )
@@ -39,12 +40,51 @@ const fix = Fn( ( [i_immutable, aspect_immutable] ) => {
 
 // build these nodes once for all instances
 const aSide = attribute( 'side', 'float' )
+const aJoinRole = attribute( 'joinRole', 'float' )
 const aProgress = attribute( 'progress', 'float' )
 const aColor = attribute( 'vertexColor', 'vec3' )
 const aWidth = attribute( 'width', 'float' )
 const vProgress = varyingProperty( 'float', 'vProgress' )
 const vColor = varyingProperty( 'vec4', 'vColor' )
 const vertexSide = float( 1 ).sub( float( vertexIndex.bitAnd( uint( 1 ) ) ).mul( 2 ) )
+// Billboard geometry stores [incoming+, incoming-, outgoing+, outgoing-] for
+// every logical point. The sign owns the incident body and the magnitude owns
+// the side, so both survive BufferGeometry.toNonIndexed(). A missing attribute
+// reads as zero, retaining the old indexed-geometry fallback.
+const indexedOutgoingVertex = vertexIndex.bitAnd( uint( 2 ) ).notEqual( uint( 0 ) )
+const hasJoinRole = aJoinRole.abs().greaterThan( float( 0.5 ) )
+const outgoingVertex = hasJoinRole.select(
+	aJoinRole.greaterThan( float( 0 ) ),
+	indexedOutgoingVertex
+)
+const encodedSide = hasJoinRole.select(
+	aJoinRole.abs().lessThan( float( 1.5 ) ).select( float( 1 ), float( -1 ) ),
+	vertexSide
+)
+
+// Normalized stroke coordinate, after rreusser/webgpu-instanced-lines' `lineCoord`.
+//   x: signed position inside an end cap. The billboard profile emits no cap
+//      topology, so it is a compile-time zero today and is reserved for caps.
+//   y: normalized position across the emitted cross-section. -1 and +1 land
+//      exactly on the two silhouette edges, 0 on the mid-line between them.
+// It is a silhouette coordinate, not a distance. The emitted edge sits at
+// `lineWidth / 2` only on a straight run; at a bend of deviation a the miter
+// pushes it to `lineWidth / ( 2 cos( a / 2 ) )`, bounded by the miter limit, and
+// past that limit it falls back to `lineWidth / 2`. So do not read
+// `lineCoord.y` as "signed distance in half-widths". `y` is also
+// the mid-line rather than the centerline whenever a `widthFn`/`normalFn`
+// hook makes the cross-section asymmetric — both receive `side`.
+export const lineCoord = vec2( float( 0 ), varying( encodedSide, 'vLineCoord' ) )
+
+// Half a device pixel of outward padding, so an antialiased edge has real
+// geometry to fade across instead of eroding the stroke it is smoothing.
+const AA_EDGE_PADDING_PX = 0.5
+// Never emit a stroke narrower than one device pixel: a sub-pixel quad misses
+// most pixel centers and drops out in bands. Below that width the fade is
+// carried by `vAaCoverage` instead of by the geometry.
+const AA_MINIMUM_HALF_PX = 0.5
+const vAaCoord = varyingProperty( 'float', 'vAaCoord' )
+const vAaCoverage = varyingProperty( 'float', 'vAaCoverage' )
 
 /**
  * TSL-based NodeMaterial for GPU line rendering. Extends `MeshBasicNodeMaterial`
@@ -132,7 +172,14 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 			this.gradient = uniform( new Color( options.gradientColor ) )
 		}
 
-		const hasAlphaFeatures = options.alphaMap != null || ( options.opacity ?? 1 ) < 1
+		// Analytic edge coverage is written into alpha, so it is invisible unless
+		// the pipeline actually blends: three drops the blend state entirely for
+		// an opaque NormalBlending material. Opting in therefore implies
+		// transparency, which is also why this is off by default — MSAA already
+		// antialiases the billboard silhouette, since the silhouette is the geometry.
+		this.antialias = options.antialias ?? false
+
+		const hasAlphaFeatures = options.alphaMap != null || ( options.opacity ?? 1 ) < 1 || this.antialias
 		this.transparent = hasAlphaFeatures || ( options.transparent ?? false )
 		if ( this.transparent ) {
 			this.opacity = uniform( options.opacity ?? 1 )
@@ -262,10 +309,11 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 	}
 
 	buildShadowPositionNode() {
+		const shadowSide = this.options?.needsSide ? aSide : encodedSide
 
 		this.castShadowPositionNode = Fn( () => {
 			const progress = this._needsProgress ? aProgress : float( 0 )
-			const side = this.options.needsSide ? aSide : vertexSide
+			const side = shadowSide
 			const endpoint = this._endpointAttribute ?? float( 0 )
 			const endpointMarker = this._needsEndpointMetadata ? endpoint.x : float( 0 )
 
@@ -276,13 +324,32 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 			const posView = modelViewMatrix.mul( vec4( pos, 1.0 ) ).xyz
 			const prevView = modelViewMatrix.mul( vec4( previous, 1.0 ) ).xyz
 			const nextView = modelViewMatrix.mul( vec4( next, 1.0 ) ).xyz
+			const posClip = cameraProjectionMatrix.mul( vec4( posView, 1.0 ) ).toVar( 'shadowPosClip' )
+			const prevClip = cameraProjectionMatrix.mul( vec4( prevView, 1.0 ) ).toVar( 'shadowPrevClip' )
+			const nextClip = cameraProjectionMatrix.mul( vec4( nextView, 1.0 ) ).toVar( 'shadowNextClip' )
+			const posScreen = fix( posClip, float( 1 ) ).toVar( 'shadowPosScreen' )
+			const prevScreen = fix( prevClip, float( 1 ) ).toVar( 'shadowPrevScreen' )
+			const nextScreen = fix( nextClip, float( 1 ) ).toVar( 'shadowNextScreen' )
+			const screenDelta1 = posScreen.sub( prevScreen ).toVar( 'shadowScreenDelta1' )
+			const screenDelta2 = nextScreen.sub( posScreen ).toVar( 'shadowScreenDelta2' )
+			const screenMinimumLength = float( SCREEN_DIRECTION_EPSILON )
+			const screenDelta1Length = screenDelta1.length().toVar( 'shadowScreenDelta1Length' )
+			const screenDelta2Length = screenDelta2.length().toVar( 'shadowScreenDelta2Length' )
+			const screenDirection1 = screenDelta1.div( max( screenDelta1Length, screenMinimumLength ) ).toVar( 'shadowScreenDirection1' )
+			const screenDirection2 = screenDelta2.div( max( screenDelta2Length, screenMinimumLength ) ).toVar( 'shadowScreenDirection2' )
+			const projectedReversal = screenDelta1Length.greaterThanEqual( screenMinimumLength )
+				.and( screenDelta2Length.greaterThanEqual( screenMinimumLength ) )
+				.and( dot( screenDirection1, screenDirection2 ).lessThanEqual( float( SCREEN_REVERSAL_DOT_THRESHOLD ) ) )
 
-			// Calculate a finite line direction in VIEW space. Open endpoints reuse
-			// their real segment direction, matching the visible pass.
+			// Calculate a finite line direction in VIEW space. Open endpoints and
+			// projected reversals reuse the owning physical body's direction, matching
+			// the visible pass without reconnecting the duplicated join pairs.
 			const delta1Raw = posView.sub( prevView ).toVar( 'shadowDelta1Raw' )
 			const delta2Raw = nextView.sub( posView ).toVar( 'shadowDelta2Raw' )
-			const atStart = max( endpointMarker.negate(), float( 0 ) ).toVar( 'shadowAtStart' )
-			const atEnd = max( endpointMarker, float( 0 ) ).toVar( 'shadowAtEnd' )
+			const reversalStart = outgoingVertex.and( projectedReversal ).select( float( 1 ), float( 0 ) )
+			const reversalEnd = outgoingVertex.not().and( projectedReversal ).select( float( 1 ), float( 0 ) )
+			const atStart = max( max( endpointMarker.negate(), float( 0 ) ), reversalStart ).toVar( 'shadowAtStart' )
+			const atEnd = max( max( endpointMarker, float( 0 ) ), reversalEnd ).toVar( 'shadowAtEnd' )
 			const delta1 = mix( delta1Raw, delta2Raw, atStart ).toVar( 'shadowDelta1' )
 			const delta2 = mix( delta2Raw, delta1Raw, atEnd ).toVar( 'shadowDelta2' )
 			const minimumLength = float( 0.0001 )
@@ -299,10 +366,21 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 			const dir2 = mix( dir1, dir2Raw, step( minimumLength, delta2Length ) ).toVar( 'shadowDir2' )
 			const directionSum = dir1.add( dir2 ).toVar( 'shadowDirectionSum' )
 			const directionSumLength = directionSum.length().toVar( 'shadowDirectionSumLength' )
-			const dir = mix(
-				dir1,
+			const bodyDirection = outgoingVertex.select( dir2, dir1 ).toVar( 'shadowBodyDirection' )
+			const directionBlend = directionSumLength.smoothstep(
+				this._miterThreshold.mul( 0.75 ),
+				this._miterThreshold
+			).toVar( 'shadowDirectionBlend' )
+			const blendedDirection = mix(
+				bodyDirection,
 				directionSum.div( max( directionSumLength, minimumLength ) ),
-				step( minimumLength, directionSumLength )
+				directionBlend
+			).toVar( 'shadowBlendedDirection' )
+			const blendedDirectionLength = blendedDirection.length().toVar( 'shadowBlendedDirectionLength' )
+			const dir = mix(
+				bodyDirection,
+				blendedDirection.div( max( blendedDirectionLength, minimumLength ) ),
+				step( minimumLength, blendedDirectionLength )
 			).toVar( 'shadowDir' )
 
 			// Calculate perpendicular in VIEW space (billboard to camera)
@@ -317,7 +395,9 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 				step( minimumLength, perpendicularLength )
 			).toVar( 'shadowPerpendicular' )
 
-			const w = this.getLineWidth( this.lineWidth.mul( 0.5 ), progress, side )
+			const bodyScreenLength = outgoingVertex.select( screenDelta2Length, screenDelta1Length )
+			const bodyVisible = step( screenMinimumLength, bodyScreenLength )
+			const w = this.getLineWidth( this.lineWidth.mul( 0.5 ), progress, side ).mul( bodyVisible )
 
 			// Apply offset in VIEW space
 			const posViewNew = posView.add( perp.mul( side.mul( w ) ) )
@@ -336,7 +416,7 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 				let cyclePosition = mod( vProg.mul( this.dashCount ).add( this.dashOffset ), float( 1 ) ).toVar( 'cyclePosition' )
 
 				if ( this.dashFn ) {
-					cyclePosition.assign( this.dashFn( cyclePosition, vProg, varying( side ) ) )
+					cyclePosition.assign( this.dashFn( cyclePosition, vProg, varying( shadowSide ) ) )
 				}
 
 				const dashMask = step( cyclePosition, this.dashRatio )
@@ -354,7 +434,7 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 
 		// Cache frequently-used attributes to prevent duplicate GPU computation
 		const progress = ( this._needsProgress ? aProgress : float( 0 ) ).toVar( 'varProgress' )
-		const lineSide = this.options.needsSide ? aSide : vertexSide
+		const lineSide = this.options.needsSide ? aSide : encodedSide
 		const side = lineSide.toVar( 'varSide' )
 		// Fragment hooks need an interpolated float. Reusing the IndexNode there
 		// would expose the provoking vertex's integer index for the whole triangle.
@@ -405,18 +485,27 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 			const nextP = fix( nextPos, aspect ).toVar( 'nextP' )
 			const delta1Raw = currentP.sub( prevP ).toVar( 'delta1Raw' )
 			const delta2Raw = nextP.sub( currentP ).toVar( 'delta2Raw' )
-			const atStart = max( endpointMarker.negate(), float( 0 ) ).toVar( 'atStart' )
-			const atEnd = max( endpointMarker, float( 0 ) ).toVar( 'atEnd' )
+			const minDirectionLength = float( SCREEN_DIRECTION_EPSILON )
+			const delta1RawLen = delta1Raw.length().toVar( 'delta1RawLen' )
+			const delta2RawLen = delta2Raw.length().toVar( 'delta2RawLen' )
+			const projectedDir1 = delta1Raw.div( max( delta1RawLen, minDirectionLength ) ).toVar( 'projectedDir1' )
+			const projectedDir2 = delta2Raw.div( max( delta2RawLen, minDirectionLength ) ).toVar( 'projectedDir2' )
+			const projectedReversal = delta1RawLen.greaterThanEqual( minDirectionLength )
+				.and( delta2RawLen.greaterThanEqual( minDirectionLength ) )
+				.and( dot( projectedDir1, projectedDir2 ).lessThanEqual( float( SCREEN_REVERSAL_DOT_THRESHOLD ) ) )
+			const reversalStart = outgoingVertex.and( projectedReversal ).select( float( 1 ), float( 0 ) )
+			const reversalEnd = outgoingVertex.not().and( projectedReversal ).select( float( 1 ), float( 0 ) )
+			const atStart = max( max( endpointMarker.negate(), float( 0 ) ), reversalStart ).toVar( 'atStart' )
+			const atEnd = max( max( endpointMarker, float( 0 ) ), reversalEnd ).toVar( 'atEnd' )
 			const delta1 = mix( delta1Raw, delta2Raw, atStart ).toVar( 'delta1' )
 			const delta2 = mix( delta2Raw, delta1Raw, atEnd ).toVar( 'delta2' )
 
 			const w = this.getLineWidth( this.lineWidth, progress, side ).toVar( 'w' )
 
 			// Miter offset. |dir1+dir2| = 2·cos(α/2) for interior bend α.
-			// Once a miter would exceed the configured limit, fixed strip topology
-			// cannot represent a real bevel wedge. Fall back to the incoming segment's
-			// bounded half-width instead, preventing spikes and exact-reversal NaNs.
-			const minDirectionLength = float( SCREEN_DIRECTION_EPSILON )
+			// Once a miter would exceed the configured limit, the duplicated join rows
+			// separate toward their owning incident bodies. This leaves a bounded butt
+			// fallback instead of swapping strip sides or manufacturing a miter spike.
 			const delta1Len = delta1.length().toVar( 'delta1Len' )
 			const delta2Len = delta2.length().toVar( 'delta2Len' )
 			const dirFallback = vec2( 1, 0 ).toVar( 'dirFallback' )
@@ -432,7 +521,8 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 			const dirSumLen = dirSum.length().toVar( 'dirSumLen' )
 
 			const perpRaw = vec2( dirSum.y.negate(), dirSum.x ).toVar( 'perpRaw' )
-			const perpFallback = vec2( dir1.y.negate(), dir1.x ).toVar( 'perpFallback' )
+			const bodyDirection = outgoingVertex.select( dir2, dir1 ).toVar( 'bodyDirection' )
+			const perpFallback = vec2( bodyDirection.y.negate(), bodyDirection.x ).toVar( 'perpFallback' )
 			const miterBlend = dirSumLen.smoothstep(
 				this._miterThreshold.mul( 0.75 ),
 				this._miterThreshold
@@ -458,8 +548,9 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 			const normal = vec4( 0, 0, 0, 1 ).toVar( 'normal' )
 			normal.xy.assign( unitPerp.mul( miterHalfWidth ) )
 
-			// Apply normal modifier if provided. Pass the unit bisector for backward
-			// compatibility with existing normalFn hooks.
+			// Apply normal modifier if provided. Supported joins still pass their unit
+			// bisector; a bounded fallback passes the owning body's direction so hooks
+			// follow the same frame as the physical cross-section.
 			if ( this.normalFn ) {
 				const dir = vec2( unitPerp.y, unitPerp.x.negate() ).toVar( 'dir' )
 				normal.assign( this.normalFn( normal, dir, dir1, dir2, progress, side ) )
@@ -477,14 +568,60 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 				normal.xy.mulAssign( finalPosition.w.mul( 2 ).div( this.resolution.y ) )
 			}
 
-			finalPosition.xy.addAssign( normal.xy.mul( side ) )
+			if ( this.antialias ) {
+				// Measure the emitted half-extent in device pixels, pad it outward by
+				// half a pixel, and rescale the coordinate so |vAaCoord| == 1 still
+				// marks the *unpadded* edge. The fragment band is then centred on the
+				// real silhouette instead of eaten out of the stroke.
+				const halfNdc = normal.xy.div( max( finalPosition.w.abs(), float( 1e-6 ) ) ).toVar( 'halfNdc' )
+				const halfPx = vec2(
+					halfNdc.x.mul( this.resolution.x ),
+					halfNdc.y.mul( this.resolution.y )
+				).mul( float( 0.5 ).mul( this.dpr ) ).length().toVar( 'halfPx' )
+				// The pad rides along the miter bisector, so at a corner only
+				// cos(theta/2) of it lands perpendicular to the stroke. Divide that
+				// back out, bounded by the miter limit — which already bounds how far
+				// the bisector itself may stretch. |dirSum| / 2 is cos(theta/2), and
+				// the fallback cross-section has no bisector stretch to undo.
+				const cosHalfAngle = mix(
+					float( 1 ),
+					max( dirSumLen.mul( 0.5 ), this._miterThreshold.mul( 0.5 ) ),
+					miterBlend
+				).toVar( 'cosHalfAngle' )
+				const edgePad = float( AA_EDGE_PADDING_PX ).div( max( cosHalfAngle, float( 1e-4 ) ) ).toVar( 'edgePad' )
+				const paddedHalfPx = max( halfPx, float( AA_MINIMUM_HALF_PX ) ).add( edgePad ).toVar( 'paddedHalfPx' )
+				const aaScale = paddedHalfPx.div( max( halfPx, float( 1e-6 ) ) ).toVar( 'aaScale' )
+				normal.xy.mulAssign( aaScale )
+				vAaCoord.assign( side.mul( aaScale ) )
+				// A stroke thinner than one device pixel can no longer lose width to
+				// the geometry clamp above, so fade it by its true coverage instead.
+				vAaCoverage.assign( min( float( 1 ), halfPx.mul( 2 ) ) )
+			}
+
+			// Collapse a vertex whose own incident body has no projected length onto
+			// its centerline rather than pushing it outside the frustum. A join-fill
+			// triangle spans two different bodies, so an off-frustum sentinel on one
+			// pair would stretch a wedge across the viewport. Gate the offset (a
+			// select, never a multiply — NaN * 0 is still NaN) so `normalFn`,
+			// `sizeAttenuation` and `vertexFn` keep running on the collapsed row.
+			// This matches what the shadow path already does with `bodyVisible`.
+			const bodyLength = outgoingVertex.select( delta2RawLen, delta1RawLen )
+			const bodyVisible = bodyLength.greaterThanEqual( minDirectionLength )
+			finalPosition.xy.addAssign( bodyVisible.select( normal.xy, vec2( 0 ) ).mul( side ) )
 
 			// Apply vertex modifier if provided
 			if ( this.vertexFn ) {
 				finalPosition.assign( this.vertexFn( finalPosition, normal, progress, side ) )
 			}
 
-			return finalPosition
+			// `bodyVisible` used to double as the NaN sink for the whole vertex, so
+			// keep an explicit one now that it only gates the offset. NaN fails every
+			// comparison, so the self-equality test is false exactly when it matters.
+			const positionFinite = finalPosition.x.equal( finalPosition.x )
+				.and( finalPosition.y.equal( finalPosition.y ) )
+				.and( finalPosition.z.equal( finalPosition.z ) )
+				.and( finalPosition.w.equal( finalPosition.w ) )
+			return positionFinite.select( finalPosition, vec4( 2, 2, 2, 1 ) )
 		} )()
 		let uvCoords
 		if ( ( this.map && this.map.value ) || ( this.alphaMap && this.alphaMap.value ) || this.uvFn || this.fragmentColorFn || this.fragmentAlphaFn || this.discardFn ) {
@@ -524,6 +661,28 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 		// Opacity node
 		this.opacityNode = Fn( () => {
 			let alpha = float( 1 ).toVar( 'alpha' )
+
+			if ( this.antialias ) {
+				// Evaluated before any Discard so the derivative stays in uniform
+				// control flow. `fwidth` is the Manhattan sum and overestimates the
+				// gradient by up to sqrt(2) on diagonal edges, which would blur them;
+				// take the real gradient length instead. Coverage under a box filter
+				// is linear in distance, so no smoothstep here either.
+				// Differentiate the SIGNED coordinate: dFdx( abs( v ) ) folds toward zero
+				// in any 2x2 quad straddling the mid-line, and on a two-pixel padded
+				// strip that is most of them, so the gradient under-reads and coverage
+				// clamps to 1 wherever the centerline happens to fall.
+				const gradient = vec2( dFdx( vAaCoord ), dFdy( vAaCoord ) ).length().toVar( 'aaGradient' )
+				const edge = vAaCoord.abs().toVar( 'aaEdge' )
+				// `(1 - edge) / gradient + 0.5` is the distance in pixels from this
+				// sample to the nearer edge, offset to the pixel centre — box coverage
+				// for a strip wider than the filter. A narrower strip is capped by its
+				// own width, which is what `vAaCoverage` carries, so the two combine
+				// with min(): multiplying them would attenuate a sub-pixel line twice.
+				const coverage = float( 1 ).sub( edge ).div( max( gradient, float( 1e-6 ) ) )
+					.add( 0.5 ).clamp( 0, 1 )
+				alpha.mulAssign( min( coverage, vAaCoverage ) )
+			}
 
 			if ( this.alphaMap && this.alphaMap.value ) {
 				alpha.mulAssign( this.alphaMap.sample( uvCoords ).r )
@@ -581,6 +740,7 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 		// Copy feature flags
 		this.alphaTest = source.alphaTest
 		this.sizeAttenuation = source.sizeAttenuation
+		this.antialias = source.antialias
 
 		// Copy uniform values
 		if ( source.lineWidth && this.lineWidth ) this.lineWidth.value = source.lineWidth.value

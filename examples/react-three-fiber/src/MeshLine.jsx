@@ -1,36 +1,30 @@
-import { useEffect, useImperativeHandle, useMemo, useRef, forwardRef } from 'react'
 import { useThree } from '@react-three/fiber'
 import { MeshLine as MeshLineCore } from 'makio-meshline'
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
 
-function applyBuildOptions( line, options ) {
-	const { cap, dash, join, points, surface, ...configureOptions } = options
-	const linePoints = points ?? configureOptions.lines
+const DEFAULT_JOIN = Object.freeze( { type: 'miter', limit: 4, segments: 8 } )
+const DEFAULT_CAP = Object.freeze( { type: 'butt', segments: 8 } )
 
-	line.configure( {
-		...configureOptions,
-		lines: linePoints,
-		transparent: configureOptions.transparent || configureOptions.opacity < 1,
-	} )
-
-	if ( surface ) {
-		if ( typeof line.surface !== 'function' ) {
-			throw new Error( '[MeshLine] The surface prop requires a makio-meshline version with road/ribbon support.' )
-		}
-		line.surface( surface === true ? {} : surface )
-	}
-	line.dash( dash )
-	if ( join ) line.join( join )
-	if ( cap ) line.cap( cap )
-	return line
+function createMeshLine( options ) {
+	return new MeshLineCore( options ).build()
 }
 
 export const MeshLine = forwardRef( function MeshLine( {
+	// Geometry and topology
 	points,
 	lines,
 	segments,
 	closed = false,
-	lineWidth = 0.1,
 	surface = false,
+	join,
+	cap,
+	smoothSharpBends = false,
+	smoothSharpBendsAlpha,
+	smoothSharpBendsThreshold,
+	updateBounding = false,
+
+	// Appearance
+	lineWidth = 0.3,
 	color = 0xffffff,
 	vertexColors,
 	widthCallback,
@@ -45,16 +39,13 @@ export const MeshLine = forwardRef( function MeshLine( {
 	wireframe = false,
 	shadow = false,
 	sizeAttenuation = true,
-	join,
-	cap,
-	smoothSharpBends = false,
-	smoothSharpBendsAlpha,
-	smoothSharpBendsThreshold,
 	dpr,
-	frustumCulled = true,
+	frustumCulled,
 	verbose = false,
 	renderWidth,
 	renderHeight,
+
+	// Buffer layout, GPU positions, and instancing
 	dynamic,
 	gpuPositionNode,
 	usage,
@@ -66,6 +57,8 @@ export const MeshLine = forwardRef( function MeshLine( {
 	needsNext,
 	needsSide,
 	needsVertexColor,
+
+	// TSL hooks
 	widthFn,
 	normalFn,
 	colorFn,
@@ -80,142 +73,231 @@ export const MeshLine = forwardRef( function MeshLine( {
 	fragmentAlphaFn,
 	discardFn,
 	vertexFn,
-	updateBounding = false,
+
+	// R3F lifecycle
 	onReady,
 	...props
 }, ref ) {
-	const previousClosedRef = useRef( closed )
+	const synchronizedLineRef = useRef( false )
+	const notifiedLineRef = useRef( null )
+	const disposalGenerationRef = useRef( 0 )
 	const size = useThree( state => state.size )
 	const linePoints = points ?? lines
+	const hasLinePoints = linePoints != null
 	const resolvedRenderWidth = renderWidth ?? size.width
 	const resolvedRenderHeight = renderHeight ?? size.height
+	const resolvedFrustumCulled = frustumCulled ?? (
+		sizeAttenuation !== false &&
+		!gpuPositionNode &&
+		!positionFn &&
+		!previousFn &&
+		!nextFn &&
+		!widthFn &&
+		!normalFn &&
+		!vertexFn
+	)
 
-	const line = useMemo( () => {
-		const line = new MeshLineCore()
-		applyBuildOptions( line, {
-			points: linePoints,
-			segments,
-			closed,
-			surface,
-			vertexColors,
-			color,
-			lineWidth,
-			widthCallback,
-			sizeAttenuation,
-			gradientColor,
-			dash,
-			map,
-			mapOffset,
-			alphaMap,
-			opacity,
-			alphaTest,
-			transparent,
-			wireframe,
-			shadow,
-			join,
-			cap,
-			smoothSharpBends,
-			smoothSharpBendsAlpha,
-			smoothSharpBendsThreshold,
-			dpr,
-			frustumCulled,
-			verbose,
-			renderWidth: resolvedRenderWidth,
-			renderHeight: resolvedRenderHeight,
-			dynamic,
-			gpuPositionNode,
-			usage,
-			instanceCount,
-			needsUV,
-			needsWidth,
-			needsProgress,
-			needsPrevious,
-			needsNext,
-			needsSide,
-			needsVertexColor,
-			positionFn,
-			previousFn,
-			nextFn,
-			widthFn,
-			normalFn,
-			colorFn,
-			gradientFn,
-			opacityFn,
-			dashFn,
-			uvFn,
-			vertexFn,
-			fragmentColorFn,
-			fragmentAlphaFn,
-			discardFn,
-		} )
-		line.build()
-		previousClosedRef.current = closed
-		return line
-	}, [segments, surface, sizeAttenuation, widthCallback, vertexColors, join, cap, smoothSharpBends, smoothSharpBendsAlpha,
-		smoothSharpBendsThreshold, dynamic, gpuPositionNode, usage, instanceCount, needsUV, needsWidth,
-		needsProgress, needsPrevious, needsNext, needsSide, needsVertexColor, positionFn, previousFn, nextFn,
-		widthFn, normalFn, colorFn, gradientFn, opacityFn, dashFn, uvFn, vertexFn, fragmentColorFn,
-		fragmentAlphaFn, discardFn] )
+	// Structural options rebuild the existing facade. Keeping them separate from
+	// live uniforms makes object identity, refs, and scene attachments stable.
+	const structuralOptions = useMemo( () => ( {
+		segments: segments ?? 1,
+		closed,
+		surface,
+		vertexColors: vertexColors ?? null,
+		widthCallback: widthCallback ?? null,
+		sizeAttenuation,
+		join: join ?? DEFAULT_JOIN,
+		cap: cap ?? DEFAULT_CAP,
+		smoothSharpBends,
+		smoothSharpBendsAlpha: smoothSharpBendsAlpha ?? 0.001,
+		smoothSharpBendsThreshold: smoothSharpBendsThreshold ?? -0.5,
+		dynamic: dynamic ?? false,
+		gpuPositionNode: gpuPositionNode ?? null,
+		usage,
+		instanceCount: instanceCount ?? -1,
+		needsUV: needsUV ?? false,
+		needsWidth: needsWidth ?? false,
+		needsProgress: needsProgress ?? false,
+		needsPrevious: needsPrevious ?? !gpuPositionNode,
+		needsNext: needsNext ?? !gpuPositionNode,
+		needsSide: needsSide ?? false,
+		needsVertexColor: needsVertexColor ?? false,
+		positionFn: positionFn ?? null,
+		previousFn: previousFn ?? null,
+		nextFn: nextFn ?? null,
+		widthFn: widthFn ?? null,
+		normalFn: normalFn ?? null,
+		colorFn: colorFn ?? null,
+		gradientFn: gradientFn ?? null,
+		opacityFn: opacityFn ?? null,
+		dashFn: dashFn ?? null,
+		uvFn: uvFn ?? null,
+		vertexFn: vertexFn ?? null,
+		fragmentColorFn: fragmentColorFn ?? null,
+		fragmentAlphaFn: fragmentAlphaFn ?? null,
+		discardFn: discardFn ?? null,
+		frustumCulled: resolvedFrustumCulled,
+	} ), [
+		segments,
+		closed,
+		surface,
+		vertexColors,
+		widthCallback,
+		sizeAttenuation,
+		join,
+		cap,
+		smoothSharpBends,
+		smoothSharpBendsAlpha,
+		smoothSharpBendsThreshold,
+		dynamic,
+		gpuPositionNode,
+		usage,
+		instanceCount,
+		needsUV,
+		needsWidth,
+		needsProgress,
+		needsPrevious,
+		needsNext,
+		needsSide,
+		needsVertexColor,
+		positionFn,
+		previousFn,
+		nextFn,
+		widthFn,
+		normalFn,
+		colorFn,
+		gradientFn,
+		opacityFn,
+		dashFn,
+		uvFn,
+		vertexFn,
+		fragmentColorFn,
+		fragmentAlphaFn,
+		discardFn,
+		resolvedFrustumCulled,
+	] )
+
+	const liveOptions = useMemo( () => ( {
+		lineWidth,
+		color,
+		gradientColor: gradientColor ?? null,
+		dash,
+		map: map ?? null,
+		mapOffset: mapOffset ?? null,
+		alphaMap: alphaMap ?? null,
+		opacity,
+		alphaTest,
+		transparent: transparent || opacity < 1 || alphaMap != null,
+		wireframe,
+		shadow,
+		dpr,
+		verbose,
+	} ), [
+		lineWidth,
+		color,
+		gradientColor,
+		dash,
+		map,
+		mapOffset,
+		alphaMap,
+		opacity,
+		alphaTest,
+		transparent,
+		wireframe,
+		shadow,
+		dpr,
+		verbose,
+	] )
+
+	const renderSize = useMemo( () => ( {
+		renderWidth: resolvedRenderWidth,
+		renderHeight: resolvedRenderHeight,
+	} ), [resolvedRenderWidth, resolvedRenderHeight] )
+	const latestLiveOptionsRef = useRef( liveOptions )
+	const latestRenderSizeRef = useRef( renderSize )
+	latestLiveOptionsRef.current = liveOptions
+	latestRenderSizeRef.current = renderSize
+
+	const [line] = useState( () => createMeshLine( {
+		lines: linePoints,
+		...structuralOptions,
+		...liveOptions,
+		...renderSize,
+	} ) )
 
 	useEffect( () => {
-		return () => line.dispose()
+		disposalGenerationRef.current += 1
+		return () => {
+			const generation = ++disposalGenerationRef.current
+			queueMicrotask( () => {
+				if ( disposalGenerationRef.current === generation ) line.dispose()
+			} )
+		}
 	}, [line] )
 
 	useEffect( () => {
-		onReady?.( line )
+		if ( !onReady || notifiedLineRef.current === line ) return
+		notifiedLineRef.current = line
+		onReady( line )
 	}, [line, onReady] )
 
 	useEffect( () => {
-		if ( !linePoints ) return
-
-		if ( previousClosedRef.current !== closed ) {
-			line.lines( linePoints, closed )
-			previousClosedRef.current = closed
-			return
-		}
-
+		if ( !synchronizedLineRef.current || !hasLinePoints ) return
 		line.setPositions( linePoints, updateBounding )
-	}, [line, linePoints, closed, updateBounding] )
+	}, [line, linePoints, hasLinePoints, updateBounding] )
 
 	useEffect( () => {
-		line.lineWidth( lineWidth )
-		line.color( color )
-		line.transparent( transparent || opacity < 1 )
-		line.opacity( opacity )
-		line.alphaTest( alphaTest )
-		line.wireframe( wireframe )
-		line.shadow( shadow )
-		line.setFrustumCulled( frustumCulled )
-		line.verbose( verbose )
-		if ( dpr !== undefined ) line.dpr( dpr )
-	}, [line, lineWidth, color, opacity, alphaTest, transparent, wireframe, shadow, frustumCulled, verbose, dpr] )
+		if ( !synchronizedLineRef.current ) return
+
+		// Mark the pipeline dirty first so configure() batches surface, topology,
+		// buffer-layout, and hook changes into one rebuild.
+		line.positionFn( structuralOptions.positionFn )
+		line.configure( {
+			...structuralOptions,
+			...latestLiveOptionsRef.current,
+			...latestRenderSizeRef.current,
+		} )
+		line.dash( latestLiveOptionsRef.current.dash )
+		line.rebuild()
+	}, [line, structuralOptions] )
 
 	useEffect( () => {
-		line.gradientColor( gradientColor ?? null )
-	}, [line, gradientColor] )
+		if ( !synchronizedLineRef.current ) return
+
+		line.lineWidth( liveOptions.lineWidth )
+		line.color( liveOptions.color )
+		line.transparent( liveOptions.transparent )
+		line.opacity( liveOptions.opacity )
+		line.alphaTest( liveOptions.alphaTest )
+		line.wireframe( liveOptions.wireframe )
+		line.shadow( liveOptions.shadow )
+		line.gradientColor( liveOptions.gradientColor )
+		line.map( liveOptions.map )
+		line.alphaMap( liveOptions.alphaMap )
+		line.mapOffset( liveOptions.mapOffset )
+		line.dash( liveOptions.dash )
+		line.verbose( liveOptions.verbose )
+		if ( liveOptions.dpr !== undefined ) line.dpr( liveOptions.dpr )
+	}, [line, liveOptions] )
 
 	useEffect( () => {
-		line.map( map ?? null )
-	}, [line, map] )
-
-	useEffect( () => {
-		line.alphaMap( alphaMap ?? null )
-	}, [line, alphaMap] )
-
-	useEffect( () => {
-		line.mapOffset( mapOffset ?? null )
-	}, [line, mapOffset] )
-
-	useEffect( () => {
-		line.dash( dash )
-	}, [line, dash] )
-
-	useEffect( () => {
-		line.renderSize( resolvedRenderWidth, resolvedRenderHeight )
-		line.resize( resolvedRenderWidth, resolvedRenderHeight )
-	}, [line, resolvedRenderWidth, resolvedRenderHeight] )
+		if ( !synchronizedLineRef.current ) return
+		// renderSize() preserves the dimensions for later rebuilds; resize()
+		// updates the current material's resolution uniform immediately.
+		line.renderSize( renderSize.renderWidth, renderSize.renderHeight )
+		line.resize( renderSize.renderWidth, renderSize.renderHeight )
+	}, [line, renderSize] )
 
 	useImperativeHandle( ref, () => line, [line] )
+
+	// Construction already applied every prop. Mark the object only after the
+	// update effects above so they handle later changes, not the initial mount.
+	useEffect( () => {
+		synchronizedLineRef.current = true
+		return () => {
+			synchronizedLineRef.current = false
+		}
+	}, [line] )
 
 	return <primitive {...props} object={line} dispose={null} />
 } )

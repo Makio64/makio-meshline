@@ -448,6 +448,57 @@ test( 'same-sign turns reject overlapping exact footprints on one body edge', ()
 	)
 } )
 
+test( 'clipped inner joins share short same-sign legs without degenerate topology', () => {
+	const turn = 120 * Math.PI / 180
+	const middleLength = 2
+	const point2 = [Math.cos( turn ) * middleLength, 0, Math.sin( turn ) * middleLength]
+	const geometry = new MeshLineSurfaceGeometry( {
+		lines: new Float64Array( [
+			-10, 0, 0,
+			0, 0, 0,
+			...point2,
+			point2[0] + Math.cos( turn * 2 ) * 10, 0, point2[2] + Math.sin( turn * 2 ) * 10,
+		] ),
+		lineWidth: 2,
+		join: { type: 'round', limit: 4, segments: 8, inner: 'clip' },
+	} )
+
+	assert.equal( geometry.options.join.inner, 'clip' )
+	assertFiniteGeometry( geometry )
+	assertIndicesInRange( geometry )
+	assertConsistentWinding( geometry )
+	assertNondegenerateTriangles( geometry )
+	assertBoundsContainEveryVertex( geometry )
+} )
+
+test( 'clipped compact miters degrade safely when a sharp footprint exceeds its leg', () => {
+	const turn = 160 * Math.PI / 180
+	const legLength = 4
+	const lines = new Float64Array( [
+		-legLength, 0, 0,
+		0, 0, 0,
+		Math.cos( turn ) * legLength, 0, Math.sin( turn ) * legLength,
+	] )
+	assert.throws(
+		() => new MeshLineSurfaceGeometry( {
+			lines,
+			lineWidth: 2,
+			join: { type: 'miter', limit: 20 },
+		} ),
+		/Exact inner join.*requires.*only.*available/
+	)
+	const geometry = new MeshLineSurfaceGeometry( {
+		lines,
+		lineWidth: 2,
+		join: { type: 'miter', limit: 20, inner: 'clip' },
+	} )
+
+	assert.ok( geometry.getAttribute( 'position' ).count > 6, 'unsafe compact miter should use bounded topology' )
+	assertFiniteGeometry( geometry )
+	assertConsistentWinding( geometry )
+	assertNondegenerateTriangles( geometry )
+} )
+
 test( 'legacy simple join aliases miter in the low-level surface builder', () => {
 	const geometry = new MeshLineSurfaceGeometry( {
 		lines: new Float32Array( [0, 0, 0, 1, 0, 0, 1, 0, 1] ),
@@ -801,6 +852,18 @@ function assertConsistentWinding( geometry ) {
 			readAttributeVector( normal, c )
 		)
 		assert.ok( dot( face, expected ) > 0, `triangle ${i / 3} has inverted winding` )
+	}
+}
+
+function assertNondegenerateTriangles( geometry ) {
+	const position = geometry.getAttribute( 'position' )
+	const indices = geometry.getIndex().array
+	for ( let i = 0; i < indices.length; i += 3 ) {
+		const a = readAttributeVector( position, indices[i] )
+		const b = readAttributeVector( position, indices[i + 1] )
+		const c = readAttributeVector( position, indices[i + 2] )
+		const areaVector = cross( subtract( b, a ), subtract( c, a ) )
+		assert.ok( vectorLength( areaVector ) > EPSILON, `triangle ${i / 3} must have non-zero area` )
 	}
 }
 

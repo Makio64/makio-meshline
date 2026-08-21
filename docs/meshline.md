@@ -13,7 +13,7 @@ The `MeshLine` class is the main interface for creating lines. It extends `Mesh`
 ## Constructor
 
 ```ts
-new MeshLine(options?: MeshLineOptions)
+new MeshLine(options?: MeshLineConfigureOptions)
 ```
 
 `MeshLine` supports both options object configuration and a fluent API with chainable methods for easy configuration.
@@ -45,7 +45,7 @@ See [Common Patterns](./common-patterns.md) for more examples.
 - `widthCallback(callback: (progress: number, pointIndex?: number, lineIndex?: number) => number)` - Set an arc-length-based variable width multiplier
 - `sizeAttenuation(enable: boolean)` - Enable scene-space projected width. Disable it for constant CSS-pixel width.
 - `gradientColor(color: number | THREE.Color)` - Set gradient end color
-- `vertexColors(colors: Float32Array | number[])` - Set per-vertex RGB colors
+- `vertexColors(colors: Float32Array | number[])` - Set one RGB color per logical path point; billboard geometry expands each value across its four physical rows
 - `opacity(opacity: number)` - Set opacity level
 
 **Material Properties:**
@@ -66,13 +66,13 @@ See [Common Patterns](./common-patterns.md) for more examples.
 
 **Advanced:**
 
-- `join({ type?: 'miter' | 'bevel' | 'round', limit?: number, segments?: number })` - Configure joins. The regular billboard profile keeps its bounded fixed-strip miter. World surfaces emit true bevel wedges and round fans; over-limit miters switch to bounded bevel topology.
+- `join({ type?: 'miter' | 'simple' | 'bevel' | 'round', limit?: number, segments?: number })` - Configure joins. `'simple'` is retained as a compatibility alias for `'miter'`. The regular billboard profile keeps its bounded fixed-strip miter. World surfaces emit true bevel wedges and round fans; over-limit miters switch to bounded bevel topology.
 - `cap('butt' | 'square' | 'round')` or `cap({ type, segments })` - Configure open-path endpoints. World surfaces and the optional native-WebGPU path emit true square/round cap topology; the regular billboard profile remains butt-capped.
-- `smoothSharpBends(enabled: boolean)` - Toggle CPU-side splitting of polyline corners that are too sharp for the screen-space miter to render cleanly. Defaults to `false` so GPU buffers stay aligned 1:1 with your input points. Enable for static sharp polylines when cleaner corners matter more than exact input topology.
+- `smoothSharpBends(enabled: boolean)` - Toggle CPU-side splitting of polyline corners that are too sharp for the screen-space miter to render cleanly. Defaults to `false` so authored logical points retain their stable four-physical-vertices-per-point mapping. Enable for static sharp polylines when cleaner corners matter more than exact input topology.
 - `smoothSharpBendsAlpha(alpha: number)` - Cutoff fraction used when `smoothSharpBends` is on: each sharp corner is replaced by two points sitting `alpha` of the way back along each adjacent segment. Smaller values preserve the pointy look; larger values flatten the tip more. Defaults to `0.001` (visually imperceptible but enough to stabilise the shader miter math).
 - `smoothSharpBendsThreshold(threshold: number)` - `dot(dir_in, dir_out)` cutoff below which a vertex is considered sharp enough to subdivide. Defaults to `-0.5` (≈ 60° interior bend). Lower (more negative) values subdivide only the very sharpest corners.
 - `dpr(ratio: number)` - Set the legacy/custom-hook DPR uniform
-- `setFrustumCulled(enable: boolean)` - Enable/disable frustum culling; when disabled, build-time bounding volumes are skipped
+- `setFrustumCulled(enable: boolean)` - Explicitly enable/disable frustum culling; when disabled, build-time bounding volumes are skipped. Explicit overrides remain in force across later hook changes and rebuilds.
 - `verbose(enable: boolean)` - Enable/disable verbose logging
 - `renderSize(width: number, height: number)` - Set render resolution
 - `gpuPositionNode(node: Fn)` - Set GPU position calculation node
@@ -107,13 +107,14 @@ These controls are auto-detected from your configuration and rarely need manual 
 - `needsUV(enable: boolean)` - Auto-detected from `map`, `alphaMap`, `uvFn`, `fragmentColorFn`, `fragmentAlphaFn`, `discardFn`
 - `needsWidth(enable: boolean)` - Auto-detected from `widthCallback`, `widthFn`
 - `needsProgress(enable: boolean)` - Force the progress attribute on; the facade otherwise allocates it only when an active feature consumes path progress
-- `needsSide(enable: boolean)` - Force a physical side attribute (also useful before converting geometry to non-indexed); the default indexed shader derives side from the paired vertex index
+- `needsSide(enable: boolean)` - Force a separate physical side attribute for a custom low-level consumer. The built-in material normally decodes both side and incoming/outgoing ownership from the packed `joinRole` attribute, including after `toNonIndexed()`.
 - `needsPrevious(enable: boolean)` - Auto-detected (disabled when using `gpuPositionNode`)
 - `needsNext(enable: boolean)` - Auto-detected (disabled when using `gpuPositionNode`)
 - `needsVertexColor(enable: boolean)` - Auto-detected from `vertexColors`
 
 **Building:**
 - `build()` - Finalize configuration and build the line (returns the instance)
+- `rebuild()` - Rebuild geometry and material from the current configuration (returns the instance)
 - `ensureBuilt()` - Ensures the line is built if not already, useful for accessing geometry before first render (returns the instance)
 
 > **Note:** Call `build()` to finalize the configuration & build the geometry and tsl nodes, or the line will auto-build on first render (during `onBeforeRender`). Use `ensureBuilt()` when you need to access geometry attributes before the first render.
@@ -152,7 +153,7 @@ Alternatively, you can use the traditional options object approach:
 type LinePoint = [x: number, y: number, z?: number] | THREE.Vector2 | THREE.Vector3 | { x: number, y: number, z?: number }
 type LinePoints = Float32Array | number[] | THREE.BufferGeometry | LinePoint[]
 
-interface MeshLineOptions {
+interface MeshLineConfigureOptions {
   // ***Geometry***
   lines?: LinePoints | LinePoints[]          // One line or multiple lines
   segments?: number                          // Template segments for GPU positions
@@ -174,13 +175,16 @@ interface MeshLineOptions {
 
   // ***Dashes***
   dash?: { count?: number, ratio?: number, offset?: number }
+  /** @deprecated Prefer dash.count. */
   dashCount?: number | null
+  /** @deprecated Prefer dash.ratio. */
   dashRatio?: number | null
+  /** @deprecated Prefer dash.offset. */
   dashOffset?: number
 
   // ***Joins and corner smoothing***
   join?: {
-    type?: 'miter' | 'bevel' | 'round'
+    type?: 'miter' | 'simple' | 'bevel' | 'round'
     limit?: number
     segments?: number
   }
@@ -261,7 +265,7 @@ interface MeshLineSurfaceOptions {
 }
 ```
 
-## MeshLineOptions
+## MeshLineConfigureOptions
 
 ### Geometry
 
@@ -279,13 +283,13 @@ interface MeshLineSurfaceOptions {
 
 - **`lineWidth`** (`number`) — Full width of the line. When `sizeAttenuation` is `false`, this is a constant CSS-pixel width. When `true`, it is projected as a scene-space width and attenuates with distance. Default: `0.3`.
 
-- **`widthCallback`** (`(progress: number, pointIndex?: number, lineIndex?: number) => number | null`) — Receives normalized arc-length progress plus the optional source point and line indices, and returns a width multiplier. Default: `null`.
+- **`widthCallback`** (`(progress: number, pointIndex?: number, lineIndex?: number) => number`) — Receives normalized arc-length progress plus the optional source point and line indices, and returns a width multiplier. Default: `null`.
 
 - **`sizeAttenuation`** (`boolean`) — Whether `lineWidth` is projected in scene space. When `false`, lines maintain constant CSS-pixel width regardless of distance. Default: `true`.
 
 - **`gradientColor`** (`number | null`) — Optional gradient end color. When set, the line will smoothly transition from `color` to `gradientColor` along its length. Default: `null` (no gradient).
 
-- **`vertexColors`** (`Float32Array | number[]`) — Per-vertex RGB colors for individual point coloring. Should be a flat array of RGB values (0-1 range) with 3 values per vertex. When set, each point along the line can have its own color, multiplied with the base `color`. Best used with `Float32Array` for performance. Default: `null` (no vertex colors).
+- **`vertexColors`** (`Float32Array | number[]`) — Per-logical-point RGB colors. Supply a flat array in the 0–1 range with three values per authored point; the geometry duplicates each color across the point's physical billboard rows. Each point color is multiplied with the base `color`. Best used with `Float32Array` for performance. Default: `null` (no vertex colors).
 
 ### Textures
 
@@ -297,11 +301,19 @@ interface MeshLineSurfaceOptions {
 
 ### Dashes
 
-- **`dashCount`** (`number | null`) — Number of dash cycles along the entire line length. When set, creates a dashed line pattern. Default: `null` (solid line).
+- **`dash`** (`MeshLineDashOptions`) — Configures the complete dash pattern with `{ count, ratio, offset }`. `count` is the number of cycles along the path, `ratio` is the visible fraction of each cycle from `0` to `1`, and `offset` shifts the pattern for animation. Omit `dash` or its `count` to render a solid line.
 
-- **`dashRatio`** (`number | null`) — Ratio of dash length to gap length (0 to 1). For example, `0.5` creates equal dash and gap lengths, `0.7` creates longer dashes with shorter gaps. Only works when `dashCount` is set. Default: `null`.
+```js
+const line = new MeshLine( {
+  lines: points,
+  dash: { count: 12, ratio: 0.6, offset: 0 }
+} )
 
-- **`dashOffset`** (`number`) — Offset into the dash cycle pattern. Animate this value to create moving dash effects. Default: `0`.
+// Animate without rebuilding.
+line.material.dashOffset.value += 0.01
+```
+
+`dashCount`, `dashRatio`, and `dashOffset` remain accepted for v1 compatibility but are deprecated. Prefer the grouped `dash` option or `.dash( options )` in new code.
 
 ### Shadow
 
@@ -319,7 +331,7 @@ interface MeshLineSurfaceOptions {
 
 - **`wireframe`** (`boolean`) — Render the line geometry as wireframe. Mainly useful for debugging. Default: `false`.
 
-- **`frustumCulled`** (`boolean`) — Whether the line should be frustum culled by Three.js. Default: `true` for CPU paths. It defaults to `false` after `gpuPositionNode()` because the synthetic CPU template cannot bound arbitrary shader-generated positions; call `setFrustumCulled( true )` only when you provide a conservative bound yourself.
+- **`frustumCulled`** (`boolean`) — Whether Three.js should frustum-cull the line. The automatic default is `true` only for ordinary scene-width CPU paths. It becomes `false` for CSS-pixel width, `gpuPositionNode`, or any potentially geometry-deforming `positionFn`, `previousFn`, `nextFn`, `widthFn`, `normalFn`, or `vertexFn`, because CPU bounds cannot conservatively predict those GPU changes. Pass `frustumCulled` or call `setFrustumCulled()` only when you provide a conservative bound; that explicit choice remains in force across later hook changes and rebuilds.
 
 ### Device Pixel Ratio
 
@@ -337,11 +349,11 @@ interface MeshLineSurfaceOptions {
 
 - **`needsNext`** (`boolean`) — Whether the line needs next point information. Default: `true`.
 
-- **`needsSide`** (`boolean`) — Force a physical side attribute for a custom low-level consumer or before `toNonIndexed()`. The default indexed line shader derives its `+1/-1` side from paired vertex indices, so the facade default is `false`; when enabled, the built-in material reads the attribute.
+- **`needsSide`** (`boolean`) — Force a separate physical `+1/-1` side attribute for a custom low-level consumer. The facade default is `false`: its built-in material decodes side and body ownership from the always-generated packed `joinRole` values `[-1, -2, +1, +2]`, corresponding to `[incoming+, incoming-, outgoing+, outgoing-]`. Because that attribute is copied by `toNonIndexed()`, conversion no longer requires `needsSide: true`; `needsSide` does not control `joinRole`.
 
-- **`renderWidth`** (`number`) — Width of the rendered line. Default: `1024`.
+- **`renderWidth`** (`number`) — CSS-pixel viewport width used by the line material. Defaults to `window.innerWidth` in a browser and `1024` in SSR/Node.
 
-- **`renderHeight`** (`number`) — Height of the rendered line. Default: `1024`.
+- **`renderHeight`** (`number`) — CSS-pixel viewport height used by the line material. Defaults to `window.innerHeight` in a browser and `768` in SSR/Node.
 
 - **`verbose`** (`boolean`) — When `true` logs to the console which buffer attributes are generated for the geometry. Useful for debugging option combinations. Default: `false`.
 
@@ -349,14 +361,17 @@ interface MeshLineSurfaceOptions {
 
 - **`instanceCount`** (`number`) — When set to a positive number, enables instanced rendering for the specified number of instances. Each instance renders the same line geometry but can have different transformations, colors, and other per-instance properties via custom attributes. Default: `-1` (instancing disabled).
 
-> **Instance Attributes:** Use `addInstanceAttribute(name, components)` to create per-instance attributes. Use `setInstanceValues(name, typedArray)` for initial or bulk data and `setInstanceValue(name, index, value)` for occasional edits. Instance attributes can be accessed in hook functions using `attribute(name, type)`.
+> **Instance Attributes:** Use `addInstanceAttributes({ name: components, ... })` when a hook consumes several values so they share one portable GPU buffer; `addInstanceAttribute(name, components)` remains convenient for one value. Use `setInstanceValues(name, typedArray)` for initial or bulk data and `setInstanceValue(name, index, value)` for occasional edits. Instance attributes can be accessed in hook functions using `attribute(name, type)`.
 
 ### Hook Functions
 
 Hook functions allow custom TSL (Three.js Shading Language) code to modify various aspects of line rendering. All hooks are optional and receive relevant parameters for their processing stage:
 
 - **`positionFn`** (`Fn | null`) — Modify vertex positions. Receives `(position, progress)`.
+- **`previousFn`** (`Fn | null`) — Override the previous-neighbour position used to calculate line direction. Receives `(previous, progress)`.
+- **`nextFn`** (`Fn | null`) — Override the next-neighbour position used to calculate line direction. Receives `(next, progress)`.
 - **`widthFn`** (`Fn | null`) — Modify line width. Receives `(width, progress, side)`.
+- **`normalFn`** (`Fn | null`) — Modify the calculated screen-space normal. Receives `(normal, dir, dir1, dir2, progress, side)`.
 - **`colorFn`** (`Fn | null`) — Modify vertex colors. Receives `(color, progress, side)`.
 - **`gradientFn`** (`Fn | null`) — Modify gradient factor. Receives `(gradientFactor, side)`.
 - **`opacityFn`** (`Fn | null`) — Modify opacity in fragment shader. Receives `(alpha, progress, side)`.
@@ -380,9 +395,33 @@ Use `line.setPositions(positions, true)` or `geometry.setPositions(positions, tr
 
 When only a fixed span changes, `line.setPositionRange(patch, startPoint, { lineIndex, updateBounding })` avoids rewriting and uploading the whole position/neighbor buffers. The range cannot introduce duplicate points or change topology. Arc-length-dependent progress, UV, endpoint metadata, and callback widths still refresh for the affected line. Surface transport frames and `smoothSharpBends` use `setPositions()` because a local edit can affect derived topology or frames beyond the edited span.
 
+Position and viewport updates are persistent facade state: data written through `setPositions()` or `setPositionRange()`, and CSS viewport dimensions written through `resize()`, remain the source for a later `rebuild()`. A rebuild does not silently restore the constructor's original points or viewport.
+
 ## Methods
 
+### Configuration
+
+**`configure(options?: MeshLineConfigureOptions): MeshLine`**
+
+Applies several options at once through the same validated setters used by the fluent API. The constructor calls `configure()` internally, and the method returns the line for chaining. Setter-specific rebuild behavior still applies when configuring an already-built line.
+
+```js
+line.configure( {
+  color: 0xff6600,
+  lineWidth: 0.4,
+  dash: { count: 8, ratio: 0.5 }
+} )
+```
+
 ### Building & Lifecycle
+
+**`build(): MeshLine`**
+
+Builds geometry and material from the current configuration. It is optional before rendering because `ensureBuilt()` calls it automatically on the first render.
+
+**`rebuild(): MeshLine`**
+
+Marks the line as unbuilt and immediately rebuilds it from the current configuration. Use it when you deliberately need to refresh both geometry and material after changing build-time state. The latest `setPositions()`/`setPositionRange()` data and `resize()` dimensions remain active.
 
 **`ensureBuilt(): MeshLine`**
 
@@ -394,11 +433,33 @@ line.ensureBuilt()
 const positions = line.geometry.getAttribute('position')
 ```
 
+### Position Updates
+
+**`setPositions(points: LinePoints | LinePoints[], updateBounding?: boolean): void`**
+
+Updates CPU-controlled line positions in place when topology is unchanged. If line or point counts change, the geometry performs a full rebuild. Pass `true` for `updateBounding` when edited points can leave the previous bounds. The updated positions become the facade's current line data and survive later material or shader rebuilds.
+
+```js
+updateTrail( points )
+line.setPositions( points, true )
+```
+
+**`setPositionRange(points: ArrayLike<number> | LinePoint[], startPoint: number, options?: MeshLinePositionRangeOptions): MeshLine`**
+
+Updates a fixed-size range of a CPU billboard line and returns the line for chaining. `options.lineIndex` selects a line in a batch and `options.updateBounding` controls bounds recomputation. The patched canonical lines become the facade's current data and survive later rebuilds. This method cannot change topology, introduce consecutive duplicate points, run with `smoothSharpBends`, or update surface geometry; use `setPositions()` in those cases.
+
+```js
+line.setPositionRange( patch, 2048, {
+  lineIndex: 0,
+  updateBounding: true
+} )
+```
+
 ### Vertex Attributes
 
-**`addVertexAttribute(name: string, components: number): BufferAttribute`**
+**`addVertexAttribute(name: string, components = 1): BufferAttribute`**
 
-Creates a new per-vertex buffer attribute with the specified name and component count. Returns the created `BufferAttribute` for direct manipulation. Useful for custom per-vertex data like colors, IDs, or other metadata.
+Creates a new per-physical-vertex buffer attribute with the specified name and component count. Returns the created `BufferAttribute`. A regular billboard has four physical vertices for each logical point in `[incoming+, incoming-, outgoing+, outgoing-]` order. Duplicate point-scoped values across all four rows unless the shader intentionally needs different data per incident body or side. Same-topology rebuilds preserve custom attributes, but a point/line-count change removes them because their vertex mapping is no longer valid; recreate and refill them after the topology change. Managed names such as `position`, `side`, and `joinRole` are reserved.
 
 ```js
 // Create a 3-component attribute for custom vertex colors
@@ -407,19 +468,42 @@ const colorAttr = line.addVertexAttribute('lineColor', 3)
 // Create a 1-component attribute for vertex IDs
 const idAttr = line.addVertexAttribute('vertexId', 1)
 
-// Access and modify the attribute data
-const colors = colorAttr.array
-for (let i = 0; i < colors.length; i += 3) {
-  colors[i] = Math.random()     // R
-  colors[i + 1] = Math.random() // G
-  colors[i + 2] = Math.random() // B
+// Fill a reusable CPU buffer. Keep all four physical roles at a logical point equal.
+const colors = new Float32Array(colorAttr.array.length)
+const logicalPointCount = colorAttr.count / 4
+for (let pointIndex = 0; pointIndex < logicalPointCount; pointIndex++) {
+  const color = [Math.random(), Math.random(), Math.random()]
+  for (let role = 0; role < 4; role++) {
+    const offset = (pointIndex * 4 + role) * 3
+    colors.set(color, offset)
+  }
 }
-colorAttr.needsUpdate = true
+line.setVertexValues('lineColor', colors)
 ```
+
+**`addVertexAttributes(layout: Record<string, 1 | 2 | 3 | 4>): Record<string, InterleavedBufferAttribute>`**
+
+Creates several custom attributes in one interleaved GPU buffer. Prefer this form when a hook needs multiple custom values: portable WebGPU adapters guarantee only eight vertex-buffer slots, while every separate `BufferAttribute` consumes one slot.
+
+```js
+const { heat, flow } = line.addVertexAttributes({
+  heat: 1,
+  flow: 2
+})
+
+line.setVertexValues('heat', heatValues)
+line.setVertexValues('flow', flowValues)
+```
+
+The returned attributes share one backing array. Use `setVertexValues()` for component-aware writes; direct writes must respect the interleaved buffer's `stride` and each attribute's `offset`.
+
+**`setVertexValues(name: string, values: ArrayLike<number>, startVertex = 0): MeshLine`**
+
+Uploads a flat block into an existing vertex attribute. `startVertex` is a physical vertex index and defaults to zero; for regular billboard point `i`, its first row is `i * 4`. The method validates the destination capacity before marking the affected range for upload.
 
 ### Instance Management
 
-**`addInstanceAttribute(name: string, components: number): InstancedBufferAttribute`**
+**`addInstanceAttribute(name: string, components = 1): InstancedBufferAttribute`**
 
 Creates a new instanced buffer attribute with the specified name and component count. Returns the created `InstancedBufferAttribute` for direct manipulation if needed.
 
@@ -431,7 +515,25 @@ const offsetAttr = line.addInstanceAttribute('instanceOffset', 3)
 const scaleAttr = line.addInstanceAttribute('instanceScale', 1)
 ```
 
-**`setInstanceValue(name: string, index: number, value: number | number[]): void`**
+**`addInstanceAttributes(layout: Record<string, 1 | 2 | 3 | 4>): Record<string, InterleavedBufferAttribute>`**
+
+Packs several per-instance values into one instanced buffer. This is the portable default for feature-heavy instanced lines.
+
+```js
+line.addInstanceAttributes({
+  instanceOffset: 3,
+  instanceScale: 1
+})
+
+line.setInstanceValues('instanceOffset', offsets)
+line.setInstanceValues('instanceScale', scales)
+```
+
+**`getVertexBufferUsage(options?): MeshLineVertexBufferUsage`** returns the current distinct-buffer layout, grouping interleaved attributes together. `validateVertexBufferBudget(options?)` returns the same report or throws an actionable error when the portable limit is exceeded. Both accept `{ limit = 8, reservedBuffers = 0 }` for diagnostics against a known adapter or additional application-owned streams.
+
+The facade validates this budget during builds and before adding custom buffers, so unsupported combinations fail before WebGPU pipeline creation. Low-level geometry remains available when an application intentionally targets hardware with a higher verified limit.
+
+**`setInstanceValue(name: string, index: number, value: number | number[] | { x: number; y: number; z?: number; w?: number }): void`**
 
 Sets the value for a specific instance at the given index. The value can be a single number (for 1-component attributes) or an array of numbers (for multi-component attributes).
 
@@ -454,14 +556,18 @@ line.setInstanceValues( 'instanceOffset', offsets )
 ```
 
 For advanced instancing examples, see:
-- [Basic Instancing](./common-patterns.md#10-basic-instancing) for simple use cases
+- [Instanced Lines](./advanced-patterns.md#6-instanced-lines) for a complete packed-attribute example
 - [GPU Instanced Circles](./advanced-patterns.md#7-gpu-instanced-circles) for complex animated instances
 
 ### Other Methods
 
 **`resize(width?: number, height?: number): void`**
 
-Updates the material's resolution uniform. Call this when the canvas size changes to maintain correct line width scaling.
+Updates the current material resolution and stores the CSS viewport dimensions for later rebuilds. Call this when the canvas size changes to maintain correct line-width scaling; a subsequent shader or material rebuild keeps the most recent size.
+
+**`autoResize(target?: MeshLineResizeTarget): MeshLine`**
+
+Registers a resize listener on a window-like target and returns the line. The listener updates the material resolution from `target.innerWidth` and `target.innerHeight`; `dispose()` removes it.
 
 **`dispose(): void`**
 

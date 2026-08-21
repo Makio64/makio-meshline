@@ -4,7 +4,12 @@ import { attribute, cos, float, Fn, instanceIndex, sin, time, vec3 } from 'three
 import OrbitControl from '@/makio/three/controls/OrbitControl'
 import stage3d from '@/makio/three/stage3d'
 
-class InstancedGpuExample {
+const GRID_SIZE = 10
+const GRID_SPACING = 3
+const INSTANCE_COUNT = GRID_SIZE * GRID_SIZE
+const SEGMENTS = 64
+
+class GpuInstanceExample {
 	constructor() {
 		this.line = null
 	}
@@ -24,27 +29,28 @@ class InstancedGpuExample {
 			this.line.dispose()
 		}
 
-		const instanceCount = 100
-		const segments = 64
-
 		const gpuPositionNode = Fn( ( [progress] ) => {
 			const offset = attribute( 'instanceOffset', 'vec3' )
 			const radius = sin( time.add( float( instanceIndex ).div( 3 ) ) )
 			const angle = progress.mul( Math.PI * 2 ).add( time.negate() )
-			return vec3( cos( angle ), sin( angle ), 0 ).mul( radius ).add( offset ) 
+			return vec3( cos( angle ), sin( angle ), 0 ).mul( radius ).add( offset )
 		} )
 
 		this.line = new MeshLine()
-			.instances( instanceCount )
-			.segments( segments )
+			.instances( INSTANCE_COUNT )
+			.segments( SEGMENTS )
 			.lineWidth( 0.2 )
 			.color( 0xffffff )
-			.verbose( true )
 			.gpuPositionNode( gpuPositionNode )
-			.colorFn( Fn( ( [progress] ) => {
-				const col = float( instanceIndex ).mod( 10 )
-				const row = float( instanceIndex ).div( 10 )
-				return vec3( col.div( 9 ), row.div( 9 ), ( col.add( row ) ).div( 18 ).oneMinus() )
+			.colorFn( Fn( () => {
+				const column = float( instanceIndex ).mod( GRID_SIZE )
+				const row = float( instanceIndex ).div( GRID_SIZE ).floor()
+				const maxGridIndex = GRID_SIZE - 1
+				return vec3(
+					column.div( maxGridIndex ),
+					row.div( maxGridIndex ),
+					column.add( row ).div( maxGridIndex * 2 ).oneMinus()
+				)
 			} ) )
 
 		// Add custom instance attributes
@@ -53,12 +59,13 @@ class InstancedGpuExample {
 		// Fill the returned CPU buffer before its first upload. This avoids a
 		// second staging array while still producing one initial GPU transfer.
 		const offsets = offsetAttribute.array
-		for ( let i = 0; i < instanceCount; i++ ) {
-			const col = i % 10
-			const row = Math.floor( i / 10 )
+		const gridCenter = ( GRID_SIZE - 1 ) * 0.5
+		for ( let i = 0; i < INSTANCE_COUNT; i++ ) {
+			const column = i % GRID_SIZE
+			const row = Math.floor( i / GRID_SIZE )
 			const offset = i * 3
-			offsets[offset] = ( col - 4.5 ) * 3
-			offsets[offset + 1] = ( row - 4.5 ) * 3
+			offsets[offset] = ( column - gridCenter ) * GRID_SPACING
+			offsets[offset + 1] = ( row - gridCenter ) * GRID_SPACING
 			offsets[offset + 2] = 0
 		}
 		stage3d.add( this.line )
@@ -75,8 +82,6 @@ class InstancedGpuExample {
 		stage3d.control.dispose()
 	}
 
-	show() {}
-	hide( cb ) { if ( cb ) cb() }
 }
 
-export default new InstancedGpuExample()
+export default GpuInstanceExample

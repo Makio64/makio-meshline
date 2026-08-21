@@ -32,14 +32,14 @@ test( 'dense CPU paths preserve valid subpixel directions and continuous Uint32 
 	assert.ok( index instanceof Uint32Array )
 	assert.equal( index.length, ( POINT_COUNT - 1 ) * 6 )
 	for ( let segment = 0; segment < POINT_COUNT - 1; segment++ ) {
-		const vertex = segment * 2
+		const vertex = segment * 4
 		const offset = segment * 6
-		assert.equal( index[offset], vertex )
-		assert.equal( index[offset + 1], vertex + 1 )
-		assert.equal( index[offset + 2], vertex + 2 )
-		assert.equal( index[offset + 3], vertex + 2 )
-		assert.equal( index[offset + 4], vertex + 1 )
-		assert.equal( index[offset + 5], vertex + 3 )
+		assert.equal( index[offset], vertex + 2 )
+		assert.equal( index[offset + 1], vertex + 3 )
+		assert.equal( index[offset + 2], vertex + 4 )
+		assert.equal( index[offset + 3], vertex + 4 )
+		assert.equal( index[offset + 4], vertex + 3 )
+		assert.equal( index[offset + 5], vertex + 5 )
 	}
 
 	const camera = new PerspectiveCamera( 55, 1280 / 720, 0.1, 250 )

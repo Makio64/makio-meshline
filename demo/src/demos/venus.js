@@ -204,9 +204,9 @@ class VenusExample {
 		const texB = texture( this.texB )		
 
 		// return the percent with a delay depending of y
-		let percent = Fn( () => {
-			let p =  this.morph // 0 -> 1
-			let y = float( instanceIndex ).div( float( numRings ) ) // 0 -> 1
+		const percent = Fn( () => {
+			const p =  this.morph // 0 -> 1
+			const y = float( instanceIndex ).div( float( numRings ) ) // 0 -> 1
 			return backInOut( p.mul( 2 ).sub( y ).clamp() ).toVar()
 		} )()
 
@@ -220,18 +220,18 @@ class VenusExample {
 			.lineWidth( 0.02 )
 			.verbose( true )
 			.gpuPositionNode( Fn( ( [progress] ) => {
-				let y = float( instanceIndex ).div( float( numRings ) ).toVar()
+				const y = float( instanceIndex ).div( float( numRings ) ).toVar()
 				const v = y.add( float( 0.5 ).div( float( numRings ) ) )
 				const u = fract( progress )
 				const posA = texA.sample( vec2( u, v ) ).xyz
 				const posB = texB.sample( vec2( u, v ) ).xyz
-				let extra = percent.clamp().sub( .5 ).abs().mul( 2 ).oneMinus().abs().toVar()
-				let pos = mix( posA, posB, percent )
+				const extra = percent.clamp().sub( .5 ).abs().mul( 2 ).oneMinus().abs().toVar()
+				const pos = mix( posA, posB, percent )
 				pos.xz.mulAssign( extra.mul( 0.6 ).add( 1 ) )
 				return pos
 			} ) )
 			.colorFn( Fn( () => {
-				let y = float( instanceIndex ).div( float( numRings ) ).toVar()
+				const y = float( instanceIndex ).div( float( numRings ) ).toVar()
 				const v = y.add( float( 0.5 ).div( float( numRings ) ) )
 				const alphaA = texA.sample( vec2( 0, v ) ).w
 				const alphaB = texB.sample( vec2( 0, v ) ).w
@@ -239,12 +239,12 @@ class VenusExample {
 				return vec3( 1, y.smoothstep( 0, 1 ), percent.smoothstep( 0, .5 ) ).mul( alpha )
 			} ) )
 			.opacityFn( Fn( ( [opacity] ) => {
-				let y = float( instanceIndex ).div( float( numRings ) ).toVar()
+				const y = float( instanceIndex ).div( float( numRings ) ).toVar()
 				const v = y.add( float( 0.5 ).div( float( numRings ) ) ).oneMinus()
 				return v.smoothstep( this.opacity.oneMinus().sub( 0.1 ), this.opacity.oneMinus() )
 			} ) )
 			.widthFn( Fn( ( [width] ) => {
-				let y = float( instanceIndex ).div( float( numRings ) ).toVar()
+				const y = float( instanceIndex ).div( float( numRings ) ).toVar()
 				const v = y.add( float( 0.5 ).div( float( numRings ) ) )
 				const alphaA = texA.sample( vec2( 0, v ) ).w
 				const alphaB = texB.sample( vec2( 0, v ) ).w
@@ -350,7 +350,7 @@ class VenusExample {
 			const y = minY + t * height
 			const ring = new Float32Array( this.samplesPerRing * 3 )
 			// Use pre-calculated center for all rings (much faster)
-			let cx = boundsCenterX, cz = boundsCenterZ
+			const cx = boundsCenterX, cz = boundsCenterZ
 			target.set( cx, y, cz )
 			let prevX = 0, prevY = y, prevZ = 0
 			let hasHit = false
@@ -501,9 +501,6 @@ class VenusExample {
 		stage3d.control?.dispose()
 	}
 
-	show() {}
-	hide( cb ) { if ( cb ) cb() }
-
 }
 
-export default new VenusExample()
+export default VenusExample

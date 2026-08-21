@@ -2,6 +2,7 @@ import type {
 	Mesh as ThreeMesh,
 	Group as ThreeGroup,
 	InstancedBufferAttribute,
+	InterleavedBufferAttribute,
 	Intersection,
 	Raycaster,
 	Texture,
@@ -173,6 +174,12 @@ export interface MeshLineJoinOptions {
 	limit?: number
 	/** Maximum round-join subdivisions per 180-degree turn. Defaults to 8. */
 	segments?: number
+	/**
+	 * Inner-edge policy when a full-width corner footprint cannot fit its legs.
+	 * `'exact'` rejects the path; `'clip'` locally pinches the inner edge while
+	 * retaining the centerline and outer join. Defaults to `'exact'`.
+	 */
+	inner?: 'exact' | 'clip'
 }
 
 export type MeshLineCapType = 'butt' | 'square' | 'round'
@@ -241,6 +248,13 @@ export interface MeshLineConfigureOptions {
 	 * (default), `lineWidth` is projected in scene space and attenuates with depth.
 	 */
 	sizeAttenuation?: boolean
+	/**
+	 * Analytic edge antialiasing. Off by default — MSAA already smooths the
+	 * billboard silhouette. Enabling it pads the stroke outward by half a device
+	 * pixel, fades that padding by real edge coverage, keeps sub-pixel lines from
+	 * dropping out, and forces `transparent` because coverage lands in alpha.
+	 */
+	antialias?: boolean
 	gradientColor?: number | string | Color | null
 	vertexColors?: Float32Array | number[]
 	map?: Texture | null
@@ -354,6 +368,32 @@ export interface MeshLinePositionRangeOptions {
 	updateBounding?: boolean
 }
 
+/** Component counts for attributes packed into one shared GPU vertex buffer. */
+export type MeshLinePackedAttributeLayout = Record<string, 1 | 2 | 3 | 4>
+
+export interface MeshLineVertexBufferBudgetOptions {
+	/** Portable WebGPU adapters guarantee at least eight vertex buffers. Defaults to 8. */
+	limit?: number
+	/** Additional renderer-owned or application buffers to reserve. Defaults to 0. */
+	reservedBuffers?: number
+}
+
+export interface MeshLineVertexBufferGroup {
+	attributes: string[]
+	instanced: boolean
+	interleaved: boolean
+}
+
+export interface MeshLineVertexBufferUsage {
+	attributeBuffers: number
+	buffers: MeshLineVertexBufferGroup[]
+	exceeded: boolean
+	limit: number
+	remaining: number
+	reservedBuffers: number
+	usedBuffers: number
+}
+
 // ---------------------------------------------------------------------------
 // MeshLine (main facade)
 // ---------------------------------------------------------------------------
@@ -372,6 +412,7 @@ export class MeshLine extends ThreeMesh {
 	lineWidth( width: number ): this
 	widthCallback( fn: ( ( progress: number, pointIndex?: number, lineIndex?: number ) => number ) | null ): this
 	sizeAttenuation( enabled: boolean ): this
+	antialias( enabled?: boolean ): this
 	shadow( enabled: boolean ): this
 
 	opacity( opacity: number ): this
@@ -432,10 +473,15 @@ export class MeshLine extends ThreeMesh {
 	setPositions( points: MultiLinePoints, updateBounding?: boolean ): void
 	setPositionRange( points: ArrayLike<number> | Array<LinePointTuple | LinePointObject>, startPoint: number, options?: MeshLinePositionRangeOptions ): this
 	addVertexAttribute( name: string, components?: number ): BufferAttribute
+	addVertexAttributes( layout: MeshLinePackedAttributeLayout ): Record<string, InterleavedBufferAttribute>
+	setVertexValues( name: string, values: ArrayLike<number>, startVertex?: number ): this
 
 	addInstanceAttribute( name: string, components?: number ): InstancedBufferAttribute
+	addInstanceAttributes( layout: MeshLinePackedAttributeLayout ): Record<string, InterleavedBufferAttribute>
 	setInstanceValue( name: string, index: number, value: number | number[] | { x: number; y: number; z?: number; w?: number } ): void
 	setInstanceValues( name: string, values: ArrayLike<number>, startInstance?: number ): this
+	getVertexBufferUsage( options?: MeshLineVertexBufferBudgetOptions ): MeshLineVertexBufferUsage
+	validateVertexBufferBudget( options?: MeshLineVertexBufferBudgetOptions ): MeshLineVertexBufferUsage
 	resize( width?: number, height?: number ): void
 	autoResize( target?: MeshLineResizeTarget ): this
 	dispose(): void
@@ -581,6 +627,18 @@ export class MeshLinePickerHelper extends ThreeGroup {
 	rebuild(): void
 	dispose(): void
 }
+
+// ---------------------------------------------------------------------------
+// Shader accessors
+// ---------------------------------------------------------------------------
+
+/**
+ * Normalized stroke coordinate for the billboard profile, usable inside any TSL
+ * hook. `y` runs from -1 to +1 across the emitted cross-section, landing exactly
+ * on the two silhouette edges; `x` is reserved for cap topology and is currently
+ * always 0. It is a silhouette coordinate, not a signed distance in half-widths.
+ */
+export const lineCoord: MeshLineNodeValue
 
 // ---------------------------------------------------------------------------
 // Position helpers

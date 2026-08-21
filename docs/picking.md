@@ -229,11 +229,11 @@ Tear down existing proxies and rebuild from the picker's current registry. Use a
 
 Dispose all proxy materials and detach them from the helper. Geometries are owned by the source lines and are **not** disposed — so disposing the helper is safe even while the lines are still in use.
 
-See it live in the [Laser Heist demo](https://meshline-demo.makio.io/#/laser-heist) — pressing **P** cycles through `raycast` → `picker` → `picker-debug`, where the third state turns the helper on while picking continues to run through the GPU picker.
+See it live in the [Laser Heist demo](https://meshline-demo.makio.io/examples/laser-heist) — pressing **P** cycles through `raycast` → `picker` → `picker-debug`, where the third state turns the helper on while picking continues to run through the GPU picker.
 
 ## "Laser Heist" — raycast vs picker, side by side
 
-The bundled [Laser Heist demo](https://meshline-demo.makio.io/#/laser-heist) renders 24 instanced GPU-positioned laser beams and cycles through three hover-test modes at runtime (click the pill at the top or press **P**):
+The bundled [Laser Heist demo](https://meshline-demo.makio.io/examples/laser-heist) renders 24 instanced GPU-positioned laser beams and cycles through three hover-test modes at runtime (click the pill at the top or press **P**):
 
 - **Raycast mode** uses Three.js's `Raycaster` against the instanced `MeshLine` — it relies on the CPU-known `instanceStart` / `instanceEnd` attributes to test each laser as a line segment. Simple and cheap, but only works because each laser is a straight segment whose endpoints live on the CPU.
 - **MeshLinePicker mode** registers the same `MeshLine` with the GPU picker and calls `picker.pick(x, y)` on pointer move. The picker reads the rendered pixel under the cursor and decodes the instance ID.

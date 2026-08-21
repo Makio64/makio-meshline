@@ -4,6 +4,7 @@ const EPSILON = 1e-10
 const DUPLICATE_EPSILON = 1e-12
 const REVERSAL_SPLIT_ANGLE = Math.PI / 180
 const REVERSAL_SPLIT_DOT = -Math.cos( REVERSAL_SPLIT_ANGLE )
+const CLIPPED_INNER_MARGIN = 1e-4
 
 const DEFAULT_SURFACE_OPTIONS = {
 	frame: 'transport',
@@ -17,6 +18,7 @@ const DEFAULT_JOIN_OPTIONS = {
 	type: 'miter',
 	limit: 4,
 	segments: 8,
+	inner: 'exact',
 }
 
 const DEFAULT_CAP_OPTIONS = {
@@ -524,6 +526,7 @@ function buildSurfaceLine( line, lineIndex, options ) {
 	const frame = computeFrames( path, options.surface, lineIndex )
 	const halfWidths = computeHalfWidths( path.progress, options, lineIndex )
 	const offsets = computeOffsets( path, frame, options.join )
+	const innerJoins = resolveInnerJoinFootprints( path, frame, halfWidths, options.join, lineIndex )
 	const topologyNeeds = {
 		tangents: !!( options.needsTangents || options.surface.normalMap ),
 		uvs: !!(
@@ -533,9 +536,9 @@ function buildSurfaceLine( line, lineIndex, options ) {
 		progress: !!options.needsProgress,
 		sides: !!options.needsSide,
 	}
-	const topologyMode = getVariableTopologyMode( path, frame, options.join, options.cap )
+	const topologyMode = getVariableTopologyMode( path, frame, options.join, options.cap, innerJoins )
 	const topology = topologyMode === 'full'
-		? buildVariableTopology( path, frame, halfWidths, options.surface, options.join, options.cap, topologyNeeds, lineIndex )
+		? buildVariableTopology( path, frame, halfWidths, options.surface, options.join, options.cap, topologyNeeds, innerJoins )
 		: null
 	const capTopology = topologyMode === 'caps'
 		? buildCompactCapTopology( path, frame, offsets, halfWidths, options.surface, options.cap, topologyNeeds )
@@ -561,7 +564,7 @@ function buildSurfaceLine( line, lineIndex, options ) {
 	}
 }
 
-function getVariableTopologyMode( path, frame, join, cap ) {
+function getVariableTopologyMode( path, frame, join, cap, innerJoins ) {
 	for ( let pointIndex = 0; pointIndex < path.pointCount; pointIndex++ ) {
 		const hasJoin = path.closed || ( pointIndex > 0 && pointIndex < path.pointCount - 1 )
 		if ( !hasJoin ) continue
@@ -569,6 +572,7 @@ function getVariableTopologyMode( path, frame, join, cap ) {
 		const info = computeJoinInfo( path, frame, pointIndex )
 		if ( info.split ) return 'full'
 		if ( Math.abs( info.angle ) <= 1e-8 ) continue
+		if ( innerJoins[pointIndex]?.factor < 1 ) return 'full'
 		if ( join.type !== 'miter' || info.scale > join.limit ) return 'full'
 	}
 
@@ -681,7 +685,7 @@ function buildCompactCapTopology( path, frame, offsets, halfWidths, surface, cap
 	}
 }
 
-function buildVariableTopology( path, frame, halfWidths, surface, join, cap, needs, lineIndex ) {
+function buildVariableTopology( path, frame, halfWidths, surface, join, cap, needs, innerJoins ) {
 	const positions = []
 	const normals = []
 	const tangents = needs.tangents ? [] : null
@@ -693,10 +697,6 @@ function buildVariableTopology( path, frame, halfWidths, surface, join, cap, nee
 	let aliases = null
 	const segments = new Array( path.segmentCount )
 	const splits = new Uint8Array( path.pointCount )
-	const segmentStartInset = new Float64Array( path.segmentCount )
-	const segmentEndInset = new Float64Array( path.segmentCount )
-	const segmentStartInsetSide = new Int8Array( path.segmentCount )
-	const segmentEndInsetSide = new Int8Array( path.segmentCount )
 	let hasAliases = false
 
 	const getHalfWidth = pointIndex => typeof halfWidths === 'number' ? halfWidths : halfWidths[pointIndex]
@@ -816,14 +816,13 @@ function buildVariableTopology( path, frame, halfWidths, surface, join, cap, nee
 		const centerZ = path.points[pointOffset + 2]
 		const width = getHalfWidth( pointIndex )
 		const turnSign = info.angle > 0 ? 1 : -1
-		const innerOffset = reserveExactJoinFootprint(
-			path, info, width, turnSign,
-			incomingIndex, outgoingIndex,
-			segmentStartInset, segmentEndInset,
-			segmentStartInsetSide, segmentEndInsetSide,
-			lineIndex, pointIndex
-		)
-		if ( join.type === 'miter' && info.scale <= join.limit ) {
+		const innerJoin = innerJoins[pointIndex]
+		const innerOffset = [
+			innerJoin.offset[0] * innerJoin.factor,
+			innerJoin.offset[1] * innerJoin.factor,
+			innerJoin.offset[2] * innerJoin.factor,
+		]
+		if ( join.type === 'miter' && info.scale <= join.limit && innerJoin.factor === 1 ) {
 			for ( const coordinateSide of [-1, 1] ) {
 				const x = centerX + info.miter[0] * width * info.scale * coordinateSide
 				const y = centerY + info.miter[1] * width * info.scale * coordinateSide
@@ -884,40 +883,92 @@ function buildVariableTopology( path, frame, halfWidths, surface, join, cap, nee
 	}, hasAliases )
 }
 
-function reserveExactJoinFootprint(
-	path, info, width, turnSign,
-	incomingIndex, outgoingIndex,
-	segmentStartInset, segmentEndInset,
-	segmentStartInsetSide, segmentEndInsetSide,
-	lineIndex, pointIndex
-) {
-	const signedScale = width * info.scale * turnSign
-	const innerOffset = [
-		info.miter[0] * signedScale,
-		info.miter[1] * signedScale,
-		info.miter[2] * signedScale,
-	]
-	segmentEndInset[incomingIndex] = Math.max( 0, -dotVector( innerOffset, info.incomingDirection ) )
-	segmentStartInset[outgoingIndex] = Math.max( 0, dotVector( innerOffset, info.outgoingDirection ) )
-	segmentEndInsetSide[incomingIndex] = turnSign
-	segmentStartInsetSide[outgoingIndex] = turnSign
+function resolveInnerJoinFootprints( path, frame, halfWidths, join, lineIndex ) {
+	const joins = new Array( path.pointCount )
+	const segmentStarts = new Array( path.segmentCount )
+	const segmentEnds = new Array( path.segmentCount )
+	const getHalfWidth = pointIndex => typeof halfWidths === 'number' ? halfWidths : halfWidths[pointIndex]
 
-	for ( const segmentIndex of incomingIndex === outgoingIndex ? [incomingIndex] : [incomingIndex, outgoingIndex] ) {
-		const sameSide = segmentStartInsetSide[segmentIndex] !== 0 &&
-			segmentStartInsetSide[segmentIndex] === segmentEndInsetSide[segmentIndex]
+	for ( let pointIndex = 0; pointIndex < path.pointCount; pointIndex++ ) {
+		const hasJoin = path.closed || ( pointIndex > 0 && pointIndex < path.pointCount - 1 )
+		if ( !hasJoin || path.cusps[pointIndex] ) continue
+		const info = computeJoinInfo( path, frame, pointIndex )
+		if ( info.split || Math.abs( info.angle ) <= 1e-8 ) continue
+
+		const incomingIndex = ( pointIndex - 1 + path.segmentCount ) % path.segmentCount
+		const outgoingIndex = pointIndex % path.segmentCount
+		const turnSign = info.angle > 0 ? 1 : -1
+		const signedScale = getHalfWidth( pointIndex ) * info.scale * turnSign
+		const offset = [
+			info.miter[0] * signedScale,
+			info.miter[1] * signedScale,
+			info.miter[2] * signedScale,
+		]
+		const footprint = {
+			pointIndex,
+			factor: 1,
+			offset,
+			incomingInset: Math.max( 0, -dotVector( offset, info.incomingDirection ) ),
+			outgoingInset: Math.max( 0, dotVector( offset, info.outgoingDirection ) ),
+			turnSign,
+		}
+		joins[pointIndex] = footprint
+		segmentEnds[incomingIndex] = footprint
+		segmentStarts[outgoingIndex] = footprint
+	}
+
+	if ( join.inner === 'clip' ) {
+		// First keep every individual footprint strictly inside its adjacent leg.
+		// The small margin prevents two clipped inner vertices from quantizing to
+		// the same position and producing a zero-area body triangle.
+		for ( let segmentIndex = 0; segmentIndex < path.segmentCount; segmentIndex++ ) {
+			const available = path.segmentLengths[segmentIndex] * ( 1 - CLIPPED_INNER_MARGIN )
+			const start = segmentStarts[segmentIndex]
+			const end = segmentEnds[segmentIndex]
+			if ( start?.outgoingInset > available ) {
+				start.factor = Math.min( start.factor, available / start.outgoingInset )
+			}
+			if ( end?.incomingInset > available ) {
+				end.factor = Math.min( end.factor, available / end.incomingInset )
+			}
+		}
+
+		// Consecutive same-sign turns consume the same body edge. Share the
+		// available length proportionally so neither exact footprint crosses the
+		// other; opposite-sign turns live on different edges and need no sum cap.
+		for ( let segmentIndex = 0; segmentIndex < path.segmentCount; segmentIndex++ ) {
+			const start = segmentStarts[segmentIndex]
+			const end = segmentEnds[segmentIndex]
+			if ( !start || !end || start.turnSign !== end.turnSign ) continue
+			const required = start.outgoingInset + end.incomingInset
+			const available = path.segmentLengths[segmentIndex] * ( 1 - CLIPPED_INNER_MARGIN )
+			if ( required <= available ) continue
+			const scale = available / required
+			start.factor = Math.min( start.factor, scale )
+			end.factor = Math.min( end.factor, scale )
+		}
+
+		return joins
+	}
+
+	for ( let segmentIndex = 0; segmentIndex < path.segmentCount; segmentIndex++ ) {
+		const start = segmentStarts[segmentIndex]
+		const end = segmentEnds[segmentIndex]
+		const sameSide = start && end && start.turnSign === end.turnSign
 		const required = sameSide
-			? segmentStartInset[segmentIndex] + segmentEndInset[segmentIndex]
-			: Math.max( segmentStartInset[segmentIndex], segmentEndInset[segmentIndex] )
+			? start.outgoingInset + end.incomingInset
+			: Math.max( start?.outgoingInset || 0, end?.incomingInset || 0 )
 		const available = path.segmentLengths[segmentIndex]
 		const tolerance = Math.max( EPSILON, available * 1e-12 )
 		if ( required > available + tolerance ) {
+			const pointIndex = end?.pointIndex ?? start?.pointIndex
 			throw new Error(
-				`[MeshLineSurfaceGeometry] Exact inner join at point ${pointIndex} of line ${lineIndex} requires ${required} units on segment ${segmentIndex}, but only ${available} are available; lengthen or split the centerline, or reduce lineWidth`
+				`[MeshLineSurfaceGeometry] Exact inner join at point ${pointIndex} of line ${lineIndex} requires ${required} units on segment ${segmentIndex}, but only ${available} are available; lengthen or split the centerline, reduce lineWidth, or use join.inner 'clip'`
 			)
 		}
 	}
 
-	return innerOffset
+	return joins
 }
 
 function finalizeVariableTopology( topology, hasAliases ) {
@@ -1592,6 +1643,9 @@ function validateOptions( options, surface, join, cap ) {
 	}
 	if ( !Number.isInteger( join.segments ) || join.segments < 1 ) {
 		throw new Error( '[MeshLineSurfaceGeometry] join.segments must be a positive integer' )
+	}
+	if ( join.inner !== 'exact' && join.inner !== 'clip' ) {
+		throw new Error( `[MeshLineSurfaceGeometry] Unsupported inner join policy: ${join.inner}` )
 	}
 	if ( !['butt', 'square', 'round'].includes( cap.type ) ) {
 		throw new Error( `[MeshLineSurfaceGeometry] Unsupported cap type: ${cap.type}` )

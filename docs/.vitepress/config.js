@@ -15,7 +15,9 @@ const PAGE_DESCRIPTIONS = {
   'common-patterns.md': 'Copy practical Makio MeshLine recipes for circles, dashed lines, gradients, textures, dynamic updates, and sharp-corner handling in Three.js.',
   'advanced-patterns.md': 'Explore advanced Makio MeshLine patterns for GPU positions, instancing, batching, animated dashes, and custom TSL material hooks.',
   'performance.md': 'Performance tips for Makio MeshLine covering instancing, batching, dynamic position updates, GPU positioning, and sharp-corner rendering.',
+  'v2-migration.md': 'Migrate Makio MeshLine v1 applications to V2, including changed defaults, arc-length progress, stricter validation, surfaces, and optional WebGPU entry points.',
   'v2-design.md': 'Makio MeshLine V2 engineering contract for robust screen strokes, road surfaces, compute acceleration, and backend parity.',
+  'v2-api-coverage.md': 'Map every Makio MeshLine V2 public export and update API to its canonical reference, runnable demo, optional WebGPU entry point, and framework integration.',
   'surface.md': 'Build camera-independent world-space ribbons, roads, and tracks with MeshLine surface frames, true joins and caps, banking, distance UVs, and PBR materials.',
   'gpu-culling.md': 'Use optional native-WebGPU chunk culling and indirect index compaction for very large Makio MeshLine paths and road surfaces.',
   'gpu-path.md': 'Use the experimental native-WebGPU point-centric MeshLine path with true screen joins, caps, homogeneous clipping, and local-space simplification.',
@@ -40,7 +42,7 @@ const PAGE_DESCRIPTIONS = {
   'hooks.md': 'Complete guide to the 14 TSL hooks in Makio MeshLine for customizing vertex positions, line width, colors, opacity, dashes, UVs, and fragment output.',
   'picking.md': 'Pick GPU-positioned and instanced Makio MeshLines under the cursor with MeshLinePicker, an offscreen ID-render picker that works where raycasting cannot.',
   'react-three-fiber.md': 'Use Makio MeshLine with React Three Fiber (R3F) for wide lines, gradients, dashes, textures, and GPU-driven effects in React and Three.js WebGPU.',
-  'tresjs.md': 'Use Makio MeshLine with TresJS for wide lines, gradients, dashes, textures, and GPU-driven effects in Vue 3 and Three.js WebGPU.'
+  'vue.md': 'Use Makio MeshLine with Vue for wide lines, gradients, dashes, textures, and GPU-driven effects in Vue 3 and Three.js WebGPU.'
 }
 
 function stripMarkup( value = '' ) {
@@ -179,6 +181,7 @@ export default defineConfig( {
       { text: 'Guides', link: '/guide' },
       { text: 'Examples', link: '/examples/basic' },
       { text: 'API', link: '/api' },
+      { text: 'V2 API Map', link: '/v2-api-coverage' },
       { text: 'Demos', link: DEMO_URL },
     ],
 
@@ -187,7 +190,8 @@ export default defineConfig( {
         text: 'Introduction',
         items: [
           { text: 'Makio MeshLine', link: '/why-makio-meshline' },
-          { text: 'Getting Started', link: '/guide' }
+          { text: 'Getting Started', link: '/guide' },
+          { text: 'Migrate to V2', link: '/v2-migration' }
         ]
       },
       {
@@ -212,6 +216,7 @@ export default defineConfig( {
         text: 'API',
         items: [
           { text: 'Overview', link: '/api' },
+          { text: 'V2 API & Demo Coverage', link: '/v2-api-coverage' },
           { text: 'MeshLine', link: '/meshline' },
           { text: 'MeshLineGeometry', link: '/meshline-geometry' },
           { text: 'MeshLineNodeMaterial', link: '/meshline-material' },
@@ -240,9 +245,9 @@ export default defineConfig( {
       {
         text: 'Other',
         items: [
-          { text: 'V2 Design Contract', link: '/v2-design' },
           { text: 'Performance', link: '/performance' },
           { text: 'Changelog & Roadmap', link: '/changelog-roadmap' },
+          { text: 'V2 Design Contract', link: '/v2-design' },
         ]
       }
 

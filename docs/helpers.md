@@ -1,10 +1,10 @@
 ---
-description: "Reference helper functions like circlePositions, squarePositions, sineWavePositions, and straightLine for building Three.js MeshLine paths."
+description: "Reference helper functions like circlePositions, squarePositions, rectanglePositions, sineWavePositions, and straightLine for building Three.js MeshLine paths."
 ---
 
 # Helper Functions
 
-Utilities functions to help generate `Float32Array` for common line shapes.
+Utility functions that generate `Float32Array` point data for common line shapes.
 
 ## circlePositions()
 
@@ -35,13 +35,14 @@ const circle = new MeshLine({ lines: circlePositions(64, 2), closed: true });
 ## squarePositions()
 
 ```ts
-squarePositions(segments?: number): Float32Array
+squarePositions(width?: number, segments?: number): Float32Array
 ```
 
 Generates a `Float32Array` of `[x, y, z]` points outlining a square.
 
 #### Parameters
 
+- `width` (number, optional) — side length of the square. Default: `1`.
 - `segments` (number, optional) — number of segments per side. Default: `1`.
 
 #### Returns
@@ -56,8 +57,37 @@ import { squarePositions, MeshLine } from 'makio-meshline';
 // Create a simple square
 const square = new MeshLine({ lines: squarePositions(), closed: true });
 
-// Create a square with more segments per side for smoother corners
-const line = new MeshLine({ lines: squarePositions(4), closed: true });
+// Create a unit square with four segments per side
+const line = new MeshLine({ lines: squarePositions(1, 4), closed: true });
+```
+
+## rectanglePositions()
+
+```ts
+rectanglePositions(width?: number, height?: number, segments?: number): Float32Array
+```
+
+Generates a `Float32Array` of `[x, y, z]` points outlining a rectangle in the XY plane. Use `closed: true` to connect the final side.
+
+#### Parameters
+
+- `width` (number, optional) — width of the rectangle. Default: `1`.
+- `height` (number, optional) — height of the rectangle. Default: `1`.
+- `segments` (number, optional) — number of segments per side. Default: `1`.
+
+#### Returns
+
+`Float32Array` containing rectangle vertex positions.
+
+#### Example
+
+```javascript
+import { rectanglePositions, MeshLine } from 'makio-meshline';
+
+const rectangle = new MeshLine({
+  lines: rectanglePositions(3, 2, 4),
+  closed: true
+});
 ```
 
 ## sineWavePositions()

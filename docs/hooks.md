@@ -148,7 +148,7 @@ Override the **previous** or **next** neighbour position independently. These ar
 Useful when you want asymmetric smoothing or custom direction vectors.
 
 ```js
-import { Fn, mix } from 'three/tsl'
+import { Fn, mix, positionGeometry } from 'three/tsl'
 
 // Smooth the previous position towards current for softer corners
 const smoothPrev = Fn( ( [prev, progress] ) => {
@@ -259,7 +259,7 @@ const line = new MeshLine()
 Modify the final fragment color after texture sampling and gradient application. Useful for post-processing effects.
 
 ```js
-import { Fn, vec4, pow } from 'three/tsl'
+import { Fn, mix, vec3, vec4 } from 'three/tsl'
 
 // Desaturate based on progress
 const desaturateFn = Fn( ( [color, uv, progress, side] ) => {
@@ -313,7 +313,7 @@ const flickerFn = Fn( ( [alpha, uv, progress, side] ) => {
 
 ### uvFn
 
-Transform UV coordinates before texture sampling. `uv.x` runs along the line (0→1), `uv.y` runs across (-1→1).
+Transform UV coordinates before texture sampling. `uv.x` runs along the line (0→1), while `uv.y` runs across the ribbon (0→1).
 
 ```js
 import { Fn, vec2, sin, time } from 'three/tsl'

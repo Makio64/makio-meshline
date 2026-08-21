@@ -27,6 +27,10 @@ First, install the package:
 pnpm add makio-meshline # or npm/yarn
 ```
 
+::: tip Upgrading from V1
+Version 2 is the current package line. Existing users should review [Migrating from v1 to V2](./v2-migration.md) before upgrading.
+:::
+
 ## Basic Setup
 
 Here's a minimal example of how to create a simple circular `MeshLine` and add it to your scene:
@@ -42,6 +46,7 @@ camera.position.z = 20
 const renderer = new THREE.WebGPURenderer({ antialias: true })
 renderer.setSize(innerWidth, innerHeight)
 document.body.append(renderer.domElement)
+await renderer.init()
 
 
 const line = new MeshLine()
@@ -53,11 +58,7 @@ const line = new MeshLine()
 
 scene.add(line)
 
-const loop = () => {
-  renderer.render(scene, camera)
-  requestAnimationFrame(loop)
-}
-loop()
+renderer.setAnimationLoop( () => renderer.render( scene, camera ) )
 ```
 
 That's it! You should now see a vibrant orange circle in your scene.
@@ -72,7 +73,7 @@ If you're building with React or Vue, jump to a ready-to-run example with a decl
 
 ## Next Steps
 
-- Start with [Basic Examples](./examples/basic.md) to see one option change at a time
+- Start with the [Basic Example](./examples/basic.md) to compare common options and open the vanilla starter
 - Build a camera-independent road with the [Road Surface example](./examples/road.md)
 - Inspect the [Variable Topology gallery](https://meshline-demo.makio.io/examples/variable-topology) for wireframed joins, caps, reversals, and native-WebGPU clipping
 - Check [Follow](./examples/follow.md) and [Draw Lines](./examples/drawlines.md) for dynamic updates
