@@ -1,4 +1,17 @@
-import { InstancedBufferAttribute, Matrix4, Mesh, Ray, Sphere, StaticDrawUsage, StreamDrawUsage, Vector3 } from "three/webgpu"
+import {
+	BufferAttribute,
+	InstancedBufferAttribute,
+	InstancedInterleavedBuffer,
+	InterleavedBuffer,
+	InterleavedBufferAttribute,
+	Matrix4,
+	Mesh,
+	Ray,
+	Sphere,
+	StaticDrawUsage,
+	StreamDrawUsage,
+	Vector3,
+} from 'three/webgpu'
 
 import MeshLineGeometry from "./MeshLineGeometry.js"
 import MeshLineNodeMaterial from "./MeshLineNodeMaterial.js"
@@ -22,6 +35,100 @@ const getDefaultWidth = () => isBrowser ? window.innerWidth : 1024
 const getDefaultHeight = () => isBrowser ? window.innerHeight : 768
 
 const defaultPositions = straightLine( 2 )
+const MANAGED_BILLBOARD_ATTRIBUTES = new Set( [
+	'position',
+	'previous',
+	'next',
+	'side',
+	'joinRole',
+	'width',
+	'uv',
+	'progress',
+	'endpoint',
+	'vertexColor',
+] )
+const PORTABLE_VERTEX_BUFFER_LIMIT = 8
+
+function isInstancedAttribute( attribute ) {
+	return !!(
+		attribute?.isInstancedBufferAttribute ||
+		attribute?.data?.isInstancedInterleavedBuffer
+	)
+}
+
+function getAttributeBuffer( attribute ) {
+	return attribute?.isInterleavedBufferAttribute ? attribute.data : attribute
+}
+
+function getAttributeStorage( attribute ) {
+	if ( attribute.isInterleavedBufferAttribute ) {
+		return {
+			array: attribute.data.array,
+			buffer: attribute.data,
+			offset: attribute.offset,
+			stride: attribute.data.stride,
+		}
+	}
+	return {
+		array: attribute.array,
+		buffer: attribute,
+		offset: 0,
+		stride: attribute.itemSize,
+	}
+}
+
+function validateCustomAttributeLayout( layout ) {
+	if ( !layout || typeof layout !== 'object' || Array.isArray( layout ) ) {
+		throw new TypeError( 'MeshLine: packed attribute layout must be an object of name/component pairs' )
+	}
+
+	const entries = Object.entries( layout )
+	if ( entries.length === 0 ) {
+		throw new Error( 'MeshLine: packed attribute layout requires at least one attribute' )
+	}
+
+	let stride = 0
+	for ( const [name, components] of entries ) {
+		if ( !name ) throw new Error( 'MeshLine: custom attribute names cannot be empty' )
+		validateAttributeComponents( components )
+		stride += components
+	}
+	return { entries, stride }
+}
+
+function validateAttributeComponents( components ) {
+	if ( !Number.isInteger( components ) || components < 1 || components > 4 ) {
+		throw new RangeError( 'MeshLine: custom attribute components must be an integer from 1 to 4' )
+	}
+}
+
+function writeAttributeValues( attribute, values, startElement ) {
+	const { array, buffer, offset, stride } = getAttributeStorage( attribute )
+	const valueCount = values?.length ?? 0
+	const elementCount = valueCount === 0 ? 0 : Math.ceil( valueCount / attribute.itemSize )
+	if ( valueCount % attribute.itemSize !== 0 ) {
+		throw new Error( `MeshLine: ${attribute.name || 'attribute'} values must contain complete ${attribute.itemSize}-component elements` )
+	}
+	if ( startElement + elementCount > attribute.count ) return null
+
+	if ( attribute.isInterleavedBufferAttribute ) {
+		for ( let element = 0; element < elementCount; element++ ) {
+			const sourceOffset = element * attribute.itemSize
+			const targetOffset = ( startElement + element ) * stride + offset
+			for ( let component = 0; component < attribute.itemSize; component++ ) {
+				array[targetOffset + component] = values[sourceOffset + component]
+			}
+		}
+	} else if ( valueCount > 0 ) {
+		array.set( values, startElement * attribute.itemSize )
+	}
+
+	const updateStart = startElement * stride + offset
+	const updateCount = elementCount === 0
+		? 0
+		: ( elementCount - 1 ) * stride + attribute.itemSize
+	return { buffer, updateCount, updateStart }
+}
 
 /**
  * High-level facade for creating GPU-rendered lines in Three.js.
@@ -46,13 +153,14 @@ export default class MeshLine extends Mesh {
 			segments: 1,
 			closed: false,
 			surface: false,
-			join: { type: 'miter', limit: 4, segments: 8 },
+			join: { type: 'miter', limit: 4, segments: 8, inner: 'exact' },
 			cap: { type: 'butt', segments: 8 },
 			
 			color: 0xffffff,
 			lineWidth: 0.3,
 			widthCallback: null,
 			sizeAttenuation: true,
+			antialias: false,
 
 			opacity: 1,
 			alphaTest: 0,
@@ -122,6 +230,7 @@ export default class MeshLine extends Mesh {
 		if ( options.lineWidth !== undefined ) this.lineWidth( options.lineWidth )
 		if ( options.widthCallback !== undefined ) this.widthCallback( options.widthCallback )
 		if ( options.sizeAttenuation !== undefined ) this.sizeAttenuation( options.sizeAttenuation )
+		if ( options.antialias !== undefined ) this.antialias( options.antialias )
 		if ( options.gradientColor !== undefined ) this.gradientColor( options.gradientColor )
 		if ( options.map !== undefined ) this.map( options.map )
 		if ( options.mapOffset !== undefined ) this.mapOffset( options.mapOffset )
@@ -305,17 +414,32 @@ export default class MeshLine extends Mesh {
 	 */
 	sizeAttenuation( sizeAttenuation ) {
 		this._options.sizeAttenuation = sizeAttenuation
-		if ( sizeAttenuation === false ) {
-			// Pixel padding has no camera-independent world-space bound.
-			this._options.frustumCulled = false
-			this.frustumCulled = false
-		}
+		this._syncAutomaticFrustumCulling()
 		if ( this._built && this.material.isMeshLineNodeMaterial ) {
 			this.material.sizeAttenuation = sizeAttenuation
 			this.material.needsUpdate = true
 			this.geometry.options.sizeAttenuation = sizeAttenuation
 			this.geometry.computeBoundingBoxes()
 			this.geometry.computeBoundingSphere()
+		}
+		return this
+	}
+
+	/**
+	 * Toggle analytic edge antialiasing. Off by default: MSAA already smooths the
+	 * billboard silhouette, because the silhouette *is* the emitted geometry.
+	 *
+	 * Turning it on pads the stroke outward by half a device pixel and fades that
+	 * padding by real edge coverage, which also keeps sub-pixel lines from
+	 * dropping out. Coverage is written into alpha, so this forces
+	 * `transparent = true` — expect the usual transparent-draw sort order.
+	 * @param {boolean} [antialias=true]
+	 * @returns {this}
+	 */
+	antialias( antialias = true ) {
+		this._options.antialias = !!antialias
+		if ( this._built && this.material.isMeshLineNodeMaterial ) {
+			this.material.buildLine( this._getBuildOptions() )
 		}
 		return this
 	}
@@ -359,7 +483,15 @@ export default class MeshLine extends Mesh {
 		if ( opacityUniform && typeof opacityUniform === 'object' && 'value' in opacityUniform ) {
 			this.material.opacity.value = opacity
 		} else if ( this._built && opacity < 1 ) {
-			this.rebuild()
+			return this.rebuild()
+		}
+
+		const previousTransparent = this.material.transparent
+		const previousDepthWrite = this.material.depthWrite
+		this.material.transparent = this._resolvesToTransparent( { opacity } )
+		this.material.depthWrite = this._options.depthWrite ?? !this.material.transparent
+		if ( previousTransparent !== this.material.transparent || previousDepthWrite !== this.material.depthWrite ) {
+			this.material.needsUpdate = true
 		}
 		return this
 	}
@@ -385,13 +517,12 @@ export default class MeshLine extends Mesh {
 	 */
 	transparent( transparent ) {
 		this._options.transparent = transparent
-		const changed = this.material.transparent !== transparent
-		this.material.transparent = transparent
-		if ( this.material.isMeshLineSurfaceNodeMaterial ) {
-			const previousDepthWrite = this.material.depthWrite
-			this.material.depthWrite = this._options.depthWrite ?? !transparent
-			if ( changed || previousDepthWrite !== this.material.depthWrite ) this.material.needsUpdate = true
-		} else if ( changed ) {
+		const resolvedTransparent = this._resolvesToTransparent( { transparent } )
+		const previousTransparent = this.material.transparent
+		const previousDepthWrite = this.material.depthWrite
+		this.material.transparent = resolvedTransparent
+		this.material.depthWrite = this._options.depthWrite ?? !resolvedTransparent
+		if ( previousTransparent !== resolvedTransparent || previousDepthWrite !== this.material.depthWrite ) {
 			this.material.needsUpdate = true
 		}
 		return this
@@ -417,7 +548,7 @@ export default class MeshLine extends Mesh {
 	 * @param {import('./index.d.ts').MeshLineJoinOptions} [options]
 	 * @returns {this}
 	 */
-	join( { type = 'miter', limit = 4, segments = 8 } = {} ) {
+	join( { type = 'miter', limit = 4, segments = 8, inner = 'exact' } = {} ) {
 		const normalizedType = type === 'simple' ? 'miter' : type
 		if ( !['miter', 'bevel', 'round'].includes( normalizedType ) ) {
 			throw new Error( `MeshLine: unsupported join type: ${type}` )
@@ -428,10 +559,19 @@ export default class MeshLine extends Mesh {
 		if ( !Number.isInteger( segments ) || segments < 1 ) {
 			throw new Error( 'MeshLine: join.segments must be a positive integer' )
 		}
-		this._options.join = { type: normalizedType, limit, segments }
+		if ( inner !== 'exact' && inner !== 'clip' ) {
+			throw new Error( `MeshLine: unsupported inner join policy: ${inner}` )
+		}
+		const joinTypeChanged = this._options.join?.type !== normalizedType
+		this._options.join = { type: normalizedType, limit, segments, inner }
 		this._options.miterLimit = limit
 		if ( this._built && this.geometry.isMeshLineSurfaceGeometry ) {
 			this.geometry.buildLine( this._getBuildOptions() )
+		} else if ( this._built && joinTypeChanged && this.geometry.isMeshLine ) {
+			// Billboard bevel fill is index topology, so the type has to reach the
+			// geometry builder rather than only the material's miter limit.
+			this.geometry.buildLine( this._getBuildOptions() )
+			if ( this.material ) this.material.miterLimit = limit
 		} else if ( this._built && this.material ) {
 			this.material.miterLimit = limit
 			this.geometry.options.miterLimit = this.material.miterLimit
@@ -721,11 +861,7 @@ export default class MeshLine extends Mesh {
 	 */
 	gpuPositionNode( gpuPositionNode ) {
 		this._options.gpuPositionNode = gpuPositionNode
-		if ( gpuPositionNode && !this._frustumCulledExplicit ) {
-			// The CPU template cannot bound arbitrary shader-generated positions.
-			this._options.frustumCulled = false
-			this.frustumCulled = false
-		}
+		this._syncAutomaticFrustumCulling()
 		return this
 	}
 
@@ -795,6 +931,7 @@ export default class MeshLine extends Mesh {
 	 */
 	positionFn( fn ) {
 		this._options.positionFn = fn
+		this._syncAutomaticFrustumCulling()
 		this._built = false
 		return this
 	}
@@ -806,6 +943,7 @@ export default class MeshLine extends Mesh {
 	 */
 	previousFn( fn ) {
 		this._options.previousFn = fn
+		this._syncAutomaticFrustumCulling()
 		this._built = false
 		return this
 	}
@@ -817,6 +955,7 @@ export default class MeshLine extends Mesh {
 	 */
 	nextFn( fn ) {
 		this._options.nextFn = fn
+		this._syncAutomaticFrustumCulling()
 		this._built = false
 		return this
 	}
@@ -828,6 +967,7 @@ export default class MeshLine extends Mesh {
 	 */
 	widthFn( fn ) {
 		this._options.widthFn = fn
+		this._syncAutomaticFrustumCulling()
 		this._built = false
 		return this
 	}
@@ -839,6 +979,7 @@ export default class MeshLine extends Mesh {
 	 */
 	normalFn( fn ) {
 		this._options.normalFn = fn
+		this._syncAutomaticFrustumCulling()
 		this._built = false
 		return this
 	}
@@ -905,6 +1046,7 @@ export default class MeshLine extends Mesh {
 	 */
 	vertexFn( fn ) {
 		this._options.vertexFn = fn
+		this._syncAutomaticFrustumCulling()
 		this._built = false
 		return this
 	}
@@ -978,6 +1120,7 @@ export default class MeshLine extends Mesh {
 		const buildOptions = this._getBuildOptions()
 
 		this.geometry.buildLine( buildOptions )
+		this.validateVertexBufferBudget()
 		this.material.buildLine( buildOptions )
 
 		// Apply shadow if enabled
@@ -1076,6 +1219,7 @@ export default class MeshLine extends Mesh {
 	setPositions( positions, updateBounding = false ) {
 		this.ensureBuilt()
 		this.geometry.setPositions( positions, updateBounding )
+		this._options.lines = positions
 	}
 
 	/**
@@ -1093,6 +1237,7 @@ export default class MeshLine extends Mesh {
 			throw new Error( 'MeshLine: setPositionRange() is only available for CPU billboard lines; use setPositions() for surfaces' )
 		}
 		this.geometry.setPositionRange( positions, startPoint, options )
+		this._syncLineOptionsFromGeometry()
 		return this
 	}
 
@@ -1104,10 +1249,75 @@ export default class MeshLine extends Mesh {
 	 */
 	addVertexAttribute( name, components = 1 ) {
 		this.ensureBuilt()
-		const totalVertices = this.geometry.getAttribute( 'position' ).count
+		validateAttributeComponents( components )
+		if ( this.geometry.isMeshLine && MANAGED_BILLBOARD_ATTRIBUTES.has( name ) ) {
+			throw new Error( `MeshLine: ${name} is a reserved billboard vertex attribute` )
+		}
+		const positionAttribute = this.geometry.getAttribute( 'position' )
+		if ( !positionAttribute ) {
+			throw new Error( 'MeshLine: addVertexAttribute() requires at least two distinct points' )
+		}
+		this._validateProjectedVertexBufferBudget( [name], 1 )
+		const totalVertices = positionAttribute.count
 		const array = new Float32Array( totalVertices * components )
-		this.geometry.setOrUpdateAttribute( name, array, components )
-		return this.geometry.getAttribute( name )
+		const attribute = new BufferAttribute( array, components )
+		attribute.name = name
+		attribute.setUsage( this._options.usage ?? StaticDrawUsage )
+		this.geometry.setAttribute( name, attribute )
+		if ( this.geometry._attrs?.[name] ) delete this.geometry._attrs[name]
+		return attribute
+	}
+
+	/**
+	 * Add multiple custom per-vertex attributes in one shared GPU buffer.
+	 * @param {Record<string, number>} layout - Attribute names mapped to component counts (1–4)
+	 * @returns {Record<string, import('three/webgpu').InterleavedBufferAttribute>}
+	 */
+	addVertexAttributes( layout ) {
+		this.ensureBuilt()
+		const { entries, stride } = validateCustomAttributeLayout( layout )
+		for ( const [name] of entries ) {
+			if ( this.geometry.isMeshLine && MANAGED_BILLBOARD_ATTRIBUTES.has( name ) ) {
+				throw new Error( `MeshLine: ${name} is a reserved billboard vertex attribute` )
+			}
+		}
+		const positionAttribute = this.geometry.getAttribute( 'position' )
+		if ( !positionAttribute ) {
+			throw new Error( 'MeshLine: addVertexAttributes() requires at least two distinct points' )
+		}
+		this._validateProjectedVertexBufferBudget( entries.map( ( [name] ) => name ), 1 )
+
+		const data = new InterleavedBuffer( new Float32Array( positionAttribute.count * stride ), stride )
+		data.setUsage( this._options.usage ?? StaticDrawUsage )
+		return this._installPackedAttributes( data, entries )
+	}
+
+	/**
+	 * Upload a flat block of values to a vertex attribute.
+	 * @param {string} name
+	 * @param {ArrayLike<number>} values
+	 * @param {number} [startVertex=0]
+	 * @returns {this}
+	 */
+	setVertexValues( name, values, startVertex = 0 ) {
+		this.ensureBuilt()
+		const attribute = this.geometry.getAttribute( name )
+		if ( !attribute || isInstancedAttribute( attribute ) ) {
+			throw new Error( `MeshLine: Vertex attribute ${name} not found` )
+		}
+		if ( !Number.isInteger( startVertex ) || startVertex < 0 ) {
+			throw new Error( 'MeshLine: startVertex must be a non-negative integer' )
+		}
+
+		const update = writeAttributeValues( attribute, values, startVertex )
+		if ( !update ) {
+			throw new Error( `MeshLine: Vertex values exceed ${name} capacity` )
+		}
+
+		update.buffer.clearUpdateRanges()
+		if ( update.updateCount > 0 ) update.buffer.addUpdateRange( update.updateStart, update.updateCount )
+		update.buffer.needsUpdate = true
+		return this
 	}
 
 	/**
@@ -1118,11 +1328,54 @@ export default class MeshLine extends Mesh {
 	 */
 	addInstanceAttribute( name, components = 1 ) {
 		this.ensureBuilt()
+		validateAttributeComponents( components )
+		if ( this.geometry.isMeshLine && MANAGED_BILLBOARD_ATTRIBUTES.has( name ) ) {
+			throw new Error( `MeshLine: ${name} is a reserved billboard vertex attribute` )
+		}
+		this._validateProjectedVertexBufferBudget( [name], 1 )
 		const array = new Float32Array( this.count * components )
 		const attribute = new InstancedBufferAttribute( array, components )
+		attribute.name = name
+		attribute.setUsage( this._options.usage ?? StaticDrawUsage )
 		this.geometry.setAttribute( name, attribute )
 		this._pendingInstanceAttributes.add( attribute )
 		return attribute
+	}
+
+	/**
+	 * Add multiple custom per-instance attributes in one shared GPU buffer.
+	 * @param {Record<string, number>} layout - Attribute names mapped to component counts (1–4)
+	 * @returns {Record<string, import('three/webgpu').InterleavedBufferAttribute>}
+	 */
+	addInstanceAttributes( layout ) {
+		this.ensureBuilt()
+		const { entries, stride } = validateCustomAttributeLayout( layout )
+		for ( const [name] of entries ) {
+			if ( this.geometry.isMeshLine && MANAGED_BILLBOARD_ATTRIBUTES.has( name ) ) {
+				throw new Error( `MeshLine: ${name} is a reserved billboard vertex attribute` )
+			}
+		}
+		this._validateProjectedVertexBufferBudget( entries.map( ( [name] ) => name ), 1 )
+
+		const data = new InstancedInterleavedBuffer( new Float32Array( this.count * stride ), stride )
+		data.setUsage( this._options.usage ?? StaticDrawUsage )
+		const attributes = this._installPackedAttributes( data, entries )
+		for ( const attribute of Object.values( attributes ) ) this._pendingInstanceAttributes.add( attribute )
+		return attributes
+	}
+
+	_installPackedAttributes( data, entries ) {
+		const attributes = {}
+		let offset = 0
+		for ( const [name, components] of entries ) {
+			const attribute = new InterleavedBufferAttribute( data, components, offset )
+			attribute.name = name
+			this.geometry.setAttribute( name, attribute )
+			if ( this.geometry._attrs?.[name] ) delete this.geometry._attrs[name]
+			attributes[name] = attribute
+			offset += components
+		}
+		return attributes
 	}
 
 	/**
@@ -1133,7 +1386,7 @@ export default class MeshLine extends Mesh {
 	 */
 	setInstanceValue( name, index, value ) {
 		const attribute = this.geometry.getAttribute( name )
-		if ( ! attribute ) {
+		if ( !isInstancedAttribute( attribute ) ) {
 			console.warn( `MeshLine: Attribute ${name} not found. Make sure to add it first using addInstanceAttribute().` )
 			return
 		} 
@@ -1144,8 +1397,9 @@ export default class MeshLine extends Mesh {
 			return
 		}
 
-		const offset = index * attribute.itemSize
-		const array = attribute.array
+		const storage = getAttributeStorage( attribute )
+		const offset = index * storage.stride + storage.offset
+		const array = storage.array
 
 		// Handle different value types efficiently without creating arrays
 		if ( typeof value === 'number' ) {
@@ -1178,20 +1432,18 @@ export default class MeshLine extends Mesh {
 	 */
 	setInstanceValues( name, values, startInstance = 0 ) {
 		const attribute = this.geometry.getAttribute( name )
-		if ( !attribute?.isInstancedBufferAttribute ) {
+		if ( !isInstancedAttribute( attribute ) ) {
 			throw new Error( `MeshLine: Instance attribute ${name} not found` )
 		}
 		if ( !Number.isInteger( startInstance ) || startInstance < 0 ) {
 			throw new Error( 'MeshLine: startInstance must be a non-negative integer' )
 		}
-		const offset = startInstance * attribute.itemSize
-		const valueCount = values?.length ?? 0
-		if ( offset + valueCount > attribute.array.length ) {
+		const update = writeAttributeValues( attribute, values, startInstance )
+		if ( !update ) {
 			throw new Error( `MeshLine: Instance values exceed ${name} capacity` )
 		}
 
-		attribute.array.set( values, offset )
-		this._markInstanceAttributeUpdate( attribute, offset, valueCount )
+		this._markInstanceAttributeUpdate( attribute, update.updateStart, update.updateCount )
 		return this
 	}
 
@@ -1200,7 +1452,8 @@ export default class MeshLine extends Mesh {
 		// arrays directly. Avoid a redundant version change during that setup.
 		if ( !this._renderedInstanceAttributes.has( attribute ) || count === 0 ) return
 
-		const ranges = attribute.updateRanges
+		const buffer = getAttributeBuffer( attribute )
+		const ranges = buffer.updateRanges
 		const hadPendingRange = ranges.length > 0
 		const last = ranges[ranges.length - 1]
 		if ( last && start <= last.start + last.count && start + count >= last.start ) {
@@ -1208,13 +1461,98 @@ export default class MeshLine extends Mesh {
 			last.start = Math.min( last.start, start )
 			last.count = end - last.start
 		} else if ( ranges.length < 16 ) {
-			attribute.addUpdateRange( start, count )
+			buffer.addUpdateRange( start, count )
 		} else {
 			// Too many small writes cost more queue submissions than one upload.
-			attribute.clearUpdateRanges()
-			attribute.addUpdateRange( 0, attribute.array.length )
+			buffer.clearUpdateRanges()
+			buffer.addUpdateRange( 0, buffer.array.length )
 		}
-		if ( !hadPendingRange ) attribute.needsUpdate = true
+		if ( !hadPendingRange ) buffer.needsUpdate = true
+	}
+
+	/**
+	 * Inspect the portable vertex-buffer footprint of the current geometry.
+	 * Interleaved attributes that share storage count as one GPU buffer.
+	 * Use `reservedBuffers` for additional node-backed/application streams.
+	 * @param {{limit?: number, reservedBuffers?: number}} [options]
+	 * @returns {import('./index.d.ts').MeshLineVertexBufferUsage}
+	 */
+	getVertexBufferUsage( options = {} ) {
+		return this._collectVertexBufferUsage( options )
+	}
+
+	/**
+	 * Throw an actionable error when the current geometry exceeds the portable
+	 * WebGPU minimum of eight vertex buffers. This can count geometry streams
+	 * directly; pass `reservedBuffers` for additional node-backed streams.
+	 * @param {{limit?: number, reservedBuffers?: number}} [options]
+	 * @returns {import('./index.d.ts').MeshLineVertexBufferUsage}
+	 */
+	validateVertexBufferBudget( options = {} ) {
+		const usage = this._collectVertexBufferUsage( options )
+		if ( usage.exceeded ) this._throwVertexBufferBudgetError( usage )
+		return usage
+	}
+
+	_validateProjectedVertexBufferBudget( replacedNames, additionalBuffers ) {
+		const usage = this._collectVertexBufferUsage( {
+			additionalBuffers,
+			excludedNames: new Set( replacedNames ),
+		} )
+		if ( usage.exceeded ) this._throwVertexBufferBudgetError( usage )
+	}
+
+	_collectVertexBufferUsage( options = {} ) {
+		const limit = options.limit ?? PORTABLE_VERTEX_BUFFER_LIMIT
+		if ( !Number.isInteger( limit ) || limit < 1 ) {
+			throw new RangeError( 'MeshLine: vertex-buffer limit must be a positive integer' )
+		}
+		const reservedBuffers = options.reservedBuffers ?? 0
+		if ( !Number.isInteger( reservedBuffers ) || reservedBuffers < 0 ) {
+			throw new RangeError( 'MeshLine: reserved vertex-buffer count must be a non-negative integer' )
+		}
+		const excludedNames = options.excludedNames ?? null
+		const groups = new Map()
+		for ( const [name, attribute] of Object.entries( this.geometry?.attributes ?? {} ) ) {
+			if ( excludedNames?.has( name ) ) continue
+			const buffer = getAttributeBuffer( attribute )
+			let group = groups.get( buffer )
+			if ( !group ) {
+				group = {
+					attributes: [],
+					instanced: isInstancedAttribute( attribute ),
+					interleaved: !!attribute.isInterleavedBufferAttribute,
+				}
+				groups.set( buffer, group )
+			}
+			group.attributes.push( name )
+			group.instanced ||= isInstancedAttribute( attribute )
+		}
+
+		const attributeBuffers = groups.size + ( options.additionalBuffers ?? 0 )
+		const usedBuffers = attributeBuffers + reservedBuffers
+		return {
+			attributeBuffers,
+			buffers: Array.from( groups.values(), ( group ) => ( {
+				...group,
+				attributes: group.attributes.sort(),
+			} ) ),
+			exceeded: usedBuffers > limit,
+			limit,
+			remaining: limit - usedBuffers,
+			reservedBuffers,
+			usedBuffers,
+		}
+	}
+
+	_throwVertexBufferBudgetError( usage ) {
+		const reserved = usage.reservedBuffers > 0
+			? ` + ${usage.reservedBuffers} renderer-reserved instancing buffer${usage.reservedBuffers === 1 ? '' : 's'}`
+			: ''
+		throw new Error(
+			`MeshLine: portable vertex-buffer budget exceeded (${usage.usedBuffers}/${usage.limit}: ${usage.attributeBuffers} geometry buffers${reserved}). ` +
+			'Pack related custom attributes with addVertexAttributes()/addInstanceAttributes(), disable unused optional attributes, or use the low-level geometry API on a known higher-limit adapter.',
+		)
 	}
 
 	/**
@@ -1223,9 +1561,11 @@ export default class MeshLine extends Mesh {
 	 * @param {number} [height]
 	 */
 	resize( width = getDefaultWidth(), height = getDefaultHeight() ) {
+		const safeWidth = Number.isFinite( width ) ? Math.max( 1, width ) : 1
+		const safeHeight = Number.isFinite( height ) ? Math.max( 1, height ) : 1
+		this._options.renderWidth = safeWidth
+		this._options.renderHeight = safeHeight
 		if ( this.material && this.material.resolution ) {
-			const safeWidth = Number.isFinite( width ) ? Math.max( 1, width ) : 1
-			const safeHeight = Number.isFinite( height ) ? Math.max( 1, height ) : 1
 			this.material.resolution.value.set( safeWidth, safeHeight )
 		}
 	}
@@ -1254,6 +1594,43 @@ export default class MeshLine extends Mesh {
 
 	_warnIfBuilt = ( feature ) => {
 		if ( this._built ) console.warn( `MeshLine: Changing ${feature} after build is not supported yet.` )
+	}
+
+	/**
+	 * Whether the billboard material must blend. Every alpha-producing feature has
+	 * to be listed here: three drops the blend state entirely for an opaque
+	 * NormalBlending material, so a feature missing from this predicate is
+	 * silently switched off rather than merely mis-sorted.
+	 */
+	_resolvesToTransparent( { opacity = this._options.opacity, transparent = this._options.transparent } = {} ) {
+		return !!(
+			transparent ||
+			opacity < 1 ||
+			this._options.alphaMap != null ||
+			this._options.antialias
+		)
+	}
+
+	_syncAutomaticFrustumCulling() {
+		if ( this._frustumCulledExplicit ) return
+		const hasUnboundedVertexDeformation = !!(
+			this._options.gpuPositionNode ||
+			this._options.positionFn ||
+			this._options.previousFn ||
+			this._options.nextFn ||
+			this._options.widthFn ||
+			this._options.normalFn ||
+			this._options.vertexFn
+		)
+		const frustumCulled = this._options.sizeAttenuation !== false && !hasUnboundedVertexDeformation
+		this._options.frustumCulled = frustumCulled
+		this.frustumCulled = frustumCulled
+	}
+
+	_syncLineOptionsFromGeometry() {
+		const lines = this.geometry?._lines
+		if ( !Array.isArray( lines ) || lines.length === 0 ) return
+		this._options.lines = lines.length === 1 ? lines[0] : lines.slice()
 	}
 
 	/**
@@ -1304,7 +1681,7 @@ export default class MeshLine extends Mesh {
 		// (Three.js r183+ manages Mesh.count internally and may override it)
 		const startAttr = geometry.getAttribute( 'instanceStart' )
 		const endAttr = geometry.getAttribute( 'instanceEnd' )
-		const isInstanced = !!( startAttr && endAttr && startAttr.isInstancedBufferAttribute )
+		const isInstanced = !!( startAttr && endAttr && isInstancedAttribute( startAttr ) )
 		const hasLines = !!( geometry._lines && geometry._lines.length > 0 )
 
 		if ( !isInstanced ) {

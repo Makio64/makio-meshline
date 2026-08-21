@@ -56,6 +56,29 @@ export interface MeshLineCullingStatus {
 	lastError: unknown
 }
 
+/** One source-index range, stable until the culling chunk plan is refreshed. */
+export interface MeshLineCullingChunk {
+	readonly chunkIndex: number
+	readonly indexStart: number
+	readonly indexCount: number
+}
+
+/** On-demand GPU visibility snapshot captured from the prepared primary camera. */
+export interface MeshLineCullingSnapshot {
+	/** Identity of the prepared camera; the mutable Camera object is not cloned. */
+	readonly camera: Camera
+	/** Increases whenever this handle dispatches a new GPU culling result. */
+	readonly revision: number
+	readonly chunkCount: number
+	readonly indexCount: number
+	readonly visibleChunkCount: number
+	readonly culledChunkCount: number
+	readonly visibleIndexCount: number
+	readonly culledIndexCount: number
+	readonly visibleChunks: readonly MeshLineCullingChunk[]
+	readonly culledChunks: readonly MeshLineCullingChunk[]
+}
+
 export interface MeshLineCullingHandle {
 	readonly line: MeshLine
 	readonly enabled: boolean
@@ -66,6 +89,11 @@ export interface MeshLineCullingHandle {
 	readonly reason: string
 	readonly lastError: unknown
 	refresh(): boolean
+	/**
+	 * Read the exact current chunk visibility from the GPU. This is an explicit
+	 * synchronization point; returns null when no GPU result is active at call time.
+	 */
+	readCullingSnapshot(): Promise<MeshLineCullingSnapshot | null>
 	remove(): void
 }
 

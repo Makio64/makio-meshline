@@ -16,6 +16,7 @@
 ## Examples And Docs
 
 - Treat Vue and React Three Fiber support as first-class integration surfaces for the library, not incidental demos.
+- Keep the center of demo canvases clear. New demos should omit the generic `this.text` instruction overlay; place essential copy in unobtrusive edge-aligned UI or integrate short labels into the scene composition.
 - Framework wrappers in `examples/` should read like starter code users can drop into their own projects.
 - Keep framework wrappers aligned with the public `MeshLine` API and `MeshLineConfigureOptions`: if a prop is exposed, wire its build and update behavior; if an API is intentionally omitted, document that the wrapper covers only common options.
 - Keep docs pages aligned with the actual files under `examples/react-three-fiber/src/` and `examples/vue/src/`.

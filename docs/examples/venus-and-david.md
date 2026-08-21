@@ -32,8 +32,10 @@ const line = new MeshLine()
 		return mix( fromPosition, toPosition, morph ).add( position )
 	} ) )
 
-line.addInstanceAttribute( 'fromPosition', 3 )
-line.addInstanceAttribute( 'toPosition', 3 )
+line.addInstanceAttributes( {
+	fromPosition: 3,
+	toPosition: 3
+} )
 
 for ( let i = 0; i < ringCount; i++ ) {
 	line.setInstanceValue( 'fromPosition', i, venusSamples[i] )

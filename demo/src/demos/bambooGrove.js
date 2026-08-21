@@ -187,8 +187,10 @@ class BambooGroveExample {
 
 		this.stalksMesh.material.castShadowNode = vec4( 0.7, 0.7, 0.7, 1 )
 
-		this.stalksMesh.addInstanceAttribute( 'instanceTransform', 4 )
-		this.stalksMesh.addInstanceAttribute( 'instanceLean', 3 )
+		this.stalksMesh.addInstanceAttributes( {
+			instanceTransform: 4,
+			instanceLean: 3,
+		} )
 
 		for ( let i = 0; i < stalksData.length; i++ ) {
 			const s = stalksData[ i ]
@@ -225,9 +227,11 @@ class BambooGroveExample {
 
 		this.nodesMesh.material.castShadowNode = vec4( 0.7, 0.7, 0.7, 1 )
 
-		this.nodesMesh.addInstanceAttribute( 'instancePosition', 3 )
-		this.nodesMesh.addInstanceAttribute( 'instanceSize', 1 )
-		this.nodesMesh.addInstanceAttribute( 'instanceWidth', 1 )
+		this.nodesMesh.addInstanceAttributes( {
+			instancePosition: 3,
+			instanceSize: 1,
+			instanceWidth: 1,
+		} )
 
 		for ( let i = 0; i < nodesData.length; i++ ) {
 			const n = nodesData[ i ]
@@ -273,8 +277,6 @@ class BambooGroveExample {
 		stage3d.control?.dispose()
 	}
 
-	show() { }
-	hide( cb ) { if ( cb ) cb() }
 }
 
-export default new BambooGroveExample()
+export default BambooGroveExample

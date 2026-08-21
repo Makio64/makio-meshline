@@ -156,7 +156,7 @@ export default class MeshLinePicker {
 		if ( line.count > 0 ) proxy.count = line.count
 		this._pickScene.add( proxy )
 
-		const entry = { line, proxy, material }
+		const entry = { line, proxy, material, instanced: options.instanceCount > 0 }
 		this._registry.set( slot, entry )
 		this._lineToSlot.set( line, slot )
 		this._syncProxyMaterial( entry )
@@ -255,7 +255,7 @@ export default class MeshLinePicker {
 				const instanceId = ( g << 8 ) | b
 				return {
 					line: entry.line,
-					instanceId: entry.line.count > 0 ? instanceId : -1,
+					instanceId: entry.instanced ? instanceId : -1,
 				}
 			}
 			return null

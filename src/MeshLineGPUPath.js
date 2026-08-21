@@ -463,6 +463,130 @@ const computeInnerJoinOffset = ( incoming, outgoing, halfWidth ) => {
 	return { offset: [bisectorX * side * scale, bisectorY * side * scale], side, fallback: false }
 }
 
+/**
+ * Resolve one projected join in aspect-corrected NDC. Exact inner offset-line
+ * intersections are retained only while their longitudinal setback fits on
+ * both incident legs. Wider/shorter configurations keep each incident body at
+ * its full local half-width and use a bounded center pivot only for the join
+ * wedge, instead of allowing the intersection to escape across the viewport.
+ */
+const resolveProjectedJoin = ( incoming, outgoing, halfWidth ) => {
+	if ( !incoming || !outgoing || incoming.length < 2 || outgoing.length < 2 ) {
+		throw new TypeError( '[MeshLineGPUPath] projected join deltas require xy components' )
+	}
+	halfWidth = Number( halfWidth )
+	if ( !Number.isFinite( halfWidth ) || halfWidth < 0 ) {
+		throw new RangeError( '[MeshLineGPUPath] projected join width must be finite and non-negative' )
+	}
+	const incomingX = Number( incoming[0] )
+	const incomingY = Number( incoming[1] )
+	const outgoingX = Number( outgoing[0] )
+	const outgoingY = Number( outgoing[1] )
+	const incomingLength = Math.hypot( incomingX, incomingY )
+	const outgoingLength = Math.hypot( outgoingX, outgoingY )
+	const degenerate = (
+		!Number.isFinite( incomingLength ) || !Number.isFinite( outgoingLength ) ||
+		incomingLength < MIN_DIRECTION_LENGTH || outgoingLength < MIN_DIRECTION_LENGTH
+	)
+	if ( degenerate ) {
+		return {
+			offset: [0, 0],
+			pivotOffset: [0, 0],
+			incomingBodyInnerOffset: null,
+			outgoingBodyInnerOffset: null,
+			exactOffset: [0, 0],
+			side: 0,
+			incomingLength,
+			outgoingLength,
+			turnDot: 1,
+			turnCross: 0,
+			incomingDemand: 0,
+			outgoingDemand: 0,
+			demand: 0,
+			available: Math.min( incomingLength, outgoingLength ) * ( 1 - TOPOLOGY_SUPPORT_EPSILON ),
+			reversal: false,
+			defined: false,
+			supported: false,
+			fallback: 'degenerate',
+		}
+	}
+
+	const incomingDirection = [incomingX / incomingLength, incomingY / incomingLength]
+	const outgoingDirection = [outgoingX / outgoingLength, outgoingY / outgoingLength]
+	const turnDot = Math.max( -1, Math.min( 1,
+		incomingDirection[0] * outgoingDirection[0] + incomingDirection[1] * outgoingDirection[1]
+	) )
+	const turnCross = incomingDirection[0] * outgoingDirection[1] - incomingDirection[1] * outgoingDirection[0]
+	const reversal = turnDot <= REVERSAL_DOT_THRESHOLD
+	const straight = Math.abs( turnCross ) <= MIN_DIRECTION_LENGTH && !reversal
+	if ( reversal || straight ) {
+		return {
+			offset: [0, 0],
+			pivotOffset: [0, 0],
+			incomingBodyInnerOffset: null,
+			outgoingBodyInnerOffset: null,
+			exactOffset: [0, 0],
+			side: 0,
+			incomingLength,
+			outgoingLength,
+			turnDot,
+			turnCross,
+			incomingDemand: 0,
+			outgoingDemand: 0,
+			demand: 0,
+			available: Math.min( incomingLength, outgoingLength ) * ( 1 - TOPOLOGY_SUPPORT_EPSILON ),
+			reversal,
+			defined: false,
+			supported: straight,
+			fallback: reversal ? 'reversal' : 'exact',
+		}
+	}
+
+	const exact = computeInnerJoinOffset( incomingDirection, outgoingDirection, halfWidth )
+	const incomingNormal = [-incomingDirection[1], incomingDirection[0]]
+	const incomingBaseX = incomingNormal[0] * exact.side * halfWidth
+	const incomingBaseY = incomingNormal[1] * exact.side * halfWidth
+	const incomingDemand = Math.abs(
+		( exact.offset[0] - incomingBaseX ) * incomingDirection[0] +
+		( exact.offset[1] - incomingBaseY ) * incomingDirection[1]
+	)
+	const outgoingNormal = [-outgoingDirection[1], outgoingDirection[0]]
+	const outgoingBaseX = outgoingNormal[0] * exact.side * halfWidth
+	const outgoingBaseY = outgoingNormal[1] * exact.side * halfWidth
+	const outgoingDemand = Math.abs(
+		( exact.offset[0] - outgoingBaseX ) * outgoingDirection[0] +
+		( exact.offset[1] - outgoingBaseY ) * outgoingDirection[1]
+	)
+	const demand = Math.max( incomingDemand, outgoingDemand )
+	const available = Math.min( incomingLength, outgoingLength ) * ( 1 - TOPOLOGY_SUPPORT_EPSILON )
+	const supported = (
+		!exact.fallback && Number.isFinite( demand ) &&
+		incomingDemand <= incomingLength * ( 1 - TOPOLOGY_SUPPORT_EPSILON ) &&
+		outgoingDemand <= outgoingLength * ( 1 - TOPOLOGY_SUPPORT_EPSILON )
+	)
+	const pivotOffset = supported ? exact.offset : [0, 0]
+	return {
+		offset: pivotOffset,
+		pivotOffset,
+		incomingBodyInnerOffset: supported ? exact.offset : [incomingBaseX, incomingBaseY],
+		outgoingBodyInnerOffset: supported ? exact.offset : [outgoingBaseX, outgoingBaseY],
+		exactOffset: exact.offset,
+		side: exact.side,
+		incomingLength,
+		outgoingLength,
+		turnDot,
+		turnCross,
+		incomingDemand,
+		outgoingDemand,
+		demand,
+		available,
+		reversal: false,
+		defined: !exact.fallback,
+		supported,
+		fallback: supported ? 'exact' : 'center',
+	}
+}
+
 const validateInnerJoinSupport = ( lengths, startDemands, endDemands, startSides, endSides ) => {
 	const segmentCount = lengths.length
 	if (
@@ -1338,9 +1462,9 @@ export class MeshLineGPUPath extends Group {
 		this.status.join = topology.join.type
 		this.status.cap = topology.cap.type
 		this.status.topology = advancedTopology ? 'variable-triangles' : 'fixed-strip'
-		this.status.topologySafety = advancedTopology ? 'finite-legs-unverified' : 'not-required'
+		this.status.topologySafety = advancedTopology ? 'projected-join-guarded' : 'not-required'
 		this.status.topologySafetyReason = advancedTopology
-			? 'exact inner intersections can extend beyond short projected incident legs; GPU self-overlap is not rejected'
+			? 'unsupported projected inner intersections keep full-width bodies and use a bounded center pivot for the join wedge; adjacent fallback regions can still overlap'
 			: null
 		this.status.reversalSplitting = simplify ? 'retained-points-only' : 'source-and-projected'
 	}
@@ -1540,7 +1664,10 @@ export class MeshLineGPUPath extends Group {
 				const directionSum = direction1.add( direction2 )
 				const directionSumLength = length( directionSum )
 				const perpendicularRaw = vec2( directionSum.y.negate(), directionSum.x )
-				const perpendicularFallback = vec2( direction1.y.negate(), direction1.x )
+				// The fixed strip owns separate A/outgoing and B/incoming endpoint
+				// vertices. Keep an over-limit join aligned with that physical body.
+				const bodyDirection = usesB.select( direction1, direction2 )
+				const perpendicularFallback = vec2( bodyDirection.y.negate(), bodyDirection.x )
 				const miterBlend = directionSumLength.smoothstep( miterThreshold.mul( 0.75 ), miterThreshold )
 				const blendedPerpendicular = mix(
 					perpendicularFallback,
@@ -1568,7 +1695,9 @@ export class MeshLineGPUPath extends Group {
 				const finalPosition = currentPosition.toVar()
 				const side = positiveSide.select( float( 1 ), float( -1 ) )
 				finalPosition.xy.addAssign( offset.mul( side ) )
-				return bodyVisible.select( finalPosition, vec4( 2, 2, 2, 1 ) )
+				const bodyProjectedLength = usesB.select( delta1RawLength, delta2RawLength )
+				const projectedBodyVisible = bodyProjectedLength.greaterThanEqual( float( MIN_DIRECTION_LENGTH ) )
+				return bodyVisible.and( projectedBodyVisible ).select( finalPosition, vec4( 2, 2, 2, 1 ) )
 			} )()
 		} else {
 			material.vertexNode = Fn( () => {
@@ -1642,19 +1771,65 @@ export class MeshLineGPUPath extends Group {
 				const halfWidth = widthNode.mul( 0.5 )
 				const startTurnCross = incomingDirection.x.mul( bodyDirection.y ).sub( incomingDirection.y.mul( bodyDirection.x ) )
 				const endTurnCross = bodyDirection.x.mul( outgoingDirection.y ).sub( bodyDirection.y.mul( outgoingDirection.x ) )
+				const startTurnDot = dot( incomingDirection, bodyDirection ).clamp( -1, 1 )
+				const endTurnDot = dot( bodyDirection, outgoingDirection ).clamp( -1, 1 )
+				let startScreenHalfWidth
+				let endScreenHalfWidth
+				if ( sizeAttenuation ) {
+					const projectedHalfWidthX = abs( cameraProjectionMatrix.mul( vec4( halfWidth, 0, 0, 0 ) ).x ).mul( aspect )
+					const projectedHalfWidthY = abs( cameraProjectionMatrix.mul( vec4( 0, halfWidth, 0, 0 ) ).y )
+					const projectedHalfWidth = max( projectedHalfWidthX, projectedHalfWidthY )
+					startScreenHalfWidth = projectedHalfWidth.div( max( aRaw.w, MIN_CLIP_W ) )
+					endScreenHalfWidth = projectedHalfWidth.div( max( bRaw.w, MIN_CLIP_W ) )
+				} else {
+					startScreenHalfWidth = halfWidth.mul( 2 ).div( resolutionNode.y )
+					endScreenHalfWidth = startScreenHalfWidth
+				}
+				// q = h * |cross| / ( 1 + dot ) is the longitudinal inner
+				// setback. Compare without dividing so a near-reversal cannot
+				// manufacture a viewport-sized intermediate or final position.
+				const supportFactor = float( 1 - TOPOLOGY_SUPPORT_EPSILON )
+				const startInnerSupported = incomingLength.greaterThanEqual( float( MIN_DIRECTION_LENGTH ) )
+					.and( bodyLength.greaterThanEqual( float( MIN_DIRECTION_LENGTH ) ) )
+					.and( startReversal.not() )
+					.and(
+						startScreenHalfWidth.mul( abs( startTurnCross ) ).lessThanEqual(
+							min( incomingLength, bodyLength )
+								.mul( max( float( 0 ), float( 1 ).add( startTurnDot ) ) )
+								.mul( supportFactor )
+						)
+					)
+				const endInnerSupported = bodyLength.greaterThanEqual( float( MIN_DIRECTION_LENGTH ) )
+					.and( outgoingLength.greaterThanEqual( float( MIN_DIRECTION_LENGTH ) ) )
+					.and( endReversal.not() )
+					.and(
+						endScreenHalfWidth.mul( abs( endTurnCross ) ).lessThanEqual(
+							min( bodyLength, outgoingLength )
+								.mul( max( float( 0 ), float( 1 ).add( endTurnDot ) ) )
+								.mul( supportFactor )
+						)
+					)
 				const startNormalSum = incomingNormal.add( bodyNormal )
 				const endNormalSum = bodyNormal.add( outgoingNormal )
 				const startNormalSumLength = length( startNormalSum )
 				const endNormalSumLength = length( endNormalSum )
 				const startBisector = startNormalSum.div( max( startNormalSumLength, MIN_DIRECTION_LENGTH ) )
 				const endBisector = endNormalSum.div( max( endNormalSumLength, MIN_DIRECTION_LENGTH ) )
-				const startInnerScale = halfWidth.div( max( abs( dot( startBisector, bodyNormal ) ), MIN_DIRECTION_LENGTH ) )
-				const endInnerScale = halfWidth.div( max( abs( dot( endBisector, outgoingNormal ) ), MIN_DIRECTION_LENGTH ) )
 				const startInnerDefined = startNormalSumLength.greaterThan( float( MIN_DIRECTION_LENGTH ) )
 				const endInnerDefined = endNormalSumLength.greaterThan( float( MIN_DIRECTION_LENGTH ) )
-				const startOuterMiterValid = startInnerDefined
+				const startInnerDenominator = startInnerDefined.and( startInnerSupported ).select(
+					abs( dot( startBisector, bodyNormal ) ),
+					float( 1 )
+				)
+				const endInnerDenominator = endInnerDefined.and( endInnerSupported ).select(
+					abs( dot( endBisector, outgoingNormal ) ),
+					float( 1 )
+				)
+				const startInnerScale = halfWidth.div( max( startInnerDenominator, MIN_DIRECTION_LENGTH ) )
+				const endInnerScale = halfWidth.div( max( endInnerDenominator, MIN_DIRECTION_LENGTH ) )
+				const startOuterMiterValid = startInnerDefined.and( startInnerSupported )
 					.and( startInnerScale.lessThanEqual( halfWidth.mul( float( miterLimit ) ) ) )
-				const endOuterMiterValid = endInnerDefined
+				const endOuterMiterValid = endInnerDefined.and( endInnerSupported )
 					.and( endInnerScale.lessThanEqual( halfWidth.mul( float( miterLimit ) ) ) )
 				const startInnerSide = startTurnCross.greaterThan( float( 0 ) ).select( float( 1 ), float( -1 ) )
 				const endInnerSide = endTurnCross.greaterThan( float( 0 ) ).select( float( 1 ), float( -1 ) )
@@ -1668,12 +1843,26 @@ export class MeshLineGPUPath extends Group {
 				)
 				const startOuterMiter = startBisector.mul( startInnerSide.negate() ).mul( startInnerScale )
 				const endOuterMiter = endBisector.mul( endInnerSide.negate() ).mul( endInnerScale )
-				const startInnerActive = previousReachesA.and( reachesA ).and( aInsideClip )
+				const startJoinActive = previousReachesA.and( reachesA ).and( aInsideClip )
 					.and( startReversal.not() )
 					.and( abs( startTurnCross ).greaterThan( float( MIN_DIRECTION_LENGTH ) ) )
-				const endInnerActive = nextStartsB.and( reachesB ).and( bInsideClip )
+				const endJoinActive = nextStartsB.and( reachesB ).and( bInsideClip )
 					.and( endReversal.not() )
 					.and( abs( endTurnCross ).greaterThan( float( MIN_DIRECTION_LENGTH ) ) )
+				const startInnerExact = startInnerDefined.and( startInnerSupported )
+				const endInnerExact = endInnerDefined.and( endInnerSupported )
+				// The finite-support guard applies only to the shared join pivot. When
+				// the exact intersection would extend beyond either incident leg, keep
+				// each body at its own normal half-width so the stroke cannot taper away.
+				const startBodyInnerOffset = startInnerExact.select(
+					startInnerOffset,
+					bodyNormal.mul( startInnerSide ).mul( halfWidth )
+				)
+				const endBodyInnerOffset = endInnerExact.select(
+					endInnerOffset,
+					bodyNormal.mul( endInnerSide ).mul( halfWidth )
+				)
+				const endJoinPivotOffset = endInnerExact.select( endInnerOffset, vec2( 0 ) )
 				const emitted = bool( false ).toVar()
 				const finalPosition = aPosition.toVar()
 				const strokeOffset = vec2( 0 ).toVar()
@@ -1691,24 +1880,24 @@ export class MeshLineGPUPath extends Group {
 					finalPosition.assign( usesB.select( bPosition, aPosition ) )
 					strokeOffset.assign( bodyNormal.mul( positiveSide.select( halfWidth, halfWidth.negate() ) ) )
 					If(
-						usesB.not().and( startInnerActive ).and( positiveSide.equal( startTurnCross.greaterThan( float( 0 ) ) ) ),
-						() => { strokeOffset.assign( startInnerOffset ) }
+						usesB.not().and( startJoinActive ).and( positiveSide.equal( startTurnCross.greaterThan( float( 0 ) ) ) ),
+						() => { strokeOffset.assign( startBodyInnerOffset ) }
 					)
 					If(
-						usesB.and( endInnerActive ).and( positiveSide.equal( endTurnCross.greaterThan( float( 0 ) ) ) ),
-						() => { strokeOffset.assign( endInnerOffset ) }
+						usesB.and( endJoinActive ).and( positiveSide.equal( endTurnCross.greaterThan( float( 0 ) ) ) ),
+						() => { strokeOffset.assign( endBodyInnerOffset ) }
 					)
 					if ( topology.join.type === 'miter' ) {
 						If(
 							usesB.not()
-								.and( startInnerActive )
+								.and( startJoinActive )
 								.and( startOuterMiterValid )
 								.and( positiveSide.notEqual( startTurnCross.greaterThan( float( 0 ) ) ) ),
 							() => { strokeOffset.assign( startOuterMiter ) }
 						)
 						If(
 							usesB
-								.and( endInnerActive )
+								.and( endJoinActive )
 								.and( endOuterMiterValid )
 								.and( positiveSide.notEqual( endTurnCross.greaterThan( float( 0 ) ) ) ),
 							() => { strokeOffset.assign( endOuterMiter ) }
@@ -1756,7 +1945,7 @@ export class MeshLineGPUPath extends Group {
 								const startRadius = rotate2D( outerIncoming, arcAngle.mul( turnSign ).mul( startFraction ) )
 								const endRadius = rotate2D( outerIncoming, arcAngle.mul( turnSign ).mul( endFraction ) )
 								strokeOffset.assign( triangleVertex.equal( uint( 0 ) ).select(
-									endInnerOffset,
+									endJoinPivotOffset,
 									triangleVertex.equal( uint( 1 ) ).select( startRadius, endRadius ).mul( halfWidth )
 								) )
 								emitted.assign( joinVisible.and( abs( turnCross ).greaterThan( float( MIN_DIRECTION_LENGTH ) ) ) )
@@ -1764,7 +1953,7 @@ export class MeshLineGPUPath extends Group {
 						} else {
 							const outerA = outerIncoming.mul( halfWidth )
 							const outerB = outerOutgoing.mul( halfWidth )
-							const middle = endInnerOffset.toVar()
+							const middle = endJoinPivotOffset.toVar()
 							const emitJoin = bool( true ).toVar()
 							if ( topology.join.type === 'miter' ) {
 								emitJoin.assign( endOuterMiterValid.not() )
@@ -1862,6 +2051,7 @@ export const _gpuPathInternals = Object.freeze( {
 	findReversalBreaks,
 	clipHomogeneousSegment,
 	computeInnerJoinOffset,
+	resolveProjectedJoin,
 	validateInnerJoinSupport,
 	createStableSegmentRecords,
 	createProceduralPrimitiveRecords,

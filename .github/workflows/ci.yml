@@ -4,6 +4,9 @@ on:
   pull_request:
     branches: [ main ]
 
+permissions:
+  contents: read
+
 jobs:
   lint:
     runs-on: ubuntu-latest
@@ -16,4 +19,15 @@ jobs:
           cache: 'pnpm'
       - run: pnpm i --frozen-lockfile
       - run: pnpm -w run lint
-
+      - run: pnpm -w run test
+      - run: pnpm -w run test:types
+      - run: pnpm -w run build
+      - run: pnpm -w run docs:build
+      - run: pnpm --filter makio-meshline-vanilla-example build
+      - run: pnpm --filter makio-meshline-r3f-example build
+      - run: pnpm --filter makio-meshline-vue-example build
+      - run: pnpm -w run verify:package
+      - run: pnpm -w run verify:compat
+      - name: Three.js dev branch compatibility canary
+        continue-on-error: true
+        run: pnpm -w run verify:compat:canary

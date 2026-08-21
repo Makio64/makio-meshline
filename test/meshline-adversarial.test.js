@@ -20,7 +20,7 @@ const assertFiniteAttributes = geometry => {
 }
 
 test( 'index reuse changes storage type when topology crosses the Uint16 limit', () => {
-	const geometry = new MeshLineGeometry( { lines: straightLine( 32_767 ) } )
+	const geometry = new MeshLineGeometry( { lines: straightLine( 16_383 ) } )
 	const originalIndexCount = geometry.getIndex().count
 
 	assert.ok( geometry.getIndex().array instanceof Uint16Array )
@@ -29,9 +29,9 @@ test( 'index reuse changes storage type when topology crosses the Uint16 limit',
 	// count. A count-only reuse check would retain Uint16 storage and wrap the
 	// final two vertex indices back to zero and one.
 	geometry.setLines( [
-		straightLine( 10_923 ),
-		straightLine( 10_923 ),
-		straightLine( 10_923 ),
+		straightLine( 5_461 ),
+		straightLine( 5_462 ),
+		straightLine( 5_462 ),
 	] )
 
 	const index = geometry.getIndex()
@@ -118,7 +118,7 @@ test( 'closed screen lines duplicate first vertex color and width at the seam', 
 	} )
 	const color = geometry.getAttribute( 'vertexColor' )
 	const width = geometry.getAttribute( 'width' )
-	const seamVertex = color.count - 2
+	const seamVertex = color.count - 4
 
 	assert.deepEqual(
 		[color.getX( seamVertex ), color.getY( seamVertex ), color.getZ( seamVertex )],

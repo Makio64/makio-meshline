@@ -11,6 +11,9 @@
 
 Makio MeshLine is built for creative coding, interactive trails, data visualization, and stylized rendering on top of Three.js `WebGPURenderer`. It gives you a small fluent API for wide and thick lines, while keeping TSL hooks available when you need custom GPU behavior.
 
+> [!IMPORTANT]
+> Version 2 is the current API and package line. Existing V1 applications should review [Migrating from v1 to V2](https://meshline.makio.io/v2-migration.html) before upgrading because progress, sharp-bend smoothing, validation, surfaces, and optional WebGPU entry points changed.
+
 ## Features
 
 - **TSL-powered** — Built with Three.js Shading Language for maximum GPU performance
@@ -21,7 +24,7 @@ Makio MeshLine is built for creative coding, interactive trails, data visualizat
 - **Variable width** — Per-vertex width control via callback or GPU hook
 - **Bounded line joins** — Finite miter fallback at sharp projected turns, with optional CPU subdivision for static paths
 - **Road and ribbon surfaces** — Camera-independent geometry with transport frames, banking, normals, tangents, and distance UVs
-- **Hybrid GPU culling** — Optional native-WebGPU chunk compaction and one indirect draw for very large opaque paths
+- **Optional GPU culling** — Native-WebGPU chunk compaction and one indirect draw for very large opaque paths
 - **Shadow support** — Cast shadows from lines
 - **GPU positions** — Procedural line generation entirely on the GPU
 - **Tree-shakeable** — ESM-only, `sideEffects: false`, import only what you need
@@ -47,9 +50,12 @@ Makio MeshLine is built for creative coding, interactive trails, data visualizat
 
 | Requirement | Version |
 |---|---|
-| **Three.js** | r180+ |
+| **Core `makio-meshline` entry** | Three.js r180+ |
+| **Optional `gpu-culling` / `gpu-path` entries** | Three.js r183+ |
 | **Renderer** | `WebGPURenderer` only |
 | **Backends** | WebGPU & WebGL2 (via `WebGPURenderer`) |
+
+The release gate installs the packed library into clean consumers and runs runtime plus declaration smoke tests against the minimum core version (r180), the minimum optional-entry version (r183), and the pinned workspace version. A separate Three.js `dev` branch canary is advisory so upstream movement stays visible without making releases depend on a moving target.
 
 ## [Live Demo](https://meshline-demo.makio.io)
 
@@ -65,6 +71,8 @@ See it in action with examples on [https://meshline-demo.makio.io](https://meshl
 pnpm add makio-meshline # or npm/yarn
 ```
 
+Upgrading an existing v1 application? Review the [V2 migration guide](https://meshline.makio.io/v2-migration.html) before changing the dependency. Progress is now distance-based, sharp-bend smoothing is opt-in, invalid configuration fails earlier, and the optional native-WebGPU imports have a narrower Three.js version requirement.
+
 ## Quick Start
 
 ```javascript
@@ -75,6 +83,7 @@ import { MeshLine, circlePositions } from 'makio-meshline'
 const renderer = new THREE.WebGPURenderer()
 renderer.setSize(innerWidth, innerHeight)
 document.body.appendChild(renderer.domElement)
+await renderer.init()
 
 const scene = new THREE.Scene()
 const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 100)
@@ -122,9 +131,17 @@ import MeshLineCullingSystem from 'makio-meshline/gpu-culling'
 
 const culling = MeshLineCullingSystem.attach(renderer, scene, { mode: 'auto' })
 const handle = culling.add(line)
+
+// The first draw warms the compact index buffer; then prepare a culling result.
+renderer.render(scene, camera)
+await culling.update(camera)
+
+// Explicit diagnostic readback of the active result.
+const snapshot = await handle.readCullingSnapshot()
+console.log(snapshot?.culledChunks)
 ```
 
-Unsupported backends, cameras, materials, or bounds draw the complete geometry. See [GPU culling](https://meshline.makio.io/gpu-culling.html) for the bounds contract and profiling guidance.
+Unsupported backends, cameras, materials, or bounds draw the complete geometry. See [GPU culling](https://meshline.makio.io/gpu-culling.html) for the bounds contract, chunk-range snapshot format, readback cost, and profiling guidance.
 
 ### Experimental GPU Path
 
@@ -144,6 +161,14 @@ await path.prepare( renderer, camera )
 
 It emits stable segment records and one non-indexed indirect draw while retaining a complete CPU `MeshLine` fallback. See [GPU path](https://meshline.makio.io/gpu-path.html) for its deliberately narrow local-space guarantee and current unsupported profiles.
 
+## Vanilla Three.js Example
+
+The [vanilla starter](./examples/vanilla/) follows the familiar Three.js example structure: `init()`, `onWindowResize()`, and `animate()`, with explicit WebGPU renderer and OrbitControls setup.
+
+```bash
+pnpm --filter makio-meshline-vanilla-example dev
+```
+
 ## Framework Quickstart
 
 Use Makio MeshLine with React Three Fiber or Vue. Each example ships a declarative `<MeshLine>` wrapper and is ready to open on StackBlitz.
@@ -154,21 +179,31 @@ Use Makio MeshLine with React Three Fiber or Vue. Each example ships a declarati
 
 ```jsx
 import { Canvas } from '@react-three/fiber'
-import { WebGPURenderer } from 'three/webgpu'
 import { circlePositions } from 'makio-meshline'
-import { MeshLine } from './MeshLine' // wrapper from the example
+import { WebGPURenderer } from 'three/webgpu'
+import { MeshLine } from './MeshLine.jsx' // wrapper from the example
+
+const circlePoints = circlePositions( 64, 3 )
+
+async function createRenderer( props ) {
+  const renderer = new WebGPURenderer( { ...props, antialias: true } )
+  await renderer.init()
+  return renderer
+}
 
 export default function App() {
   return (
     <Canvas
       camera={{ position: [0, 0, 10] }}
-      gl={async ( props ) => {
-        const renderer = new WebGPURenderer( { ...props, antialias: true } )
-        await renderer.init()
-        return renderer
-      }}
+      gl={createRenderer}
     >
-      <MeshLine points={circlePositions( 64, 3 )} closed lineWidth={0.2} color={0xff8800} gradientColor={0xffffff} />
+      <MeshLine
+        points={circlePoints}
+        closed
+        lineWidth={0.2}
+        color={0xff8800}
+        gradientColor={0xffffff}
+      />
     </Canvas>
   )
 }
@@ -181,16 +216,30 @@ Full example & wrapper source: [examples/react-three-fiber/](./examples/react-th
 [![Open in StackBlitz](https://developer.stackblitz.com/img/open_in_stackblitz.svg)](https://stackblitz.com/github/Makio64/makio-meshline/tree/main/examples/vue)
 
 ```vue
-<MeshLine
-  v-if="group"
-  :parent="group"
-  :points="circlePositions( 64, 3 )"
-  closed
-  :line-width="0.2"
-  :color="0xff8800"
-  :gradient-color="0xffffff"
-/>
+<script setup>
+import { circlePositions } from 'makio-meshline'
+import MeshLine from './MeshLine.vue'
+
+defineProps( {
+  parent: { type: Object, required: true },
+} )
+
+const points = circlePositions( 64, 3 )
+</script>
+
+<template>
+  <MeshLine
+    :parent="parent"
+    :points="points"
+    closed
+    :line-width="0.2"
+    :color="0xff8800"
+    :gradient-color="0xffffff"
+  />
+</template>
 ```
+
+Pass any Three.js `Object3D` already attached to your scene as `parent`.
 
 Full example & wrapper source: [examples/vue/](./examples/vue/) — [docs](https://meshline.makio.io/vue.html)
 
@@ -206,7 +255,9 @@ Check out the [documentation site](https://meshline.makio.io/) for detailed inst
 - [World-space roads and ribbons](https://meshline.makio.io/surface.html)
 - [GPU culling](https://meshline.makio.io/gpu-culling.html)
 - [Experimental GPU path](https://meshline.makio.io/gpu-path.html)
+- [Migrating from v1 to V2](https://meshline.makio.io/v2-migration.html)
 - [V2 design contract](https://meshline.makio.io/v2-design.html)
+- [Release notes and checklist](https://meshline.makio.io/changelog-roadmap.html)
 - [Helpers functions](https://meshline.makio.io/helpers.html)
 - [GPU picking & debug helper](https://meshline.makio.io/picking.html)
 - [React Three Fiber integration](https://meshline.makio.io/react-three-fiber.html)
@@ -220,7 +271,7 @@ The concept was to build a performant but easily customizable MeshLine with TSL 
 
 ## Coming from THREE.MeshLine?
 
-If you've been using [spite/THREE.MeshLine](https://github.com/spite/THREE.MeshLine), makio-meshline is a modern replacement built for Three.js WebGPU era. The API is different (fluent/chainable), but the concepts are the same. Check the [documentation](https://meshline.makio.io/guide.html) for migration guidance.
+If you've been using [spite/THREE.MeshLine](https://github.com/spite/THREE.MeshLine), makio-meshline is a modern replacement built for the Three.js WebGPU era. The API is different (fluent/chainable), but the concepts are familiar. Start with [Getting Started](https://meshline.makio.io/guide.html) for the Makio MeshLine API. The [V2 migration guide](https://meshline.makio.io/v2-migration.html) is specifically for existing `makio-meshline` v1 applications.
 
 ## Thanks
 

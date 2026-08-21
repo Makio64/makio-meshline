@@ -26,9 +26,10 @@ const CIRCLE_CONFIGS = [
 	{ radius: 3.5, dashCount: 45, dashRatio: 0.4, color: 0x333333, width: 0.08 }
 ]
 
-class WireSculptureExample {
+class ShadowExample {
 	constructor() {
 		this.lines = []
+		this.dashOffsets = []
 		this.lights = []
 		this.lightHelpers = []
 		this.ambientLight = null
@@ -114,6 +115,7 @@ class WireSculptureExample {
 
 			stage3d.add( line )
 			this.lines.push( line )
+			this.dashOffsets.push( 0 )
 		} )
 	}
 
@@ -124,9 +126,13 @@ class WireSculptureExample {
 			line.rotation.x = this.time * ( 0.15 + i * 0.1 )
 			line.rotation.y = this.time * ( 0.1 + i * 0.05 )
 
-			if ( line.material.dashOffset ) {
-				line.material.dashOffset.value -= dt * ( 0.001 + i * 0.0005 )
-			}
+			const config = CIRCLE_CONFIGS[i]
+			this.dashOffsets[i] -= dt * ( 0.001 + i * 0.0005 )
+			line.dash( {
+				count: config.dashCount,
+				ratio: config.dashRatio,
+				offset: this.dashOffsets[i],
+			} )
 		} )
 
 		this.lights.forEach( ( light, i ) => {
@@ -164,6 +170,7 @@ class WireSculptureExample {
 			line.dispose()
 		} )
 		this.lines = []
+		this.dashOffsets = []
 
 		this.lightHelpers.forEach( helper => {
 			helper.parent?.remove( helper )
@@ -189,8 +196,6 @@ class WireSculptureExample {
 		stage3d.control?.dispose()
 	}
 
-	show() { }
-	hide( cb ) { if ( cb ) cb() }
 }
 
-export default new WireSculptureExample()
+export default ShadowExample

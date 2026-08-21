@@ -13,9 +13,12 @@ declare module 'vue' {
   export interface GlobalComponents {
     BurgerButton: typeof import('./src/components/ui/BurgerButton.vue')['default']
     CodeButton: typeof import('./src/components/ui/CodeButton.vue')['default']
+    GpuPath: typeof import('./src/components/GpuPath.vue')['default']
+    GpuSimplification: typeof import('./src/components/GpuSimplification.vue')['default']
     Heist: typeof import('./src/components/Heist.vue')['default']
     MenuFullscreen: typeof import('./src/components/ui/MenuFullscreen.vue')['default']
     Spinner: typeof import('./src/components/ui/Spinner.vue')['default']
+    SurfaceRoad: typeof import('./src/components/SurfaceRoad.vue')['default']
     SVGCircle: typeof import('./src/components/ui/SVGCircle.vue')['default']
     Venus: typeof import('./src/components/Venus.vue')['default']
   }

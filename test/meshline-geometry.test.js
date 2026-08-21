@@ -6,9 +6,9 @@ import { DynamicDrawUsage, StaticDrawUsage, StreamDrawUsage } from 'three/webgpu
 import MeshLineGeometry from '../src/MeshLineGeometry.js'
 import MeshLineNodeMaterial from '../src/MeshLineNodeMaterial.js'
 
-const pairedValues = attribute => {
+const pointValues = attribute => {
 	const values = []
-	for ( let i = 0; i < attribute.count; i += 2 ) values.push( attribute.getX( i ) )
+	for ( let i = 0; i < attribute.count; i += 4 ) values.push( attribute.getX( i ) )
 	return values
 }
 
@@ -83,7 +83,7 @@ test( 'closed procedural templates preserve their exact segment grid', () => {
 
 	assert.equal( geometry._lines[0].length / 3, 5 )
 	assert.equal( geometry.getIndex().count, 24 )
-	assert.deepEqual( pairedValues( geometry.getAttribute( 'progress' ) ), [0, 0.25, 0.5, 0.75, 1] )
+	assert.deepEqual( pointValues( geometry.getAttribute( 'progress' ) ), [0, 0.25, 0.5, 0.75, 1] )
 
 	const endpoint = geometry.getAttribute( 'endpoint' )
 	assert.equal( endpoint.getZ( 0 ), 0.25 )
@@ -98,12 +98,12 @@ test( 'CPU progress and UVs use normalized arc length and update in place', () =
 		needsUV: true,
 	} )
 
-	assert.deepEqual( pairedValues( geometry.getAttribute( 'progress' ) ), [0, 0.25, 1] )
-	assert.deepEqual( pairedValues( geometry.getAttribute( 'uv' ) ), [0, 0.25, 1] )
+	assert.deepEqual( pointValues( geometry.getAttribute( 'progress' ) ), [0, 0.25, 1] )
+	assert.deepEqual( pointValues( geometry.getAttribute( 'uv' ) ), [0, 0.25, 1] )
 
 	geometry.setPositions( new Float32Array( [0, 0, 0, 3, 0, 0, 4, 0, 0] ) )
-	assert.deepEqual( pairedValues( geometry.getAttribute( 'progress' ) ), [0, 0.75, 1] )
-	assert.deepEqual( pairedValues( geometry.getAttribute( 'uv' ) ), [0, 0.75, 1] )
+	assert.deepEqual( pointValues( geometry.getAttribute( 'progress' ) ), [0, 0.75, 1] )
+	assert.deepEqual( pointValues( geometry.getAttribute( 'uv' ) ), [0, 0.75, 1] )
 } )
 
 test( 'procedural progress remains parameter based rather than arc-length based', () => {
@@ -111,7 +111,7 @@ test( 'procedural progress remains parameter based rather than arc-length based'
 		lines: new Float32Array( [0, 0, 0, 1, 0, 0, 4, 0, 0] ),
 		gpuPositionNode: () => null,
 	} )
-	assert.deepEqual( pairedValues( geometry.getAttribute( 'progress' ) ), [0, 0.5, 1] )
+	assert.deepEqual( pointValues( geometry.getAttribute( 'progress' ) ), [0, 0.5, 1] )
 } )
 
 test( 'neighbor-progress metadata is allocated only when a CPU hook needs it', () => {
@@ -121,7 +121,7 @@ test( 'neighbor-progress metadata is allocated only when a CPU hook needs it', (
 	} )
 	const endpoint = geometry.getAttribute( 'endpoint' )
 	assert.equal( endpoint.itemSize, 4 )
-	assert.deepEqual( [endpoint.getZ( 2 ), endpoint.getW( 2 )], [0.25, 0.75] )
+	assert.deepEqual( [endpoint.getZ( 4 ), endpoint.getW( 4 )], [0.25, 0.75] )
 
 	geometry.buildLine( { positionFn: null } )
 	assert.equal( geometry.getAttribute( 'endpoint' ), undefined )

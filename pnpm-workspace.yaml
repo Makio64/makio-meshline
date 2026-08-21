@@ -4,10 +4,16 @@ packages:
   - docs
   - examples/*
 
-onlyBuiltDependencies:
-  - esbuild
+allowBuilds:
+  esbuild: true
+
+minimumReleaseAgeExclude:
+  - terser@5.50.0
 
 overrides:
+  # Standalone starters keep copy-pasteable registry ranges while workspace
+  # builds always exercise the current package source.
+  makio-meshline: link:./src
   axios@<1.12.0: '>=1.12.0'
   brace-expansion@>=2.0.0 <=2.0.1: '>=2.0.2'
   esbuild@<=0.24.2: '>=0.25.0'

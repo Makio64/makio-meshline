@@ -1,6 +1,6 @@
 import MeshLine from './MeshLine.js'
 import { MeshLineGeometry } from './MeshLineGeometry.js'
-import MeshLineNodeMaterial from './MeshLineNodeMaterial.js'
+import MeshLineNodeMaterial, { lineCoord } from './MeshLineNodeMaterial.js'
 import MeshLinePicker from './MeshLinePicker.js'
 import MeshLinePickerHelper from './MeshLinePickerHelper.js'
 import { MeshLineSurfaceGeometry } from './MeshLineSurfaceGeometry.js'
@@ -19,6 +19,7 @@ export {
 	MeshLinePickerHelper,
 	MeshLineSurfaceGeometry,
 	MeshLineSurfaceNodeMaterial,
+	lineCoord,
 	circlePositions,
 	squarePositions,
 	rectanglePositions,

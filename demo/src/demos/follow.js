@@ -11,6 +11,9 @@ import random from '@/makio/utils/random'
 
 const NUM_POINTS = 20
 const NUM_LINES = 4
+const BILLBOARD_VERTICES_PER_POINT = 4
+// Keep a resting trail non-degenerate so its dynamic buffers retain capacity.
+const TOPOLOGY_EPSILON = 0.0001
 const GREEN_PALETTE = [0x00FF88, 0x88FF00, 0x00AA44, 0x44FF88]
 const interactionPlane = new Plane( new Vector3( 0, 0, 1 ), 0 )
 const pointerNDC = new Vector2()
@@ -19,13 +22,14 @@ const force3 = new Vector3()
 
 class FollowExample {
 	constructor() {
-		this.text = isMobile ? `touch & move` : `move your mouse`
+		this.text = isMobile ? 'touch & move' : 'move your mouse'
 		this.lines = []
 		this.lineArrays = []
 		this.line = null
 		this.target = new Vector3()
 		this.raycaster = new Raycaster()
 		this.mouseSpeed = 0
+		this.currentLineWidth = 0.01
 
 		for ( let index = 0; index < NUM_LINES; index++ ) {
 			const angle = index / NUM_LINES * Math.PI * 2
@@ -75,22 +79,24 @@ class FollowExample {
 			} )
 			.colorFn( Fn( ( [, progress] ) => {
 				const vertexColor = attribute( 'lineColor', 'vec3' )
-				return vec4( vertexColor.add( progress.smoothstep( 0.5, 1 ).mul( .2 ) ), 1 )
+				return vec4( vertexColor.add( progress.smoothstep( 0.5, 1 ).mul( 0.2 ) ), 1 )
 			} ) )
 
 		this.line.build()
 
-		const colorArray = new Float32Array( NUM_LINES * NUM_POINTS * 2 * 3 )
+		this.line.addVertexAttribute( 'lineColor', 3 )
+		const verticesPerLine = NUM_POINTS * BILLBOARD_VERTICES_PER_POINT
+		const colors = new Float32Array( NUM_LINES * verticesPerLine * 3 )
 		for ( let lineIndex = 0; lineIndex < NUM_LINES; lineIndex++ ) {
 			const color = new Color( GREEN_PALETTE[lineIndex % GREEN_PALETTE.length] )
-			const startVertex = lineIndex * NUM_POINTS * 2
+			const startVertex = lineIndex * verticesPerLine
 
-			for ( let i = 0; i < NUM_POINTS * 2; i++ ) {
-				colorArray.set( [color.r, color.g, color.b], ( startVertex + i ) * 3 )
+			for ( let i = 0; i < verticesPerLine; i++ ) {
+				color.toArray( colors, ( startVertex + i ) * 3 )
 			}
 		}
 
-		this.line.geometry.setOrUpdateAttribute( 'lineColor', colorArray, 3 )
+		this.line.setVertexValues( 'lineColor', colors )
 		stage3d.add( this.line )
 	}
 
@@ -114,11 +120,12 @@ class FollowExample {
 
 		const speed = Math.sqrt( mouse.moveX ** 2 + mouse.moveY ** 2 ) / ( dt / 16 || 1 ) * 0.01
 		this.mouseSpeed = MathUtils.lerp( this.mouseSpeed, speed, 0.15 )
-		this.line.material.lineWidth.value = MathUtils.lerp( 
-			this.line.material.lineWidth.value, 
-			MathUtils.clamp( this.mouseSpeed, 0.01, 1 ), 
-			0.15 
+		this.currentLineWidth = MathUtils.lerp(
+			this.currentLineWidth,
+			MathUtils.clamp( this.mouseSpeed, 0.01, 1 ),
+			0.15
 		)
+		this.line.lineWidth( this.currentLineWidth )
 	}
 
 	onMouseMove = ( mouseData ) => {
@@ -145,17 +152,16 @@ class FollowExample {
 		this.line = null
 	}
 
-	show() {}
-	hide( cb ) { if ( cb ) cb() }
 }
 
 function writePointsToArray( points, positions ) {
 	for ( let i = 0; i < NUM_POINTS; i++ ) {
 		const point = points[i]
-		positions[i * 3] = point.x
-		positions[i * 3 + 1] = point.y
-		positions[i * 3 + 2] = point.z
+		const offset = i * 3
+		positions[offset] = point.x - i * TOPOLOGY_EPSILON
+		positions[offset + 1] = point.y
+		positions[offset + 2] = point.z
 	}
 }
 
-export default new FollowExample()
+export default FollowExample

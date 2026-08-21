@@ -191,10 +191,16 @@ const createChunkRanges = ( geometry, indexCount, chunkTriangles ) => {
 
 	const lines = geometry?._lines
 	if ( Array.isArray( lines ) && lines.length > 0 && geometry?.isMeshLine === true ) {
+		// The billboard builder records what it actually emitted per line, which
+		// stays correct when a line carries optional bevel-join bridges. Fall back
+		// to the plain body-quad formula for geometries built before that existed.
+		const emitted = geometry?._lineIndexCounts
 		let indexStart = 0
-		for ( const line of lines ) {
+		for ( let lineIndex = 0; lineIndex < lines.length; lineIndex++ ) {
+			const line = lines[lineIndex]
 			const pointCount = Number( line?.length ?? 0 ) / 3
-			const count = Math.max( 0, pointCount - 1 ) * 6
+			const recorded = Array.isArray( emitted ) ? emitted[lineIndex] : undefined
+			const count = Number.isSafeInteger( recorded ) ? recorded : Math.max( 0, pointCount - 1 ) * 6
 			if ( !Number.isSafeInteger( count ) || !appendChunkedRange( chunks, indexStart, count, maxIndices ) ) return null
 			indexStart += count
 		}
@@ -366,6 +372,8 @@ class MeshLineCullingHandle {
 		this._warmBackend = null
 		this._warmDevice = null
 		this._cpuFallback = false
+		this._cullingRevision = 0
+		this._readback = null
 		this.refresh()
 	}
 
@@ -416,6 +424,7 @@ class MeshLineCullingHandle {
 			this._restoreOwnedGeometryState()
 			this._disposeComputeNodes()
 			this._resources = null
+			this._readback = null
 			this.prepared = false
 			this.warmedUp = false
 			this.chunkCount = 0
@@ -470,6 +479,7 @@ class MeshLineCullingHandle {
 			const outputAttribute = new StorageBufferAttribute( source.slice(), 1, Uint32Array )
 			const chunkAttribute = new StorageBufferAttribute( createChunkInfo( chunks ), 4, Uint32Array )
 			const boundsAttribute = new StorageBufferAttribute( bounds, 4 )
+			const visibilityAttribute = new StorageBufferAttribute( new Uint32Array( chunks.length ), 1, Uint32Array )
 			const indirectArray = new Uint32Array( [index.count, instanceCount, 0, 0, 0] )
 			const indirectAttribute = new IndirectStorageBufferAttribute( indirectArray, 1 )
 			const planes = Array.from( { length: 6 }, () => new Vector4() )
@@ -494,6 +504,7 @@ class MeshLineCullingHandle {
 				outputAttribute,
 				planes,
 				sourceAttribute,
+				visibilityAttribute,
 				worldPadding,
 			}
 			this._createComputeNodes()
@@ -513,6 +524,7 @@ class MeshLineCullingHandle {
 		const outputBuffer = storage( resources.outputAttribute, 'uint', this.indexCount )
 		const chunkBuffer = storage( resources.chunkAttribute, 'uvec4', this.chunkCount ).toReadOnly()
 		const boundsBuffer = storage( resources.boundsAttribute, 'vec4', this.chunkCount * 2 ).toReadOnly()
+		const visibilityBuffer = storage( resources.visibilityAttribute, 'uint', this.chunkCount )
 		const indirectBuffer = storage( resources.indirectAttribute, 'uint', INDIRECT_WORDS ).toAtomic()
 		const planeBuffer = uniformArray( resources.planes, 'vec4' )
 		const instanceCount = this.instanceCount
@@ -541,6 +553,8 @@ class MeshLineCullingHandle {
 					visible.assign( visible.and( distance.add( radius ).greaterThanEqual( 0 ) ) )
 				}
 
+				visibilityBuffer.element( instanceIndex ).assign( visible.select( uint( 1 ), uint( 0 ) ) )
+
 				If( visible, () => {
 					const sourceStart = chunk.x
 					const sourceCount = chunk.y
@@ -553,6 +567,94 @@ class MeshLineCullingHandle {
 				} )
 			} )
 		} )().compute( this.chunkCount )
+	}
+
+	/**
+	 * Explicitly read the current prepared chunk visibility from the GPU.
+	 * Normal updates never call this synchronization path.
+	 */
+	readCullingSnapshot() {
+		const resources = this._resources
+		const camera = this.system?._preparedCamera ?? null
+		const revision = this._cullingRevision
+		if (
+			!this.active ||
+			!resources ||
+			!camera ||
+			!this._hasCurrentDevice() ||
+			!this._isPreparedFor( camera ) ||
+			typeof this.system?.renderer?.getArrayBufferAsync !== 'function'
+		) return Promise.resolve( null )
+
+		if ( this._readback?.resources === resources && this._readback.revision === revision ) {
+			return this._readback.promise
+		}
+
+		const context = {
+			resources,
+			revision,
+			camera,
+			chunkCount: this.chunkCount,
+			indexCount: this.indexCount,
+		}
+		const readback = { resources, revision, promise: null }
+		readback.promise = this._readCullingSnapshot( context ).catch( error => {
+			if ( this._readback === readback ) this._readback = null
+			if (
+				this.removed ||
+				this._resources !== resources ||
+				this._cullingRevision !== revision ||
+				!this._hasCurrentDevice()
+			) return null
+			throw error
+		} )
+		this._readback = readback
+		return readback.promise
+	}
+
+	async _readCullingSnapshot( context ) {
+		const { resources, revision, camera, chunkCount, indexCount } = context
+		const result = await this.system.renderer.getArrayBufferAsync( resources.visibilityAttribute )
+		const byteLength = Number( result?.byteLength ?? 0 )
+		if ( !Number.isSafeInteger( byteLength ) || byteLength < chunkCount * Uint32Array.BYTES_PER_ELEMENT ) {
+			throw new Error( '[MeshLineCullingSystem] visibility readback is shorter than the chunk list' )
+		}
+		const visibility = ArrayBuffer.isView( result )
+			? new Uint32Array( result.buffer, result.byteOffset, chunkCount )
+			: new Uint32Array( result, 0, chunkCount )
+		const visibleChunks = []
+		const culledChunks = []
+		let visibleIndexCount = 0
+		let culledIndexCount = 0
+
+		for ( let chunkIndex = 0; chunkIndex < chunkCount; chunkIndex++ ) {
+			const flag = visibility[chunkIndex]
+			if ( flag !== 0 && flag !== 1 ) {
+				throw new Error( `[MeshLineCullingSystem] invalid visibility flag ${flag} for chunk ${chunkIndex}` )
+			}
+			const [indexStart, chunkIndexCount] = resources.chunks[chunkIndex]
+			const chunk = { chunkIndex, indexStart, indexCount: chunkIndexCount }
+			if ( flag === 1 ) {
+				visibleChunks.push( chunk )
+				visibleIndexCount += chunkIndexCount
+			} else {
+				culledChunks.push( chunk )
+				culledIndexCount += chunkIndexCount
+			}
+		}
+
+		return {
+			camera,
+			revision,
+			chunkCount,
+			indexCount,
+			visibleChunkCount: visibleChunks.length,
+			culledChunkCount: culledChunks.length,
+			visibleIndexCount,
+			culledIndexCount,
+			visibleChunks,
+			culledChunks,
+		}
 	}
 
 	_fail( reason, error = null, cpuFallback = false ) {
@@ -761,6 +863,7 @@ class MeshLineCullingHandle {
 
 	_markPrepared() {
 		this.prepared = true
+		this._cullingRevision++
 		this.reason = 'GPU culling active'
 	}
 
@@ -803,6 +906,7 @@ class MeshLineCullingHandle {
 		}
 		if ( this.line ) this.line.frustumCulled = this._originalFrustumCulled
 		this._resources = null
+		this._readback = null
 		this.prepared = false
 		attachedLines.delete( this.line )
 		this.system?._handles.delete( this )

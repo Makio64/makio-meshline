@@ -21,9 +21,14 @@ const createNativeRendererStub = () => {
 		isWebGPURenderer: true,
 		backend: { isWebGPUBackend: true, device: {} },
 		computeCalls: [],
+		readbackCalls: [],
 		async init() {},
 		compute( nodes ) {
 			this.computeCalls.push( nodes )
+		},
+		async getArrayBufferAsync( attribute ) {
+			this.readbackCalls.push( attribute )
+			return attribute.array.buffer.slice( 0 )
 		},
 	}
 	return renderer
@@ -98,6 +103,119 @@ test( 'native culling warms INDEX|STORAGE, selects indirect only for the prepare
 	system.dispose()
 	assert.equal( scene.onBeforeRender, originalSceneBeforeRender )
 	assert.equal( scene.onAfterRender, originalSceneAfterRender )
+} )
+
+test( 'explicit visibility readback reports exact visible and culled source-index chunks', async () => {
+	const renderer = createNativeRendererStub()
+	const scene = new Scene()
+	const camera = new PerspectiveCamera( 50, 1, 0.1, 100 )
+	const line = createLine()
+	const system = MeshLineCullingSystem.attach( renderer, scene, { autoUpdate: false, chunkSize: 2, mode: 'webgpu' } )
+	const handle = system.add( line )
+
+	assert.equal( await handle.readCullingSnapshot(), null )
+	assert.equal( renderer.readbackCalls.length, 0 )
+
+	line.onBeforeRender( renderer, scene, camera, line.geometry, line.material, null )
+	line.onAfterRender( renderer, scene, camera, line.geometry, line.material, null )
+	assert.equal( await system.update( camera ), true )
+	assert.equal( renderer.readbackCalls.length, 0, 'normal updates must remain readback-free' )
+
+	handle._resources.visibilityAttribute.array.set( [1, 0, 0, 1] )
+	const firstRead = handle.readCullingSnapshot()
+	const duplicateRead = handle.readCullingSnapshot()
+	assert.equal( duplicateRead, firstRead, 'concurrent reads of one revision should share a readback' )
+	const snapshot = await firstRead
+
+	assert.equal( renderer.readbackCalls.length, 1 )
+	assert.equal( renderer.readbackCalls[0], handle._resources.visibilityAttribute )
+	assert.equal( snapshot.camera, camera )
+	assert.equal( snapshot.revision, 1 )
+	assert.equal( snapshot.chunkCount, 4 )
+	assert.equal( snapshot.indexCount, 24 )
+	assert.equal( snapshot.visibleChunkCount, 2 )
+	assert.equal( snapshot.culledChunkCount, 2 )
+	assert.equal( snapshot.visibleIndexCount, 12 )
+	assert.equal( snapshot.culledIndexCount, 12 )
+	assert.deepEqual( snapshot.visibleChunks, [
+		{ chunkIndex: 0, indexStart: 0, indexCount: 6 },
+		{ chunkIndex: 3, indexStart: 18, indexCount: 6 },
+	] )
+	assert.deepEqual( snapshot.culledChunks, [
+		{ chunkIndex: 1, indexStart: 6, indexCount: 6 },
+		{ chunkIndex: 2, indexStart: 12, indexCount: 6 },
+	] )
+	assert.equal( await handle.readCullingSnapshot(), snapshot, 'an unchanged revision should reuse its completed snapshot' )
+	assert.equal( renderer.readbackCalls.length, 1 )
+
+	camera.position.x = 1
+	camera.updateWorldMatrix( true, false )
+	assert.equal( await handle.readCullingSnapshot(), null, 'a changed camera must not expose the stale selection' )
+	assert.equal( renderer.readbackCalls.length, 1 )
+
+	handle.remove()
+	assert.equal( await handle.readCullingSnapshot(), null )
+	system.dispose()
+} )
+
+test( 'a current readback failure rejects without poisoning a later retry', async () => {
+	const renderer = createNativeRendererStub()
+	const scene = new Scene()
+	const camera = new PerspectiveCamera( 50, 1, 0.1, 100 )
+	const line = createLine()
+	const system = MeshLineCullingSystem.attach( renderer, scene, { autoUpdate: false, mode: 'webgpu' } )
+	const handle = system.add( line )
+
+	line.onBeforeRender( renderer, scene, camera, line.geometry, line.material, null )
+	line.onAfterRender( renderer, scene, camera, line.geometry, line.material, null )
+	assert.equal( await system.update( camera ), true )
+	renderer.getArrayBufferAsync = async () => {
+		throw new Error( 'readback failed' )
+	}
+	await assert.rejects( handle.readCullingSnapshot(), /readback failed/ )
+
+	renderer.getArrayBufferAsync = async attribute => attribute.array.buffer.slice( 0 )
+	handle._resources.visibilityAttribute.array.fill( 1 )
+	const snapshot = await handle.readCullingSnapshot()
+	assert.equal( snapshot.visibleChunkCount, snapshot.chunkCount )
+
+	system.dispose()
+} )
+
+test( 'visibility readback preserves its call-time revision while a newer cull is dispatched', async () => {
+	const renderer = createNativeRendererStub()
+	const scene = new Scene()
+	const camera = new PerspectiveCamera( 50, 1, 0.1, 100 )
+	const line = createLine()
+	const system = MeshLineCullingSystem.attach( renderer, scene, { autoUpdate: false, mode: 'webgpu' } )
+	const handle = system.add( line )
+	let finishReadback = null
+
+	renderer.getArrayBufferAsync = attribute => {
+		renderer.readbackCalls.push( attribute )
+		const captured = attribute.array.buffer.slice( 0 )
+		return new Promise( resolve => {
+			finishReadback = () => resolve( captured )
+		} )
+	}
+	line.onBeforeRender( renderer, scene, camera, line.geometry, line.material, null )
+	line.onAfterRender( renderer, scene, camera, line.geometry, line.material, null )
+	assert.equal( await system.update( camera ), true )
+	handle._resources.visibilityAttribute.array.set( [1] )
+
+	const pending = handle.readCullingSnapshot()
+	assert.equal( renderer.readbackCalls.length, 1 )
+	camera.position.x = 1
+	assert.equal( await system.update( camera ), true )
+	assert.equal( handle._cullingRevision, 2 )
+	handle._resources.visibilityAttribute.array.set( [0] )
+	finishReadback()
+	const snapshot = await pending
+	assert.equal( snapshot.revision, 1 )
+	assert.equal( snapshot.visibleChunkCount, 1 )
+	assert.equal( snapshot.culledChunkCount, 0 )
+
+	system.dispose()
 } )
 
 test( 'same-capacity position updates refresh chunk bounds while topology changes fail open until refresh', async () => {

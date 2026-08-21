@@ -29,6 +29,12 @@ const geometry = new MeshLineGeometry( { lines: points } )
 geometry.setUsage( DynamicDrawUsage )
 geometry.setPositionRange( new Float32Array( [1, 0.25, 0] ), 1, { updateBounding: true } )
 road.setPositionRange( new Float32Array( [1, 0.25, 0] ), 1 )
+const packedLine = new MeshLine( { lines: points, instanceCount: 2 } ).build()
+packedLine.addVertexAttributes( { heat: 1, flow: 2 } )
+packedLine.addInstanceAttributes( { instanceOffset: 3, instanceScale: 1 } )
+const vertexBufferUsage = packedLine.getVertexBufferUsage()
+packedLine.validateVertexBufferBudget( { limit: 8, reservedBuffers: 1 } )
+void vertexBufferUsage.buffers.map( buffer => buffer.attributes.join( ',' ) )
 
 const surfaceGeometry = new MeshLineSurfaceGeometry( {
 	lines: points,
@@ -54,6 +60,9 @@ const surfaceMaterial = new MeshLineSurfaceNodeMaterial( {
 const culling = MeshLineCullingSystem.attach( renderer, new Scene(), { mode: 'auto', minIndices: 4096 } )
 const cullingHandle = culling.add( road, { bounds: [new Box3()], worldPadding: 1 } )
 void culling.update( new PerspectiveCamera() )
+void cullingHandle?.readCullingSnapshot().then( snapshot => snapshot?.culledChunks.map(
+	chunk => chunk.chunkIndex + chunk.indexStart + chunk.indexCount
+) )
 cullingHandle?.remove()
 culling.dispose()
 
@@ -65,4 +74,4 @@ void gpuPath.prepare( renderer, new PerspectiveCamera() )
 void gpuPath.setSimplificationTolerance( 0.1 )
 gpuPath.resize( 1280, 720 )
 
-void [road, geometry, surfaceGeometry, material, surfaceMaterial, culling, gpuPath]
+void [road, packedLine, geometry, surfaceGeometry, material, surfaceMaterial, culling, gpuPath]

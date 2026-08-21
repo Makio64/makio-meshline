@@ -221,10 +221,12 @@ class HeistExample {
 			} ) )
 			.usage( StaticDrawUsage )
 
-		this.line.addInstanceAttribute( 'instanceStart', 3 )
-		this.line.addInstanceAttribute( 'instanceEnd', 3 )
-		this.line.addInstanceAttribute( 'instancePhase', 1 )
-		this.line.addInstanceAttribute( 'instanceAlarm', 1 )
+		this.line.addInstanceAttributes( {
+			instanceStart: 3,
+			instanceEnd: 3,
+			instancePhase: 1,
+			instanceAlarm: 1,
+		} )
 		this.line.material.blending = AdditiveBlending
 		stage3d.add( this.line )
 
@@ -391,9 +393,6 @@ class HeistExample {
 		return this.pickMode
 	}
 
-	show() {}
-	hide( cb ) { if ( cb ) cb() }
-
 	dispose() {
 		stage.onUpdate.remove( this.update )
 		stage.onResize.remove( this.onResize )
@@ -459,4 +458,4 @@ class HeistExample {
 	}
 }
 
-export default new HeistExample()
+export default HeistExample

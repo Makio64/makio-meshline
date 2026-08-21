@@ -1,6 +1,5 @@
-import WebGPU from 'three/addons/capabilities/WebGPU'
 import { Inspector } from 'three/addons/inspector/Inspector.js'
-import { PerspectiveCamera, Scene, WebGPURenderer } from 'three/webgpu'
+import { NoToneMapping, PerspectiveCamera, Scene, WebGPURenderer } from 'three/webgpu'
 
 import stage from '../core/stage'
 
@@ -10,13 +9,13 @@ class Stage3D {
 		this.camera = new PerspectiveCamera( 55, stage.width / stage.height, 1, 100 )
 		this.camera.position.set( 0, 0, 10 )
 		this.camera.lookAt( 0, 0, 0 )
-		this.isWebGPU = WebGPU.isAvailable()
+		this.isWebGPU = false
+		this.backend = 'uninitialized'
+		this.isResizeSubscribed = false
 	}
 
 	async initRender( options = {} ) {
-		this.opt = false
 		if ( !this.renderer ) {
-
 			this.renderer = new WebGPURenderer( {
 				antialias: true,
 				reverseDepth: true,
@@ -25,10 +24,7 @@ class Stage3D {
 
 			this.renderer.setPixelRatio( stage.devicePixelRatio )
 			this.renderer.setSize( stage.width, stage.height )
-			this.renderer.setClearColor( options.background || 0x000000, options.clearAlpha || 1 )
 			this.renderer.domElement.classList.add( 'three' )
-
-			console.log( `BackEnd ${this.isWebGPU ? 'WebGPU' : 'WebGL2'}` )
 
 			if ( import.meta.env.DEV ) {
 				this.renderer.inspector = new Inspector()
@@ -38,6 +34,9 @@ class Stage3D {
 			}
 
 			await this.renderer.init()
+			this.isWebGPU = this.renderer.backend?.isWebGPUBackend === true
+			this.backend = this.isWebGPU ? 'webgpu' : 'webgl2'
+			console.info( `[meshline demo] ${this.backend.toUpperCase()} backend` )
 			document.body.appendChild( this.renderer.domElement )
 
 			if ( this.renderer.inspector?.domElement ) {
@@ -48,11 +47,44 @@ class Stage3D {
 
 		}
 
+		this.resetForDemo( options )
 		this.forceRatio = options.forceRatio ?? 1
 
-		stage.onResize.add( this.resize )
+		if ( !this.isResizeSubscribed ) {
+			stage.onResize.add( this.resize )
+			this.isResizeSubscribed = true
+		}
 
 		this.resize()
+	}
+
+	resetForDemo( options = {} ) {
+		const background = options.background ?? 0x000000
+		const clearAlpha = options.clearAlpha ?? 1
+
+		this.renderer.setClearColor( background, clearAlpha )
+		this.renderer.toneMapping = NoToneMapping
+		this.renderer.shadowMap.enabled = false
+		this.renderer.shadowMap.transmitted = false
+
+		this.scene.background = null
+		this.scene.backgroundNode = null
+		this.scene.environment = null
+		this.scene.environmentIntensity = 1
+		this.scene.fog = null
+
+		this.camera.fov = 55
+		this.camera.near = 1
+		this.camera.far = 100
+		this.camera.zoom = 1
+		this.camera.up.set( 0, 1, 0 )
+		this.camera.position.set( 0, 0, 10 )
+		this.camera.lookAt( 0, 0, 0 )
+		this.camera.updateProjectionMatrix()
+
+		this.control = null
+		this.renderPipeline = null
+		this.postFX = null
 	}
 
 	//---------------------------------------------------------- RENDER
@@ -130,9 +162,17 @@ class Stage3D {
 		this.renderer?.setAnimationLoop( null )
 		this.removeAll()
 		this.control?.disable()
-		stage.onResize.remove( this.resize )
+		if ( this.isResizeSubscribed ) {
+			stage.onResize.remove( this.resize )
+			this.isResizeSubscribed = false
+		}
 		this.renderer?.clear()
 		this.renderer?.dispose()
+		this.renderer?.domElement.remove()
+		this.renderer = null
+		this.control = null
+		this.renderPipeline = null
+		this.postFX = null
 	}
 
 }

@@ -7,12 +7,16 @@
     "build": "vite build"
   },
   "dependencies": {
-    "makio-meshline": "^1.4.0",
-    "three": "^0.183.2",
-    "vue": "^3.5.32"
+    "makio-meshline": "^2.0.0",
+    "three": "0.185.1",
+    "vue": "^3.5.41"
   },
   "devDependencies": {
-    "@vitejs/plugin-vue": "^6.0.5",
-    "vite": "^8.0.8"
-  }
+    "@vitejs/plugin-vue": "^6.0.8",
+    "vite": "^8.2.1"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "packageManager": "pnpm@11.21.0"
 }

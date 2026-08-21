@@ -32,8 +32,10 @@ const line = new MeshLine()
     return vec4( attribute( 'instanceColor', 'vec3' ), 1 )
   } ) )
 
-line.addInstanceAttribute( 'instanceOffset', 3 )
-line.addInstanceAttribute( 'instanceColor', 3 )
+line.addInstanceAttributes( {
+  instanceOffset: 3,
+  instanceColor: 3
+} )
 
 for ( let i = 0; i < instanceCount; i++ ) {
   const angle = i / instanceCount * Math.PI * 2

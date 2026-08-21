@@ -21,10 +21,13 @@ import { attribute, Fn, vec3 } from 'three/tsl'
 const stalkCount = 20
 
 const stalks = new MeshLine()
-  .lines( straightLine( 1, 32 ) )
+  .lines( straightLine( 1, 32, true ) )
   .instances( stalkCount )
   .color( 0x497849 )
   .lineWidth( 0.1 )
+  .widthFn( Fn( ( [width] ) => {
+    return width.mul( attribute( 'instanceTransform', 'vec4' ).w )
+  } ) )
   .shadow( true )
   .positionFn( Fn( ( [position, progress] ) => {
     const transform = attribute( 'instanceTransform', 'vec4' )
@@ -38,8 +41,10 @@ const stalks = new MeshLine()
     )
   } ) )
 
-stalks.addInstanceAttribute( 'instanceTransform', 4 )
-stalks.addInstanceAttribute( 'instanceLean', 3 )
+stalks.addInstanceAttributes( {
+  instanceTransform: 4,
+  instanceLean: 3
+} )
 
 for ( let i = 0; i < stalkCount; i++ ) {
   stalks.setInstanceValue( 'instanceTransform', i, [x, z, height, width] )

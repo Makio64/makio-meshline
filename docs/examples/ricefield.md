@@ -21,7 +21,7 @@ import { attribute, Fn, vec3 } from 'three/tsl'
 const bladeCount = 2000
 
 const rice = new MeshLine()
-	.lines( straightLine( 1, 24 ) )
+	.lines( straightLine( 1, 24, true ) )
 	.instances( bladeCount )
 	.lineWidth( 0.03 )
 	.color( 0x6fbf4b )

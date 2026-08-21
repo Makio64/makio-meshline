@@ -44,6 +44,7 @@ scene.add(light)
 // Create a MeshLine with shadows enabled
 const line = new MeshLine()
   .lines(circlePositions(64, 2))
+  .closed(true)
   .lineWidth(0.1)
   .shadow(true)
   .build()
@@ -63,6 +64,7 @@ Shadow casting works seamlessly with dashed lines - gaps in the dash pattern are
 ```javascript
 const dashedLine = new MeshLine()
   .lines(circlePositions(64, 3))
+  .closed(true)
   .lineWidth(0.1)
   .dash({ count: 30, ratio: 0.5 })
   .shadow(true)

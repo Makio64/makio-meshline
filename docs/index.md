@@ -1,11 +1,11 @@
 ---
 layout: home
-description: "Makio MeshLine is a TSL-powered MeshLine library for Three.js with wide lines, gradients, dashes, textures, shadows, GPU positions, and instancing."
+description: "Makio MeshLine is a TSL-powered Three.js library for wide screen strokes and world-space road surfaces, with styling, GPU positions, and instancing."
 
 hero:
   name: "Makio MeshLine"
   text: "A performant and customizable line solution for Three.js."
-  tagline: "TSL-powered lines with gradients, dashes, textures and more."
+  tagline: "TSL-powered screen strokes and world-space road surfaces."
   actions:
     - theme: brand
       text: What is Makio-Meshline
@@ -55,6 +55,10 @@ Makio MeshLine is built for the cases where `THREE.Line` is too limited and olde
 
 It is designed around Three.js TSL and `WebGPURenderer`, so the same line system works across WebGPU and WebGL2 backends while staying friendly to creative coding, interactive scenes, data visualization, and stylized rendering.
 
+::: tip Version 2
+This site documents the `2.0.0` API. Existing V1 users should read [Migrating from v1 to V2](./v2-migration.md) before upgrading.
+:::
+
 ## What You Can Build
 
 - Cursor trails and draw-on-screen tools
@@ -69,12 +73,13 @@ It is designed around Three.js TSL and `WebGPURenderer`, so the same line system
 - TSL-powered hooks let you customize position, width, color, opacity, UVs, dashes, and discard logic directly in the shader.
 - Instancing and batched lines keep draw calls low when one line turns into hundreds or thousands.
 - GPU position nodes let you animate lines without pushing vertex updates from the CPU every frame.
-- The API stays small enough to learn quickly, with helpers like `circlePositions`, `squarePositions`, `sineWavePositions`, and `straightLine`.
+- The API stays small enough to learn quickly, with helpers like `circlePositions`, `squarePositions`, `rectanglePositions`, `sineWavePositions`, and `straightLine`.
 
 ## Start Here
 
 - Read [Getting Started](./guide.md) for installation and the first line setup.
-- Open [Basic Examples](./examples/basic.md) to compare width, dashes, gradients, textures, opacity, and size attenuation side by side.
+- Upgrading an existing application? Follow [Migrating from v1 to V2](./v2-migration.md).
+- Open the [Basic Example](./examples/basic.md) to compare common options side by side and find the complete vanilla starter.
 - Use the [Interactive Sandbox](./examples/sandbox.md) to tune a line visually and export code.
 - Browse the [API Reference](./api.md) once you want hooks, joins, helpers, instancing, or GPU positions.
 
@@ -92,5 +97,5 @@ It is designed around Three.js TSL and `WebGPURenderer`, so the same line system
 | World-space road surfaces | Yes |
 | Surface bevel/round joins and caps | Yes |
 | WebGPU and WebGL2 via `WebGPURenderer` | Yes |
-| Native-WebGPU chunk culling | Optional |
-| Point-centric indirect GPU path + screen topology | Experimental |
+| Native-WebGPU chunk culling | Optional, Three.js r183+ |
+| Point-centric indirect GPU path + screen topology | Experimental, Three.js r183+ |

@@ -97,8 +97,6 @@ class GpuCullingExample {
 		this.control = null
 	}
 
-	show() {}
-	hide( cb ) { if ( cb ) cb() }
 }
 
-export default new GpuCullingExample()
+export default GpuCullingExample

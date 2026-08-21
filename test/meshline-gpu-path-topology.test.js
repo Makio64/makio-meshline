@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { PerspectiveCamera } from 'three/webgpu'
+import { PerspectiveCamera, Vector4, WebGPUCoordinateSystem } from 'three/webgpu'
 
 import MeshLineGPUPath, { _gpuPathInternals } from '../src/MeshLineGPUPath.js'
 
@@ -14,10 +14,92 @@ const {
 	findReversalBreaks,
 	clipHomogeneousSegment,
 	computeInnerJoinOffset,
+	resolveProjectedJoin,
 	validateInnerJoinSupport,
 	createStableSegmentRecords,
 	createProceduralPrimitiveRecords,
 } = _gpuPathInternals
+
+const SCREEN_PATH = new Float32Array( [
+	-8.2, 3.15, 5.8,
+	-5.4, 4.35, 5.8,
+	-2.7, 2.95, 5.8,
+	0, 4.45, 5.8,
+	2.7, 2.95, 5.8,
+	5.4, 4.35, 5.8,
+	8.2, 3.15, 5.8,
+] )
+
+const closeTo = ( actual, expected, epsilon = 1e-12 ) => {
+	assert.ok(
+		Math.abs( actual - expected ) <= epsilon,
+		`expected ${actual} to be within ${epsilon} of ${expected}`
+	)
+}
+
+const projectScreenPathJoin = ( theta, reversed = false, join = 3 ) => {
+	const aspect = 1847 / 1304
+	const phi = 1.155
+	const radius = 24
+	const camera = new PerspectiveCamera( 55, aspect, 0.1, 180 )
+	camera.coordinateSystem = WebGPUCoordinateSystem
+	camera.position.set(
+		radius * Math.sin( phi ) * Math.cos( theta ),
+		radius * Math.cos( phi ),
+		radius * Math.sin( phi ) * Math.sin( theta )
+	)
+	camera.lookAt( 0, 0.5, -1.3 )
+	camera.updateMatrixWorld()
+	camera.updateProjectionMatrix()
+
+	const pointCount = SCREEN_PATH.length / 3
+	const matrix = camera.projectionMatrix.clone().multiply( camera.matrixWorldInverse )
+	const clip = []
+	const projected = []
+	for ( let point = 0; point < pointCount; point++ ) {
+		const sourcePoint = reversed ? pointCount - point - 1 : point
+		const offset = sourcePoint * 3
+		const position = new Vector4(
+			SCREEN_PATH[offset],
+			SCREEN_PATH[offset + 1],
+			SCREEN_PATH[offset + 2],
+			1
+		).applyMatrix4( matrix )
+		clip.push( position.toArray() )
+		projected.push( [position.x / position.w * aspect, position.y / position.w] )
+	}
+
+	const incomingDelta = [
+		projected[join][0] - projected[join - 1][0],
+		projected[join][1] - projected[join - 1][1],
+	]
+	const outgoingDelta = [
+		projected[join + 1][0] - projected[join][0],
+		projected[join + 1][1] - projected[join][1],
+	]
+	const projectedHalfWidth = 0.22 * camera.projectionMatrix.elements[5] / clip[join][3]
+
+	return { clip, join, incomingDelta, outgoingDelta, projectedHalfWidth }
+}
+
+const assertFullWidthBodyFallback = ( resolved, fixture ) => {
+	closeTo( Math.hypot( ...resolved.incomingBodyInnerOffset ), fixture.projectedHalfWidth )
+	closeTo( Math.hypot( ...resolved.outgoingBodyInnerOffset ), fixture.projectedHalfWidth )
+	const incomingDirection = fixture.incomingDelta.map( value => value / resolved.incomingLength )
+	const outgoingDirection = fixture.outgoingDelta.map( value => value / resolved.outgoingLength )
+	closeTo(
+		resolved.incomingBodyInnerOffset[0] * -incomingDirection[1] +
+		resolved.incomingBodyInnerOffset[1] * incomingDirection[0],
+		resolved.side * fixture.projectedHalfWidth
+	)
+	closeTo(
+		resolved.outgoingBodyInnerOffset[0] * -outgoingDirection[1] +
+		resolved.outgoingBodyInnerOffset[1] * outgoingDirection[0],
+		resolved.side * fixture.projectedHalfWidth
+	)
+	assert.notDeepEqual( resolved.incomingBodyInnerOffset, resolved.pivotOffset )
+	assert.notDeepEqual( resolved.outgoingBodyInnerOffset, resolved.pivotOffset )
+}
 
 const createRendererStub = ( limits = null ) => ( {
 	isWebGPURenderer: true,
@@ -177,6 +259,135 @@ test( 'shared inner intersections stay exact when the independent outer miter be
 	assert.deepEqual( hairpin.offset, [0, 0] )
 } )
 
+test( 'projected join resolution bounds the join pivot without tapering unsupported bodies', () => {
+	const angle = 160 * Math.PI / 180
+	const direction = [Math.cos( angle ), Math.sin( angle )]
+	const expectedOffset = [-Math.tan( 80 * Math.PI / 180 ), 1]
+	const supported = resolveProjectedJoin( [10, 0], [direction[0] * 10, direction[1] * 10], 1 )
+
+	assert.equal( supported.fallback, 'exact' )
+	assert.equal( supported.supported, true )
+	closeTo( supported.incomingLength, 10 )
+	closeTo( supported.outgoingLength, 10 )
+	closeTo( supported.offset[0], expectedOffset[0] )
+	closeTo( supported.offset[1], expectedOffset[1] )
+	assert.deepEqual( supported.pivotOffset, supported.exactOffset )
+	assert.deepEqual( supported.incomingBodyInnerOffset, supported.exactOffset )
+	assert.deepEqual( supported.outgoingBodyInnerOffset, supported.exactOffset )
+	assert.ok( supported.incomingDemand < supported.incomingLength )
+	assert.ok( supported.outgoingDemand < supported.outgoingLength )
+
+	const unsupported = resolveProjectedJoin( [1, 0], direction, 1 )
+	assert.equal( unsupported.fallback, 'center' )
+	assert.equal( unsupported.supported, false )
+	assert.deepEqual( Array.from( unsupported.offset ), [0, 0] )
+	assert.deepEqual( Array.from( unsupported.pivotOffset ), [0, 0] )
+	assertFullWidthBodyFallback( unsupported, {
+		incomingDelta: [1, 0],
+		outgoingDelta: direction,
+		projectedHalfWidth: 1,
+	} )
+	assert.ok( unsupported.incomingDemand > unsupported.incomingLength )
+	assert.ok( unsupported.outgoingDemand > unsupported.outgoingLength )
+	closeTo( unsupported.incomingDemand, supported.incomingDemand )
+	closeTo( unsupported.outgoingDemand, supported.outgoingDemand )
+
+	const anisotropicProjection = resolveProjectedJoin(
+		[10, 0],
+		[direction[0] * 10, direction[1] * 10],
+		2
+	)
+	assert.equal( anisotropicProjection.fallback, 'center' )
+	assert.ok( anisotropicProjection.demand > anisotropicProjection.available )
+	assertFullWidthBodyFallback( anisotropicProjection, {
+		incomingDelta: [10, 0],
+		outgoingDelta: [direction[0] * 10, direction[1] * 10],
+		projectedHalfWidth: 2,
+	} )
+
+	const reversal = resolveProjectedJoin( [1, 0], [-1, 0], 1 )
+	assert.equal( reversal.fallback, 'reversal' )
+	assert.equal( reversal.supported, false )
+	assert.deepEqual( Array.from( reversal.offset ), [0, 0] )
+	assert.equal( reversal.incomingBodyInnerOffset, null )
+	assert.equal( reversal.outgoingBodyInnerOffset, null )
+
+	const degenerate = resolveProjectedJoin( [0, 0], [1, 0], 1 )
+	assert.equal( degenerate.fallback, 'degenerate' )
+	assert.equal( degenerate.supported, false )
+	assert.deepEqual( Array.from( degenerate.offset ), [0, 0] )
+} )
+
+test( 'the variable-topology demo cusp keeps every projected join finite and full-width through the reversal transition', () => {
+	const cameraCases = [
+		{ theta: 0.271 - 2e-6, fallback: 'reversal' },
+		{ theta: 0.271, fallback: 'center' },
+		{ theta: 0.271 + 2e-6, fallback: 'center' },
+	]
+	const pointCount = SCREEN_PATH.length / 3
+
+	for ( const reversed of [false, true] ) {
+		const observedCentralFallbacks = []
+		for ( const cameraCase of cameraCases ) {
+			for ( let join = 1; join < pointCount - 1; join++ ) {
+				const fixture = projectScreenPathJoin( cameraCase.theta, reversed, join )
+				for ( const point of fixture.clip.slice( join - 1, join + 2 ) ) {
+					assert.ok( point.every( Number.isFinite ) )
+					assert.ok( point[3] > 0 )
+				}
+				for ( const segment of [[join - 1, join], [join, join + 1]] ) {
+					const clipped = clipHomogeneousSegment(
+						fixture.clip[segment[0]],
+						fixture.clip[segment[1]]
+					)
+					assert.equal( clipped.visible, true )
+					assert.deepEqual( clipped.range, [0, 1] )
+				}
+
+				const resolved = resolveProjectedJoin(
+					fixture.incomingDelta,
+					fixture.outgoingDelta,
+					fixture.projectedHalfWidth
+				)
+				assert.equal( resolved.supported, false )
+				assert.deepEqual( Array.from( resolved.pivotOffset ), [0, 0] )
+				assert.ok( resolved.incomingLength > 1e-7 )
+				assert.ok( resolved.outgoingLength > 1e-7 )
+
+				if ( resolved.fallback === 'center' ) {
+					assert.ok(
+						resolved.incomingDemand > resolved.incomingLength * ( 1 - 1e-6 ) ||
+						resolved.outgoingDemand > resolved.outgoingLength * ( 1 - 1e-6 )
+					)
+					assertFullWidthBodyFallback( resolved, fixture )
+				} else {
+					assert.equal( resolved.fallback, 'reversal' )
+					assert.equal( resolved.incomingBodyInnerOffset, null )
+					assert.equal( resolved.outgoingBodyInnerOffset, null )
+				}
+
+				if ( join === 3 ) {
+					observedCentralFallbacks.push( resolved.fallback )
+					assert.equal( resolved.fallback, cameraCase.fallback )
+					if ( cameraCase.theta === 0.271 ) {
+						const exact = computeInnerJoinOffset(
+							fixture.incomingDelta,
+							fixture.outgoingDelta,
+							fixture.projectedHalfWidth
+						)
+						assert.equal( exact.fallback, false )
+						assert.ok(
+							Math.hypot( ...exact.offset ) > fixture.projectedHalfWidth * 100,
+							'the fixture must retain the formerly unbounded inner intersection'
+						)
+					}
+				}
+			}
+		}
+		assert.deepEqual( observedCentralFallbacks, ['reversal', 'center', 'center'] )
+	}
+} )
+
 test( 'finite support budgeting is per strip side', () => {
 	const lengths = new Float64Array( [1] )
 	const demands = new Float64Array( [0.6] )
@@ -295,8 +506,8 @@ test( 'advanced raw topology is compact and forces full detail when simplificati
 	assert.equal( path.status.segmentRecords, 'storage' )
 	assert.equal( path.status.primitiveRecords, 'compact-storage' )
 	assert.equal( path.status.simplification, 'disabled-for-variable-topology' )
-	assert.equal( path.status.topologySafety, 'finite-legs-unverified' )
-	assert.match( path.status.topologySafetyReason, /short projected incident legs/ )
+	assert.equal( path.status.topologySafety, 'projected-join-guarded' )
+	assert.match( path.status.topologySafetyReason, /full-width bodies.*bounded center pivot/ )
 	assert.equal( path._resources.segmentAttribute.count, 3 )
 	assert.equal( path._resources.segmentAttribute.itemSize, 4 )
 	assert.equal( path._resources.segmentAttribute.array.byteLength, 3 * 16 )

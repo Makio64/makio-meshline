@@ -12,6 +12,9 @@
   },
   "dependencies": {
     "makio-meshline": "workspace:*",
-    "three": ">=0.183.2"
+    "three": "0.185.1"
+  },
+  "engines": {
+    "node": ">=22.12.0"
   }
 }

@@ -15,8 +15,7 @@ const line = new MeshLine({
   lines: [[0,0,0],[1,1,0],[2,0,0]],
   color: 0xff6600,
   lineWidth: 0.4,
-  dashCount: 8,
-  dashRatio: 0.5
+  dash: { count: 8, ratio: 0.5 }
 })
 scene.add( line )
 ```
@@ -69,6 +68,8 @@ const mat = new MeshLineNodeMaterial({
   miterLimit: 4
 })
 ```
+
+Direct material construction uses the low-level `dashCount`, `dashRatio`, and `dashOffset` uniform fields shown above. For application code, prefer the `MeshLine` facade and its grouped `dash` option.
 
 Tip: uniforms such as `lineWidth`, `dashOffset`, and `opacity` are mutable at runtime for animation.
 

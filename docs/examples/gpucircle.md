@@ -38,27 +38,35 @@ Instead of providing vertex positions as a buffer, you define a TSL function tha
 
 ```javascript
 import { MeshLine } from 'makio-meshline'
-import { Fn, vec3, cos, sin, time, mix } from 'three/tsl'
+import { cos, Fn, mix, sin, time, uniform, vec3 } from 'three/tsl'
 
-// TSL function for circle positions
+const SEGMENTS = 128
+const TWO_PI = Math.PI * 2
+
+// Generate a circle in the XY plane from normalized per-vertex progress.
 const circlePosition = Fn( ( [progress] ) => {
-  const angle = progress.add( time.negate() ).mul( Math.PI * 2 )
-  return vec3( cos( angle ), sin( angle ), 0 )
+	const angle = progress.add( time.negate() ).mul( TWO_PI )
+	return vec3( cos( angle ), sin( angle ), 0 )
 } )
 
-// TSL function for wave positions  
+// Generate a wave in the XY plane from the same normalized progress.
 const wavePosition = Fn( ( [progress] ) => {
-  const y = sin( progress.mul( Math.PI * 4 ).add( time.negate().mul( 4 ) ) )
-  return vec3( progress.oneMinus().mul( 2 ).sub( 1 ), y.mul( 0.5 ), 0 )
+	const y = sin( progress.mul( Math.PI * 4 ).add( time.negate().mul( 4 ) ) )
+	return vec3( progress.oneMinus().mul( 2 ).sub( 1 ), y.mul( 0.5 ), 0 )
+} )
+
+const useWave = uniform( 0 )
+const positionNode = Fn( ( [progress] ) => {
+	return mix( circlePosition( progress ), wavePosition( progress ), useWave )
 } )
 
 // Create line with GPU position node
 const line = new MeshLine()
-  .segments( 128 )
-  .closed( true )
-  .gpuPositionNode( circlePosition )
-  .lineWidth( 0.1 )
-  .gradientColor( 0x0000ff )
-  .color( 0xffffff )
-  .build()
+	.segments( SEGMENTS )
+	.closed( true )
+	.gpuPositionNode( positionNode )
+	.lineWidth( 0.1 )
+	.gradientColor( 0x0000ff )
+	.color( 0xffffff )
+	.build()
 ```

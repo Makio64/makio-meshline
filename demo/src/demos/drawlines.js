@@ -11,8 +11,11 @@ import random from '@/makio/utils/random'
 
 const NUM_POINTS = 20
 const NUM_LINES = 1000
+const BILLBOARD_VERTICES_PER_POINT = 4
 const LINES_FOLLOWING_MOUSE = 5
 const LINES_BY_PATH = 10
+// Keep resting trails non-degenerate so their dynamic buffers retain capacity.
+const TOPOLOGY_EPSILON = 0.0001
 const GREEN_PALETTE = [0x00FF88, 0x88FF00, 0x00AA44, 0x44FF88]
 const force3 = new Vector3()
 const pathPoint3 = new Vector3()
@@ -21,7 +24,7 @@ const pointerNDC = new Vector2()
 
 class DrawLinesExample {
 	constructor() {
-		this.text = 'Click & drag to draw lines'
+		this.text = ''
 		this.paths = []
 		this.activeStroke = null
 		this.lines = []
@@ -30,11 +33,15 @@ class DrawLinesExample {
 		this.target = new Vector3()
 		this.raycaster = new Raycaster()
 		this.mouseSpeed = 0
-		this.timespeed = 1
+		this.timeScale = 1
+		this.hasInteracted = false
+		this.instructionElement = null
+		this.instructionStyle = null
+		this.instructionTimer = 0
 
 		for ( let i = 0; i < NUM_LINES; i++ ) {
 			const angle = random() * Math.PI * 2
-			const radius = 0.2 + random( -.3, .3 )
+			const radius = 0.2 + random( -0.3, 0.3 )
 			const offset = new Vector3(
 				Math.cos( angle ) * radius,
 				Math.sin( angle ) * radius,
@@ -49,7 +56,7 @@ class DrawLinesExample {
 				points,
 				positions,
 				offset,
-				speed: 0.00000001,
+				speed: 0,
 				target: new Vector3(),
 				velocity: new Vector3(),
 				spring: 0.06 + random( -0.02, 0.02 ),
@@ -66,6 +73,7 @@ class DrawLinesExample {
 		stage3d.control = new OrbitControl( stage3d.camera, 12 )
 		stage3d.control.disable()
 		this.createLine()
+		this.createInstruction()
 
 		onDown.add( this.onDown )
 		onMove.add( this.onMouseMove )
@@ -83,28 +91,82 @@ class DrawLinesExample {
 			.widthCallback( getWidthFactor )
 			.colorFn( Fn( ( [, progress] ) => {
 				const vertexColor = attribute( 'lineColor', 'vec3' )
-				return vec4( vertexColor.add( progress.smoothstep( 0.5, 1 ).mul( .2 ) ), 1 )
+				return vec4( vertexColor.add( progress.smoothstep( 0.5, 1 ).mul( 0.2 ) ), 1 )
 			} ) )
 
 		this.meshline.build()
 
-		this.widthArray = new Float32Array( NUM_LINES * NUM_POINTS * 2 )
-		for ( let i = 0; i < this.widthArray.length; i++ ) {
-			this.widthArray[i] = 0.01
-		}
+		const verticesPerLine = NUM_POINTS * BILLBOARD_VERTICES_PER_POINT
+		this.widthArray = new Float32Array( NUM_LINES * verticesPerLine )
 
-		const colorArray = new Float32Array( NUM_LINES * NUM_POINTS * 2 * 3 )
+		this.meshline.addVertexAttribute( 'lineColor', 3 )
+		const colors = new Float32Array( NUM_LINES * verticesPerLine * 3 )
 		for ( let lineIndex = 0; lineIndex < NUM_LINES; lineIndex++ ) {
 			const color = new Color( GREEN_PALETTE[lineIndex % GREEN_PALETTE.length] )
-			const startVertex = lineIndex * NUM_POINTS * 2
+			const startVertex = lineIndex * verticesPerLine
 
-			for ( let i = 0; i < NUM_POINTS * 2; i++ ) {
-				colorArray.set( [color.r, color.g, color.b], ( startVertex + i ) * 3 )
+			for ( let i = 0; i < verticesPerLine; i++ ) {
+				color.toArray( colors, ( startVertex + i ) * 3 )
 			}
 		}
 
-		this.meshline.geometry.setOrUpdateAttribute( 'lineColor', colorArray, 3 )
+		this.meshline.setVertexValues( 'lineColor', colors )
+		this.meshline.setVertexValues( 'width', this.widthArray )
+		this.meshline.visible = false
 		stage3d.add( this.meshline )
+	}
+
+	createInstruction() {
+		this.instructionStyle = document.createElement( 'style' )
+		this.instructionStyle.textContent = `
+			.DrawLinesHint {
+				position: fixed;
+				top: calc(16px + var(--sait, 0px));
+				left: calc(16px + var(--sail, 0px));
+				z-index: 20;
+				padding: 8px 11px;
+				border: 1px solid rgba(118, 255, 178, .28);
+				border-radius: 999px;
+				background: rgba(3, 12, 8, .7);
+				box-shadow: 0 8px 28px rgba(0, 0, 0, .28);
+				backdrop-filter: blur(8px);
+				font: 650 11px/1 system-ui, sans-serif;
+				letter-spacing: .06em;
+				text-transform: uppercase;
+				color: rgba(224, 255, 235, .9);
+				pointer-events: none;
+				user-select: none;
+				transition: opacity .24s ease, transform .24s ease;
+			}
+			@media (max-width: 600px) {
+				.DrawLinesHint {
+					top: calc(10px + var(--sait, 0px));
+					left: calc(10px + var(--sail, 0px));
+					font-size: 10px;
+				}
+			}
+			@media (prefers-reduced-motion: reduce) {
+				.DrawLinesHint { transition: none; }
+			}
+		`
+		document.head.appendChild( this.instructionStyle )
+
+		this.instructionElement = document.createElement( 'div' )
+		this.instructionElement.className = 'DrawLinesHint'
+		this.instructionElement.textContent = 'Drag anywhere to draw'
+		document.body.appendChild( this.instructionElement )
+	}
+
+	dismissInstruction() {
+		if ( !this.instructionElement ) return
+
+		this.instructionElement.style.opacity = '0'
+		this.instructionElement.style.transform = 'translateY(-4px)'
+		window.clearTimeout( this.instructionTimer )
+		this.instructionTimer = window.setTimeout( () => {
+			this.instructionElement?.remove()
+			this.instructionElement = null
+		}, 260 )
 	}
 
 	update = ( dt ) => {
@@ -134,7 +196,7 @@ class DrawLinesExample {
 			} else {
 				for ( let k = NUM_POINTS - 1; k >= 0; k-- ) {
 					if ( k === 0 ) {
-						const force = force3.copy( line.target ).sub( line.points[k] ).multiplyScalar( line.spring * this.timespeed )
+						const force = force3.copy( line.target ).sub( line.points[k] ).multiplyScalar( line.spring * this.timeScale )
 						line.velocity.add( force ).multiplyScalar( line.friction )
 						line.points[k].add( line.velocity )
 					} else {
@@ -147,7 +209,7 @@ class DrawLinesExample {
 		}
 
 		this.meshline.setPositions( this.lineArrays )
-		this.meshline.geometry.setOrUpdateAttribute( 'width', this.widthArray, 1 )
+		this.meshline.setVertexValues( 'width', this.widthArray )
 	}
 
 	updateWidthArray( lineIndex, line ) {
@@ -157,9 +219,10 @@ class DrawLinesExample {
 				width *= smoothstep( 0, 100, line.pathTime )
 			}
 
-			const attributeIndex = lineIndex * NUM_POINTS * 2 + pointIndex * 2
-			this.widthArray[attributeIndex] = width
-			this.widthArray[attributeIndex + 1] = width
+			const attributeIndex = ( lineIndex * NUM_POINTS + pointIndex ) * BILLBOARD_VERTICES_PER_POINT
+			for ( let copyIndex = 0; copyIndex < BILLBOARD_VERTICES_PER_POINT; copyIndex++ ) {
+				this.widthArray[attributeIndex + copyIndex] = width
+			}
 		}
 	}
 
@@ -170,7 +233,7 @@ class DrawLinesExample {
 
 	updateLineOnPath( line, path, dt ) {
 		const range = path.endTime - path.startTime
-		line.pathTime += dt * this.timespeed
+		line.pathTime += dt * this.timeScale
 		let percent = ( line.pathTime / range ) % 1
 
 		if ( line.pathTime >= range ) {
@@ -198,8 +261,14 @@ class DrawLinesExample {
 		line.speed = MathUtils.lerp( line.speed, speed, 0.15 )
 		line.target.set( pathPoint3.x, pathPoint3.y, 0 ).add( line.offset )
 	}
+
 	onDown = ( mouseData ) => {
 		this.updateTarget( mouseData )
+		if ( !this.hasInteracted ) {
+			this.hasInteracted = true
+			this.meshline.visible = true
+			this.dismissInstruction()
+		}
 		this.activeStroke = []
 		this.addPoint( this.target )
 	}
@@ -262,6 +331,11 @@ class DrawLinesExample {
 		onDown.remove( this.onDown )
 		onMove.remove( this.onMouseMove )
 		onUp.remove( this.onUp )
+		window.clearTimeout( this.instructionTimer )
+		this.instructionElement?.remove()
+		this.instructionStyle?.remove()
+		this.instructionElement = null
+		this.instructionStyle = null
 		
 		stage3d.remove( this.meshline )
 		stage3d.control.dispose()
@@ -269,8 +343,6 @@ class DrawLinesExample {
 		this.meshline = null
 	}
 
-	show() {}
-	hide( cb ) { if ( cb ) cb() }
 }
 
 function getWidthFactor( t ) {
@@ -283,9 +355,10 @@ function getWidthFactor( t ) {
 function writePointsToArray( points, positions ) {
 	for ( let i = 0; i < NUM_POINTS; i++ ) {
 		const point = points[i]
-		positions[i * 3] = point.x
-		positions[i * 3 + 1] = point.y
-		positions[i * 3 + 2] = point.z
+		const offset = i * 3
+		positions[offset] = point.x - i * TOPOLOGY_EPSILON
+		positions[offset + 1] = point.y
+		positions[offset + 2] = point.z
 	}
 }
 
@@ -313,4 +386,4 @@ function samplePathPoint( path, percent, target ) {
 	return target
 }
 
-export default new DrawLinesExample()
+export default DrawLinesExample

@@ -53,8 +53,39 @@ test( 'surface geometry rebuilds for live width/path updates and can switch prof
 	road.surface( false )
 	assert.equal( road.geometry.isMeshLine, true )
 	assert.equal( road.material.isMeshLineNodeMaterial, true )
+	assert.equal( road.geometry.getAttribute( 'position' ).count, 12 )
+	assert.deepEqual( Array.from( road.geometry.getAttribute( 'joinRole' ).array ), [
+		-1, -2, 1, 2,
+		-1, -2, 1, 2,
+		-1, -2, 1, 2,
+	] )
+	assert.deepEqual( Array.from( road.geometry.getIndex().array ), [
+		2, 3, 4, 4, 3, 5,
+		6, 7, 8, 8, 7, 9,
+	] )
 
 	road.dispose()
+} )
+
+test( 'surface facade retains and rebuilds the clipped inner-join policy', () => {
+	const line = new MeshLine()
+		.lines( new Float32Array( [
+			-10, 0, 0,
+			0, 0, 0,
+			-1, 0, Math.sqrt( 3 ),
+			-6, 0, -Math.sqrt( 3 ),
+		] ) )
+		.lineWidth( 2 )
+		.surface( { frame: 'fixed-up', up: [0, 1, 0] } )
+		.join( { type: 'round', segments: 8, inner: 'clip' } )
+		.build()
+
+	assert.equal( line._options.join.inner, 'clip' )
+	assert.equal( line.geometry.options.join.inner, 'clip' )
+	line.join( { type: 'round', segments: 12, inner: 'clip' } )
+	assert.equal( line.geometry.options.join.inner, 'clip' )
+	assert.ok( line.geometry.getAttribute( 'position' ).count > 0 )
+	line.dispose()
 } )
 
 test( 'surface raycast uses the generated triangles', () => {
@@ -137,6 +168,41 @@ test( 'instance batches avoid redundant pre-upload versions and support one-shot
 	line.dispose()
 } )
 
+test( 'facade uploads custom vertex values with bounds checking', () => {
+	const line = new MeshLine().lines( roadPoints ).build()
+	const weights = line.addVertexAttribute( 'customWeight', 2 )
+
+	const result = line.setVertexValues( 'customWeight', new Float32Array( [1, 2, 3, 4] ), 1 )
+	assert.equal( result, line )
+	assert.deepEqual( Array.from( weights.array.slice( 2, 6 ) ), [1, 2, 3, 4] )
+	assert.deepEqual( weights.updateRanges, [{ start: 2, count: 4 }] )
+	assert.throws(
+		() => line.setVertexValues( 'customWeight', new Float32Array( weights.array.length ), 1 ),
+		/exceed.*capacity/i,
+	)
+	assert.throws(
+		() => line.setVertexValues( 'missing', new Float32Array( [1] ) ),
+		/not found/i,
+	)
+	for ( const name of ['position', 'previous', 'next', 'side', 'joinRole', 'width', 'uv', 'progress', 'endpoint', 'vertexColor'] ) {
+		assert.throws(
+			() => line.addVertexAttribute( name, 1 ),
+			/reserved billboard vertex attribute/i,
+		)
+	}
+
+	line.dispose()
+} )
+
+test( 'facade reports degenerate custom-attribute geometry clearly', () => {
+	const line = new MeshLine().lines( new Float32Array( [0, 0, 0, 0, 0, 0] ) )
+	assert.throws(
+		() => line.addVertexAttribute( 'customWeight', 1 ),
+		/requires at least two distinct points/i,
+	)
+	line.dispose()
+} )
+
 test( 'facade range updates stay billboard-only and chainable', () => {
 	const line = new MeshLine().lines( roadPoints ).build()
 	const result = line.setPositionRange( new Float32Array( [0.5, 0, 2] ), 1 )
@@ -166,4 +232,34 @@ test( 'surface texture topology removes and restores optional UV storage', () =>
 
 	road.dispose()
 	map.dispose()
+} )
+
+test( 'facade keeps automatic transparency and depth writes aligned during live updates', () => {
+	const alphaMap = new Texture()
+
+	for ( const surface of [false, true] ) {
+		const line = new MeshLine( { lines: roadPoints, alphaMap, surface } ).build()
+		assert.equal( line.material.transparent, true )
+		assert.equal( line.material.depthWrite, false )
+
+		line.transparent( false )
+		assert.equal( line.material.transparent, true )
+		assert.equal( line.material.depthWrite, false )
+
+		line.alphaMap( null )
+		assert.equal( line.material.transparent, false )
+		assert.equal( line.material.depthWrite, true )
+
+		line.opacity( 0.5 )
+		assert.equal( line.material.transparent, true )
+		assert.equal( line.material.depthWrite, false )
+
+		line.opacity( 1 )
+		assert.equal( line.material.transparent, false )
+		assert.equal( line.material.depthWrite, true )
+
+		line.dispose()
+	}
+
+	alphaMap.dispose()
 } )

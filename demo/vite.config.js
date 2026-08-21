@@ -58,11 +58,9 @@ export default defineConfig( {
 		keepNames: true,
 		legalComments: 'none',
 	},
-	// optimizeDeps: {
-	// 	esbuildOptions: {
-	// 		target: 'esnext', // Ensure esbuild target is set to esnext for dependencies
-	// 	},
-	// },
+	optimizeDeps: {
+		exclude: ['three/addons/inspector/Inspector.js'],
+	},
 	base: process.env.NODE_ENV === 'production' ? '/' : '/',
 	resolve: {
 		dedupe: ['three'],

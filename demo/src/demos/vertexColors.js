@@ -1,4 +1,5 @@
 import { MeshLine } from 'makio-meshline'
+import { Color } from 'three/webgpu'
 
 import OrbitControl from '@/makio/three/controls/OrbitControl'
 import stage3d from '@/makio/three/stage3d'
@@ -21,14 +22,15 @@ class VertexColorsExample {
 		window.addEventListener( 'resize', this.onResize )
 	}
 
-	// Add colored line helper
+	// Create one wave and move it vertically so the examples stay distinct.
 	addLine( colors, yOffset ) {
 		const positions = new Float32Array( NUM_POINTS * 3 )
 		for ( let i = 0; i < NUM_POINTS; i++ ) {
 			const t = i / ( NUM_POINTS - 1 )
-			positions[i * 3] =  ( t - 0.5 ) * 15
-			positions[i * 3 + 1] = Math.sin( t * Math.PI * 3 )
-			positions[i * 3 + 2] = yOffset
+			const offset = i * 3
+			positions[offset] = ( t - 0.5 ) * 15
+			positions[offset + 1] = Math.sin( t * Math.PI * 3 ) + yOffset
+			positions[offset + 2] = 0
 		}
 
 		const line = new MeshLine()
@@ -46,9 +48,10 @@ class VertexColorsExample {
 
 		for ( let i = 0; i < NUM_POINTS; i++ ) {
 			const t = i / ( NUM_POINTS - 1 )
-			colors[i * 3] = 1 - t      // Red
-			colors[i * 3 + 1] = 0      // Green
-			colors[i * 3 + 2] = t      // Blue
+			const offset = i * 3
+			colors[offset] = 1 - t
+			colors[offset + 1] = 0
+			colors[offset + 2] = t
 		}
 
 		this.addLine( colors, 2 )
@@ -56,12 +59,11 @@ class VertexColorsExample {
 
 	createRainbowLine() {
 		const colors = new Float32Array( NUM_POINTS * 3 )
+		const color = new Color()
 
 		for ( let i = 0; i < NUM_POINTS; i++ ) {
-			const hue = ( i / NUM_POINTS ) * 6
-			colors[i * 3] = Math.sin( hue ) * 0.5 + 0.5
-			colors[i * 3 + 1] = Math.sin( hue + 2 ) * 0.5 + 0.5
-			colors[i * 3 + 2] = Math.sin( hue + 4 ) * 0.5 + 0.5
+			const hue = i / ( NUM_POINTS - 1 )
+			color.setHSL( hue, 1, 0.5 ).toArray( colors, i * 3 )
 		}
 
 		this.addLine( colors, 0 ).dash( { count: 10 } )
@@ -71,8 +73,8 @@ class VertexColorsExample {
 		const colors = new Float32Array( NUM_POINTS * 3 )
 
 		for ( let i = 0; i < NUM_POINTS; i++ ) {
-			let p =  i / NUM_POINTS
-			colors[i * 3] = p
+			const progress = i / ( NUM_POINTS - 1 )
+			colors[i * 3] = progress
 		}
 
 		this.addLine( colors, -2 )
@@ -92,11 +94,6 @@ class VertexColorsExample {
 		stage3d.control?.dispose()
 	}
 
-	show() {}
-
-	hide( cb ) {
-		if ( cb ) cb()
-	}
 }
 
-export default new VertexColorsExample()
+export default VertexColorsExample
