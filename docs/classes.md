@@ -1,6 +1,6 @@
 # Classes
 
-Makio MeshLine provides a high-level façade, a screen-profile geometry/material pair, and a surface-profile geometry/material pair. All live in the `makio-meshline` package and work with both WebGPU and WebGL2 back-ends.
+Makio MeshLine provides a high-level façade, cross-backend screen and surface geometry/material pairs, and an experimental WebGPU compute façade. All live in the `makio-meshline` package; `MeshLineCompute` requires `WebGPURenderer.compute()`, while the regular profiles work with both WebGPU and WebGL2 back-ends.
 
 ---
 
@@ -45,6 +45,25 @@ Important API:
 * `setPositionRange( patch, startPoint, options? )` – update and upload only a fixed local span plus its neighbor halo.
 
 See the dedicated [geometry page](/meshline-geometry) for all details.
+
+---
+
+## `MeshLineCompute`
+
+Experimental WebGPU-only façade for autonomous curves. It owns storage buffers for point positions, velocities, base positions, seeds, and cumulative distance, dispatches motion and arc-length compute passes with `step(renderer, delta)`, then renders through MeshLine's material pipeline.
+
+```ts
+import { MeshLineCompute } from 'makio-meshline'
+
+const curves = new MeshLineCompute( {
+  curveCount: 180,
+  pointsPerCurve: 42,
+  lineWidth: 0.14,
+  dash: { count: 72, ratio: 0.58 }
+} ).build()
+```
+
+Use `MeshLine` for ordinary WebGPU/WebGL2 lines. Use `MeshLineCompute` when curve state should live and evolve on the GPU.
 
 ---
 

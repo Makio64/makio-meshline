@@ -29,6 +29,7 @@
     "MeshLineNodeMaterial.js",
     "MeshLineSurfaceGeometry.js",
     "MeshLineSurfaceNodeMaterial.js",
+    "MeshLineCompute.js",
     "MeshLinePicker.js",
     "MeshLinePickerHelper.js",
     "MeshLineCullingSystem.js",

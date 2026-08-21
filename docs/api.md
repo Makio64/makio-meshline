@@ -1,12 +1,12 @@
 ---
-description: "Browse the Makio MeshLine API reference for MeshLine, MeshLineGeometry, MeshLineNodeMaterial, hooks, helpers, and rendering options."
+description: "Browse the Makio MeshLine API reference for MeshLine, MeshLineCompute, MeshLineGeometry, MeshLineNodeMaterial, hooks, helpers, and rendering options."
 ---
 
 # API Reference
 
 Makio MeshLine is built around three creative-coding requirements: **performance**, **customization**, and **simplicity**.
 
-The main entry uses TSL and requires Three.js `WebGPURenderer`; it works with both its WebGPU and WebGL2 backends on Three.js r180+. The optional `gpu-culling` and `gpu-path` entry points require Three.js r183+ and native WebGPU. Existing v1 users should review [Migrating from v1 to V2](/v2-migration) before upgrading.
+The regular `MeshLine` API uses TSL and requires Three.js `WebGPURenderer`; it works with both its WebGPU and WebGL2 backends on Three.js r180+. The root `MeshLineCompute` export requires WebGPU compute support. The optional `gpu-culling` and `gpu-path` entry points require Three.js r183+ and native WebGPU. Existing v1 users should review [Migrating from v1 to V2](/v2-migration) before upgrading.
 
 ## [MeshLine](/meshline)
 
@@ -23,6 +23,16 @@ new MeshLine().color(0xff0000).gradientColor(0xff00ff) // etc.
 ```
 
 Use `.surface( options )` when the path represents a road, track, or lit ribbon. See [World-Space Surfaces](/surface).
+
+## [MeshLineCompute](/meshline-compute)
+
+Experimental WebGPU-only curve engine. It stores autonomous curve points in GPU storage buffers, updates them with motion and arc-length compute passes, and renders the result through MeshLine's ribbon material.
+
+```ts
+new MeshLineCompute(options?: MeshLineComputeOptions)
+```
+
+Call `step(renderer, deltaSeconds)` once per frame to dispatch the motion and cumulative arc-length compute passes. Use the regular `MeshLine` API when a WebGL2-compatible path is required.
 
 ## [MeshLineGeometry](/meshline-geometry)
 
@@ -104,6 +114,7 @@ See the dedicated [picking page](/picking) for the full API.
 * Only the uniforms / attributes needed are created & uploaded to the GPU.
 * Many hooks are available for customizing line behavior and rendering.
 * Instancing and GPU positions support large repeated or procedural line scenes.
+* `MeshLineCompute` keeps animated curve point state and cumulative arc length on the GPU for experimental WebGPU-only simulation workflows.
 * Batching is available for CPU-controlled animation or static lines.
 * The surface profile uses ordinary world-space mesh geometry for roads, tracks, and lit ribbons.
 * Optional native-WebGPU chunk culling is available for large opaque packed paths.

@@ -20,19 +20,25 @@ The publishable manifest, standalone starters, changelog, and documentation now 
 - Lazy optional attributes and stricter validation for point data, dimensions, widths, opacity, dashes, joins, caps, and surface construction.
 - Safer default frustum behavior for CSS-pixel and shader-positioned lines.
 
+### Experimental WebGPU compute
+
+- The root package exports `MeshLineCompute`, an experimental WebGPU-only façade that keeps positions, velocities, base positions, seeds, and cumulative curve distance in storage buffers.
+- `step( renderer, delta )` dispatches separate motion and arc-length passes. Material hooks can sample the updated distance with `arcLengthNode( progress )` for distance-stable dashes, bands, and pulses.
+- The [Compute Curves demo](./examples/compute-curves.md) exercises autonomous, follow, and field modes with mouse interaction and glowing textured ribbons.
+
 ### Optional native-WebGPU entries
 
 - `makio-meshline/gpu-culling` adds conservative chunk AABB compaction for measured, very large opaque lines and surfaces. It requires Three.js r183+ and fails open when bounds or a render pass are ambiguous.
 - `makio-meshline/gpu-path` is an experimental point-centric renderer for one very large static open path. It adds indirect drawing, homogeneous clipping, projected finite-leg guards, bounded center-pivot fallbacks, optional local-space simplification, and a complete CPU `MeshLine` fallback.
 
-The main `makio-meshline` entry remains the preferred API and supports Three.js r180+ through `WebGPURenderer` on WebGPU and WebGL2. Read [Migrating from v1 to V2](./v2-migration.md) for behavior changes and application checks, and the [V2 Design Contract](./v2-design.md) for the geometry guarantees.
+The regular `MeshLine` export from the main `makio-meshline` entry remains the preferred API and supports Three.js r180+ through `WebGPURenderer` on WebGPU and WebGL2. Read [Migrating from v1 to V2](./v2-migration.md) for behavior changes and application checks, and the [V2 Design Contract](./v2-design.md) for the geometry guarantees.
 
 ### Deliberately not promoted
 
 - The GPU path remains experimental and falls back for multi-line/closed paths, surfaces, shadows, XR, picking, instancing, maps, dashes, and shader-hook profiles.
 - Local simplification is not a screen-pixel guarantee and is disabled for advanced GPU topology.
 - GPU culling remains opt-in/conservative because its measured development-machine frame-time improvement stayed below the project promotion threshold.
-- The compute demo is a prototype, not part of the public cross-backend geometry contract.
+- `MeshLineCompute` remains experimental and outside the public cross-backend geometry contract. It warns and skips simulation when `WebGPURenderer.compute()` is unavailable; regular `MeshLine` remains the WebGPU/WebGL2 path.
 
 ## Version 2 release verification
 
@@ -59,7 +65,7 @@ Package and verification status:
 
 ## Release history
 
-- **v2.0.0**: Arc-length progress, exact-by-default billboard topology, world-space road/ribbon surfaces, partial position updates, hardened bounds and validation, complete framework starters, optional native-WebGPU chunk culling, and an experimental point-centric GPU path with CPU fallback.
+- **v2.0.0**: Arc-length progress, exact-by-default billboard topology, world-space road/ribbon surfaces, partial position updates, hardened bounds and validation, complete framework starters, optional native-WebGPU chunk culling, an experimental point-centric GPU path with CPU fallback, and experimental WebGPU compute curves.
 - **v1.4.0**: New `MeshLinePickerHelper` (Three.js-style helper that overlays the GPU picker's hit-zones with a distinct hue per instance), new `picker.lines` snapshot getter, aligned point-array input handling, TypeScript declarations, and material shadow-node docs.
 - **v1.3.2**: Normalize `lineWidth` semantics, stabilize GPU-positioned endpoint tangents, fix pre-build `.opacity()`, and expand options-object configuration.
 - **v1.3.1**: Corner rendering overhaul — uniform thickness at every bend, stable miter at oblique camera angles, and CPU-side smoothing (`smoothSharpBends`) for very sharp polylines. `useMiterLimit` option removed; miter is always on.
@@ -79,8 +85,10 @@ Full changelog: [CHANGELOG.md](https://github.com/Makio64/makio-meshline/blob/ma
 
 - **Mid-term**:
   - Add `receiveShadow` support.
+  - Extend `MeshLineCompute` with neighbour constraints, real texture/audio/depth force integrations, and compute-aware segment picking.
   - Promote the optional GPU path's variable topology after multi-line/closed, shadows, XR, and picking gates.
 - **Long-term**:
+  - Explore optional compute pre-passes for dynamic polylines only where resampling, tangent generation, or arc-length work produces a measured end-to-end win.
   - Extend the experimental point-centric GPU path with integrated segment-run culling, screen-error LOD, closed/multi-line topology, shadows/XR, and transported road frames.
   - Add advanced PBR surface customization and instancing without coupling it to billboard-only TSL hooks.
   - Explore further WebGPU performance opportunities only where matched benchmarks show a material win.

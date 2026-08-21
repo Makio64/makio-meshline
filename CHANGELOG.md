@@ -7,8 +7,10 @@
 - Add optional native-WebGPU chunk culling for large opaque CPU-built lines and surfaces. Unsupported renderers, cameras, materials, and nested render states retain the complete fail-open draw.
 - Expose opt-in asynchronous GPU-culling snapshots with exact visible and culled source-index chunk ranges and aggregate counts.
 - Add the experimental point-centric `makio-meshline/gpu-path` entry point for large static open paths, with raw and locally simplified indirect rendering, stable segment records, homogeneous clipping, and a complete CPU fallback.
+- Add `MeshLineCompute`, an experimental WebGPU-only storage-buffer curve engine that updates autonomous curve fields with TSL compute, maintains cumulative arc length on the GPU, and renders through the existing MeshLine ribbon material.
 - Add partial CPU billboard edits with `setPositionRange()` and public bulk custom-attribute uploads with `setVertexValues()`.
 - Add complete vanilla Three.js, React Three Fiber, and Vue starters, plus compact Basic, Surface, and Feature Gallery demos.
+- Add a Compute Curves demo with autonomous, follow, and field motion modes, distance-spaced dashes, glowing textured ribbons, mouse interaction, and live simulation controls.
 
 ### Changed
 - Derive CPU-path progress and UVs from normalized arc length so gradients, dashes, and hooks remain visually consistent across uneven point sampling. Procedural GPU templates retain parameter-based progress.
@@ -19,7 +21,8 @@
 
 ### Stability
 - The facade, CPU billboard profile, world-space surface profile, framework wrappers, and optional chunk-culling system are supported in 2.0.0.
-- `makio-meshline/gpu-path`, GPU simplification, and compute prototypes remain explicitly experimental in 2.0.0. Their unsupported profiles continue to fail open to documented CPU paths.
+- `makio-meshline/gpu-path` and GPU simplification remain explicitly experimental in 2.0.0; unsupported profiles retain the complete CPU fallback.
+- `MeshLineCompute` remains explicitly experimental and WebGPU-only. Without `WebGPURenderer.compute()`, `step()` warns once and skips simulation; use the regular `MeshLine` API when a WebGL2-compatible path is required.
 
 ## 1.4.0
 ### Added

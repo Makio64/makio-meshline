@@ -394,6 +394,43 @@ export interface MeshLineVertexBufferUsage {
 	usedBuffers: number
 }
 
+export type MeshLineComputeMode = 'autonomous' | 'follow' | 'field' | number
+
+export interface MeshLineComputeOptions extends Omit<MeshLineConfigureOptions, 'lines' | 'segments' | 'closed' | 'surface' | 'gpuPositionNode' | 'instanceCount' | 'needsPrevious' | 'needsNext'> {
+	/** Number of autonomous curve instances. Defaults to 128. */
+	curveCount?: number
+	/** Number of simulated storage-buffer points per curve. Defaults to 32. */
+	pointsPerCurve?: number
+	/** Initial home-curve length in scene units. Defaults to 4. */
+	curveLength?: number
+	/** Simulation bounds around the origin. Defaults to 12. */
+	bounds?: number
+	/** Velocity damping applied each compute step. Defaults to 0.94. */
+	damping?: number
+	/** Flow/curl force multiplier. Defaults to 4. */
+	curlStrength?: number
+	/** Field animation speed. Defaults to 1. */
+	flowSpeed?: number
+	/** Spring force back to the generated home curve. Defaults to 1.4. */
+	homeStrength?: number
+	/** Mouse attractor force multiplier. Defaults to 8. */
+	mouseStrength?: number
+	/** Mouse attractor radius in scene units. Defaults to 5. */
+	mouseRadius?: number
+	/** Audio-reactive force multiplier slot. Defaults to 0. */
+	audioLevel?: number
+	/** Depth/collision force slot for future scene-depth workflows. Defaults to 0. */
+	depthStrength?: number
+	/** Texture/field force slot for future storage-texture workflows. Defaults to 0. */
+	textureStrength?: number
+	/** Simulation blend mode. Defaults to `'autonomous'`. */
+	mode?: MeshLineComputeMode
+	/** Initial mouse/attractor target. */
+	mouse?: Vector3 | { x: number; y: number; z?: number } | number[]
+	/** Alias for `mouse`. */
+	mouseTarget?: Vector3 | { x: number; y: number; z?: number } | number[]
+}
+
 // ---------------------------------------------------------------------------
 // MeshLine (main facade)
 // ---------------------------------------------------------------------------
@@ -485,6 +522,46 @@ export class MeshLine extends ThreeMesh {
 	resize( width?: number, height?: number ): void
 	autoResize( target?: MeshLineResizeTarget ): this
 	dispose(): void
+}
+
+// ---------------------------------------------------------------------------
+// MeshLineCompute (WebGPU-only compute facade)
+// ---------------------------------------------------------------------------
+
+/**
+ * WebGPU-only curve engine that keeps point state in storage buffers, updates
+ * it with TSL compute nodes, and renders through MeshLine's ribbon material.
+ */
+export class MeshLineCompute extends MeshLine {
+	readonly isMeshLineCompute: true
+	readonly positionBuffer: BufferAttribute | null
+	readonly velocityBuffer: BufferAttribute | null
+	readonly baseBuffer: BufferAttribute | null
+	readonly seedBuffer: BufferAttribute | null
+	readonly distanceBuffer: BufferAttribute | null
+
+	constructor( options?: MeshLineComputeOptions )
+
+	configure( options?: MeshLineComputeOptions ): this
+	curveCount( count: number ): this
+	pointsPerCurve( count: number ): this
+	curveLength( length: number ): this
+	bounds( bounds: number ): this
+	damping( damping: number ): this
+	curlStrength( strength: number ): this
+	flowSpeed( speed: number ): this
+	homeStrength( strength: number ): this
+	mouseStrength( strength: number ): this
+	mouseRadius( radius: number ): this
+	audioLevel( level: number ): this
+	depthStrength( strength: number ): this
+	textureStrength( strength: number ): this
+	mode( mode: MeshLineComputeMode ): this
+	mouse( target: Vector3 | { x: number; y: number; z?: number } | number[] ): this
+	clearMouse(): this
+	arcLengthNode( progress: MeshLineNodeValue ): MeshLineNodeValue
+	step( renderer: WebGPURenderer, delta?: number ): boolean
+	reset(): this
 }
 
 // ---------------------------------------------------------------------------

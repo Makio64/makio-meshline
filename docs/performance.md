@@ -1,5 +1,5 @@
 ---
-description: "Performance tips for Makio MeshLine covering instancing, batching, dynamic position updates, GPU positioning, and sharp-corner rendering."
+description: "Performance tips for Makio MeshLine covering instancing, batching, dynamic position updates, GPU positioning, compute curves, and sharp-corner rendering."
 ---
 
 # Performance Guide
@@ -9,6 +9,8 @@ Makio MeshLine uses TSL core for efficient GPU rendering, supporting both WebGPU
 The core approach minimizes overhead by generating only necessary vertex attributes and uniforms based on active features, like skipping UVs if no textures are used.
 
 It also supports `Instancing` and optimized CPU batching.
+
+`MeshLineCompute` is the experimental exception to the cross-backend contract: it requires WebGPU compute support and does not provide a WebGL2 simulation fallback.
 
 <svg viewBox="0 0 820 340" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Instancing: 12 draw calls versus 1 draw call" style="max-width:100%;height:auto;display:block;margin:1.5em auto;">
   <defs>
@@ -76,6 +78,7 @@ It also supports `Instancing` and optimized CPU batching.
 - **Miter Clamp + Optional Corner Smoothing**: The shader miter is always on (no branch cost, simpler than the old opt-in path). For static sharp polylines, opt into `smoothSharpBends` to split near-hairpin corners on the CPU before they reach the shader. Leave it off for dynamic lines or custom per-vertex attributes that need stable topology.
 - **Hybrid Culling**: The optional [GPU culling system](./gpu-culling.md) keeps small paths on Three's CPU object test and can compact offscreen chunks of a very large opaque path into one native-WebGPU indirect draw.
 - **Point-centric GPU path**: The optional experimental [GPU path](./gpu-path.md) stores source points once and renders one non-indexed indirect draw. Raw mode derives neighbours without a segment buffer or compute dispatch; simplification emits stable records with a 256-lane prefix above 256 chunks. The complete CPU line remains its fail-open reference.
+- **WebGPU Compute Curves**: `MeshLineCompute.step()` dispatches a motion pass and a cumulative arc-length pass over storage-buffer curve state, avoiding per-frame JavaScript point uploads for autonomous curve fields. Measure the complete simulation and render workload on target hardware; moving state to the GPU is not itself a performance guarantee.
 - **GPU topology staging**: Advanced GPU-path records are counted first and written directly into final typed arrays. This avoids transient boxed-number arrays; adapter storage limits and integer products are checked before allocation.
 
 ## Best Practices
@@ -89,6 +92,7 @@ It also supports `Instancing` and optimized CPU batching.
 - When several custom values are read by the same hook, create them together with `addVertexAttributes({ ... })` or `addInstanceAttributes({ ... })`. Use the bulk setter methods for interleaved attributes; their direct backing arrays include the other packed attributes between rows.
 - Call `dispose()` on unused lines to free GPU memory.
 - For massive repeated lines, combine `gpuPositionNode` with instancing to skip CPU position uploads.
+- For autonomous trails or flow-field curves on WebGPU, use `MeshLineCompute` so point state stays on the GPU. Keep plain `gpuPositionNode` for deterministic parametric curves like circles and waves, and use regular `MeshLine` when a WebGL2-compatible path is required.
 - For picking or hover, set `raycaster.params.Line.firstHitOnly = true` when you only need the nearest hit.
 - Test both backends on target devices. Backend wins depend on the scene, driver, and workload.
 

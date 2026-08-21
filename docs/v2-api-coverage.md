@@ -6,13 +6,14 @@ description: "Map every Makio MeshLine V2 public entry point and update API to i
 
 Use this page as the index for the V2 public surface. The reference link is the canonical contract; the demo link shows the closest runnable example. “Facade exercised” means the demo uses `MeshLine`, which creates the low-level class internally. “Reference only” identifies an API that is documented but does not yet have a dedicated live demo.
 
-The regular package entry and surface profile support the WebGPU and WebGL2 renderers. The optional `gpu-culling` and `gpu-path` entries require native WebGPU and Three.js r183 or newer; their demos report the complete fallback when those features are unavailable.
+The regular `MeshLine` façade and surface profile support the WebGPU and WebGL2 renderers. The root `MeshLineCompute` export requires WebGPU compute support and has no WebGL2 simulation fallback. The optional `gpu-culling` and `gpu-path` entries require native WebGPU and Three.js r183 or newer; their demos report the complete fallback when those features are unavailable.
 
 ## Root package exports
 
 | Export | Canonical reference | Runnable coverage | Coverage note |
 | --- | --- | --- | --- |
 | `MeshLine` (named and default) | [MeshLine](./meshline.md) | [Basic](https://meshline-demo.makio.io/examples/basic), [Sandbox](https://meshline-demo.makio.io/examples/sandbox) | Preferred entry point for screen lines and surfaces. |
+| `MeshLineCompute` | [MeshLineCompute](./meshline-compute.md) | [Compute Curves](https://meshline-demo.makio.io/examples/compute-curves) | Experimental WebGPU-only storage-buffer simulation façade; regular `MeshLine` remains the cross-backend path. |
 | `MeshLineGeometry` | [MeshLineGeometry](./meshline-geometry.md) | [Waves](https://meshline-demo.makio.io/examples/waves), [Follow](https://meshline-demo.makio.io/examples/follow) | Facade exercised; use the class directly only for low-level composition. |
 | `MeshLineNodeMaterial` | [MeshLineNodeMaterial](./meshline-material.md) | [Basic](https://meshline-demo.makio.io/examples/basic), [Sandbox](https://meshline-demo.makio.io/examples/sandbox) | Facade exercised across color, gradient, dash, maps, and opacity. |
 | `MeshLineSurfaceGeometry` | [Surface low-level API](./surface.md#low-level-class-api) | [Surface](https://meshline-demo.makio.io/examples/surface), [Variable Topology](https://meshline-demo.makio.io/examples/variable-topology) | Facade exercised; the topology gallery covers joins, caps, and reversals. |
@@ -47,6 +48,7 @@ The [V2 Updates demo](https://meshline-demo.makio.io/examples/v2-updates) also c
 | Capability | Import / entry | Canonical reference | Runnable coverage |
 | --- | --- | --- | --- |
 | World-space road/ribbon surfaces | `MeshLine` or the two root surface classes | [World-Space Surfaces](./surface.md) | [Surface](https://meshline-demo.makio.io/examples/surface), [Surface Road](https://meshline-demo.makio.io/examples/surface-road), [Metallic Tube](https://meshline-demo.makio.io/examples/metallic-tube), [Variable Topology](https://meshline-demo.makio.io/examples/variable-topology) |
+| Experimental WebGPU compute curves | root `MeshLineCompute` export | [MeshLineCompute](./meshline-compute.md) | [Compute Curves](https://meshline-demo.makio.io/examples/compute-curves) |
 | Native-WebGPU chunk culling | `makio-meshline/gpu-culling` | [GPU Culling](./gpu-culling.md) | [GPU Culling](https://meshline-demo.makio.io/examples/gpu-culling); append `?culling=0` for the unculled baseline. |
 | Experimental native-WebGPU point path | `makio-meshline/gpu-path` | [GPU Path](./gpu-path.md) | [GPU Path](https://meshline-demo.makio.io/examples/gpu-path), [Variable Topology](https://meshline-demo.makio.io/examples/variable-topology) |
 | GPU picking and debug visualization | root `MeshLinePicker` exports | [GPU Picking](./picking.md) | [Laser Heist](https://meshline-demo.makio.io/examples/laser-heist) |
