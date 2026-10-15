@@ -6,11 +6,11 @@ pageClass: example-page
 
 # Vertex Colors
 
-Color each point of your line individually with per-vertex RGB colors.
+Color each point of your line individually with per-vertex RGB colors. In the Waves demo below, one RGB per point paints the sea: a warm glint under the sun that cools toward the edges, while the positions animate every frame.
 
-<iframe title="Makio MeshLine Vertex Colors demo" src="https://meshline-demo.makio.io/examples/vertex-colors?noUI" width="100%" height="600" style="border: 1px solid #ddd; border-radius: 8px;"></iframe>
+<iframe title="Makio MeshLine Waves demo with vertex colors" src="https://meshline-demo.makio.io/examples/waves?noUI" width="100%" height="600" style="border: 1px solid #ddd; border-radius: 8px;"></iframe>
 
-[Open the full Vertex Colors demo](https://meshline-demo.makio.io/examples/vertex-colors)
+[Open the full Waves demo](https://meshline-demo.makio.io/examples/waves)
 
 ## Usage
 

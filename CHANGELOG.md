@@ -10,7 +10,7 @@
 - Add `MeshLineCompute`, an experimental WebGPU-only storage-buffer curve engine that updates autonomous curve fields with TSL compute, maintains cumulative arc length on the GPU, and renders through the existing MeshLine ribbon material.
 - Add partial CPU billboard edits with `setPositionRange()` and public bulk custom-attribute uploads with `setVertexValues()`.
 - Add complete vanilla Three.js, React Three Fiber, and Vue starters, plus compact Basic, Surface, and Feature Gallery demos.
-- Add a Compute Curves demo with autonomous, follow, and field motion modes, distance-spaced dashes, glowing textured ribbons, mouse interaction, and live simulation controls.
+- Add a Compute Curves demo with autonomous, follow, and field motion modes, distance-spaced pulses, glowing ribbons, mouse interaction, and live simulation controls.
 
 ### Changed
 - Derive CPU-path progress and UVs from normalized arc length so gradients, dashes, and hooks remain visually consistent across uneven point sampling. Procedural GPU templates retain parameter-based progress.
@@ -19,6 +19,9 @@
 - Harden finite-input handling, endpoint neighbours, sharp bends, Float32 conversion, buffer reuse, bounds, and 16/32-bit topology promotion across CPU and GPU profiles.
 - Make framework wrapper defaults and update semantics match the `MeshLine` facade, including generated positions, safe culling defaults, stable Vue object identity, and explicit rebuild boundaries.
 - `setPositionRange()` keeps uploading after an edit made before the line's first draw. Three.js creates a buffer from the whole array without clearing its pending update ranges, and range marking skipped the version bump while a range was pending, so every later partial edit stayed on the CPU. Range edits now always bump the version; three still uploads at most once per frame.
+- Rework the weakest demos and fold three learning demos into scenes that use the same APIs. Waves is a synthwave sea whose rows share one RGB per point (absorbing Vertex Colors); GPU Instancing is a 150-ring tunnel positioned entirely by `gpuPositionNode()` that recolors wrapping rings with `setInstanceValues()` (absorbing GPU Circle and the instance half of Live Updates); Draw Lines replays each stroke as a colored brush and uploads its colors as one `setVertexValues()` range. The old `v2-updates`, `vertex-colors` and `gpu-circle` routes now open those demos.
+- Draw Lines drew only the first dozen of its active lines (its draw range assumed six indices per segment), and wide brush bristles waited at the end of their stroke forever. Both are fixed, and quick flicks get a usable replay duration.
+- Follow braids fourteen tapered, additive trails around the leader; Shadows returns to a white room under red, green and blue spotlights, so the dashed rings print colored shadows; Compute Curves colors its spiral from a warm core to a violet rim; Verlet Ropes hangs a fiber-optic curtain whose strands clear the floor instead of crumpling; GPU Path frames its 200K-point curve as an oscilloscope trace; GPU Simplification opens on contour lines; Variable Topology lays its joins, caps, reversal and screen path out as a labeled table. Showcases share an MSAA-preserving bloom helper.
 
 ### Stability
 - The facade, CPU billboard profile, world-space surface profile, framework wrappers, and optional chunk-culling system are supported in 2.0.0.

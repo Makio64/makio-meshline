@@ -48,6 +48,7 @@ import { buildVectorDataset, VECTOR_DATASETS, WORLD_SIZE } from '@/data/vectorDa
 import stage from '@/makio/core/stage'
 import OrbitControl from '@/makio/three/controls/OrbitControl'
 import stage3d from '@/makio/three/stage3d'
+import { createBloomPipeline } from '@/utils/bloomPipeline'
 import {
 	buildChunkPlan,
 	buildNeighbourPlan,
@@ -95,7 +96,8 @@ const HUGE_TOLERANCE_SCALE = 1e12
 const REFINE_DESCENT = 8
 const DEFAULT_LEVEL = 58
 const DEFAULT_RELAX = 4
-const DEFAULT_DATASET = 'france'
+// Contour lines show off the relax + simplify pass best; France is one click away.
+const DEFAULT_DATASET = 'isolines'
 const CAMERA_LOD_INTERVAL_MS = 1000 / 15
 const SETTLED_MEASUREMENT_DELAY_MS = 200
 const CAMERA_MATRIX_EPSILON = 1e-4
@@ -149,6 +151,7 @@ class GpuSimplificationPrototypeExample {
 		this.mesh = null
 		this.fallbackLines = []
 		this.control = null
+		this.bloom = null
 		this.dataset = null
 		this.chunkPlan = []
 		this.chunkSegments = 0
@@ -251,7 +254,7 @@ class GpuSimplificationPrototypeExample {
 			const nativeWebGPU = stage3d.renderer?.backend?.isWebGPUBackend === true
 			this.metrics.backend = nativeWebGPU ? 'webgpu' : 'webgl2'
 
-			this.control = new OrbitControl( stage3d.camera, finiteQueryNumber( query, 'radius', 108, 20, 320 ) )
+			this.control = new OrbitControl( stage3d.camera, finiteQueryNumber( query, 'radius', 120, 20, 320 ) )
 			this.control.minRadius = 12
 			this.control.maxRadius = 320
 			this.control._phi = Math.PI * 0.5
@@ -266,9 +269,17 @@ class GpuSimplificationPrototypeExample {
 			this.control.maxPhi = Math.PI * 0.5 + 0.75
 			this.control.extraPhiMouse = false
 			this.control.extraThetaMouse = false
+			// Slide the camera, not just its aim, so the flat drawing stays square
+			// while it moves clear of the tuning panel on wide screens.
+			if ( stage.width >= 900 ) {
+				const halfWidth = Math.tan( stage3d.camera.fov * Math.PI / 360 ) * this.control.radius * stage3d.camera.aspect
+				this.control.cameraOffset.x = halfWidth * 0.3
+				this.control.target.x = halfWidth * 0.3
+			}
 			this.control.update()
 			this.control.enabled = false
 			stage3d.control = this.control
+			this.bloom = createBloomPipeline( { strength: 0.55, radius: 0.3, threshold: 0.15 } )
 
 			stage3d.camera.near = 1
 			stage3d.camera.far = 640
@@ -1622,6 +1633,8 @@ class GpuSimplificationPrototypeExample {
 			line.dispose()
 		}
 		this.fallbackLines = []
+		this.bloom?.dispose()
+		this.bloom = null
 		this.control?.dispose()
 		if ( stage3d.control === this.control ) stage3d.control = null
 		if ( window.__meshLineGpuSimplificationMetrics === this.metrics ) {

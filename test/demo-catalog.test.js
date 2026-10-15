@@ -29,19 +29,33 @@ test( 'Basic keeps the feature gallery on the stable route', () => {
 	assert.deepEqual( basic?.aliases, ['feature-gallery'] )
 } )
 
-test( 'V2 data updates demo covers arc-length and partial upload APIs', async () => {
-	const demo = demoCatalog.find( entry => entry.id === 'v2-updates' )
-	assert.equal( demo?.group, 'basic' )
-	assert.equal( demo?.category, 'learn' )
+test( 'merged demos keep their historical routes as aliases', () => {
+	const routes = {
+		'v2-updates': 'drawlines',
+		'vertex-colors': 'waves',
+		'gpu-circle': 'gpu-instance',
+	}
 
-	const source = await readFile( new URL( '../demo/src/demos/v2Updates.js', import.meta.url ), 'utf8' )
-	assert.match( source, /new Float32Array/ )
-	assert.match( source, /\.gradientColor\(/ )
-	assert.match( source, /\.dash\(/ )
-	assert.match( source, /material\.dashOffset\.value/ )
-	assert.match( source, /\.setPositionRange\(/ )
-	assert.match( source, /\.setInstanceValues\(/ )
-	assert.match( source, /new OrbitControl\(/ )
+	for ( const [alias, id] of Object.entries( routes ) ) {
+		const demo = demoCatalog.find( entry => entry.aliases?.includes( alias ) )
+		assert.equal( demo?.id, id, `${alias} should open ${id}` )
+	}
+} )
+
+test( 'live update APIs stay exercised by the demos that absorbed Live Updates', async () => {
+	const [drawLines, gpuInstance, waves] = await Promise.all( [
+		readFile( new URL( '../demo/src/demos/drawlines.js', import.meta.url ), 'utf8' ),
+		readFile( new URL( '../demo/src/demos/gpuInstance.js', import.meta.url ), 'utf8' ),
+		readFile( new URL( '../demo/src/demos/waves.js', import.meta.url ), 'utf8' ),
+	] )
+
+	assert.match( drawLines, /\.setPositionRange\(/ )
+	assert.match( drawLines, /\.setVertexValues\( 'lineColor'/ )
+	assert.match( gpuInstance, /\.gpuPositionNode\(/ )
+	assert.match( gpuInstance, /\.addInstanceAttribute\(/ )
+	assert.match( gpuInstance, /\.setInstanceValues\(/ )
+	assert.match( waves, /\.vertexColors\(/ )
+	assert.match( waves, /\.setPositions\(/ )
 } )
 
 test( 'every catalog entry points to a fresh disposable demo class', async () => {

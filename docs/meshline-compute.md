@@ -107,4 +107,4 @@ curves
 - It uses an in-place motion pass plus a cumulative arc-length pass. Neighbour constraints, collision passes, and exact compute picking are planned follow-ups.
 - It inherits `MeshLine.raycast()`, but the CPU geometry is only an instanced progress template and cannot represent the GPU-updated curve shape. Use `MeshLinePicker` for rendered ID picking.
 
-See the [Compute Curves example](./examples/compute-curves.md) for a full scene with mouse interaction, dashes, glow, and a generated texture.
+See the [Compute Curves example](./examples/compute-curves.md) for a full scene with mouse interaction, arc-length pulses, per-curve colors, and glow.

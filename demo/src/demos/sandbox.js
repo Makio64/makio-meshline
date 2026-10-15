@@ -1,6 +1,5 @@
 import GUI from 'lil-gui'
 import { circlePositions, MeshLine, sineWavePositions, squarePositions, straightLine } from 'makio-meshline'
-import { DoubleSide, Mesh, MeshBasicMaterial, PlaneGeometry } from 'three/webgpu'
 import { markRaw, reactive, watch } from 'vue'
 
 import stage from '@/makio/core/stage'
@@ -99,19 +98,19 @@ class SandboxExample {
 		
 		// Reactive configuration
 		this.config = reactive( {
-			// Geometry
-			lineType: 'circle',
+			// Geometry: an open curve, so the default gradient has no seam.
+			lineType: 'snake',
 			segments: 64,
-			closed: true,
+			closed: false,
 			
 			// Appearance
-			color: '#ff3300',
+			color: '#ff4d6d',
 			lineWidth: 20,
 			opacity: 1.0,
 			
 			// Gradient
 			useGradient: true,
-			gradientColor: '#0033ff',
+			gradientColor: '#4cc9f0',
 			
 			// Dashes
 			useDashes: false,
@@ -153,9 +152,6 @@ class SandboxExample {
 		
 		// Initialize GUI
 		this.initGUI()
-		
-		// Create reference plane
-		this.createReferencePlane()
 		
 		// Create initial line
 		this.createLine()
@@ -284,30 +280,34 @@ class SandboxExample {
 	}
 	
 	setupWatchers() {
-		// Watch for geometry changes that require recreation
+		// Watch for geometry or structural shader-graph changes that require recreation
 		this.stopWatchers.push( watch(
-			() => ( { lineType: this.config.lineType, segments: this.config.segments, closed: this.config.closed } ),
+			() => ( {
+				lineType: this.config.lineType,
+				segments: this.config.segments,
+				closed: this.config.closed,
+				useGradient: this.config.useGradient,
+				useDashes: this.config.useDashes,
+				sizeAttenuation: this.config.sizeAttenuation,
+				bevelJoins: this.config.bevelJoins,
+				antialias: this.config.antialias,
+				smoothSharpBends: this.config.smoothSharpBends,
+			} ),
 			() => this.createLine()
 		) )
 		
-		// Watch for material changes
+		// Watch for uniform-only material changes (no geometry or shader rebuild needed)
 		this.stopWatchers.push( watch(
 			() => ( {
 				color: this.config.color,
 				lineWidth: this.config.lineWidth,
 				opacity: this.config.opacity,
-				useGradient: this.config.useGradient,
 				gradientColor: this.config.gradientColor,
-				useDashes: this.config.useDashes,
 				dashCount: this.config.dashCount,
 				dashRatio: this.config.dashRatio,
 				dashOffset: this.config.dashOffset,
-				sizeAttenuation: this.config.sizeAttenuation,
 				wireframe: this.config.wireframe,
-				bevelJoins: this.config.bevelJoins,
-				antialias: this.config.antialias,
 				miterLimit: this.config.miterLimit,
-				smoothSharpBends: this.config.smoothSharpBends,
 				smoothSharpBendsAlpha: this.config.smoothSharpBendsAlpha,
 				smoothSharpBendsThreshold: this.config.smoothSharpBendsThreshold,
 			} ),
@@ -333,19 +333,6 @@ class SandboxExample {
 			default:
 				return straightLine( 20, this.config.segments )
 		}
-	}
-	
-	createReferencePlane() {
-		// Create a 1x1 unit plane at the origin
-		const geometry = new PlaneGeometry( 1, 1 )
-		const material = new MeshBasicMaterial( {
-			color: 0xffffff,
-			opacity: 0.1,
-			transparent: true,
-			side: DoubleSide
-		} )
-		this.referencePlane = new Mesh( geometry, material )
-		stage3d.add( this.referencePlane )
 	}
 	
 	createLine() {
@@ -393,9 +380,28 @@ class SandboxExample {
 	}
 	
 	updateMaterial() {
-		// For material changes, it's safer to recreate the line
-		// This ensures all properties are properly initialized
-		this.createLine()
+		if ( !this.line ) {
+			this.createLine()
+			return
+		}
+		this.animatedDashOffset = this.config.dashOffset
+		this.line
+			.color( this.config.color )
+			.lineWidth( this.config.lineWidth )
+			.opacity( this.config.opacity )
+			.transparent( this.config.opacity < 1 )
+			.wireframe( this.config.wireframe )
+			.smoothSharpBendsAlpha( this.config.smoothSharpBendsAlpha )
+			.smoothSharpBendsThreshold( this.config.smoothSharpBendsThreshold )
+
+		if ( this.config.useGradient ) {
+			this.line.gradientColor( this.config.gradientColor )
+		}
+		if ( this.config.useDashes ) {
+			this.line.dash( { count: this.config.dashCount, ratio: this.config.dashRatio, offset: this.config.dashOffset } )
+		}
+
+		this.generateCode()
 	}
 	
 	generateCode() {
@@ -458,11 +464,9 @@ class SandboxExample {
 		if ( !this.config.animateDashes || !this.config.useDashes || !this.line ) return
 
 		this.animatedDashOffset -= ( dt / 8 ) * 0.02
-		this.line.dash( {
-			count: this.config.dashCount,
-			ratio: this.config.dashRatio,
-			offset: this.animatedDashOffset,
-		} )
+		if ( this.line.material?.dashOffset ) {
+			this.line.material.dashOffset.value = this.animatedDashOffset
+		}
 	}
 	
 	onResize = () => {
@@ -481,12 +485,6 @@ class SandboxExample {
 		if ( this.line ) {
 			stage3d.remove( this.line )
 			this.line.dispose()
-		}
-
-		if ( this.referencePlane ) {
-			stage3d.remove( this.referencePlane )
-			this.referencePlane.geometry.dispose()
-			this.referencePlane.material.dispose()
 		}
 
 		this.gui?.destroy()

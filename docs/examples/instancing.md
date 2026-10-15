@@ -12,6 +12,8 @@ Use one MeshLine and per-instance attributes when many lines share the same shap
 
 [Open the full Instancing demo](https://meshline-demo.makio.io/examples/gpu-instance)
 
+The demo is a tunnel of 150 instanced rings: positions come from a `gpuPositionNode()` that reads `instanceIndex`, and a `ringStyle` vec4 instance attribute holds each ring's color and petal count. Rings that wrap to the far end get new colors through `setInstanceValues()`, which uploads only that contiguous run.
+
 ## Minimal Pattern
 
 ```javascript

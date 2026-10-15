@@ -4,13 +4,13 @@ outline: false
 pageClass: example-page
 ---
 
-# GPU Circle Example
+# GPU Positions
 
-Demonstrates GPU-based position calculation using Three.js TSL (Three Shading Language) nodes, enabling complex animations with minimal CPU overhead.
+Demonstrates GPU-based position calculation using Three.js TSL (Three Shading Language) nodes, enabling complex animations with minimal CPU overhead. The demo below draws a tunnel of 150 rings in one call: every ring point is computed on the GPU from its progress, its instance index and time.
 
-<iframe title="Makio MeshLine GPU Circle demo" src="https://meshline-demo.makio.io/examples/gpu-circle?noUI" width="100%" height="600" style="border: 1px solid #ddd; border-radius: 8px;"></iframe>
+<iframe title="Makio MeshLine GPU positions demo" src="https://meshline-demo.makio.io/examples/gpu-instance?noUI" width="100%" height="600" style="border: 1px solid #ddd; border-radius: 8px;"></iframe>
 
-[Open the full GPU Circle demo](https://meshline-demo.makio.io/examples/gpu-circle)
+[Open the full GPU Instancing demo](https://meshline-demo.makio.io/examples/gpu-instance)
 
 ## Key Concepts
 
@@ -70,3 +70,32 @@ const line = new MeshLine()
 	.color( 0xffffff )
 	.build()
 ```
+
+## At Scale: One Node, Many Lines
+
+Combine `gpuPositionNode()` with `instances()` and read `instanceIndex` inside the node to give every instance its own shape. The tunnel demo places each ring at a depth derived from its index, so the CPU never uploads a position:
+
+```javascript
+import { MeshLine } from 'makio-meshline'
+import { cos, float, Fn, instanceIndex, mod, sin, uniform, vec3 } from 'three/tsl'
+
+const RING_COUNT = 150
+const TUNNEL_LENGTH = 90
+const travel = uniform( 0 ) // advanced every frame on the CPU
+
+const ringPosition = Fn( ( [progress] ) => {
+	const z = mod( float( instanceIndex ).mul( TUNNEL_LENGTH / RING_COUNT ).add( travel ), TUNNEL_LENGTH ).sub( TUNNEL_LENGTH )
+	const angle = progress.mul( Math.PI * 2 )
+	return vec3( cos( angle ).mul( 2.6 ), sin( angle ).mul( 2.6 ), z )
+} )
+
+const tunnel = new MeshLine()
+	.instances( RING_COUNT )
+	.segments( 192 )
+	.closed( true )
+	.gpuPositionNode( ringPosition )
+	.lineWidth( 0.05 )
+	.build()
+```
+
+When a ring wraps back to the far end, the demo recolors only that ring with `setInstanceValues()`, uploading a few floats instead of the whole instance buffer.

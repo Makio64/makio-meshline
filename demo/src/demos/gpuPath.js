@@ -1,3 +1,4 @@
+import { MeshLine } from 'makio-meshline'
 import MeshLineGPUPath from 'makio-meshline/gpu-path'
 import { markRaw, reactive } from 'vue'
 
@@ -5,6 +6,7 @@ import GpuPathUI from '@/components/GpuPath.vue'
 import stage from '@/makio/core/stage'
 import OrbitControl from '@/makio/three/controls/OrbitControl'
 import stage3d from '@/makio/three/stage3d'
+import { createBloomPipeline } from '@/utils/bloomPipeline'
 
 const POINT_COUNT = 200_000
 const PATH_LENGTH = 100
@@ -87,6 +89,8 @@ class GpuPathExample {
 			preview: null,
 		} )
 		this.path = null
+		this.grid = null
+		this.bloom = null
 		this.control = null
 		this.status = null
 	}
@@ -110,24 +114,28 @@ class GpuPathExample {
 			capType,
 			preview: createSimplificationPreview( points ),
 		} )
-		await stage3d.initRender( { background: 0x050913 } )
+		await stage3d.initRender( { background: 0x02050C } )
 
 		stage3d.camera.near = 0.1
 		stage3d.camera.far = 250
 		stage3d.camera.updateProjectionMatrix()
 
-		this.control = new OrbitControl( stage3d.camera, 84 )
+		// Look down on the path like an oscilloscope trace: the dense middle of the
+		// curve reads as a burst in the signal, offset right of the explainer panel.
+		this.control = new OrbitControl( stage3d.camera, 62 )
 		this.control.minRadius = 16
 		this.control.maxRadius = 140
-		this.control._phi = 1.02
-		this.control._theta = 0.24
-		this.control.target.x = 8
+		this.control.minPhi = 0.2
+		this.control._phi = 0.62
+		this.control._theta = Math.PI * 0.5
+		this.control.target.x = window.innerWidth >= 1100 ? -16 : 0
 		this.control.update()
 		stage3d.control = this.control
+		this.createGrid()
 
 		this.path = new MeshLineGPUPath( {
 			lines: points,
-			lineWidth: 0.32,
+			lineWidth: 0.16,
 			color: 0x22d3ee,
 			join: { type: joinType, limit: 3, segments: 8 },
 			cap: { type: capType, segments: 8 },
@@ -145,6 +153,7 @@ class GpuPathExample {
 		this.onResize()
 		const prepared = gpuRequested ? await this.path.prepare( stage3d.renderer, stage3d.camera ) : false
 
+		this.bloom = createBloomPipeline( { strength: 0.65, radius: 0.35, threshold: 0.12 } )
 		stage.onResize.add( this.onResize )
 		stage.onUpdate.add( this.update )
 		Object.assign( this.ui, {
@@ -154,6 +163,17 @@ class GpuPathExample {
 			capType: prepared ? this.status.cap : capType,
 		} )
 		if ( reportMetrics ) console.info( `[gpuPath] ${JSON.stringify( this.status )}` )
+	}
+
+	createGrid() {
+		const lines = []
+		for ( let z = -15; z <= 15; z += 5 ) lines.push( [-70, -3, z, 70, -3, z] )
+		for ( let x = -70; x <= 70; x += 5 ) lines.push( [x, -3, -15, x, -3, 15] )
+		this.grid = new MeshLine()
+			.lines( lines, false )
+			.lineWidth( 0.05 )
+			.color( 0x1E3A5F )
+		stage3d.add( this.grid )
 	}
 
 	getModeHref = mode => {
@@ -171,6 +191,7 @@ class GpuPathExample {
 
 	onResize = () => {
 		this.path?.resize( stage.width, stage.height )
+		this.grid?.resize()
 	}
 
 	update = () => {
@@ -187,10 +208,15 @@ class GpuPathExample {
 		stage.onResize.remove( this.onResize )
 		stage.onUpdate.remove( this.update )
 		this.path?.dispose()
+		this.bloom?.dispose()
+		stage3d.remove( this.grid )
+		this.grid?.dispose()
 		this.control?.dispose()
 		if ( stage3d.control === this.control ) stage3d.control = null
 		if ( window.__meshLineGPUPathMetrics === this.status ) window.__meshLineGPUPathMetrics = null
 		this.path = null
+		this.grid = null
+		this.bloom = null
 		this.control = null
 		this.status = null
 	}

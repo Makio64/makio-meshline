@@ -1,6 +1,7 @@
 import GUI from 'lil-gui'
 import { MeshLine } from 'makio-meshline'
 import MeshLineGPUPath from 'makio-meshline/gpu-path'
+import { CSS2DObject, CSS2DRenderer } from 'three/addons/renderers/CSS2DRenderer.js'
 import { attribute, cameraFar, cameraNear, color, cos, float, frontFacing, length, max, mix, perspectiveDepthToViewZ, positionLocal, positionView, pow, reflector, screenUV, smoothstep, transformNormalToView, uniform, varying, vec2, vec3, vec4 } from 'three/tsl'
 import {
 	AdditiveBlending,
@@ -141,7 +142,9 @@ const SURFACE_EXAMPLES = [
 	},
 ]
 
-const SCREEN_PATH = new Float32Array( [
+// The screen-space GPU path closes the table as its back row. The projected
+// cusp regression pose keeps the original placement it was tuned against.
+const CUSP_SCREEN_PATH = new Float32Array( [
 	[-8.2, 3.15, 5.8],
 	[-5.4, 4.35, 5.8],
 	[-2.7, 2.95, 5.8],
@@ -149,6 +152,16 @@ const SCREEN_PATH = new Float32Array( [
 	[2.7, 2.95, 5.8],
 	[5.4, 4.35, 5.8],
 	[8.2, 3.15, 5.8],
+].flat() )
+const SCREEN_PATH_Z = -10.2
+const SCREEN_PATH = new Float32Array( [
+	[-8.2, 0.75, SCREEN_PATH_Z],
+	[-5.4, 1.95, SCREEN_PATH_Z],
+	[-2.7, 0.55, SCREEN_PATH_Z],
+	[0, 2.05, SCREEN_PATH_Z],
+	[2.7, 0.55, SCREEN_PATH_Z],
+	[5.4, 1.95, SCREEN_PATH_Z],
+	[8.2, 0.75, SCREEN_PATH_Z],
 ].flat() )
 
 const toSurfacePoints = ( points, center, y = SURFACE_Y ) => {
@@ -189,7 +202,9 @@ const createSurface = ( points, config, wireframe = false ) => {
 	const surface = new MeshLine()
 		.lines( points )
 		.lineWidth( config.width ?? SURFACE_WIDTH )
-		.color( wireframe ? 0x111827 : config.color )
+		.color( wireframe ? 0xFFFFFF : config.color )
+		.opacity( wireframe ? 0.3 : 1 )
+		.transparent( wireframe )
 		.needsProgress( !wireframe )
 		.surface( {
 			frame: 'fixed-up',
@@ -222,6 +237,9 @@ class VariableTopologyExample {
 	constructor() {
 		this.text = ''
 		this.surfaces = []
+		this.wires = []
+		this.labels = []
+		this.labelRenderer = null
 		this.animatedJoins = []
 		this.lights = []
 		this.mirror = null
@@ -243,6 +261,7 @@ class VariableTopologyExample {
 		this.joinDirectionPhase = 0
 		this.params = {
 			animateAngles: true,
+			showTriangles: true,
 			joinAngle: JOIN_ANGLE_CENTER,
 			joinDirection: 0,
 			angleSpeed: JOIN_ANGLE_SPEED,
@@ -281,18 +300,18 @@ class VariableTopologyExample {
 		stage3d.camera.far = 180
 		stage3d.camera.updateProjectionMatrix()
 
-		this.control = new OrbitControl( stage3d.camera, this.cameraCase?.radius ?? 24 )
+		this.control = new OrbitControl( stage3d.camera, this.cameraCase?.radius ?? 17.5 )
 		this.control.minRadius = 15
 		this.control.maxRadius = 38
 		this.control.minPhi = 0.42
 		this.control.maxPhi = 1.25
-		this.control._phi = this.cameraCase?.phi ?? 0.72
-		this.control._theta = this.cameraCase?.theta ?? 1.25
+		this.control._phi = this.cameraCase?.phi ?? 0.78
+		this.control._theta = this.cameraCase?.theta ?? Math.PI * 0.5
 		if ( this.cameraCase ) {
 			this.control.extraThetaMouse = false
 			this.control.extraPhiMouse = false
 		}
-		this.control.target.set( 0, 0.5, -1.3 )
+		this.control.target.set( 0, 0.4, this.cameraCase ? -1.3 : -3 )
 		this.control.update()
 		stage3d.control = this.control
 
@@ -399,6 +418,7 @@ class VariableTopologyExample {
 			stage3d.add( surface )
 			stage3d.add( wire )
 			this.surfaces.push( surface, wire )
+			this.wires.push( wire )
 
 			const sourcePointCount = points.length / 3
 			const vertexCount = surface.geometry.getAttribute( 'position' ).count
@@ -455,18 +475,16 @@ class VariableTopologyExample {
 	}
 
 	createGui( hasNoMenu ) {
-		this.gui = new GUI( { title: 'Mirror & lines', width: hasNoMenu ? 230 : 290 } )
+		this.gui = new GUI( { title: 'Topology', width: hasNoMenu ? 220 : 250 } )
 		this.gui.domElement.classList.add( 'VariableTopologyControls' )
 		this.gui.domElement.style.right = hasNoMenu ? '0' : '60px'
-		this.gui.domElement.style.top = '58px'
 
-		const angleFolder = this.gui.addFolder( 'Join motion' )
-		this.animateAnglesController = angleFolder.add( this.params, 'animateAngles' )
-			.name( 'Animate' )
+		this.animateAnglesController = this.gui.add( this.params, 'animateAngles' )
+			.name( 'Animate joins' )
 			.onChange( enabled => {
 				if ( enabled ) this.syncJoinMotionPhases()
 			} )
-		this.joinAngleController = angleFolder.add( this.params, 'joinAngle', JOIN_ANGLE_MIN, JOIN_ANGLE_MAX, 0.1 )
+		this.joinAngleController = this.gui.add( this.params, 'joinAngle', JOIN_ANGLE_MIN, JOIN_ANGLE_MAX, 0.1 )
 			.name( 'Opening' )
 			.listen()
 			.onChange( angle => {
@@ -474,7 +492,7 @@ class VariableTopologyExample {
 				this.animateAnglesController.updateDisplay()
 				this.setJoinPose( angle, this.params.joinDirection )
 			} )
-		this.joinDirectionController = angleFolder.add( this.params, 'joinDirection', -180, 180, 0.1 )
+		this.joinDirectionController = this.gui.add( this.params, 'joinDirection', -180, 180, 0.1 )
 			.name( 'Orientation' )
 			.listen()
 			.onChange( direction => {
@@ -482,34 +500,15 @@ class VariableTopologyExample {
 				this.animateAnglesController.updateDisplay()
 				this.setJoinPose( this.params.joinAngle, direction )
 			} )
-		angleFolder.add( this.params, 'angleSpeed', 0.03, 0.3, 0.01 )
+		this.gui.add( this.params, 'angleSpeed', 0.03, 0.3, 0.01 )
 			.name( 'Motion speed' )
-
-		this.gui.add( this.params, 'surfaceHeight', 0.2, 0.9, 0.01 )
-			.name( 'Line height' )
-			.onChange( value => {
-				const offset = value - SURFACE_Y
-				for ( const surface of this.surfaces ) surface.position.y = offset
+		// The wire overlay is the proof: extra triangles appear only where a join or
+		// cap needs them.
+		this.gui.add( this.params, 'showTriangles' )
+			.name( 'Show triangles' )
+			.onChange( visible => {
+				for ( const wire of this.wires ) wire.visible = visible
 			} )
-
-		const mirrorFolder = this.gui.addFolder( 'Mirror' )
-		mirrorFolder.add( this.params, 'mirrorStrength', 0, 0.3, 0.005 )
-			.name( 'Reflection' )
-			.onChange( value => { this.mirrorUniforms.strength.value = value } )
-		mirrorFolder.add( this.params, 'mirrorDarkness', 0, 0.75, 0.01 )
-			.name( 'Darkness' )
-			.onChange( value => { this.mirrorUniforms.darkness.value = value } )
-		mirrorFolder.add( this.params, 'mirrorBlur', 0, 1, 0.01 )
-			.name( 'Blur' )
-			.onChange( value => { this.mirrorUniforms.blur.value = value } )
-
-		const normalFolder = this.gui.addFolder( 'Normal displacement' )
-		normalFolder.add( this.params, 'normalStrength', 0, 0.4, 0.005 )
-			.name( 'Amount' )
-			.onChange( value => { this.mirrorUniforms.normalStrength.value = value } )
-		normalFolder.add( this.params, 'normalFrequency', 0.05, 2, 0.01 )
-			.name( 'Scale' )
-			.onChange( value => { this.mirrorUniforms.normalFrequency.value = value } )
 
 		this.syncGuiLayout()
 	}
@@ -573,7 +572,7 @@ class VariableTopologyExample {
 
 	async createScreenTopology() {
 		const path = new MeshLineGPUPath( {
-			lines: SCREEN_PATH,
+			lines: this.cameraCase ? CUSP_SCREEN_PATH : SCREEN_PATH,
 			lineWidth: 0.44,
 			sizeAttenuation: true,
 			color: 0x38BDF8,
@@ -592,20 +591,18 @@ class VariableTopologyExample {
 		path.resize( stage.width, stage.height )
 		const prepared = await path.prepare( stage3d.renderer, stage3d.camera )
 
-		if ( !prepared ) {
-			this.metrics.screen = {
+		if ( prepared ) {
+			path.gpuMesh.material.colorNode = screenGradient
+		}
+		this.screenPath = path
+		stage3d.add( path )
+		this.metrics.screen = prepared
+			? path.status
+			: {
 				...path.status,
 				requested: true,
 				active: false,
 			}
-			path.dispose()
-			return
-		}
-
-		path.gpuMesh.material.colorNode = screenGradient
-		this.screenPath = path
-		stage3d.add( path )
-		this.metrics.screen = path.status
 	}
 
 	createHud() {
@@ -616,60 +613,55 @@ class VariableTopologyExample {
 			}
 			.VariableTopologyHud {
 				position: fixed;
-				top: calc(14px + var(--sait, 0px));
-				left: calc(14px + var(--sail, 0px));
-				right: calc(70px + var(--sair, 0px));
+				top: calc(16px + var(--sait, 0px));
+				left: calc(16px + var(--sail, 0px));
 				z-index: 20;
-				width: fit-content;
-				max-width: 860px;
-				box-sizing: border-box;
-				padding: 9px 11px 10px;
-				border: 1px solid rgba(148, 163, 184, .18);
-				border-radius: 13px;
-				background: rgba(2, 6, 23, .72);
-				box-shadow: 0 10px 34px rgba(2, 6, 23, .3);
-				backdrop-filter: blur(10px);
-				color: #f8fafc;
-				pointer-events: none;
-				user-select: none;
-			}
-			.VariableTopologyHud__header {
 				display: flex;
 				align-items: center;
 				gap: 9px;
-				margin-bottom: 7px;
+				padding: 8px 12px;
+				border: 1px solid rgba(148, 163, 184, .18);
+				border-radius: 999px;
+				background: rgba(2, 6, 23, .66);
+				box-shadow: 0 10px 34px rgba(2, 6, 23, .3);
+				backdrop-filter: blur(10px);
+				color: #f8fafc;
 				font: 750 10px/1 system-ui, sans-serif;
 				letter-spacing: .12em;
 				text-transform: uppercase;
+				pointer-events: none;
+				user-select: none;
 			}
-			.VariableTopologyHud__hint {
+			.VariableTopologyHud span + span {
 				padding-left: 9px;
 				border-left: 1px solid rgba(148, 163, 184, .22);
 				font-weight: 600;
-				color: rgba(226, 232, 240, .55);
+				color: rgba(226, 232, 240, .6);
 			}
-			.VariableTopologyHud__legend {
-				display: grid;
-				grid-template-columns: repeat(4, minmax(0, auto));
-				gap: 6px 14px;
-			}
-			.VariableTopologyHud__item {
+			.VariableTopologyLabel {
+				/* CSS2DRenderer only sets a transform; pin the origin so the page's
+				   centered text alignment cannot shift the labels. */
+				top: 0;
+				left: 0;
 				display: inline-flex;
 				align-items: center;
 				gap: 6px;
-				min-width: 0;
+				padding: 4px 8px;
+				border-radius: 999px;
+				background: rgba(2, 6, 23, .55);
+				color: rgba(241, 245, 249, .88);
 				font: 700 9px/1 system-ui, sans-serif;
-				letter-spacing: .07em;
+				letter-spacing: .08em;
 				text-transform: uppercase;
 				white-space: nowrap;
-				color: rgba(241, 245, 249, .76);
 			}
-			.VariableTopologyHud__swatch {
-				width: 7px;
-				height: 7px;
-				flex: 0 0 auto;
-				border-radius: 999px;
-				box-shadow: 0 0 10px currentColor;
+			.VariableTopologyLabel::before {
+				content: '';
+				width: 6px;
+				height: 6px;
+				border-radius: 50%;
+				background: var(--accent);
+				box-shadow: 0 0 8px var(--accent);
 			}
 			@media (max-width: 700px) {
 				.VariableTopologyControls {
@@ -681,65 +673,64 @@ class VariableTopologyExample {
 					overflow-y: auto;
 				}
 				.VariableTopologyHud {
-					top: calc(9px + var(--sait, 0px));
-					left: calc(9px + var(--sail, 0px));
-					right: calc(58px + var(--sair, 0px));
-					padding: 8px 9px 9px;
+					top: calc(10px + var(--sait, 0px));
+					left: calc(10px + var(--sail, 0px));
 				}
-				.VariableTopologyHud__header { margin-bottom: 6px; }
-				.VariableTopologyHud__legend {
-					grid-template-columns: repeat(2, minmax(0, 1fr));
-					gap: 6px 10px;
-				}
-				.VariableTopologyHud__item { font-size: 8px; }
+				.VariableTopologyHud span + span { display: none; }
+				.VariableTopologyLabel { font-size: 7px; padding: 3px 6px; }
 			}
 		`
 		document.head.appendChild( this.hudStyle )
 
 		this.hud = document.createElement( 'aside' )
 		this.hud.className = 'VariableTopologyHud'
-		this.hud.setAttribute( 'aria-label', 'Surface topology legend' )
-
-		const header = document.createElement( 'div' )
-		header.className = 'VariableTopologyHud__header'
+		this.hud.setAttribute( 'aria-label', 'Surface topology' )
 		const title = document.createElement( 'span' )
-		title.textContent = 'Surface topology'
+		title.textContent = 'Joins, caps + reversals'
 		const hint = document.createElement( 'span' )
-		hint.className = 'VariableTopologyHud__hint'
-		hint.textContent = 'Animated opening + orientation · drag to orbit'
-		header.append( title, hint )
-		this.hud.appendChild( header )
+		hint.textContent = 'Drag to orbit'
+		this.hud.append( title, hint )
+		document.body.appendChild( this.hud )
 
-		const legend = document.createElement( 'div' )
-		legend.className = 'VariableTopologyHud__legend'
-		const items = SURFACE_EXAMPLES.map( config => ( {
-			label: config.label,
-			accent: `#${config.color.toString( 16 ).padStart( 6, '0' )}`,
+		this.createLabels()
+	}
+
+	createLabels() {
+		this.labelRenderer = new CSS2DRenderer()
+		Object.assign( this.labelRenderer.domElement.style, { position: 'absolute', top: '0', left: '0', pointerEvents: 'none' } )
+		this.labelRenderer.setSize( stage.width, stage.height )
+		document.body.appendChild( this.labelRenderer.domElement )
+
+		// Each label sits just in front of its specimen, between it and the camera.
+		const entries = SURFACE_EXAMPLES.map( config => ( {
+			text: config.label,
+			color: config.color,
+			x: config.center[0],
+			z: config.center[1] + ( config.kind === 'join' ? 2 : config.kind === 'cap' ? 1.05 : 1.55 ),
 		} ) )
-		items.push( {
-			label: this.metrics.screen.active ? 'GPU screen path' : 'Screen path fallback',
-			accent: '#38bdf8',
+		entries.push( {
+			text: this.metrics.screen.active ? 'GPU screen path · round' : 'Screen path fallback',
+			color: 0x38BDF8,
+			x: 0,
+			z: SCREEN_PATH_Z + 1.2,
 		} )
 
-		for ( const item of items ) {
-			const element = document.createElement( 'span' )
-			element.className = 'VariableTopologyHud__item'
-			const swatch = document.createElement( 'span' )
-			swatch.className = 'VariableTopologyHud__swatch'
-			swatch.style.color = item.accent
-			swatch.style.background = item.accent
-			const label = document.createElement( 'span' )
-			label.textContent = item.label
-			element.append( swatch, label )
-			legend.appendChild( element )
+		for ( const entry of entries ) {
+			const element = document.createElement( 'div' )
+			element.className = 'VariableTopologyLabel'
+			element.textContent = entry.text
+			element.style.setProperty( '--accent', `#${entry.color.toString( 16 ).padStart( 6, '0' )}` )
+			const label = new CSS2DObject( element )
+			label.position.set( entry.x, SURFACE_Y, entry.z )
+			stage3d.add( label )
+			this.labels.push( label )
 		}
-		this.hud.appendChild( legend )
-		document.body.appendChild( this.hud )
 	}
 
 	onResize = () => {
 		this.syncGuiLayout()
 		this.screenPath?.resize( stage.width, stage.height )
+		this.labelRenderer?.setSize( stage.width, stage.height )
 	}
 
 	update = dt => {
@@ -751,6 +742,7 @@ class VariableTopologyExample {
 			this.setJoinPose( angle, direction )
 		}
 		this.screenPath?.update( stage3d.camera )
+		this.labelRenderer?.render( stage3d.scene, stage3d.camera )
 	}
 
 	dispose() {
@@ -800,6 +792,14 @@ class VariableTopologyExample {
 		this.hudStyle?.remove()
 		this.hud = null
 		this.hudStyle = null
+		for ( const label of this.labels ) {
+			stage3d.remove( label )
+			label.element.remove()
+		}
+		this.labels = []
+		this.labelRenderer?.domElement.remove()
+		this.labelRenderer = null
+		this.wires = []
 
 		if ( this.cameraState ) {
 			stage3d.camera.near = this.cameraState.near

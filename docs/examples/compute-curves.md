@@ -1,12 +1,12 @@
 ---
-description: "Render autonomous WebGPU storage-buffer curves with MeshLineCompute, glowing dashes, textures, and mouse-driven flow forces."
+description: "Render autonomous WebGPU storage-buffer curves with MeshLineCompute, glowing arc-length pulses, per-curve colors, and mouse-driven flow forces."
 outline: false
 pageClass: example-page
 ---
 
 # Compute Curves
 
-This demo uses `MeshLineCompute` as a WebGPU curve engine: compute shaders update autonomous curve points and arc-length data in storage buffers, then MeshLine renders them as glowing textured ribbons with distance-based dash modulation.
+This demo uses `MeshLineCompute` as a WebGPU curve engine: compute shaders update autonomous curve points and arc-length data in storage buffers, then MeshLine renders them as glowing ribbons with distance-based pulse modulation.
 
 <iframe title="Makio MeshLine Compute Curves demo" src="https://meshline-demo.makio.io/examples/compute-curves?noUI" width="100%" height="600" style="border: 1px solid #ddd; border-radius: 8px;"></iframe>
 
@@ -37,7 +37,7 @@ function frame( deltaSeconds ) {
 
 `renderer` must be a `WebGPURenderer` backed by native WebGPU. Without `renderer.compute()`, `step()` warns once, returns `false`, and does not advance the simulation.
 
-The live example adds a generated texture map, additive blending, a color gradient, width and fragment-alpha hooks, a mouse attractor, and live controls for curve count, mouse and curl strengths, dash spacing, and simulation mode. Its dash modulation uses `arcLengthNode( progress )`, so spacing follows the current animated curve distance instead of normalized point progress.
+The live example colors each curve by its place on the seeded spiral with a `colorFn` hook (a warm core cooling to a violet rim), adds additive blending and bloom, width and fragment-alpha hooks, a mouse attractor, and live controls for curve count, mouse and curl strengths, pulse spacing, and simulation mode. Its dash modulation uses `arcLengthNode( progress )`, so spacing follows the current animated curve distance instead of normalized point progress.
 
 ## Why Compute
 

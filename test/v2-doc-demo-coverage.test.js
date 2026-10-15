@@ -34,7 +34,7 @@ const documentedFeatures = [
 		name: 'partial point updates',
 		api: 'setPositionRange(',
 		doc: 'docs/meshline.md',
-		demo: 'demo/src/demos/v2Updates.js',
+		demo: 'demo/src/demos/drawlines.js',
 	},
 	{
 		name: 'bulk vertex updates',
@@ -46,7 +46,7 @@ const documentedFeatures = [
 		name: 'bulk instance updates',
 		api: 'setInstanceValues(',
 		doc: 'docs/meshline.md',
-		demo: 'demo/src/demos/v2Updates.js',
+		demo: 'demo/src/demos/gpuInstance.js',
 	},
 	{
 		name: 'native GPU culling entry',
