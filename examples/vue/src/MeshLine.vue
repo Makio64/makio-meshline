@@ -100,6 +100,16 @@ function defaultRenderHeight() {
 	return typeof window === 'undefined' ? 768 : window.innerHeight
 }
 
+// A window can measure 0×0 (an iframe before layout, a hidden tab), and
+// renderSize() rejects a zero size, so clamp to one pixel as resize() does.
+function resolveRenderWidth() {
+	return Math.max( 1, props.renderWidth ?? defaultRenderWidth() )
+}
+
+function resolveRenderHeight() {
+	return Math.max( 1, props.renderHeight ?? defaultRenderHeight() )
+}
+
 function resolveFrustumCulled() {
 	if ( props.frustumCulled !== undefined ) return props.frustumCulled
 	return props.sizeAttenuation !== false &&
@@ -140,8 +150,8 @@ function getBuildOptions() {
 		dpr: props.dpr ?? defaultDpr(),
 		frustumCulled: resolveFrustumCulled(),
 		verbose: props.verbose,
-		renderWidth: props.renderWidth ?? defaultRenderWidth(),
-		renderHeight: props.renderHeight ?? defaultRenderHeight(),
+		renderWidth: resolveRenderWidth(),
+		renderHeight: resolveRenderHeight(),
 		dynamic: props.dynamic ?? false,
 		gpuPositionNode: props.gpuPositionNode,
 		usage: props.usage,
@@ -204,8 +214,8 @@ function applyRenderSize() {
 	const line = lineRef.value
 	if ( !line ) return
 
-	const width = props.renderWidth ?? defaultRenderWidth()
-	const height = props.renderHeight ?? defaultRenderHeight()
+	const width = resolveRenderWidth()
+	const height = resolveRenderHeight()
 	line.renderSize( width, height )
 	line.resize( width, height )
 }

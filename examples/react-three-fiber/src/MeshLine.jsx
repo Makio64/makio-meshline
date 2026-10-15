@@ -84,8 +84,10 @@ export const MeshLine = forwardRef( function MeshLine( {
 	const size = useThree( state => state.size )
 	const linePoints = points ?? lines
 	const hasLinePoints = linePoints != null
-	const resolvedRenderWidth = renderWidth ?? size.width
-	const resolvedRenderHeight = renderHeight ?? size.height
+	// A hidden canvas measures 0×0, and renderSize() rejects a zero size, so
+	// clamp to one pixel as resize() does.
+	const resolvedRenderWidth = Math.max( 1, renderWidth ?? size.width )
+	const resolvedRenderHeight = Math.max( 1, renderHeight ?? size.height )
 	const resolvedFrustumCulled = frustumCulled ?? (
 		sizeAttenuation !== false &&
 		!gpuPositionNode &&
