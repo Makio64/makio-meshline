@@ -198,6 +198,28 @@ test( 'pending full uploads subsume range updates and identical topology preserv
 	assertRange( position, 24, 12 )
 } )
 
+test( 'range edits keep scheduling uploads after a first upload that left ranges pending', () => {
+	const geometry = new MeshLineGeometry( {
+		lines: createStraightLine( 0, 5 ),
+		needsProgress: false,
+		dynamic: true,
+	} )
+	const position = geometry.getAttribute( 'position' )
+	const previous = geometry.getAttribute( 'previous' )
+	clearUpdateRanges( geometry )
+
+	// An edit before the first draw: three creates the GPU buffer from the full
+	// array and records the version, but never clears the pending ranges.
+	geometry.setPositionRange( new Float32Array( [2, 1, 0] ), 2 )
+	const uploadedVersion = position.version
+	const uploadedPreviousVersion = previous.version
+	assert.ok( position.updateRanges.length > 0 )
+
+	geometry.setPositionRange( new Float32Array( [2, 2, 0] ), 2 )
+	assert.ok( position.version > uploadedVersion, 'later edits must still bump the position version' )
+	assert.ok( previous.version > uploadedPreviousVersion, 'later edits must still bump neighbor versions' )
+} )
+
 test( 'same totals with different per-line point counts regenerate connectivity', () => {
 	const geometry = new MeshLineGeometry( {
 		lines: [createStraightLine( 0, 2 ), createStraightLine( 10, 4 )],

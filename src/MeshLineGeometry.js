@@ -1562,7 +1562,6 @@ const markAttributeFullUpdate = attribute => {
 const markAttributeUpdateRange = ( attribute, start, count ) => {
 	if ( !attribute || count <= 0 ) return
 	const ranges = attribute.updateRanges
-	const hadPendingUpdate = ranges.length > 0
 	let rangeStart = start
 	let rangeEnd = start + count
 	for ( let i = ranges.length - 1; i >= 0; i-- ) {
@@ -1582,7 +1581,10 @@ const markAttributeUpdateRange = ( attribute, start, count ) => {
 	} else {
 		attribute.addUpdateRange( rangeStart, rangeEnd - rangeStart )
 	}
-	if ( !hadPendingUpdate ) attribute.needsUpdate = true
+	// Always bump the version. A buffer's first upload sends the whole array but
+	// leaves `updateRanges` untouched, so "ranges still pending" does not mean an
+	// upload is already scheduled; skipping the bump froze every later edit.
+	attribute.needsUpdate = true
 }
 
 const writePositionRange = ( array, line, vertexOffset, startPoint, endPoint ) => {

@@ -18,6 +18,7 @@
 - Keep the regular billboard profile on its compact fixed-strip path while surface and experimental GPU profiles allocate variable topology only for joins, caps, and reversal boundaries that need it.
 - Harden finite-input handling, endpoint neighbours, sharp bends, Float32 conversion, buffer reuse, bounds, and 16/32-bit topology promotion across CPU and GPU profiles.
 - Make framework wrapper defaults and update semantics match the `MeshLine` facade, including generated positions, safe culling defaults, stable Vue object identity, and explicit rebuild boundaries.
+- `setPositionRange()` keeps uploading after an edit made before the line's first draw. Three.js creates a buffer from the whole array without clearing its pending update ranges, and range marking skipped the version bump while a range was pending, so every later partial edit stayed on the CPU. Range edits now always bump the version; three still uploads at most once per frame.
 
 ### Stability
 - The facade, CPU billboard profile, world-space surface profile, framework wrappers, and optional chunk-culling system are supported in 2.0.0.
