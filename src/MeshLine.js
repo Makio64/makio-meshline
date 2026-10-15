@@ -582,6 +582,18 @@ export default class MeshLine extends Mesh {
 	}
 
 	/**
+	 * Change only the miter limit, keeping the current join type and options.
+	 * @param {number} limit - Finite and at least 1
+	 * @returns {this}
+	 */
+	miterLimit( limit ) {
+		// An unset join is the default miter; record it so join() sees no type
+		// change and keeps the existing topology.
+		this._options.join ??= { type: 'miter', limit: this._options.miterLimit ?? 4, segments: 8, inner: 'exact' }
+		return this.join( { ...this._options.join, limit } )
+	}
+
+	/**
 	 * Configure open-path end caps. Surface geometry and the optional GPU path
 	 * emit true square/round topology; the fixed billboard profile remains butt.
 	 * @param {'butt' | 'square' | 'round' | import('./index.d.ts').MeshLineCapOptions} [options]

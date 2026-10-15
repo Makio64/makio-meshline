@@ -107,6 +107,26 @@ test( 'bevel index runs stay contiguous per line and are reported for chunking',
 	geometry.dispose()
 } )
 
+test( 'miterLimit() changes only the limit and keeps the join topology', () => {
+	const bevel = new MeshLine( { lines: openLine( 4 ), join: BEVEL } ).build()
+	const bevelCount = bevel.geometry.getIndex().count
+	assert.equal( bevel.miterLimit( 2 ), bevel )
+	assert.equal( bevel.material.miterLimit, 2 )
+	assert.equal( bevel.geometry.getIndex().count, bevelCount, 'the bevel fill survives a limit change' )
+	bevel.dispose()
+
+	// An unset join is the default miter: only the material limit changes.
+	const plain = new MeshLine( { lines: openLine( 4 ) } ).build()
+	const index = plain.geometry.getIndex()
+	const version = index.version
+	plain.miterLimit( 6 )
+	assert.equal( plain.material.miterLimit, 6 )
+	assert.equal( plain.geometry.getIndex(), index )
+	assert.equal( index.version, version, 'no rebuild for the implicit miter join' )
+	assert.throws( () => plain.miterLimit( 0.5 ), /limit/ )
+	plain.dispose()
+} )
+
 test( 'connectivity reuse is invalidated by the join type and the loop flag', () => {
 	const square = new Float32Array( [0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0] )
 
