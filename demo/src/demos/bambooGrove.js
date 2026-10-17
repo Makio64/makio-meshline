@@ -5,7 +5,9 @@ import { DirectionalLight, Fog, HemisphereLight, Mesh, MeshStandardNodeMaterial,
 import stage from '@/makio/core/stage'
 import OrbitControl from '@/makio/three/controls/OrbitControl'
 import stage3d from '@/makio/three/stage3d'
+import keyboard from '@/makio/utils/input/keyboard'
 import { random } from '@/makio/utils/random'
+import { menuOpen } from '@/store'
 import { createDemoHint } from '@/utils/demoHint'
 
 // A misty grove: deep greens fading into a sage haze, a bright canopy overhead.
@@ -16,11 +18,32 @@ const FOG_FAR = 44
 const CLUMP_COUNT = 16
 const GROVE_RADIUS = 8.5
 const NODE_SPACING = 1.1
-const LEAF_POINTS = 7
+const LEAF_POINTS = 11
 // Horizontal sway at 12 m; it grows with the square of the height.
 const SWAY = 0.34
 const SWAY_REFERENCE_HEIGHT = 12
 const AUTO_ROTATE_SPEED = 0.00003
+
+const BAMBOO_PARTS = [
+	{ key: 'stalks', meshKey: 'stalksMesh', label: 'Culms', shortcut: '1' },
+	{ key: 'nodes', meshKey: 'nodesMesh', label: 'Nodes', shortcut: '2' },
+	{ key: 'twigs', meshKey: 'twigsMesh', label: 'Twigs', shortcut: '3' },
+	{ key: 'leaves', meshKey: 'leavesMesh', label: 'Leaves', shortcut: '4' },
+]
+
+// Botanical bamboo leaf silhouette: narrow petiole at the base swelling into a
+// lanceolate blade around 28% of its length, then tapering to an acuminate tip.
+const bambooLeafWidth = progress => {
+	const petiole = 0.08
+	if ( progress < petiole ) {
+		const u = progress / petiole
+		return 0.08 + 0.14 * u * u
+	}
+	const bladeT = ( progress - petiole ) / ( 1 - petiole )
+	const belly = Math.sin( Math.PI * Math.pow( bladeT, 0.62 ) )
+	const taper = Math.pow( 1 - bladeT, 0.42 )
+	return Math.max( 0, belly * taper )
+}
 
 const hash = Fn( ( [value] ) => fract( sin( value.mul( 12.9898 ).add( 7.13 ) ).mul( 43758.5453 ) ) )
 
@@ -35,6 +58,17 @@ class BambooGroveExample {
 		this.ground = null
 		this.noise = null
 		this.hint = null
+		this.hudRoot = null
+		this.hudButton = null
+		this.partButtons = new Map()
+		this.hudStyle = null
+		this.wireframeEnabled = false
+		this.partVisibility = {
+			stalks: true,
+			nodes: true,
+			twigs: true,
+			leaves: true,
+		}
 		this.time = 0
 		this.swayTime = uniform( 0 )
 		this.sunDirection = uniform( new Vector3( 0.6, 0.7, 0.4 ).normalize() )
@@ -68,8 +102,11 @@ class BambooGroveExample {
 		this.initGround()
 		const counts = this.createBamboo()
 		this.hint = createDemoHint( `${counts.stalks} culms · ${counts.leaves} leaves · 4 instanced draws`, { accent: '#a3e635', hideAfter: 9000 } )
+		this.createHud()
 
 		stage.onUpdate.add( this.update )
+		stage.onResize.add( this.onResize )
+		keyboard.onDown.add( this.onKeyDown )
 	}
 
 	initAtmosphere() {
@@ -93,7 +130,8 @@ class BambooGroveExample {
 		this.light.shadow.mapSize.set( 2048, 2048 )
 		this.light.shadow.camera.near = 0.5
 		this.light.shadow.camera.far = 60
-		this.light.shadow.bias = -0.0003
+		this.light.shadow.bias = -0.002
+		this.light.shadow.normalBias = 0.02
 		this.light.shadow.radius = 3
 		this.light.shadow.camera.left = -16
 		this.light.shadow.camera.right = 16
@@ -148,7 +186,7 @@ class BambooGroveExample {
 		const twigs = []
 		const leaves = []
 
-		const addLeaf = ( x, y, z, azimuth, pitch, length, stalk ) => {
+		const addLeaf = ( x, y, z, azimuth, pitch, length, stalk, curl = random( -0.18, 0.18 ) ) => {
 			leaves.push( {
 				x, y, z,
 				dirX: Math.cos( azimuth ) * Math.cos( pitch ),
@@ -156,9 +194,23 @@ class BambooGroveExample {
 				dirZ: Math.sin( azimuth ) * Math.cos( pitch ),
 				length,
 				flutter: random( 0, Math.PI * 2 ),
-				phase: stalk.phase,
-				droop: random( 0.15, 0.45 ),
+				phase: stalk.phase + curl * 0.5,
+				droop: random( 0.18, 0.42 ),
 			} )
+		}
+
+		// Bamboo leaves grow in palmate sprays: a fan of 3-6 blades radiating from
+		// a shared node along the twig with progressive splay and droop.
+		const addLeafSpray = ( x, y, z, baseAzimuth, basePitch, fanCount, scale, stalk ) => {
+			const spread = 0.34 + fanCount * 0.06
+			for ( let i = 0; i < fanCount; i++ ) {
+				const u = fanCount > 1 ? ( i / ( fanCount - 1 ) ) * 2 - 1 : 0
+				const archFactor = 1 - Math.abs( u ) * 0.28
+				const azimuth = baseAzimuth + u * spread + random( -0.08, 0.08 )
+				const pitch = basePitch + ( 1 - Math.abs( u ) ) * 0.14 - Math.abs( u ) * 0.18 + random( -0.08, 0.08 )
+				const length = scale * archFactor * random( 0.88, 1.14 )
+				addLeaf( x, y, z, azimuth, pitch, length, stalk, u * 0.22 )
+			}
 		}
 
 		// Bamboo grows in clumps: a few culms around each clump centre, leaning
@@ -211,27 +263,47 @@ class BambooGroveExample {
 						const end = [nodeX + dirX * length, y + dirY * length, nodeZ + dirZ * length]
 						twigs.push( { start: [nodeX, y, nodeZ], end, phase: stalk.phase } )
 
-						const leafCount = Math.round( random( 3, 6 ) )
-						for ( let leafIndex = 0; leafIndex < leafCount; leafIndex++ ) {
-							const along = random( 0.45, 1 )
-							addLeaf(
-								nodeX + ( end[0] - nodeX ) * along,
-								y + ( end[1] - y ) * along,
-								nodeZ + ( end[2] - nodeZ ) * along,
-								azimuth + random( -1.1, 1.1 ),
-								random( -0.6, 0.15 ),
-								random( 0.45, 0.85 ),
-								stalk,
-							)
-						}
+						// Lateral spray partway along the twig + terminal fan at the twig tip.
+						const midAlong = random( 0.48, 0.68 )
+						const sideSign = twigIndex % 2 === 0 ? 1 : -1
+						addLeafSpray(
+							nodeX + ( end[0] - nodeX ) * midAlong,
+							y + ( end[1] - y ) * midAlong,
+							nodeZ + ( end[2] - nodeZ ) * midAlong,
+							azimuth + sideSign * random( 0.35, 0.65 ),
+							random( -0.28, 0.05 ),
+							Math.round( random( 2, 3 ) ),
+							random( 0.52, 0.72 ),
+							stalk,
+						)
+						addLeafSpray(
+							end[0],
+							end[1],
+							end[2],
+							azimuth + random( -0.2, 0.2 ),
+							random( -0.32, 0.08 ),
+							Math.round( random( 3, 4 ) ),
+							random( 0.58, 0.84 ),
+							stalk,
+						)
 					}
 				}
 
-				// A crown of leaves fanning out from the tip.
+				// A crown of leaf sprays fanning out from the tip.
 				const [topX, topY, topZ] = rest( stalk.height )
-				const crown = Math.round( random( 5, 8 ) )
-				for ( let leafIndex = 0; leafIndex < crown; leafIndex++ ) {
-					addLeaf( topX, topY, topZ, random( 0, Math.PI * 2 ), random( -0.25, 0.5 ), random( 0.5, 0.9 ), stalk )
+				const crownSprays = 2
+				const crownBaseAngle = random( 0, Math.PI * 2 )
+				for ( let s = 0; s < crownSprays; s++ ) {
+					addLeafSpray(
+						topX,
+						topY,
+						topZ,
+						crownBaseAngle + s * Math.PI + random( -0.4, 0.4 ),
+						random( -0.1, 0.32 ),
+						Math.round( random( 3, 4 ) ),
+						random( 0.62, 0.88 ),
+						stalk,
+					)
 				}
 			}
 		}
@@ -278,7 +350,7 @@ class BambooGroveExample {
 			.instances( stalksData.length )
 			.color( 0x497849 )
 			.lineWidth( 0.1 )
-			.shadow( true )
+			.shadow( true, true )
 			.positionFn( Fn( ( [position] ) => {
 				const transform = attribute( 'instanceTransform', 'vec4' )
 				const lean = attribute( 'instanceLean', 'vec4' )
@@ -296,12 +368,12 @@ class BambooGroveExample {
 			} ) )
 			.colorFn( Fn( ( [, progress, side] ) => {
 				const lean = attribute( 'instanceLean', 'vec4' )
-				// Culms range from deep green to a sunnier yellow-green; the lit
-				// side and the dusty sheath at the base sell the cylinder.
+				// Culms range from deep green to a sunnier yellow-green; a subtle
+				// contour darkening and dusty sheath at the base sell the cylinder.
 				const culm = mix( color( 0x355F25 ), color( 0x86973A ), hash( lean.w ).mul( 0.7 ) )
-				const shade = side.mul( 0.35 ).add( 0.65 )
+				const contour = side.mul( side ).mul( -0.14 ).add( 1.04 )
 				const sheath = smoothstep( 0.03, 0.12, progress ).oneMinus().mul( 0.45 )
-				return vec4( mix( culm.mul( shade ), color( 0x8F8566 ), sheath ), 1 )
+				return vec4( mix( culm.mul( contour ), color( 0x8F8566 ), sheath ), 1 )
 			} ) )
 
 		this.stalksMesh.material.castShadowNode = vec4( 0.25, 0.27, 0.22, 1 )
@@ -341,7 +413,7 @@ class BambooGroveExample {
 			.needsProgress( false )
 			.color( 0x2d4a2d )
 			.lineWidth( 0.05 )
-			.shadow( true )
+			.shadow( true, true )
 			.positionFn( Fn( ( [position] ) => {
 				const pos = attribute( 'instancePosition', 'vec3' )
 				const shape = attribute( 'instanceShape', 'vec3' )
@@ -390,7 +462,7 @@ class BambooGroveExample {
 			.color( 0x4F6A2C )
 			.lineWidth( 0.035 )
 			.widthCallback( progress => 1 - progress * 0.6 )
-			.shadow( true )
+			.shadow( true, true )
 			.positionFn( Fn( ( [position] ) => {
 				const start = attribute( 'twigStart', 'vec3' )
 				const end = attribute( 'twigEnd', 'vec4' )
@@ -426,32 +498,63 @@ class BambooGroveExample {
 			.lines( this.createSpanTemplate( LEAF_POINTS ), false )
 			.instances( leavesData.length )
 			.color( 0x4F7F2A )
-			.lineWidth( 0.15 )
-			// Lanceolate: a thin stalk, the widest point near the base, a long tip.
-			.widthCallback( progress => Math.pow( Math.sin( Math.PI * progress ), 0.7 ) * ( 1 - progress * 0.5 ) )
-			.shadow( true )
+			.lineWidth( 0.165 )
+			// Lanceolate blade with a short petiole at the base and a fine tip.
+			.widthCallback( bambooLeafWidth )
+			.shadow( true, true )
 			.positionFn( Fn( ( [position] ) => {
 				const origin = attribute( 'leafOrigin', 'vec3' )
 				const direction = attribute( 'leafDirection', 'vec3' )
 				const shape = attribute( 'leafShape', 'vec4' )
 				const t = position.x
-				// Each leaf flutters on its own, on top of its culm's sway.
-				const flutter = sin( this.swayTime.mul( 2.4 ).add( shape.y ) ).mul( 0.2 )
-					.add( sin( this.swayTime.mul( 4.3 ).add( shape.y.mul( 2.1 ) ) ).mul( 0.08 ) )
-				const heading = normalize( direction.add( vec3( flutter, flutter.mul( 0.4 ), flutter.negate() ) ) )
-				const droop = vec3( 0, t.mul( t ).mul( shape.x ).mul( shape.w ), 0 )
-				return origin.add( heading.mul( t.mul( shape.x ) ) ).sub( droop ).add( swayOffset( shape.z, origin.y ) )
+				// Travelling wind wave along the blade so the tip ripples with phase lag.
+				const wavePhase = this.swayTime.mul( 2.4 ).add( shape.y ).sub( t.mul( 2.1 ) )
+				const flutter = sin( wavePhase ).mul( 0.16 )
+					.add( sin( wavePhase.mul( 1.85 ).add( shape.z ) ).mul( 0.06 ) )
+				const sideVec = normalize( vec3( direction.z.negate(), float( 0.0001 ), direction.x ) )
+				const curl = hash( shape.y.add( 3.7 ) ).sub( 0.5 ).mul( 0.24 )
+				const lateral = sideVec.mul( t.mul( float( 1 ).sub( t.mul( 0.35 ) ) ).mul( curl ).add( flutter.mul( t ) ) )
+				// Lift slightly out of the petiole, then arch into a catenary droop.
+				const arch = t.mul( float( 1 ).sub( t ) ).mul( 0.14 )
+					.sub( pow( t, float( 2.15 ) ).mul( shape.w ) )
+					.add( flutter.mul( 0.22 ).mul( t ) )
+				const bladeOffset = direction.mul( t.mul( shape.x ) )
+					.add( lateral.mul( shape.x ) )
+					.add( vec3( 0, arch.mul( shape.x ), 0 ) )
+				return origin.add( bladeOffset ).add( swayOffset( shape.z, origin.y ) )
+			} ) )
+			.widthFn( Fn( ( [width] ) => {
+				const shape = attribute( 'leafShape', 'vec4' )
+				return width.mul( shape.x.mul( 0.75 ).add( 0.45 ) )
 			} ) )
 			.colorFn( Fn( ( [, progress] ) => {
 				const origin = attribute( 'leafOrigin', 'vec3' )
+				const direction = attribute( 'leafDirection', 'vec3' )
 				const shape = attribute( 'leafShape', 'vec4' )
 				const seed = hash( shape.y )
-				const green = mix( color( 0x2A5419 ), color( 0x7DA536 ), seed )
-				const ripe = mix( green, color( 0xB4B055 ), smoothstep( 0.55, 1, progress ).mul( seed.mul( 0.5 ) ) )
-				// Leaves between the camera and the sun glow through.
-				const towardSun = max( dot( normalize( origin.sub( cameraPosition ) ), this.sunDirection ), 0 )
-				const glow = color( 0xC8E27A ).mul( pow( towardSun, 3 ).mul( 0.5 ) )
-				return vec4( ripe.add( glow ), 1 )
+				const baseGreen = mix( color( 0x264E17 ), color( 0x6E9A2F ), seed )
+				const sunTip = mix( baseGreen, color( 0x9FB444 ), smoothstep( 0.35, 0.92, progress ).mul( 0.55 ) )
+				const dryTip = mix( sunTip, color( 0xB89F52 ), smoothstep( 0.82, 1.0, progress ).mul( seed.mul( 0.45 ) ) )
+				// Leaves backlit between camera and sun glow with warm chlorophyll transmission.
+				const viewRay = normalize( origin.sub( cameraPosition ) )
+				const towardSun = max( dot( viewRay, this.sunDirection ), 0 )
+				const skyFacing = max( dot( direction, this.sunDirection ), 0 ).mul( 0.18 )
+				const glow = color( 0xCBE678 ).mul( pow( towardSun, 3 ).mul( 0.48 ).add( skyFacing ) )
+				return vec4( dryTip.add( glow ), 1 )
+			} ) )
+			.fragmentColorFn( Fn( ( [leafColor, , progress, side] ) => {
+				const absSide = side.abs()
+				// Central midrib vein: crisp warm ridge along side = 0, tapering toward the tip.
+				const midribWidth = mix( float( 0.14 ), float( 0.035 ), progress )
+				const midrib = smoothstep( midribWidth, float( 0 ), absSide ).mul( float( 1 ).sub( progress.mul( 0.65 ) ) )
+				// Monocot parallel lateral veins and V-fold camber across the two blade halves.
+				const parallelVeins = sin( absSide.mul( 28 ) ).mul( 0.5 ).add( 0.5 ).mul( 0.045 )
+				const halfFold = smoothstep( float( -0.08 ), float( 0.08 ), side ).mul( 0.11 ).sub( 0.055 )
+				const edgeMargin = smoothstep( float( 0.68 ), float( 0.98 ), absSide ).mul( 0.14 )
+				const shaded = leafColor.rgb
+					.mul( float( 1 ).add( halfFold ).add( parallelVeins ).sub( edgeMargin ) )
+					.add( color( 0xC6D86B ).mul( midrib.mul( 0.22 ) ) )
+				return vec4( shaded, leafColor.a )
 			} ) )
 
 		// Leaves let a little green light through, so their shadows stay soft.
@@ -486,6 +589,231 @@ class BambooGroveExample {
 		stage3d.add( this.leavesMesh )
 	}
 
+	get bambooMeshes() {
+		return [this.stalksMesh, this.nodesMesh, this.twigsMesh, this.leavesMesh].filter( Boolean )
+	}
+
+	createHud() {
+		if ( new URLSearchParams( window.location.search ).has( 'noUI' ) ) return
+		this.hudStyle = document.createElement( 'style' )
+		this.hudStyle.textContent = `
+			.BambooGroveHud {
+				position: fixed;
+				top: calc(16px + var(--sait, 0px));
+				right: calc(66px + var(--sair, 0px));
+				z-index: 20;
+				display: flex;
+				flex-wrap: wrap;
+				justify-content: flex-end;
+				align-items: center;
+				gap: 6px;
+			}
+			.BambooGroveParts {
+				display: inline-flex;
+				align-items: center;
+				gap: 4px;
+				padding: 3px;
+				border: 1px solid rgba(190, 242, 100, .24);
+				border-radius: 999px;
+				background: rgba(14, 24, 14, .68);
+				box-shadow: 0 12px 32px rgba(0, 0, 0, .24);
+				backdrop-filter: blur(12px);
+			}
+			.BambooGrovePartBtn {
+				appearance: none;
+				display: inline-flex;
+				align-items: center;
+				gap: 6px;
+				height: 28px;
+				padding: 0 10px;
+				border: 1px solid transparent;
+				border-radius: 999px;
+				background: transparent;
+				color: rgba(212, 228, 198, .62);
+				font: 700 10px/1 system-ui, sans-serif;
+				letter-spacing: .06em;
+				text-transform: uppercase;
+				cursor: pointer;
+				user-select: none;
+				transition: border-color .18s ease, background .18s ease, color .18s ease, opacity .18s ease;
+			}
+			.BambooGrovePartBtn:hover {
+				color: rgba(242, 250, 232, .95);
+				background: rgba(255, 255, 255, .06);
+			}
+			.BambooGrovePartBtn:focus-visible {
+				outline: 2px solid #a3e635;
+				outline-offset: 2px;
+			}
+			.BambooGrovePartBtn[aria-pressed="true"] {
+				border-color: rgba(163, 230, 53, .55);
+				background: rgba(63, 114, 34, .42);
+				color: #f4fce8;
+			}
+			.BambooGrovePartBtn[aria-pressed="false"] {
+				opacity: .68;
+				text-decoration: line-through;
+			}
+			.BambooGroveWireframe {
+				appearance: none;
+				position: fixed;
+				top: calc(16px + var(--sait, 0px));
+				right: calc(66px + var(--sair, 0px));
+				z-index: 20;
+				display: inline-flex;
+				align-items: center;
+				gap: 8px;
+				height: 36px;
+				padding: 0 12px;
+				border: 1px solid rgba(190, 242, 100, .28);
+				border-radius: 999px;
+				background: rgba(14, 24, 14, .68);
+				box-shadow: 0 12px 32px rgba(0, 0, 0, .24);
+				backdrop-filter: blur(12px);
+				color: rgba(242, 250, 232, .92);
+				font: 700 10px/1 system-ui, sans-serif;
+				letter-spacing: .08em;
+				text-transform: uppercase;
+				cursor: pointer;
+				user-select: none;
+				transition: border-color .18s ease, background .18s ease;
+			}
+			.BambooGroveHud .BambooGroveWireframe {
+				position: static;
+			}
+			.BambooGroveWireframe:hover {
+				border-color: rgba(163, 230, 53, .62);
+				background: rgba(20, 36, 18, .82);
+			}
+			.BambooGroveWireframe:focus-visible {
+				outline: 2px solid #a3e635;
+				outline-offset: 2px;
+			}
+			.BambooGroveWireframe[aria-pressed="true"] {
+				border-color: rgba(163, 230, 53, .78);
+				background: rgba(63, 114, 34, .46);
+				color: #fff;
+			}
+			.BambooGroveWireframe__dot {
+				width: 7px;
+				height: 7px;
+				border-radius: 50%;
+				background: rgba(163, 184, 148, .65);
+				transition: background .18s ease, box-shadow .18s ease;
+			}
+			.BambooGrovePartBtn[aria-pressed="true"] .BambooGroveWireframe__dot,
+			.BambooGroveWireframe[aria-pressed="true"] .BambooGroveWireframe__dot {
+				background: #a3e635;
+				box-shadow: 0 0 10px #a3e635;
+			}
+			.BambooGroveWireframe__key {
+				padding: 2px 5px;
+				border: 1px solid rgba(255, 255, 255, .24);
+				border-radius: 4px;
+				font: 700 9px/1 system-ui, sans-serif;
+				color: rgba(242, 250, 232, .74);
+			}
+			@media (max-width: 620px) {
+				.BambooGroveHud { top: calc(56px + var(--sait, 0px)); right: calc(8px + var(--sair, 0px)); left: 8px; }
+				.BambooGroveWireframe { top: calc(56px + var(--sait, 0px)); right: calc(8px + var(--sair, 0px)); height: 32px; padding: 0 10px; }
+				.BambooGrovePartBtn { height: 26px; padding: 0 8px; }
+				.BambooGroveWireframe__key { display: none; }
+			}
+			@media (prefers-reduced-motion: reduce) {
+				.BambooGrovePartBtn,
+				.BambooGroveWireframe,
+				.BambooGroveWireframe__dot { transition: none; }
+			}
+		`
+		document.head.appendChild( this.hudStyle )
+
+		const hudRoot = document.createElement( 'div' )
+		hudRoot.className = 'BambooGroveHud'
+		hudRoot.addEventListener( 'pointerdown', event => event.stopPropagation() )
+
+		const partsGroup = document.createElement( 'div' )
+		partsGroup.className = 'BambooGroveParts'
+		partsGroup.setAttribute( 'role', 'group' )
+		partsGroup.setAttribute( 'aria-label', 'Bamboo parts visibility' )
+
+		for ( const part of BAMBOO_PARTS ) {
+			const partBtn = document.createElement( 'button' )
+			partBtn.type = 'button'
+			partBtn.className = 'BambooGrovePartBtn'
+			partBtn.dataset.part = part.key
+			partBtn.setAttribute( 'aria-pressed', String( this.partVisibility[part.key] ) )
+			partBtn.innerHTML = `
+				<span class="BambooGroveWireframe__dot" aria-hidden="true"></span>
+				<span>${part.label}</span>
+				<kbd class="BambooGroveWireframe__key" aria-hidden="true">${part.shortcut}</kbd>
+			`
+			partBtn.addEventListener( 'click', () => this.togglePart( part.key ) )
+			partsGroup.appendChild( partBtn )
+			this.partButtons.set( part.key, partBtn )
+		}
+
+		const button = document.createElement( 'button' )
+		button.type = 'button'
+		button.className = 'BambooGroveWireframe'
+		button.setAttribute( 'aria-pressed', String( this.wireframeEnabled ) )
+		button.innerHTML = `
+			<span class="BambooGroveWireframe__dot" aria-hidden="true"></span>
+			<span>Wireframe</span>
+			<kbd class="BambooGroveWireframe__key" aria-hidden="true">W</kbd>
+		`
+		button.addEventListener( 'click', () => this.toggleWireframe() )
+
+		hudRoot.appendChild( partsGroup )
+		hudRoot.appendChild( button )
+		document.body.appendChild( hudRoot )
+		this.hudRoot = hudRoot
+		this.hudButton = button
+	}
+
+	onResize = () => {
+		this.bambooMeshes.forEach( mesh => mesh.resize() )
+	}
+
+	onKeyDown = ( key, event ) => {
+		const target = event?.target
+		const isEditable = target?.matches?.( 'input, textarea, select, [contenteditable="true"]' )
+		if (
+			event?.repeat || event?.defaultPrevented || event?.altKey || event?.ctrlKey || event?.metaKey ||
+			menuOpen.value || isEditable
+		) return
+
+		if ( key === 'w' || key === 'W' ) {
+			this.toggleWireframe()
+			return
+		}
+		const matchedPart = BAMBOO_PARTS.find( part => part.shortcut === key )
+		if ( matchedPart ) this.togglePart( matchedPart.key )
+	}
+
+	setPartVisible( partKey, visible ) {
+		const part = BAMBOO_PARTS.find( entry => entry.key === partKey )
+		if ( !part ) return false
+		const nextVisible = Boolean( visible )
+		this.partVisibility[part.key] = nextVisible
+		const mesh = this[part.meshKey]
+		if ( mesh ) mesh.visible = nextVisible
+		if ( this.light?.shadow ) this.light.shadow.needsUpdate = true
+		this.partButtons.get( part.key )?.setAttribute( 'aria-pressed', String( nextVisible ) )
+		return nextVisible
+	}
+
+	togglePart( partKey ) {
+		if ( !( partKey in this.partVisibility ) ) return false
+		return this.setPartVisible( partKey, !this.partVisibility[partKey] )
+	}
+
+	toggleWireframe() {
+		this.wireframeEnabled = !this.wireframeEnabled
+		this.bambooMeshes.forEach( mesh => mesh.wireframe( this.wireframeEnabled ) )
+		this.hudButton?.setAttribute( 'aria-pressed', String( this.wireframeEnabled ) )
+		return this.wireframeEnabled
+	}
+
 	update = ( dt ) => {
 		const delta = Math.min( dt, 100 ) * 0.001
 		this.time += delta
@@ -503,8 +831,18 @@ class BambooGroveExample {
 
 	dispose() {
 		stage.onUpdate.remove( this.update )
+		stage.onResize.remove( this.onResize )
+		keyboard.onDown.remove( this.onKeyDown )
 		this.hint?.remove()
 		this.hint = null
+		this.hudRoot?.remove()
+		this.hudButton?.remove()
+		this.hudStyle?.remove()
+		this.hudRoot = null
+		this.hudButton = null
+		this.partButtons.clear()
+		this.hudStyle = null
+		this.wireframeEnabled = false
 
 		stage3d.scene.backgroundNode = null
 		stage3d.scene.fog = null

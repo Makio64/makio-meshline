@@ -76,6 +76,7 @@ Every `lineOptions` value is applied to the complete CPU `fallback`. The native 
 | `prepare(renderer, camera?)` | `Promise<boolean>` | Initializes and selects the native path. Resolves `true` when it is active and `false` when the CPU fallback was selected. Safe to call again after renderer/device or source changes. |
 | `update(camera?)` | `boolean` | Validates the prepared backend and primary mono camera before a render. Returns whether the native path remains active. |
 | `resize(width, height)` | `this` | Updates CSS-sized render resolution used for screen expansion. |
+| `wireframe(enabled?)` | `this` | Toggles wireframe triangle edge rendering on both the native GPU path and the CPU fallback. |
 | `setSimplificationTolerance(localTolerance)` | `Promise<this>` | Reclassifies and re-emits an enabled simplified path. In raw mode it only stores the non-negative value. |
 | `setPositions(points)` | `Promise<this>` | Replaces the one open source path, updates the CPU fallback, and recreates prepared GPU resources as needed. |
 | `dispose()` | `void` | Releases GPU resources and disposes the retained CPU fallback. |
@@ -115,7 +116,7 @@ The regular billboard geometry duplicates each center point for both strip sides
 - one `uvec4(previous, a, b, next)` per advanced or simplified segment; default raw mode derives these indices in the vertex shader and allocates no segment buffer;
 - for advanced topology, one packed 8-byte `uvec2(typeAndSlot, segment)` record per body triangle and bounded join/cap candidate; geometrically empty candidates are suppressed in the vertex stage;
 - compact per-chunk state and error data;
-- one four-word non-indexed indirect draw command.
+- one non-indexed indirect draw buffer (with triangle and wireframe line-segment draw entries).
 
 The vertex shader decodes each body or topology triangle, fetches the four source points, and expands it for the active render camera. There is no generated index buffer, no duplicated current/previous/next position storage, no GPU-to-CPU visibility readback, and no `INDEX | STORAGE` warm-up draw.
 
@@ -181,7 +182,7 @@ Stage 1 intentionally falls back for:
 
 - multiple or closed lines;
 - road/surface, shadow, instanced, mapped, dashed, or hook-driven profiles;
-- CPU topology smoothing and wireframe;
+- CPU topology smoothing;
 - ArrayCamera/WebXR.
 
 Inspect `path.status` after `prepare()` to see the selected backend, active/fallback reason, point and chunk counts, and the exact simplification contract.
@@ -205,7 +206,7 @@ Chunk length is derived from the tolerance rather than fixed, and that detail ma
 
 Running relaxation first pays for itself twice. It removes the noise excursions that force Douglas-Peucker to keep points the shape does not need — on the France dataset, 4 passes take the survivors from about 10,400 to about 2,700 at the same tolerance — and because the recursion is no longer pathologically deep on a staircase, the pass budget converges and the exact flush stops firing, so the GPU result matches the CPU oracle point for point.
 
-Simplification is world-space and camera independent, so the pipeline dispatches once on load and once per control change — nothing re-runs while you orbit. The optional screen-space LOD toggle adds a CSS-pixel error term measured against the live projection and re-dispatches at a capped rate while the camera moves; camera-plane crossings are hard splits so a chord never skips across mixed projection validity. Four datasets ship with it — a digitised France, marching-squares isolines, auto-traced manga line art and raw GPS tracks — each resampled to a large point budget and then deliberately dirtied with drift, jitter and coordinate quantisation. The HUD reports GPU compute time from a timestamp query beside the same relaxation and Douglas-Peucker run on the CPU, and prints the difference in retained points between the two so the port is verified rather than asserted. Query parameters: `?dataset=france|isolines|anime|gps`, `?level=0…100` (0 is lossless), `?relax=0…24`, `?render=ribbons|lines|wireframe`, `?view=original`, `?cameraLod=1`, `?radius=`, `?validate=0` to skip the CPU cross-check, and `?noUI=1`.
+Simplification is world-space and camera independent, so the pipeline dispatches once on load and once per control change — nothing re-runs while you orbit. The optional screen-space LOD toggle adds a CSS-pixel error term measured against the live projection and re-dispatches at a capped rate while the camera moves; camera-plane crossings are hard splits so a chord never skips across mixed projection validity. Two datasets ship with it — a digitised France and marching-squares isolines — each resampled to a large point budget and then deliberately dirtied with jitter and coordinate quantisation. The HUD reports GPU compute time from a timestamp query beside the same relaxation and Douglas-Peucker run on the CPU, and prints the difference in retained points between the two so the port is verified rather than asserted. Query parameters: `?dataset=france|isolines`, `?level=0…100` (0 is lossless), `?relax=0…24`, `?render=ribbons|lines|wireframe`, `?view=original`, `?cameraLod=1`, `?radius=`, `?validate=0` to skip the CPU cross-check, and `?noUI=1`.
 
 The [GPU Path demo](https://meshline-demo.makio.io/examples/gpu-path) uses this public class with 200,000 points. Its on-screen explainer makes the intentionally subtle result explicit: the cyan curve should look unchanged while the point representation and emitted draw geometry change. Use the visible mode controls to compare GPU simplification, the raw full-detail GPU path, and the ordinary CPU baseline; the equivalent query parameters remain `?simplify=0` and `?gpu=0`. For topology profiling, `?topology=variable`, `?topology=bevel`, and `?topology=round` select the full-detail triangle-record path; append `&cap=square` or `&cap=round` to exercise non-butt caps. For the fixed demo path and `localTolerance: 0.012`, the matching CPU oracle selects 1,646 of 199,999 source segments (0.82%). The UI labels that number as an expected diagnostic because the runtime renderer deliberately performs no GPU-to-CPU count readback. On the V2 development machine, the final matched native-GPU run measured raw full detail at 0.437 ms mean frame time and 3.08 MiB of tracked buffers, versus 0.397 ms and 6.26 MiB with simplification (9.1% lower frame time and about 29% lower GPU timestamp, with the hierarchy-memory tradeoff). A separate matched CPU-fallback run used 18.34 MiB. Heap samples were noisy, so the entry remains experimental despite the repeatable frame and memory wins.
 

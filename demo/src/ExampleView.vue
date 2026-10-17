@@ -20,7 +20,7 @@
 		</section>
 		<template v-else>
 			<div v-if="text" class="instruction" v-html="text" />
-			<component :is="example && example.uiComponent" v-if="example && example.uiComponent" :api="example" class="bottom" />
+			<component :is="example && example.uiComponent" v-if="example && example.uiComponent" :api="example" />
 		</template>
 		<CodeButton v-if="codeUrl && !hideChrome" :href="codeUrl" />
 	</div></template>
@@ -220,9 +220,6 @@ export default {
 		font-size 3rem
 	.subtitle
 		font-size 1.5rem
-	.bottom
-		position absolute
-		bottom 10px
 	.instruction
 		user-select none
 		pointer-events none

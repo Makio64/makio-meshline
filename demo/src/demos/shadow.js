@@ -130,7 +130,7 @@ class ShadowExample {
 				.color( config.color )
 				.lineWidth( config.width )
 				.dash( { count: config.dashCount, ratio: config.dashRatio } )
-				.shadow( true )
+				.shadow( true, true )
 
 			stage3d.add( line )
 			this.lines.push( line )

@@ -355,6 +355,7 @@ export interface MeshLineConfigureOptions {
 	transparent?: boolean
 	wireframe?: boolean
 	shadow?: boolean
+	receiveShadow?: boolean
 
 	// advanced
 	dash?: MeshLineDashOptions | null | false
@@ -545,7 +546,8 @@ export class MeshLine extends ThreeMesh {
 	widthCallback( fn: ( ( progress: number, pointIndex?: number, lineIndex?: number ) => number ) | null ): this
 	sizeAttenuation( enabled: boolean ): this
 	antialias( enabled?: boolean ): this
-	shadow( enabled: boolean ): this
+	shadow( enabled: boolean, receiveShadow?: boolean ): this
+	setReceiveShadow( enabled: boolean ): this
 
 	opacity( opacity: number ): this
 	alphaTest( value: number ): this

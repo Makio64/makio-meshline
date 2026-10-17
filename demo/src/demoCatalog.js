@@ -27,7 +27,7 @@ export const demoCatalog = [
 	{ id: 'surface-road', section: 'ribbons', title: 'Road Editor', subtitle: 'adaptive 3D road editor', blurb: 'Drag control points to build a banked 3D road with painted lanes.', apis: ['surface()', 'setPositions()'], sourceFile: 'surfaceRoad.js' },
 
 	{ id: 'gpu-path', section: 'gpu', title: '200K-Point Line', subtitle: '200k points, one GPU draw', blurb: 'One line with 200,000 points. The GPU trims it to the 1,646 segments that keep its shape.', apis: ['MeshLineGPUPath'], sourceFile: 'gpuPath.js', status: 'experimental' },
-	{ id: 'gpu-culling', section: 'gpu', title: 'Tunnel Flythrough', subtitle: '400K-point flythrough', blurb: 'Fly through a 400,000-point tunnel. The GPU draws only the part in front of the camera.', apis: ['MeshLineCullingSystem'], sourceFile: 'gpuCulling.js' },
+	{ id: 'gpu-culling', section: 'gpu', title: 'Alpine Pass Culling', subtitle: '400K-point frustum culling', blurb: 'A 400,000-point alpine pass and contours. Watch the 3D frustum cone cull offscreen chunks live.', apis: ['MeshLineCullingSystem'], sourceFile: 'gpuCulling.js' },
 	{ id: 'gpu-simplification', section: 'gpu', title: 'GPU Simplification', subtitle: 'Douglas-Peucker on GPU', blurb: 'Research prototype: Douglas-Peucker simplification running in compute shaders.', apis: ['compute shaders'], sourceFile: 'gpuSimplificationPrototype.js', status: 'experimental' },
 	{ id: 'compute-curves', section: 'gpu', title: 'Compute Curves', subtitle: 'WebGPU curve engine', blurb: 'Thousands of curves simulated in a compute shader. Move to stir them.', apis: ['MeshLineCompute'], sourceFile: 'meshlineCompute.js', status: 'experimental', requires: 'webgpu' },
 	{ id: 'lorenz-trails', section: 'gpu', title: 'Lorenz Attractor', subtitle: 'ring-buffer compute trails', blurb: '64 trails orbiting a chaotic attractor. The GPU writes only the newest points of each trail.', apis: ['storagePositions({ head })'], sourceFile: 'lorenzTrails.js', status: 'experimental', requires: 'webgpu' },
@@ -35,7 +35,7 @@ export const demoCatalog = [
 
 	{ id: 'isobars', section: 'scenes', title: 'Isobars', subtitle: 'synoptic contour morphing', blurb: 'Weather-map contours morphing between pressure systems.', apis: ['storagePositions()', 'morph'], sourceFile: 'isobars.js', aliases: ['isobar'] },
 	{ id: 'ricefield', section: 'scenes', title: 'Rice Field', subtitle: 'storage buffers', blurb: 'Wind through thousands of instanced blades. Click for a shockwave.', apis: ['instances()', 'positionFn()'], sourceFile: 'ricefield.js' },
-	{ id: 'bamboooo', section: 'scenes', title: 'Bamboooo', subtitle: 'instancing + shadows', blurb: 'An instanced bamboo grove casting soft shadows.', apis: ['instances()', 'castShadow'], sourceFile: 'bambooGrove.js' },
+	{ id: 'bamboooo', section: 'scenes', title: 'Bamboooo', subtitle: 'instancing + shadows', blurb: 'An instanced bamboo grove casting and receiving soft shadows.', apis: ['instances()', 'castShadow', 'receiveShadow'], sourceFile: 'bambooGrove.js' },
 	{ id: 'venus-and-david', section: 'scenes', title: 'Venus & David', subtitle: 'mesh paths', blurb: 'Two statues traced as stacks of glowing contour lines.', apis: ['instances()', 'gpuPositionNode()'], sourceFile: 'venus.js' },
 	{ id: 'baguettes', section: 'scenes', title: 'Flying Baguettes', subtitle: 'multi-line batch', blurb: 'Dozens of textured lines in one geometry and one draw call.', apis: ['lines([ … ])', 'map()'], sourceFile: 'baguettes.js' },
 

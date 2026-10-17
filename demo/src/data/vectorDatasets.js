@@ -13,8 +13,6 @@ import { FRANCE_CORSICA, FRANCE_MAINLAND, FRANCE_RIVERS } from './franceOutline.
 
 export const WORLD_SIZE = 96
 
-const TAU = Math.PI * 2
-
 // ---------------------------------------------------------------------------
 // deterministic noise (shape stays identical between reloads, only the dirt uses
 // the global seeded random)
@@ -75,41 +73,6 @@ const fbm2 = ( x, y, octaves = 5 ) => {
 // ---------------------------------------------------------------------------
 // curve helpers
 // ---------------------------------------------------------------------------
-
-const bezier = ( p0, c0, c1, p1, steps = 24 ) => {
-	const points = []
-	for ( let step = 0; step <= steps; step++ ) {
-		const t = step / steps
-		const u = 1 - t
-		const a = u * u * u
-		const b = 3 * u * u * t
-		const c = 3 * u * t * t
-		const d = t * t * t
-		points.push( [
-			a * p0[0] + b * c0[0] + c * c1[0] + d * p1[0],
-			a * p0[1] + b * c0[1] + c * c1[1] + d * p1[1],
-		] )
-	}
-	return points
-}
-
-const ellipse = ( cx, cy, rx, ry, steps = 48, from = 0, to = TAU ) => {
-	const points = []
-	for ( let step = 0; step <= steps; step++ ) {
-		const angle = from + ( to - from ) * ( step / steps )
-		points.push( [cx + Math.cos( angle ) * rx, cy + Math.sin( angle ) * ry] )
-	}
-	return points
-}
-
-// Joins bezier/arc pieces into one stroke, dropping the duplicated shared knot.
-const chain = ( ...pieces ) => pieces.reduce( ( stroke, piece ) => {
-	if ( stroke.length === 0 ) return piece.slice()
-	stroke.push( ...piece.slice( 1 ) )
-	return stroke
-}, [] )
-
-const mirrorX = ( points, axis ) => points.map( ( [x, y] ) => [axis * 2 - x, y] )
 
 const polylineLength = points => {
 	let total = 0
@@ -378,115 +341,6 @@ const buildIsolines = () => {
 	return lines
 }
 
-const buildAnimeFace = () => {
-	const strokes = []
-	const add = ( points, closed = false ) => strokes.push( { closed, points, weight: 1 } )
-	const addPair = ( points, closed = false ) => {
-		add( points, closed )
-		add( mirrorX( points, 50 ), closed )
-	}
-
-	// jaw and chin
-	add( chain(
-		bezier( [26, 92], [22, 78], [24, 58], [32, 46] ),
-		bezier( [32, 46], [38, 38], [44, 34], [50, 33] ),
-		bezier( [50, 33], [56, 34], [62, 38], [68, 46] ),
-		bezier( [68, 46], [76, 58], [78, 78], [74, 92] ),
-	) )
-	// hair silhouette
-	add( chain(
-		bezier( [19, 88], [18, 106], [30, 120], [44, 123] ),
-		bezier( [44, 123], [58, 125], [74, 116], [79, 100] ),
-		bezier( [79, 100], [81, 94], [81, 90], [81, 88] ),
-	) )
-	// bangs: five locks across the forehead, rounded at the root, pointed at the tip
-	for ( const [rootX, rootY, tipX, tipY, endX, endY] of [
-		[24, 92, 31, 76, 38, 98],
-		[36, 98, 41, 69, 46, 100],
-		[45, 100, 50, 66, 55, 100],
-		[54, 100, 60, 70, 66, 98],
-		[63, 98, 70, 77, 77, 92],
-	] ) {
-		add( chain(
-			bezier( [rootX, rootY], [rootX - 1, rootY - 12], [tipX - 5, tipY + 13], [tipX, tipY] ),
-			bezier( [tipX, tipY], [tipX + 5, tipY + 13], [endX + 1, endY - 12], [endX, endY] ),
-		) )
-	}
-	// framing side locks
-	addPair( chain(
-		bezier( [21, 94], [15, 76], [13, 58], [17, 36] ),
-		bezier( [17, 36], [22, 50], [25, 66], [27, 84] ),
-	) )
-	// ahoge
-	add( chain(
-		bezier( [47, 118], [44, 128], [52, 133], [57, 126] ),
-		bezier( [57, 126], [54, 125], [51, 123], [49, 120] ),
-	) )
-	// eyes
-	addPair( chain(
-		bezier( [28, 70], [30, 80], [43, 81], [46, 72] ),
-		bezier( [46, 72], [48, 74], [49, 77], [47, 74] ),
-	) )
-	addPair( bezier( [28, 68], [31, 77], [43, 77], [46, 70] ) )
-	addPair( bezier( [29, 65], [33, 60], [41, 60], [45, 65] ) )
-	addPair( ellipse( 37, 70, 6.4, 7.4, 40 ), true )
-	addPair( ellipse( 37, 70, 2.6, 3.4, 28 ), true )
-	addPair( ellipse( 34.4, 73.4, 2.2, 2, 22 ), true )
-	addPair( ellipse( 40.2, 66.6, 1.1, 1, 16 ), true )
-	// eyebrows
-	addPair( bezier( [29, 85], [33, 89], [41, 89], [45, 85] ) )
-	// blush
-	for ( const y of [50, 53, 56] ) addPair( bezier( [26, y], [27, y + 1], [28, y + 2], [29.5, y + 3] ) )
-	// nose and mouth
-	add( bezier( [50, 60], [51.5, 56], [52, 54], [49, 53] ) )
-	add( bezier( [45, 45], [48, 42], [52, 42], [55, 45] ) )
-	// neck and shoulders
-	addPair( bezier( [42, 34], [42, 26], [41, 22], [38, 18] ) )
-	addPair( bezier( [38, 18], [28, 15], [18, 12], [8, 9] ) )
-
-	return strokes
-}
-
-const buildGpsTracks = () => {
-	const track = ( radius, phase, wiggle, segments ) => {
-		const points = []
-		for ( let i = 0; i < segments; i++ ) {
-			const angle = ( i / segments ) * TAU
-			const shape = 1 + fbm1( angle * 1.6 + phase, 4 ) * 0.34 + fbm1( angle * 5.2 + phase, 3 ) * wiggle
-			points.push( [
-				Math.cos( angle ) * radius * shape,
-				Math.sin( angle ) * radius * shape * 0.78,
-			] )
-		}
-		return points
-	}
-
-	// A ridge climb: switchbacks stacked up one flank, the shape a simplifier
-	// must not round off even though every leg is almost straight.
-	const switchbacks = []
-	for ( let leg = 0; leg < 9; leg++ ) {
-		const y = -0.22 + leg * 0.062
-		const left = -0.36 + leg * 0.012
-		const right = 0.02 - leg * 0.014
-		switchbacks.push( leg % 2 === 0 ? [left, y] : [right, y] )
-		switchbacks.push( leg % 2 === 0 ? [right, y + 0.031] : [left, y + 0.031] )
-	}
-
-	// An out-and-back spur along a valley floor.
-	const spur = []
-	for ( let i = 0; i <= 60; i++ ) {
-		const t = i / 60
-		spur.push( [-0.62 + t * 1.16, 0.34 + Math.sin( t * 7.1 ) * 0.05 + fbm1( t * 6 + 11, 3 ) * 0.06] )
-	}
-
-	return [
-		{ closed: true, points: track( 0.46, 0, 0.1, 120 ), weight: 3 },
-		{ closed: true, points: track( 0.27, 4.3, 0.16, 96 ), weight: 2 },
-		{ closed: false, points: switchbacks, weight: 1 },
-		{ closed: false, points: spur, weight: 1 },
-	]
-}
-
 // ---------------------------------------------------------------------------
 // registry
 // ---------------------------------------------------------------------------
@@ -509,31 +363,6 @@ export const VECTOR_DATASETS = [
 		id: 'isolines',
 		label: 'Isolines',
 		subtitle: 'contour extraction',
-	},
-	{
-		build: buildAnimeFace,
-		description: 'Manga-style line art auto-traced from a bitmap: smooth to the eye, pixel-quantised in the file.',
-		dirt: { jitter: 0.0005, quantize: 0.0011, wobble: 0.0009, wobbleScale: 0.75 },
-		id: 'anime',
-		label: 'Anime line art',
-		subtitle: 'auto-traced SVG',
-	},
-	{
-		build: buildGpsTracks,
-		description: 'Consumer GPS logs: one sample per second, multipath spikes, slow drift and no filtering at all.',
-		dirt: {
-			drift: 0.5,
-			driftScale: 0.0006,
-			jitter: 0.0016,
-			quantize: 0.0006,
-			spikeAmount: 0.008,
-			spikeChance: 0.004,
-			wobble: 0.0018,
-			wobbleScale: 1.4,
-		},
-		id: 'gps',
-		label: 'GPS tracks',
-		subtitle: 'raw activity log',
 	},
 ]
 

@@ -248,6 +248,7 @@ class FeatureGalleryExample {
 		this.cssRenderer = new CSS2DRenderer()
 		this.cssRenderer.domElement.style.position = 'absolute'
 		this.cssRenderer.domElement.style.top = '0px'
+		this.cssRenderer.domElement.style.left = '0px'
 		this.cssRenderer.domElement.style.pointerEvents = 'none'
 		document.body.appendChild( this.cssRenderer.domElement )
 		this.onResize()
@@ -408,6 +409,11 @@ class FeatureGalleryExample {
 			element.className = 'line-label'
 			element.textContent = config.title
 			element.title = `Inspect ${config.title} code`
+			// CSS2DRenderer only sets a transform; pin the origin so `html { text-align: center }`
+			// does not shift inline-block `<button>` static positions to the horizontal center.
+			element.style.top = '0'
+			element.style.left = '0'
+			element.style.margin = '0'
 			element.style.color = 'rgba(255, 255, 255, 0.9)'
 			element.style.fontFamily = "'Inter', system-ui, sans-serif"
 			element.style.fontSize = '12px'

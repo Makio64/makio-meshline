@@ -90,4 +90,26 @@ test( 'Surface Studio compares mapped frames with responsive motion', async () =
 	assert.match( demo, /PORTRAIT_FIT_ASPECT \/ stage3d\.camera\.aspect/ )
 	assert.match( demo, /this\.control\._theta \+= Math\.min\( dt, 100 \) \* AUTO_ROTATE_SPEED/ )
 	assert.match( demo, /prefers-reduced-motion: reduce/ )
+	assert.match( demo, /\.SurfaceStudioWireframe \{[\s\S]*?position: fixed;[\s\S]*?top: calc\([\s\S]*?right: calc\(/ )
+	assert.match( demo, /key === 'w' \|\| key === 'W'/ )
+	assert.match( demo, /this\.lines\.forEach\( line => line\.wireframe\( this\.wireframeEnabled \) \)/ )
+	assert.match( demo, /keyboard\.onDown\.add\( this\.onKeyDown \)/ )
+	assert.match( demo, /keyboard\.onDown\.remove\( this\.onKeyDown \)/ )
 } )
+
+test( 'Bamboo Grove casts and receives shadows across all layers and exposes wireframe and part toggles', async () => {
+	const demo = await read( 'demo/src/demos/bambooGrove.js' )
+
+	assert.equal( ( demo.match( /\.shadow\( true, true \)/g ) || [] ).length, 4 )
+	assert.match( demo, /const BAMBOO_PARTS = \[/ )
+	assert.match( demo, /setPartVisible\( partKey, visible \)/ )
+	assert.match( demo, /togglePart\( partKey \)/ )
+	assert.match( demo, /\.widthCallback\( bambooLeafWidth \)/ )
+	assert.match( demo, /\.fragmentColorFn\(/ )
+	assert.match( demo, /\.BambooGroveWireframe \{[\s\S]*?position: fixed;[\s\S]*?top: calc\([\s\S]*?right: calc\(/ )
+	assert.match( demo, /key === 'w' \|\| key === 'W'/ )
+	assert.match( demo, /this\.bambooMeshes\.forEach\( mesh => mesh\.wireframe\( this\.wireframeEnabled \) \)/ )
+	assert.match( demo, /keyboard\.onDown\.add\( this\.onKeyDown \)/ )
+	assert.match( demo, /keyboard\.onDown\.remove\( this\.onKeyDown \)/ )
+} )
+

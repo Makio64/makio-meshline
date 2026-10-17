@@ -4,6 +4,8 @@ import test from 'node:test'
 
 import { Object3D, Vector3 } from 'three'
 
+import { pinRoadPaintToControls } from '../demo/src/utils/roadPaint.js'
+import { planRoadPath } from '../demo/src/utils/roadPath.js'
 import MeshLineSurfaceGeometry from '../src/MeshLineSurfaceGeometry.js'
 
 const readDemo = () => readFile( new URL( '../demo/src/demos/surfaceRoad.js', import.meta.url ), 'utf8' )
@@ -86,4 +88,61 @@ test( 'pier caps roll and pitch with the banked, sloping deck they carry', async
 		}
 		geometry.dispose()
 	}
+} )
+
+test( 'adaptive road spacing optimizes long straight spans without altering pinned paint UVs', async () => {
+	const source = await readDemo()
+	const spacing = numberConstant( source, 'SPACING' )
+	assert.ok( spacing >= 20, 'straight road spans should allow long adaptive segments' )
+
+	const controls = [
+		{ x: -30, y: 2, z: 0, bank: 0 },
+		{ x: 0, y: 2, z: 0, bank: 0 },
+		{ x: 24, y: 2, z: 14, bank: 0.2 },
+	]
+	const adaptive = planRoadPath( controls, {
+		spacing,
+		maxAngle: Math.PI / 32,
+		maxChordError: 0.085,
+		maxBankAngle: Math.PI / 32,
+		minRadius: 5.55,
+		foldRadius: 3.885,
+	} )
+	const dense = planRoadPath( controls, {
+		spacing: 0.45,
+		maxAngle: Math.PI / 32,
+		maxChordError: 0.085,
+		maxBankAngle: Math.PI / 32,
+		minRadius: 5.55,
+		foldRadius: 3.885,
+	} )
+
+	assert.ok( adaptive.stats.pointCount < dense.stats.pointCount * 0.25, 'adaptive road should emit far fewer rows than uniform 0.45m sampling' )
+
+	const build = plan => {
+		const geometry = new MeshLineSurfaceGeometry( {
+			lines: Float32Array.from( plan.points ),
+			lineWidth: 7.4,
+			needsUV: true,
+			surface: { frame: 'fixed-up', up: [0, 1, 0], bank: plan.bank, uvMode: 'distance', uvScale: 1 },
+			join: { type: 'miter', limit: 1.25, inner: 'clip' },
+			cap: { type: 'butt' },
+		} )
+		pinRoadPaintToControls( geometry, plan.points, plan.anchors )
+		return geometry
+	}
+
+	const adaptiveGeometry = build( adaptive )
+	const denseGeometry = build( dense )
+	const adaptiveUV = adaptiveGeometry.getAttribute( 'uv' )
+	const denseUV = denseGeometry.getAttribute( 'uv' )
+
+	for ( let anchorIndex = 0; anchorIndex < adaptive.anchors.length; anchorIndex++ ) {
+		const adaptiveU = adaptiveUV.getX( adaptive.anchors[anchorIndex] * 2 )
+		const denseU = denseUV.getX( dense.anchors[anchorIndex] * 2 )
+		assert.ok( Math.abs( adaptiveU - denseU ) < 1e-2, `anchor ${anchorIndex} paint UV drifted between adaptive (${adaptiveU}) and dense (${denseU})` )
+	}
+
+	adaptiveGeometry.dispose()
+	denseGeometry.dispose()
 } )

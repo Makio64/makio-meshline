@@ -37,6 +37,7 @@ const props = defineProps( {
 	transparent: { type: Boolean, default: false },
 	wireframe: { type: Boolean, default: false },
 	shadow: { type: Boolean, default: false },
+	receiveShadow: { type: Boolean, default: false },
 	sizeAttenuation: { type: Boolean, default: true },
 	antialias: { type: Boolean, default: false },
 
@@ -151,6 +152,7 @@ function getBuildOptions() {
 		transparent: props.transparent || props.opacity < 1 || props.alphaMap != null,
 		wireframe: props.wireframe,
 		shadow: props.shadow,
+		receiveShadow: props.receiveShadow,
 		dpr: props.dpr ?? defaultDpr(),
 		frustumCulled: resolveFrustumCulled(),
 		verbose: props.verbose,
@@ -204,6 +206,7 @@ function applyLiveOptions() {
 	line.alphaTest( props.alphaTest )
 	line.wireframe( props.wireframe )
 	line.shadow( props.shadow )
+	line.setReceiveShadow( props.receiveShadow )
 	line.gradientColor( props.gradientColor ?? null )
 	line.map( props.map ?? null )
 	line.mapOffset( props.mapOffset ?? null )
@@ -347,6 +350,7 @@ watch( () => [
 	props.transparent,
 	props.wireframe,
 	props.shadow,
+	props.receiveShadow,
 	props.gradientColor,
 	props.dash,
 	props.miterLimit,

@@ -93,6 +93,7 @@ export class MeshLineGPUPath extends Group {
 	/** Validate that the prepared backend and primary mono camera remain usable. */
 	update( camera?: Camera | null ): boolean
 	resize( width: number, height: number ): this
+	wireframe( enabled?: boolean ): this
 	/** Reclassify an active simplification-enabled path; raw mode only stores the value. */
 	setSimplificationTolerance( localTolerance: number ): Promise<this>
 	setPositions( points: LinePoints ): Promise<this>

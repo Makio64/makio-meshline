@@ -1,4 +1,3 @@
-import GUI from 'lil-gui'
 import { MeshLine } from 'makio-meshline'
 import {
 	BoxGeometry,
@@ -22,6 +21,7 @@ import {
 	PlaneGeometry,
 	Raycaster,
 	SphereGeometry,
+	TorusGeometry,
 	Vector2,
 	Vector3,
 } from 'three/webgpu'
@@ -50,11 +50,13 @@ const ROAD_WIDTH = 6
 const SHOULDER = 0.7
 const VERGE_WIDTH = 0.7
 const RIBBON_EXTRA = VERGE_WIDTH * 2
-const SPACING = 0.45
+const SPACING = 36
 const ROAD_LIFT = 0.08
-const MAX_TURN_STEP = Math.PI / 45
-const MAX_BANK_STEP = Math.PI / 45
-const MAX_CHORD_ERROR = 0.02
+const MAX_TURN_STEP = Math.PI / 32
+const MAX_BANK_STEP = Math.PI / 32
+const MAX_CHORD_ERROR = 0.085
+const FASCIA_STEP = 1.5
+const PIER_PROBE_STEP = 0.45
 const TERRAIN_FIT_PASSES = 5
 
 // Wide enough that the fog, not a hard edge, meets the sky at the horizon. The
@@ -71,7 +73,6 @@ const MAX_CLEARANCE = 30
 const BANK_DRAG_SCALE = 0.012
 const CAMERA_RADIUS = 62
 const PORTRAIT_FIT_ASPECT = 0.8
-const COMPACT_WIDTH = 700
 const CAMERA_MIN_PHI = 0.22
 // Keeps the orbit above the horizon: below it the camera ends up under the
 // terrain and sees the road's underside instead of the route.
@@ -97,6 +98,16 @@ const HEIGHT_GIZMO_MIN_SCALE = 0.6
 const HEIGHT_GIZMO_MAX_SCALE = 1.8
 const HEIGHT_GIZMO_DISTANCE_SCALE = 0.015
 
+const BANK_GIZMO_RADIUS = 2.45
+const BANK_GIZMO_TUBE = 0.095
+const BANK_GIZMO_ARC = Math.PI * 0.36
+const BANK_GIZMO_WING_LENGTH = 1.05
+const BANK_GIZMO_WING_CENTER = 1.85
+const BANK_GIZMO_TIP_RADIUS = 0.28
+const BANK_GIZMO_TIP_HEIGHT = 0.56
+const BANK_GIZMO_PICK_LENGTH = 2.2
+const BANK_GIZMO_PICK_CENTER = 2.35
+
 const SKY_COLOR = 0x9CC2D6
 const GRASS_COLOR = 0x6D8A4E
 const HANDLE_COLOR = 0xFF9F43
@@ -106,12 +117,15 @@ const HANDLE_HOVER_COLOR = 0xFFFFFF
 const HANDLE_ACTIVE_COLOR = 0x7CFFB2
 const HANDLE_SELECTED_COLOR = 0xFFE27A
 const HEIGHT_GIZMO_COLOR = 0x62E88A
+const BANK_GIZMO_COLOR = 0x53C6FF
 const CONCRETE_COLOR = 0xB9B4AA
 
 const _pointer = new Vector2()
 const _dragPoint = new Vector3()
 const _dragOffset = new Vector3()
 const _dragTarget = new Vector3()
+const _bankPointA = new Vector3()
+const _bankPointB = new Vector3()
 const _pier = new Object3D()
 _pier.rotation.order = 'YXZ'
 const _capDown = new Vector3()
@@ -244,6 +258,7 @@ class SurfaceRoadExample {
 			clearance: 0,
 			bank: 0,
 			debug: false,
+			wireframe: false,
 			status: 'direct',
 			saveName: 'My road',
 			saves: [],
@@ -254,13 +269,12 @@ class SurfaceRoadExample {
 		this.params = {
 			roadWidth: ROAD_WIDTH,
 			showConstruction: false,
+			wireframe: false,
 			pointHeight: 0,
 			pointBank: 0,
 		}
 
 		this.control = null
-		this.gui = null
-		this.roadWidthController = null
 		this.lights = []
 		this.terrain = null
 		this.road = null
@@ -280,6 +294,14 @@ class SurfaceRoadExample {
 		this.heightGizmoMaterial = null
 		this.heightGizmoPickMaterial = null
 		this.heightGizmoHovered = false
+		this.bankGizmo = null
+		this.bankGizmoVisuals = []
+		this.bankGizmoPickers = []
+		this.bankGizmoMaterial = null
+		this.bankGizmoHovered = false
+		this._nextBankGizmoHovered = false
+		this.bankDragTangentX = 1
+		this.bankDragTangentY = 0
 		this.debugGroup = null
 		this.debugPath = null
 		this.debugPolygon = null
@@ -346,7 +368,6 @@ class SurfaceRoadExample {
 		this.createBridge()
 		this.createHandles()
 		this.createDebug()
-		this.createGui()
 		if ( !this.restoreSavedRoad() ) this.updateRoad()
 
 		this.addInteraction()
@@ -455,8 +476,9 @@ class SurfaceRoadExample {
 	}
 
 	/**
-	 * Hang a vertical wall under each built edge vertex. On the ground it sinks
-	 * into the terrain as an embankment; on a bridge it gives the deck its depth.
+	 * Hang a vertical wall under each built edge. Long adaptive road segments are
+	 * subdivided along the edge so the embankment and bridge-soffit transition
+	 * track the terrain smoothly without adding vertices to the road ribbon.
 	 */
 	updateDeckFascia() {
 		const geometry = this.deckFascia.geometry
@@ -468,30 +490,8 @@ class SurfaceRoadExample {
 			return
 		}
 
-		let position = geometry.getAttribute( 'position' )
-		if ( !position || position.count !== rows * 4 ) {
-			position = new BufferAttribute( new Float32Array( rows * 12 ), 3 ).setUsage( DynamicDrawUsage )
-			geometry.setAttribute( 'position', position )
-			geometry.setAttribute( 'normal', new BufferAttribute( new Float32Array( rows * 12 ), 3 ).setUsage( DynamicDrawUsage ) )
-			const indices = new Uint32Array( ( rows - 1 ) * 12 + 12 )
-			let offset = 0
-			for ( let row = 0; row < rows - 1; row++ ) {
-				for ( let side = 0; side < 2; side++ ) {
-					const top0 = row * 4 + side * 2
-					const bottom0 = top0 + 1
-					const top1 = top0 + 4
-					const bottom1 = top0 + 5
-					indices.set( [top0, bottom0, top1, top1, bottom0, bottom1], offset )
-					offset += 6
-				}
-			}
-			const endBase = ( rows - 1 ) * 4
-			indices.set( [0, 1, 2, 2, 1, 3, endBase + 2, endBase + 3, endBase, endBase, endBase + 3, endBase + 1], offset )
-			geometry.setIndex( new BufferAttribute( indices, 1 ) )
-		}
-
 		const widthPairs = surfaceLine?.topology?.widthPairs
-		const array = position.array
+		const edgeCoords = new Float32Array( rows * 6 )
 		for ( let row = 0; row < rows; row++ ) {
 			for ( let side = 0; side < 2; side++ ) {
 				let v0 = row * 2 + side
@@ -506,22 +506,90 @@ class SurfaceRoadExample {
 						v1 = widthPairs[row * 8 + side]
 					}
 				}
-				const offset = ( row * 4 + side * 2 ) * 3
-				const x = v0 === v1 ? edges.getX( v0 ) : ( edges.getX( v0 ) + edges.getX( v1 ) ) * 0.5
-				const y = v0 === v1 ? edges.getY( v0 ) : ( edges.getY( v0 ) + edges.getY( v1 ) ) * 0.5
-				const z = v0 === v1 ? edges.getZ( v0 ) : ( edges.getZ( v0 ) + edges.getZ( v1 ) ) * 0.5
-				array[offset] = x
-				array[offset + 1] = y
-				array[offset + 2] = z
-				// Near the ground the wall reaches into the terrain, so a grounded edge
-				// reads as a short retaining wall instead of floating above a slope;
-				// once the deck clears the ground it keeps its constant depth.
-				const deckBottom = y - DECK_DEPTH
-				const footing = terrainHeight( x, z ) - 0.2
-				const lift = clamp( ( deckBottom - footing - 0.8 ) / 1.6, 0, 1 )
-				array[offset + 3] = x
-				array[offset + 4] = footing + ( deckBottom - footing ) * lift * lift * ( 3 - 2 * lift )
-				array[offset + 5] = z
+				const out = ( row * 2 + side ) * 3
+				edgeCoords[out] = v0 === v1 ? edges.getX( v0 ) : ( edges.getX( v0 ) + edges.getX( v1 ) ) * 0.5
+				edgeCoords[out + 1] = v0 === v1 ? edges.getY( v0 ) : ( edges.getY( v0 ) + edges.getY( v1 ) ) * 0.5
+				edgeCoords[out + 2] = v0 === v1 ? edges.getZ( v0 ) : ( edges.getZ( v0 ) + edges.getZ( v1 ) ) * 0.5
+			}
+		}
+
+		const stepsPerRow = new Int32Array( rows - 1 )
+		let fasciaRows = 1
+		for ( let row = 0; row < rows - 1; row++ ) {
+			const base0 = row * 6
+			const base1 = base0 + 6
+			const leftLen = Math.hypot(
+				edgeCoords[base1] - edgeCoords[base0],
+				edgeCoords[base1 + 1] - edgeCoords[base0 + 1],
+				edgeCoords[base1 + 2] - edgeCoords[base0 + 2]
+			)
+			const rightLen = Math.hypot(
+				edgeCoords[base1 + 3] - edgeCoords[base0 + 3],
+				edgeCoords[base1 + 4] - edgeCoords[base0 + 4],
+				edgeCoords[base1 + 5] - edgeCoords[base0 + 5]
+			)
+			const steps = Math.max( 1, Math.ceil( Math.max( leftLen, rightLen ) / FASCIA_STEP ) )
+			stepsPerRow[row] = steps
+			fasciaRows += steps
+		}
+
+		let position = geometry.getAttribute( 'position' )
+		if ( !position || position.count !== fasciaRows * 4 ) {
+			position = new BufferAttribute( new Float32Array( fasciaRows * 12 ), 3 ).setUsage( DynamicDrawUsage )
+			geometry.setAttribute( 'position', position )
+			geometry.setAttribute( 'normal', new BufferAttribute( new Float32Array( fasciaRows * 12 ), 3 ).setUsage( DynamicDrawUsage ) )
+			const indices = new Uint32Array( ( fasciaRows - 1 ) * 12 + 12 )
+			let offset = 0
+			for ( let row = 0; row < fasciaRows - 1; row++ ) {
+				for ( let side = 0; side < 2; side++ ) {
+					const top0 = row * 4 + side * 2
+					const bottom0 = top0 + 1
+					const top1 = top0 + 4
+					const bottom1 = top0 + 5
+					indices.set( [top0, bottom0, top1, top1, bottom0, bottom1], offset )
+					offset += 6
+				}
+			}
+			const endBase = ( fasciaRows - 1 ) * 4
+			indices.set( [0, 1, 2, 2, 1, 3, endBase + 2, endBase + 3, endBase, endBase, endBase + 3, endBase + 1], offset )
+			geometry.setIndex( new BufferAttribute( indices, 1 ) )
+		}
+
+		const array = position.array
+		const writeFasciaColumn = ( columnIndex, side, x, y, z ) => {
+			const offset = ( columnIndex * 4 + side * 2 ) * 3
+			array[offset] = x
+			array[offset + 1] = y
+			array[offset + 2] = z
+			const deckBottom = y - DECK_DEPTH
+			const footing = terrainHeight( x, z ) - 0.2
+			const lift = clamp( ( deckBottom - footing - 0.8 ) / 1.6, 0, 1 )
+			array[offset + 3] = x
+			array[offset + 4] = footing + ( deckBottom - footing ) * lift * lift * ( 3 - 2 * lift )
+			array[offset + 5] = z
+		}
+
+		writeFasciaColumn( 0, 0, edgeCoords[0], edgeCoords[1], edgeCoords[2] )
+		writeFasciaColumn( 0, 1, edgeCoords[3], edgeCoords[4], edgeCoords[5] )
+		let column = 1
+		for ( let row = 0; row < rows - 1; row++ ) {
+			const steps = stepsPerRow[row]
+			const base0 = row * 6
+			const base1 = base0 + 6
+			for ( let step = 1; step <= steps; step++ ) {
+				const t = step / steps
+				for ( let side = 0; side < 2; side++ ) {
+					const s0 = base0 + side * 3
+					const s1 = base1 + side * 3
+					writeFasciaColumn(
+						column,
+						side,
+						edgeCoords[s0] + ( edgeCoords[s1] - edgeCoords[s0] ) * t,
+						edgeCoords[s0 + 1] + ( edgeCoords[s1 + 1] - edgeCoords[s0 + 1] ) * t,
+						edgeCoords[s0 + 2] + ( edgeCoords[s1 + 2] - edgeCoords[s0 + 2] ) * t
+					)
+				}
+				column++
 			}
 		}
 		position.needsUpdate = true
@@ -556,52 +624,67 @@ class SurfaceRoadExample {
 				let travelled = 0
 				let slot = 0
 				for ( let index = start + 1; index <= end && slot < slots && count < MAX_PIERS; index++ ) {
-					travelled += segment( index )
-					const target = ( slot + 0.5 ) * pitch
-					if ( travelled < target || index >= rows - 1 ) continue
-
+					const segmentLength = segment( index )
+					const segmentStart = travelled
+					travelled += segmentLength
+					const prevOffset = ( index - 1 ) * 3
 					const offset = index * 3
-					const x = points[offset]
-					const y = points[offset + 1]
-					const z = points[offset + 2]
-					const tangentX = points[offset + 3] - points[offset - 3]
-					const tangentY = points[offset + 4] - points[offset - 2]
-					const tangentZ = points[offset + 5] - points[offset - 1]
-					const yaw = Math.atan2( tangentX, tangentZ )
-					const climb = -Math.atan2( tangentY, Math.hypot( tangentX, tangentZ ) )
-					const bank = this.roadBank?.[index] ?? 0
+					const segDX = points[offset] - points[prevOffset]
+					const segDY = points[offset + 1] - points[prevOffset + 1]
+					const segDZ = points[offset + 2] - points[prevOffset + 2]
+					const bank0 = this.roadBank?.[index - 1] ?? 0
+					const bank1 = this.roadBank?.[index] ?? 0
+					const probes = Math.max( 1, Math.ceil( segmentLength / PIER_PROBE_STEP ) )
 
-					// Yaw, pitch, then a positive roll about the tangent rebuild the deck's
-					// own level-then-banked frame, so the cap stays parallel to the deck and
-					// hangs along its normal instead of straight down, where its upper
-					// corner cut through a banked or sloping road.
-					_pier.rotation.set( climb, yaw, bank )
-					_capDown.set( 0, -1, 0 ).applyQuaternion( _pier.quaternion )
-					const footDepth = DECK_DEPTH + PIER_CAP_HEIGHT
-					const footX = x + _capDown.x * footDepth
-					const footY = y + _capDown.y * footDepth
-					const footZ = z + _capDown.z * footDepth
-					const ground = terrainHeight( footX, footZ )
-					const height = footY - ground
-					if ( height < PIER_MIN_HEIGHT || this.isAboveRoad( index, x, y, z, half ) ) {
-						// Wait up to half a pitch for the deck to clear, then give the slot up.
-						if ( travelled >= target + pitch * 0.5 ) slot++
-						continue
+					for ( let probe = 1; probe <= probes && slot < slots && count < MAX_PIERS; probe++ ) {
+						const t = probe / probes
+						const probeDistance = segmentStart + segmentLength * t
+						const target = ( slot + 0.5 ) * pitch
+						if ( probeDistance < target || probeDistance >= length - 1e-4 ) continue
+
+						const x = points[prevOffset] + segDX * t
+						const y = points[prevOffset + 1] + segDY * t
+						const z = points[prevOffset + 2] + segDZ * t
+						const useVertexTangent = t > 0.999 && index < rows - 1
+						const tangentX = useVertexTangent ? points[offset + 3] - points[offset - 3] : segDX
+						const tangentY = useVertexTangent ? points[offset + 4] - points[offset - 2] : segDY
+						const tangentZ = useVertexTangent ? points[offset + 5] - points[offset - 1] : segDZ
+						const yaw = Math.atan2( tangentX, tangentZ )
+						const climb = -Math.atan2( tangentY, Math.hypot( tangentX, tangentZ ) )
+						const bank = bank0 + ( bank1 - bank0 ) * t
+
+						// Yaw, pitch, then a positive roll about the tangent rebuild the deck's
+						// own level-then-banked frame, so the cap stays parallel to the deck and
+						// hangs along its normal instead of straight down, where its upper
+						// corner cut through a banked or sloping road.
+						_pier.rotation.set( climb, yaw, bank )
+						_capDown.set( 0, -1, 0 ).applyQuaternion( _pier.quaternion )
+						const footDepth = DECK_DEPTH + PIER_CAP_HEIGHT
+						const footX = x + _capDown.x * footDepth
+						const footY = y + _capDown.y * footDepth
+						const footZ = z + _capDown.z * footDepth
+						const ground = terrainHeight( footX, footZ )
+						const height = footY - ground
+						if ( height < PIER_MIN_HEIGHT || this.isAboveRoad( index, x, y, z, half ) ) {
+							// Wait up to half a pitch for the deck to clear, then give the slot up.
+							if ( probeDistance >= target + pitch * 0.5 ) slot++
+							continue
+						}
+						slot++
+
+						const capDepth = DECK_DEPTH + PIER_CAP_HEIGHT * 0.5
+						_pier.position.set( x + _capDown.x * capDepth, y + _capDown.y * capDepth, z + _capDown.z * capDepth )
+						_pier.scale.set( half * 1.5, PIER_CAP_HEIGHT, 1.3 )
+						_pier.updateMatrix()
+						this.pierCaps.setMatrixAt( count, _pier.matrix )
+
+						_pier.position.set( footX, ground - PIER_FOOTING, footZ )
+						_pier.rotation.set( 0, yaw, 0 )
+						_pier.scale.set( 1, height + PIER_FOOTING, 1 )
+						_pier.updateMatrix()
+						this.piers.setMatrixAt( count, _pier.matrix )
+						count++
 					}
-					slot++
-
-					const capDepth = DECK_DEPTH + PIER_CAP_HEIGHT * 0.5
-					_pier.position.set( x + _capDown.x * capDepth, y + _capDown.y * capDepth, z + _capDown.z * capDepth )
-					_pier.scale.set( half * 1.5, PIER_CAP_HEIGHT, 1.3 )
-					_pier.updateMatrix()
-					this.pierCaps.setMatrixAt( count, _pier.matrix )
-
-					_pier.position.set( footX, ground - PIER_FOOTING, footZ )
-					_pier.rotation.set( 0, yaw, 0 )
-					_pier.scale.set( 1, height + PIER_FOOTING, 1 )
-					_pier.updateMatrix()
-					this.piers.setMatrixAt( count, _pier.matrix )
-					count++
 				}
 			}
 		}
@@ -615,12 +698,22 @@ class SurfaceRoadExample {
 	isAboveRoad( index, x, y, z, half ) {
 		const points = this.roadPoints
 		const clearance = half + 1.5
-		const skip = Math.ceil( ( half * 3 ) / SPACING )
-		for ( let other = 0; other < points.length / 3; other++ ) {
-			if ( Math.abs( other - index ) < skip ) continue
-			const offset = other * 3
-			if ( points[offset + 1] > y - DECK_DEPTH ) continue
-			if ( Math.hypot( points[offset] - x, points[offset + 2] - z ) < clearance ) return true
+		const rows = points.length / 3
+		for ( let other = 0; other < rows - 1; other++ ) {
+			if ( Math.abs( other - index ) <= 1 && Math.abs( other + 1 - index ) <= 1 ) continue
+			const a = other * 3
+			const b = a + 3
+			const ax = points[a]
+			const ay = points[a + 1]
+			const az = points[a + 2]
+			const dx = points[b] - ax
+			const dy = points[b + 1] - ay
+			const dz = points[b + 2] - az
+			const lenSq = dx * dx + dz * dz
+			const t = lenSq > 1e-6 ? clamp( ( ( x - ax ) * dx + ( z - az ) * dz ) / lenSq, 0, 1 ) : 0
+			const py = ay + dy * t
+			if ( py > y - DECK_DEPTH - PIER_MIN_HEIGHT * 0.5 ) continue
+			if ( Math.hypot( ax + dx * t - x, az + dz * t - z ) < clearance ) return true
 		}
 		return false
 	}
@@ -665,12 +758,17 @@ class SurfaceRoadExample {
 		this.syncHandles()
 	}
 
-	/** A compact, double-ended world-Y transform shown on the selected control. */
+	/** A compact, double-ended world-Y transform and roll ring shown on the selected control. */
 	createHeightGizmo() {
 		this.heightGizmo = new Group()
 		this.heightGizmo.visible = false
 		this.heightGizmoMaterial = new MeshBasicNodeMaterial( {
 			color: HEIGHT_GIZMO_COLOR,
+			depthTest: false,
+			depthWrite: false,
+		} )
+		this.bankGizmoMaterial = new MeshBasicNodeMaterial( {
+			color: BANK_GIZMO_COLOR,
 			depthTest: false,
 			depthWrite: false,
 		} )
@@ -686,7 +784,22 @@ class SurfaceRoadExample {
 		const shaftGeometry = new CylinderGeometry( 0.11, 0.11, HEIGHT_GIZMO_SHAFT_LENGTH, 10 )
 		const arrowGeometry = new ConeGeometry( 0.43, HEIGHT_GIZMO_ARROW_HEIGHT, 14 )
 		const pickGeometry = new CylinderGeometry( 0.56, 0.56, HEIGHT_GIZMO_PICK_LENGTH, 8 )
-		this.heightGizmoGeometries = [shaftGeometry, arrowGeometry, pickGeometry]
+		const wingGeometry = new CylinderGeometry( 0.075, 0.075, BANK_GIZMO_WING_LENGTH, 8 )
+		const arcGeometry = new TorusGeometry( BANK_GIZMO_RADIUS, BANK_GIZMO_TUBE, 10, 24, BANK_GIZMO_ARC )
+		const tipGeometry = new ConeGeometry( BANK_GIZMO_TIP_RADIUS, BANK_GIZMO_TIP_HEIGHT, 12 )
+		const bankPickGeometry = new CylinderGeometry( 0.58, 0.58, BANK_GIZMO_PICK_LENGTH, 8 )
+		this.heightGizmoGeometries = [
+			shaftGeometry,
+			arrowGeometry,
+			pickGeometry,
+			wingGeometry,
+			arcGeometry,
+			tipGeometry,
+			bankPickGeometry,
+		]
+
+		this.bankGizmo = new Group()
+		this.bankGizmo.rotation.order = 'YXZ'
 
 		for ( const direction of [-1, 1] ) {
 			const shaft = new Mesh( shaftGeometry, this.heightGizmoMaterial )
@@ -708,8 +821,37 @@ class SurfaceRoadExample {
 			this.heightGizmo.add( shaft, arrow, picker )
 			this.heightGizmoVisuals.push( shaft, arrow )
 			this.heightGizmoPickers.push( picker )
+
+			const wing = new Mesh( wingGeometry, this.bankGizmoMaterial )
+			wing.position.x = direction * BANK_GIZMO_WING_CENTER
+			wing.rotation.z = Math.PI * 0.5
+			wing.renderOrder = 39
+
+			const arc = new Mesh( arcGeometry, this.bankGizmoMaterial )
+			arc.rotation.z = ( direction > 0 ? 0 : Math.PI ) - BANK_GIZMO_ARC * 0.5
+			arc.renderOrder = 40
+
+			const bankPicker = new Mesh( bankPickGeometry, this.heightGizmoPickMaterial )
+			bankPicker.position.x = direction * BANK_GIZMO_PICK_CENTER
+			bankPicker.userData.bankGizmo = true
+			bankPicker.userData.direction = direction
+
+			this.bankGizmo.add( wing, arc, bankPicker )
+			this.bankGizmoVisuals.push( wing, arc )
+			this.bankGizmoPickers.push( bankPicker )
+
+			for ( const end of [-1, 1] ) {
+				const theta = ( direction > 0 ? 0 : Math.PI ) + end * BANK_GIZMO_ARC * 0.5
+				const tip = new Mesh( tipGeometry, this.bankGizmoMaterial )
+				tip.position.set( Math.cos( theta ) * BANK_GIZMO_RADIUS, Math.sin( theta ) * BANK_GIZMO_RADIUS, 0 )
+				tip.rotation.z = end > 0 ? theta : theta + Math.PI
+				tip.renderOrder = 40
+				this.bankGizmo.add( tip )
+				this.bankGizmoVisuals.push( tip )
+			}
 		}
 
+		this.heightGizmo.add( this.bankGizmo )
 		this.handleGroup.add( this.heightGizmo )
 	}
 
@@ -745,6 +887,7 @@ class SurfaceRoadExample {
 		this.heightGizmo.visible = !!handle
 		if ( !handle ) return
 		this.heightGizmo.position.copy( handle.position )
+		this.syncBankGizmo()
 		this.updateHeightGizmoScale()
 	}
 
@@ -759,12 +902,49 @@ class SurfaceRoadExample {
 		this.heightGizmo.scale.setScalar( scale )
 	}
 
+	syncBankGizmo() {
+		if ( !this.bankGizmo ) return
+		const index = this.selectedIndex
+		const control = this.controls[index]
+		if ( !control ) return
+		let tangentX = 0
+		let tangentY = 0
+		let tangentZ = 0
+		const points = this.roadPoints
+		const anchor = this.roadAnchors?.[index]
+		if ( points && Number.isInteger( anchor ) ) {
+			const rows = points.length / 3
+			const prev = Math.max( 0, anchor - 1 ) * 3
+			const next = Math.min( rows - 1, anchor + 1 ) * 3
+			tangentX = points[next] - points[prev]
+			tangentY = points[next + 1] - points[prev + 1]
+			tangentZ = points[next + 2] - points[prev + 2]
+		}
+		if ( Math.hypot( tangentX, tangentZ ) < 1e-5 && this.controls.length >= 2 ) {
+			const prevControl = this.controls[Math.max( 0, index - 1 )]
+			const nextControl = this.controls[Math.min( this.controls.length - 1, index + 1 )]
+			tangentX = nextControl.x - prevControl.x
+			tangentY = nextControl.y - prevControl.y
+			tangentZ = nextControl.z - prevControl.z
+		}
+		const yaw = Math.atan2( tangentX, tangentZ )
+		const climb = -Math.atan2( tangentY, Math.hypot( tangentX, tangentZ ) )
+		this.bankGizmo.rotation.set( climb, yaw, control.bank ?? 0 )
+	}
+
 	updateHeightGizmoAppearance() {
-		if ( !this.heightGizmoMaterial ) return
-		const active = this.activeIndex === this.selectedIndex && this.dragMode === 'height'
-		this.heightGizmoMaterial.color.setHex(
-			active ? HANDLE_ACTIVE_COLOR : this.heightGizmoHovered ? HANDLE_HOVER_COLOR : HEIGHT_GIZMO_COLOR
-		)
+		if ( this.heightGizmoMaterial ) {
+			const active = this.activeIndex === this.selectedIndex && this.dragMode === 'height'
+			this.heightGizmoMaterial.color.setHex(
+				active ? HANDLE_ACTIVE_COLOR : this.heightGizmoHovered ? HANDLE_HOVER_COLOR : HEIGHT_GIZMO_COLOR
+			)
+		}
+		if ( this.bankGizmoMaterial ) {
+			const bankActive = this.activeIndex === this.selectedIndex && this.dragMode === 'bank'
+			this.bankGizmoMaterial.color.setHex(
+				bankActive ? HANDLE_ACTIVE_COLOR : this.bankGizmoHovered ? HANDLE_HOVER_COLOR : BANK_GIZMO_COLOR
+			)
+		}
 	}
 
 	createDebug() {
@@ -788,37 +968,6 @@ class SurfaceRoadExample {
 		line.material.depthWrite = false
 		line.renderOrder = 20
 		return line
-	}
-
-	createGui() {
-		const hasNoMenu = new URLSearchParams( window.location.search ).has( 'noUI' )
-		this.gui = new GUI( { title: 'Road', width: hasNoMenu ? 230 : 280 } )
-		this.gui.domElement.style.right = hasNoMenu ? '0' : '60px'
-		this.gui.domElement.style.top = '58px'
-		if ( stage.width <= COMPACT_WIDTH ) this.gui.close()
-
-		this.roadWidthController = this.gui.add( this.params, 'roadWidth', 3, 11, 0.1 )
-			.name( 'Road width' )
-			.onChange( () => {
-				this.dirty = true
-			} )
-		this.gui.add( this.params, 'showConstruction' )
-			.name( 'Construction view' )
-			.onChange( visible => this.setDebugVisible( visible ) )
-		this.gui.add( this.params, 'pointHeight', MIN_CLEARANCE, MAX_CLEARANCE, 0.1 )
-			.name( 'Point clearance' )
-			.listen()
-			.onChange( value => this.setSelectedClearance( value ) )
-		this.gui.add( this.params, 'pointBank', -180, 180, 1 )
-			.name( 'Point bank °' )
-			.listen()
-			.onChange( value => this.setSelectedBank( value * Math.PI / 180 ) )
-		this.gui.add( { reset: () => this.setControls( defaultControls() ) }, 'reset' ).name( 'Reset road' )
-		this.gui.add( { elevated: () => this.setControls( elevatedControls() ) }, 'elevated' ).name( '3D overpass' )
-		this.gui.add( { random: () => this.setRandomControls() }, 'random' ).name( 'Random road' )
-		this.gui.add( { exportRoad: () => this.exportRoadFile() }, 'exportRoad' ).name( 'Export JSON' )
-		this.gui.add( { importRoad: () => this.importRoadFile() }, 'importRoad' ).name( 'Import JSON' )
-		this.gui.add( { copyLink: () => this.copyShareLink() }, 'copyLink' ).name( 'Copy share link' )
 	}
 
 	update = () => {
@@ -921,7 +1070,6 @@ class SurfaceRoadExample {
 				this.road.lineWidth( this.lastGoodWidth )
 				if ( requestedWidth !== this.lastGoodWidth ) {
 					this.params.roadWidth = this.lastGoodWidth - RIBBON_EXTRA
-					this.roadWidthController?.updateDisplay()
 				}
 				this.roadBank = this.lastGoodBank
 				this.roadPoints = this.lastGoodPoints
@@ -937,7 +1085,7 @@ class SurfaceRoadExample {
 		if ( this.roadPoints && this.road.visible ) {
 			pinRoadPaintToControls( this.road.geometry, this.roadPoints, this.roadAnchors )
 		}
-		if ( this.roadPoints ) this.updateDebug()
+		if ( this.roadPoints && this.params.showConstruction ) this.updateDebug()
 		this.updateDeckFascia()
 		this.updatePiers()
 		this.updateHandleColors()
@@ -1070,6 +1218,7 @@ class SurfaceRoadExample {
 			terrainLift: Math.round( terrainLift * 100 ) / 100,
 			fallback,
 			debug: this.params.showConstruction,
+			wireframe: this.params.wireframe,
 			status: fallback || tight > 0 ? 'tight' : arcs > 0 ? 'arc' : 'direct',
 		} )
 		this.syncSelectedControls()
@@ -1084,6 +1233,18 @@ class SurfaceRoadExample {
 	toggleDebug() {
 		this.setDebugVisible( !this.params.showConstruction )
 		return this.params.showConstruction
+	}
+
+	setWireframe( enabled ) {
+		const visible = Boolean( enabled )
+		this.params.wireframe = visible
+		this.road?.wireframe( visible )
+		this.ui.wireframe = visible
+		return visible
+	}
+
+	toggleWireframe() {
+		return this.setWireframe( !this.params.wireframe )
 	}
 
 	addInteraction() {
@@ -1140,6 +1301,30 @@ class SurfaceRoadExample {
 		return this.raycaster.intersectObjects( this.heightGizmoPickers, false ).length > 0
 	}
 
+	pickBankGizmo() {
+		if ( !this.heightGizmo?.visible || !this.bankGizmo ) return null
+		const hits = this.raycaster.intersectObjects( this.bankGizmoPickers, false )
+		return hits.length > 0 ? hits[0].object.userData : null
+	}
+
+	captureBankDragTangent( direction = 1 ) {
+		this.bankDragTangentX = 1
+		this.bankDragTangentY = 0
+		if ( !this.bankGizmo || !stage3d.camera || !stage3d.renderer?.domElement ) return
+		const rect = stage3d.renderer.domElement.getBoundingClientRect()
+		if ( rect.width <= 0 || rect.height <= 0 ) return
+		this.heightGizmo.updateWorldMatrix( true, true )
+		_bankPointA.set( direction * BANK_GIZMO_RADIUS, 0, 0 ).applyMatrix4( this.bankGizmo.matrixWorld ).project( stage3d.camera )
+		_bankPointB.set( direction * BANK_GIZMO_RADIUS, direction * BANK_GIZMO_RADIUS, 0 ).applyMatrix4( this.bankGizmo.matrixWorld ).project( stage3d.camera )
+		const dx = ( _bankPointB.x - _bankPointA.x ) * 0.5 * rect.width
+		const dy = -( _bankPointB.y - _bankPointA.y ) * 0.5 * rect.height
+		const length = Math.hypot( dx, dy )
+		if ( length > 1e-3 ) {
+			this.bankDragTangentX = dx / length
+			this.bankDragTangentY = dy / length
+		}
+	}
+
 	/**
 	 * Where the ray meets the rolling ground. A flat plane at y = 0 would land the
 	 * new point metres away on a slope, so the plane height is refined against the
@@ -1158,41 +1343,54 @@ class SurfaceRoadExample {
 	}
 
 	setHovered( index, heightGizmoHovered = false ) {
+		const bankGizmoHovered = Boolean( this._nextBankGizmoHovered )
+		this._nextBankGizmoHovered = false
 		const handleChanged = index !== this.hoveredIndex
-		const gizmoChanged = heightGizmoHovered !== this.heightGizmoHovered
+		const gizmoChanged = heightGizmoHovered !== this.heightGizmoHovered || bankGizmoHovered !== this.bankGizmoHovered
 		if ( handleChanged ) {
 			this.hoveredIndex = index
 			this.updateHandleColors()
 		}
-		if ( gizmoChanged ) this.heightGizmoHovered = heightGizmoHovered
+		if ( gizmoChanged ) {
+			this.heightGizmoHovered = heightGizmoHovered
+			this.bankGizmoHovered = bankGizmoHovered
+		}
 		if ( gizmoChanged || this.activeIndex !== -1 ) this.updateHeightGizmoAppearance()
 		document.documentElement.style.cursor = this.activeIndex !== -1
 			? this.dragMode === 'height' ? 'ns-resize' : this.dragMode === 'bank' ? 'ew-resize' : 'grabbing'
-			: heightGizmoHovered ? 'ns-resize' : index !== -1 ? 'grab' : this.previousCursor
+			: heightGizmoHovered ? 'ns-resize' : bankGizmoHovered ? 'ew-resize' : index !== -1 ? 'grab' : this.previousCursor
 	}
 
 	onPointerDown = event => {
 		if ( this.activePointerId !== null || event.button !== 0 || this.isPointerBlockedByUI( event.target ) ) return
 		if ( !this.setPointerFromEvent( event ) ) return
 		const heightGizmoHit = this.pickHeightGizmo()
+		const bankGizmoHit = heightGizmoHit ? null : this.pickBankGizmo()
 		const index = heightGizmoHit ? this.selectedIndex : this.pickHandle()
-		if ( index === -1 ) return
+		const controlIndex = bankGizmoHit ? this.selectedIndex : index
+		if ( controlIndex === -1 ) return
 
 		event.preventDefault()
 		event.stopPropagation()
 		this.activePointerId = event.pointerId
-		this.activeIndex = index
-		this.dragFromGizmo = heightGizmoHit
-		this.setSelectedIndex( index )
-		this.dragMode = heightGizmoHit || event.shiftKey ? 'height' : event.altKey ? 'bank' : 'position'
+		this.activeIndex = controlIndex
+		this.dragFromGizmo = Boolean( heightGizmoHit || bankGizmoHit )
+		this.setSelectedIndex( controlIndex )
+		this.dragMode = heightGizmoHit || event.shiftKey ? 'height' : bankGizmoHit || event.altKey ? 'bank' : 'position'
 		this.dragStartClientX = event.clientX
 		this.dragStartClientY = event.clientY
 		this.dragStartHeight = this.params.pointHeight
-		this.dragStartBank = this.controls[index].bank
+		this.dragStartBank = this.controls[controlIndex].bank
+		if ( bankGizmoHit ) {
+			this.captureBankDragTangent( bankGizmoHit.direction )
+		} else {
+			this.bankDragTangentX = 1
+			this.bankDragTangentY = 0
+		}
 		if ( this.dragMode === 'position' ) {
-			this.dragPlane.constant = -this.handles[index].position.y
+			this.dragPlane.constant = -this.handles[controlIndex].position.y
 			if ( this.raycaster.ray.intersectPlane( this.dragPlane, _dragPoint ) ) {
-				_dragOffset.set( this.controls[index].x - _dragPoint.x, 0, this.controls[index].z - _dragPoint.z )
+				_dragOffset.set( this.controls[controlIndex].x - _dragPoint.x, 0, this.controls[controlIndex].z - _dragPoint.z )
 			} else {
 				_dragOffset.set( 0, 0, 0 )
 			}
@@ -1207,7 +1405,8 @@ class SurfaceRoadExample {
 			this.control.disable()
 			this.controlSuspended = true
 		}
-		this.setHovered( heightGizmoHit ? -1 : index, heightGizmoHit )
+		this._nextBankGizmoHovered = Boolean( bankGizmoHit )
+		this.setHovered( heightGizmoHit || bankGizmoHit ? -1 : controlIndex, heightGizmoHit )
 		this.updateHandleColors()
 		this.updateHeightGizmoAppearance()
 	}
@@ -1225,6 +1424,8 @@ class SurfaceRoadExample {
 					this.dragStartClientY = event.clientY
 					this.dragStartHeight = this.params.pointHeight
 					this.dragStartBank = this.controls[this.activeIndex].bank
+					this.bankDragTangentX = 1
+					this.bankDragTangentY = 0
 					if ( desiredMode === 'position' && this.setPointerFromEvent( event ) ) {
 						this.dragPlane.constant = -this.handles[this.activeIndex].position.y
 						if ( this.raycaster.ray.intersectPlane( this.dragPlane, _dragPoint ) ) {
@@ -1237,6 +1438,7 @@ class SurfaceRoadExample {
 							_dragOffset.set( 0, 0, 0 )
 						}
 					}
+					this._nextBankGizmoHovered = this.bankGizmoHovered
 					this.setHovered( this.hoveredIndex, this.heightGizmoHovered )
 				}
 			}
@@ -1248,7 +1450,9 @@ class SurfaceRoadExample {
 				return
 			}
 			if ( this.dragMode === 'bank' ) {
-				this.setSelectedBank( this.dragStartBank + ( event.clientX - this.dragStartClientX ) * BANK_DRAG_SCALE )
+				const delta = ( event.clientX - this.dragStartClientX ) * this.bankDragTangentX +
+					( event.clientY - this.dragStartClientY ) * this.bankDragTangentY
+				this.setSelectedBank( this.dragStartBank + delta * BANK_DRAG_SCALE )
 				return
 			}
 			if ( !this.setPointerFromEvent( event ) ) return
@@ -1263,7 +1467,9 @@ class SurfaceRoadExample {
 			return
 		}
 		const heightGizmoHovered = this.pickHeightGizmo()
-		this.setHovered( heightGizmoHovered ? -1 : this.pickHandle(), heightGizmoHovered )
+		const bankGizmoHovered = !heightGizmoHovered && Boolean( this.pickBankGizmo() )
+		this._nextBankGizmoHovered = bankGizmoHovered
+		this.setHovered( heightGizmoHovered || bankGizmoHovered ? -1 : this.pickHandle(), heightGizmoHovered )
 	}
 
 	onPointerUp = event => {
@@ -1273,7 +1479,9 @@ class SurfaceRoadExample {
 		const onCanvas = this.setPointerFromEvent( event )
 		this.finishDrag()
 		const heightGizmoHovered = onCanvas && this.pickHeightGizmo()
-		this.setHovered( heightGizmoHovered ? -1 : onCanvas ? this.pickHandle() : -1, heightGizmoHovered )
+		const bankGizmoHovered = onCanvas && !heightGizmoHovered && Boolean( this.pickBankGizmo() )
+		this._nextBankGizmoHovered = bankGizmoHovered
+		this.setHovered( heightGizmoHovered || bankGizmoHovered ? -1 : onCanvas ? this.pickHandle() : -1, heightGizmoHovered )
 	}
 
 	onPointerCancel = event => {
@@ -1303,6 +1511,11 @@ class SurfaceRoadExample {
 			event.stopPropagation()
 			return
 		}
+		if ( this.pickBankGizmo() ) {
+			event.preventDefault()
+			event.stopPropagation()
+			return
+		}
 		const index = this.pickHandle()
 		if ( index !== -1 ) {
 			this.removeControl( index )
@@ -1323,6 +1536,11 @@ class SurfaceRoadExample {
 	onContextMenu = event => {
 		if ( this.isPointerBlockedByUI( event.target ) || !this.setPointerFromEvent( event ) ) return
 		if ( this.pickHeightGizmo() ) {
+			event.preventDefault()
+			event.stopPropagation()
+			return
+		}
+		if ( this.pickBankGizmo() ) {
 			event.preventDefault()
 			event.stopPropagation()
 			return
@@ -1453,7 +1671,6 @@ class SurfaceRoadExample {
 	applyRoadRecord( record ) {
 		const parsed = parseRoad( record )
 		this.params.roadWidth = parsed.roadWidth
-		this.roadWidthController?.updateDisplay()
 		if ( parsed.id !== AUTOSAVE_ID && parsed.name ) this.ui.saveName = parsed.name
 		this.ui.activeSaveId = parsed.id ?? ''
 		return this.setControls( parsed.controls )
@@ -1571,6 +1788,7 @@ class SurfaceRoadExample {
 		return removed
 	}
 
+	/** Export JSON, Import JSON, and Copy share link actions for SurfaceRoadSaves. */
 	exportRoadFile() {
 		if ( this.controls.length < MIN_CONTROLS ) {
 			this.ui.saveMessage = 'Road is not ready'
@@ -1655,7 +1873,6 @@ class SurfaceRoadExample {
 		stage.onUpdate.remove( this.update )
 		stage.onResize.remove( this.onResize )
 		this.removeInteraction()
-		this.gui?.destroy()
 
 		for ( const ribbon of [this.road, this.debugPolygon, this.debugPath] ) {
 			if ( !ribbon ) continue
@@ -1684,6 +1901,7 @@ class SurfaceRoadExample {
 			this.handleGeometry?.dispose()
 			this.heightGizmoGeometries.forEach( geometry => geometry.dispose() )
 			this.heightGizmoMaterial?.dispose()
+			this.bankGizmoMaterial?.dispose()
 			this.heightGizmoPickMaterial?.dispose()
 		}
 
@@ -1703,8 +1921,6 @@ class SurfaceRoadExample {
 			stage3d.renderer.shadowMap.type = this.previousShadowState.type
 		}
 
-		this.gui = null
-		this.roadWidthController = null
 		this.lights = []
 		this.terrain = null
 		this.road = null
@@ -1724,6 +1940,11 @@ class SurfaceRoadExample {
 		this.heightGizmoMaterial = null
 		this.heightGizmoPickMaterial = null
 		this.heightGizmoHovered = false
+		this.bankGizmo = null
+		this.bankGizmoVisuals = []
+		this.bankGizmoPickers = []
+		this.bankGizmoMaterial = null
+		this.bankGizmoHovered = false
 		this.debugGroup = null
 		this.debugPath = null
 		this.debugPolygon = null

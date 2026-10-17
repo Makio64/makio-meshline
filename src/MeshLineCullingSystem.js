@@ -807,7 +807,8 @@ class MeshLineCullingHandle {
 				return
 			}
 
-			if ( this.system._isSafeRenderPass() && scene?.overrideMaterial == null && this._isPreparedFor( camera ) ) {
+			const cullCamera = this.system.cullCamera?.isCamera === true ? this.system.cullCamera : camera
+			if ( this.system._isSafeRenderPass() && scene?.overrideMaterial == null && this._isPreparedFor( cullCamera ) ) {
 				setIndex( geometry, this._resources.outputAttribute )
 				setIndirect( geometry, this._resources.indirectAttribute, 0 )
 			} else {
@@ -1013,7 +1014,10 @@ export class MeshLineCullingSystem {
 				systems.set( renderer, byScene )
 			}
 			const existing = byScene.get( scene )
-			if ( existing && !existing.disposed ) return existing
+			if ( existing && !existing.disposed ) {
+				if ( 'cullCamera' in options ) existing.cullCamera = options.cullCamera?.isCamera === true ? options.cullCamera : null
+				return existing
+			}
 			const system = new MeshLineCullingSystem( renderer, scene, options )
 			byScene.set( scene, system )
 			return system
@@ -1024,6 +1028,7 @@ export class MeshLineCullingSystem {
 	constructor( renderer, scene, options = {} ) {
 		this.renderer = renderer
 		this.scene = scene
+		this.cullCamera = options.cullCamera?.isCamera === true ? options.cullCamera : null
 		this.options = {
 			mode: normalizeMode( options.mode ),
 			autoUpdate: options.autoUpdate !== false,
@@ -1093,7 +1098,8 @@ export class MeshLineCullingSystem {
 				let result
 				if ( typeof previous === 'function' ) result = previous.call( this, renderer, scene, camera, renderTarget )
 				if ( system._sceneRenderDepth === 1 ) {
-					if ( system.options.autoUpdate ) system._updateSync( camera )
+					const cullCamera = system.cullCamera?.isCamera === true ? system.cullCamera : camera
+					if ( system.options.autoUpdate ) system._updateSync( cullCamera )
 					else system._enforceFallbackPolicies()
 				} else {
 					system._enforceFallbackPolicies()
@@ -1265,6 +1271,7 @@ export class MeshLineCullingSystem {
 		}
 		const byScene = isObject( this.renderer ) ? systems.get( this.renderer ) : null
 		byScene?.delete?.( this.scene )
+		this.cullCamera = null
 		this._preparedCamera = null
 	}
 }

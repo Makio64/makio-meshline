@@ -183,5 +183,23 @@ test( 'raw native path derives canonical records without a segment buffer or com
 	assert.equal( path.status.segmentRecords, 'derived' )
 	assert.equal( path.status.prefixScan, 'none' )
 	assert.equal( path.gpuMesh.geometry.getIndirect().array[0], 12 )
+	assert.equal( path.gpuMesh.geometry.getIndirect().array[4], 24 )
+	assert.equal( path.gpuMesh.isLineSegments, false )
+	assert.equal( path.gpuMesh.geometry.indirectOffset, 0 )
+
+	assert.equal( path.wireframe( true ), path )
+	assert.equal( path.lineOptions.wireframe, true )
+	assert.equal( path.fallback.material.wireframe, true )
+	assert.equal( path.gpuMesh.isLineSegments, true )
+	assert.equal( path.gpuMesh.geometry.indirectOffset, 16 )
+	assert.equal( path._resources.wireframeNode.value, 1 )
+
+	path.wireframe( false )
+	assert.equal( path.lineOptions.wireframe, false )
+	assert.equal( path.fallback.material.wireframe, false )
+	assert.equal( path.gpuMesh.isLineSegments, false )
+	assert.equal( path.gpuMesh.geometry.indirectOffset, 0 )
+	assert.equal( path._resources.wireframeNode.value, 0 )
 	path.dispose()
 } )
+

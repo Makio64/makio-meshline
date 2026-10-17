@@ -77,6 +77,8 @@ test( 'Basic feature gallery exercises the public TSL styling hooks', async () =
 	}
 	assert.match( source, /from 'three\/tsl'/ )
 	assert.match( source, /\btime\b/ )
+	assert.match( source, /element\.style\.top = '0'/ )
+	assert.match( source, /element\.style\.left = '0'/ )
 } )
 
 test( 'merged demos keep their historical routes as aliases', () => {

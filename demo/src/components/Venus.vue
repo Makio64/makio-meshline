@@ -21,6 +21,7 @@
 <script>
 export default {
 	name: 'VenusUI',
+	inheritAttrs: false,
 	props: {
 		api: { type: Object, required: true },
 	},
@@ -50,13 +51,12 @@ export default {
 <style lang="stylus" scoped>
 .morph-ui
 	position fixed
-	bottom calc( 68px + var( --saib, 0px ) )
-	left auto 
-	right auto
-	max-width: 260px;
+	top calc( 18px + var( --sait, 0px ) )
+	left 50%
+	transform translateX( -50% )
+	max-width 260px
 	display flex
 	flex-direction column
-	margin auto
 	gap 20px
 	padding 20px
 	border-radius 20px
@@ -168,4 +168,11 @@ export default {
 				&:active
 					box-shadow 0 2px 8px rgba(240, 147, 251, 0.15), 0 1px 3px rgba(240, 147, 251, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.25), inset 0 -2px 4px rgba(215, 67, 87, 0.4)
 					transform scale(0.95)
+
+@media (max-width: 640px)
+	.morph-ui
+		top calc( 12px + var( --sait, 0px ) )
+		max-width calc( 100vw - 112px )
+		gap 12px
+		padding 14px 16px
 </style>

@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { color, float, fog, Fn, instanceIndex, positionLocal, positionView, positionWorld, positionWorldDirection, rangeFogFactor, uniform, vec3, vec4, velocity } from 'three/tsl'
-import { Mesh, NodeMaterial, Vector4 } from 'three/webgpu'
+import { color, float, fog, Fn, instanceIndex, lights, positionLocal, positionView, positionWorld, positionWorldDirection, rangeFogFactor, uniform, vec3, vec4, velocity } from 'three/tsl'
+import { DirectionalLight, Mesh, NodeMaterial, Vector4 } from 'three/webgpu'
 
 import MeshLine from '../src/MeshLine.js'
 import { createRenderer, createShaderBuilder } from './helpers/shaderBuilder.js'
@@ -10,8 +10,8 @@ import { createRenderer, createShaderBuilder } from './helpers/shaderBuilder.js'
 // Three r183+. Older peers have no height fog factor to test.
 const { exponentialHeightFogFactor } = await import( 'three/tsl' )
 
-const buildShaders = ( renderer, object, { fogNode = null, clipPlanes = null, hardwareClipping = false } = {} ) => {
-	const builder = createShaderBuilder( renderer, object, { fogNode } )
+const buildShaders = ( renderer, object, { fogNode = null, lightsNode = null, clipPlanes = null, hardwareClipping = false } = {} ) => {
+	const builder = createShaderBuilder( renderer, object, { fogNode, lightsNode } )
 	if ( clipPlanes ) {
 		// What a render object's clipping context hands the builder; hardware clip
 		// distances are a device feature, so it is stubbed either way.
@@ -174,3 +174,55 @@ test( 'shadow passes of placed lines keep their own position node', () => {
 		}
 	}
 } )
+
+test( 'shadow-receiving billboard lines modulate indirectDiffuse from placed and CPU centerlines', () => {
+	const configured = new MeshLine( { shadow: true, receiveShadow: true } ).build()
+	assert.equal( configured.castShadow, true )
+	assert.equal( configured.receiveShadow, true )
+	configured.setReceiveShadow( false )
+	assert.equal( configured.receiveShadow, false )
+	configured.shadow( true, true )
+	assert.equal( configured.castShadow, true )
+	assert.equal( configured.receiveShadow, true )
+	configured.dispose()
+
+	for ( const forceWebGL of [false, true] ) {
+		const renderer = createRenderer( forceWebGL )
+		renderer.shadowMap.enabled = true
+		const dirLight = new DirectionalLight( 0xffffff, 2.0 )
+		dirLight.castShadow = true
+		const lightsNode = lights( [dirLight] )
+
+		for ( const line of createPlacedLines() ) {
+			line.setReceiveShadow( true )
+			const { vertexShader, fragmentShader } = buildShaders( renderer, line, { lightsNode } )
+			assertPlaced( vertexShader, 'positionLocal', /\bv_positionWorld = / )
+			assert.match( vertexShader, /\bvShadowTube = / )
+			assert.match( fragmentShader, /\bmeshLineReceivedShadowMask\b/ )
+			assert.match( fragmentShader, /\bnormalWorld\b/ )
+			assert.doesNotMatch( vertexShader, /\bv_normalViewGeometry\b/ )
+			line.dispose()
+		}
+
+		const cpuLine = new MeshLine()
+			.lines( new Float32Array( [0, -1, 0, 0, 0, 0, 0, 1, 0] ), false )
+			.shadow( true, true )
+			.build()
+		const cpuShaders = buildShaders( renderer, cpuLine, { lightsNode } )
+		assert.match( cpuShaders.vertexShader, /\bv_positionWorld = / )
+		assert.match( cpuShaders.vertexShader, /\bvShadowTube = / )
+		assert.match( cpuShaders.fragmentShader, /\bmeshLineReceivedShadowMask\b/ )
+		assert.match( cpuShaders.fragmentShader, /\bnormalWorld\b/ )
+		cpuLine.dispose()
+
+		// A line with receiveShadow = false sharing the same cached lightNode
+		// must not inherit shadow sampling or v_positionWorld varyings.
+		const unshadowedLine = new MeshLine()
+			.lines( new Float32Array( [0, -1, 0, 0, 0, 0, 0, 1, 0] ), false )
+			.build()
+		const unshadowed = buildShaders( renderer, unshadowedLine, { lightsNode } )
+		assert.doesNotMatch( unshadowed.vertexShader + unshadowed.fragmentShader, /\bmeshLineReceivedShadowMask\b|\bv_positionWorld\b|\bvShadowTube\b/ )
+		unshadowedLine.dispose()
+	}
+} )
+

@@ -7,6 +7,7 @@ import {
 	AdditiveBlending,
 	DirectionalLight,
 	DoubleSide,
+	FrontSide,
 	HemisphereLight,
 	Mesh,
 	MeshBasicNodeMaterial,
@@ -22,15 +23,16 @@ const SURFACE_HEIGHT = 0.46
 const SURFACE_WIDTH = 0.9
 const FAN_SEGMENTS = 12
 const JOIN_FAN_SEGMENTS = 6
-// Stay within one adaptive round-fan subdivision band while making the
-// opening visibly flex. Replacing an index buffer during the reflected pass
-// can race WebGPU, so direction changes rotate this stable V instead.
-const JOIN_ANGLE_MIN = 32
-const JOIN_ANGLE_MAX = 58
+const DEFAULT_MITER_LIMIT = 2.5
+// Sweep from a tight 20° hairpin (160° turn, ×5.76 miter scale, 6/6 round fan)
+// to a gentle 165° bend (15° turn, ×1.01 miter scale, 1/6 round fan).
+const JOIN_ANGLE_MIN = 20
+const JOIN_ANGLE_MAX = 165
+const JOIN_ANGLE_DEFAULT = 60
 const JOIN_ANGLE_CENTER = ( JOIN_ANGLE_MIN + JOIN_ANGLE_MAX ) * 0.5
 const JOIN_ANGLE_AMPLITUDE = ( JOIN_ANGLE_MAX - JOIN_ANGLE_MIN ) * 0.5
-const JOIN_ANGLE_SPEED = 0.18
-const JOIN_DIRECTION_SPEED_RATIO = 0.5
+const JOIN_ANGLE_SPEED = 0.12
+const JOIN_ARM_LENGTH = 2.65
 const MIRROR_SPAN = 48
 const MIRROR_STRENGTH = 0.14
 const MIRROR_DARKNESS = 0.2
@@ -45,15 +47,10 @@ const PROJECTED_CUSP_PHI = 1.155
 const PROJECTED_CUSP_THETA = 0.271
 
 const JOIN_PATH = [
-	[-2.1, -1.05],
-	[0, 1.15],
-	[2.1, -1.05],
+	[-1.85, -0.95],
+	[0, 1.05],
+	[1.85, -0.95],
 ]
-
-const JOIN_ARM_LENGTH = Math.hypot(
-	JOIN_PATH[0][0] - JOIN_PATH[1][0],
-	JOIN_PATH[0][1] - JOIN_PATH[1][1]
-)
 
 const CAP_PATH = [
 	[-1.75, 0],
@@ -72,11 +69,11 @@ const SURFACE_EXAMPLES = [
 	{
 		label: 'MITER JOIN',
 		kind: 'join',
-		center: [-6, 1.45],
+		center: [-6.2, 1.45],
 		points: JOIN_PATH,
 		color: 0xF59E0B,
 		gradientColor: 0xFDE047,
-		join: { type: 'miter', limit: 12, segments: JOIN_FAN_SEGMENTS },
+		join: { type: 'miter', limit: DEFAULT_MITER_LIMIT, segments: JOIN_FAN_SEGMENTS },
 		cap: { type: 'butt', segments: FAN_SEGMENTS },
 	},
 	{
@@ -92,7 +89,7 @@ const SURFACE_EXAMPLES = [
 	{
 		label: 'TRUE ROUND FAN',
 		kind: 'join',
-		center: [6, 1.45],
+		center: [6.2, 1.45],
 		points: JOIN_PATH,
 		color: 0xFB7185,
 		gradientColor: 0xD946EF,
@@ -177,25 +174,48 @@ const toSurfacePoints = ( points, center, y = SURFACE_Y ) => {
 	return result
 }
 
+const computeMiterScale = openingAngle => 1 / Math.sin( Math.max( 1, openingAngle ) * Math.PI / 360 )
+
+const formatSpecimenBadge = metrics => {
+	if ( metrics.kind === 'join' ) {
+		if ( metrics.join === 'miter' ) {
+			return metrics.variableTopology
+				? `${metrics.triangleCount} tris · > limit`
+				: `${metrics.triangleCount} tris · compact`
+		}
+		if ( metrics.join === 'bevel' ) {
+			return `${metrics.triangleCount} tris · +1 wedge`
+		}
+		const fanTris = Math.max( 1, metrics.triangleCount - 4 )
+		return `${metrics.triangleCount} tris · +${fanTris}/${JOIN_FAN_SEGMENTS} fan`
+	}
+	if ( metrics.kind === 'cap' ) {
+		if ( metrics.cap === 'butt' ) return `${metrics.triangleCount} tris · compact`
+		if ( metrics.cap === 'square' ) return `${metrics.triangleCount} tris · +2 quads`
+		return `${metrics.triangleCount} tris · 2×${FAN_SEGMENTS} fan`
+	}
+	return `${metrics.triangleCount} tris · split cusp`
+}
+
 const writeJoinPose = ( target, center, angle, direction, y ) => {
 	const halfAngle = angle * Math.PI / 360
 	const halfWidth = Math.sin( halfAngle ) * JOIN_ARM_LENGTH
-	const depth = Math.cos( halfAngle ) * JOIN_ARM_LENGTH
+	const halfDepth = Math.cos( halfAngle ) * JOIN_ARM_LENGTH * 0.5
 	const rotation = direction * Math.PI / 180
 	const cosine = Math.cos( rotation )
 	const sine = Math.sin( rotation )
-	const apexX = center[0] + JOIN_PATH[1][0]
-	const apexZ = center[1] + JOIN_PATH[1][1]
+	const centerX = center[0]
+	const centerZ = center[1] + 0.1
 
-	target[0] = apexX - halfWidth * cosine + depth * sine
+	target[0] = centerX - halfWidth * cosine + halfDepth * sine
 	target[1] = y
-	target[2] = apexZ - halfWidth * sine - depth * cosine
-	target[3] = apexX
+	target[2] = centerZ - halfWidth * sine - halfDepth * cosine
+	target[3] = centerX - halfDepth * sine
 	target[4] = y
-	target[5] = apexZ
-	target[6] = apexX + halfWidth * cosine + depth * sine
+	target[5] = centerZ + halfDepth * cosine
+	target[6] = centerX + halfWidth * cosine + halfDepth * sine
 	target[7] = y
-	target[8] = apexZ + halfWidth * sine - depth * cosine
+	target[8] = centerZ + halfWidth * sine - halfDepth * cosine
 }
 
 const createSurface = ( points, config, wireframe = false ) => {
@@ -209,7 +229,10 @@ const createSurface = ( points, config, wireframe = false ) => {
 		.surface( {
 			frame: 'fixed-up',
 			up: [0, 1, 0],
-			side: DoubleSide,
+			// Wireframe edges have no face culling; keeping wireframes single-sided
+			// avoids redundant double-pass draws and keeps dynamic buffer resizes
+			// synchronized across the reflected pass.
+			side: wireframe ? FrontSide : DoubleSide,
 			uvMode: 'distance',
 			uvScale: 1,
 			roughness: wireframe ? 1 : 0.68,
@@ -221,7 +244,9 @@ const createSurface = ( points, config, wireframe = false ) => {
 		.dynamic( config.kind === 'join' )
 		.build()
 
-	if ( !wireframe ) {
+	if ( wireframe ) {
+		surface.material.forceSinglePass = true
+	} else {
 		const progress = smoothstep( 0.04, 0.96, varying( attribute( 'progress', 'float' ) ) )
 		const surfaceColor = mix( color( config.color ), color( config.gradientColor ), progress )
 		surface.material.colorNode = surfaceColor
@@ -250,19 +275,23 @@ class VariableTopologyExample {
 		this.gui = null
 		this.isCompactGui = null
 		this.hud = null
+		this.hudTelemetry = null
 		this.hudStyle = null
 		this.metrics = null
 		this.cameraState = null
 		this.cameraCase = null
 		this.animateAnglesController = null
 		this.joinAngleController = null
+		this.turnAngleController = null
+		this.miterLimitController = null
 		this.joinDirectionController = null
 		this.joinAnglePhase = 0
-		this.joinDirectionPhase = 0
 		this.params = {
 			animateAngles: true,
 			showTriangles: true,
-			joinAngle: JOIN_ANGLE_CENTER,
+			joinAngle: JOIN_ANGLE_DEFAULT,
+			turnAngle: 180 - JOIN_ANGLE_DEFAULT,
+			miterLimit: DEFAULT_MITER_LIMIT,
 			joinDirection: 0,
 			angleSpeed: JOIN_ANGLE_SPEED,
 			surfaceHeight: SURFACE_HEIGHT,
@@ -289,6 +318,7 @@ class VariableTopologyExample {
 		}
 		const prefersReducedMotion = window.matchMedia?.( '(prefers-reduced-motion: reduce)' ).matches === true
 		this.params.animateAngles = !this.cameraCase && !reportMetrics && !prefersReducedMotion
+		this.syncJoinMotionPhases()
 		await stage3d.initRender( { background: 0x07101E } )
 		stage3d.renderer.setClearColor( 0x07101E )
 
@@ -433,10 +463,12 @@ class VariableTopologyExample {
 				triangleCount,
 				variableTopology: vertexCount > sourcePointCount * 2,
 			}
+			metrics.badge = formatSpecimenBadge( metrics )
 			examples.push( metrics )
 
 			if ( config.kind === 'join' ) {
 				this.animatedJoins.push( {
+					badgeElement: null,
 					center: config.center,
 					metrics,
 					points,
@@ -463,6 +495,10 @@ class VariableTopologyExample {
 				reversalSplits: 1,
 				roundHalfTurnSegments: FAN_SEGMENTS,
 				animatedRoundHalfTurnSegments: JOIN_FAN_SEGMENTS,
+				joinAngle: this.params.joinAngle,
+				turnAngle: this.params.turnAngle,
+				miterScale: Number( computeMiterScale( this.params.joinAngle ).toFixed( 2 ) ),
+				miterLimit: this.params.miterLimit,
 				examples,
 			},
 			screen: {
@@ -485,19 +521,30 @@ class VariableTopologyExample {
 				if ( enabled ) this.syncJoinMotionPhases()
 			} )
 		this.joinAngleController = this.gui.add( this.params, 'joinAngle', JOIN_ANGLE_MIN, JOIN_ANGLE_MAX, 0.1 )
-			.name( 'Opening' )
+			.name( 'Opening (°)' )
 			.listen()
 			.onChange( angle => {
 				this.params.animateAngles = false
 				this.animateAnglesController.updateDisplay()
 				this.setJoinPose( angle, this.params.joinDirection )
 			} )
-		this.joinDirectionController = this.gui.add( this.params, 'joinDirection', -180, 180, 0.1 )
-			.name( 'Orientation' )
+		this.turnAngleController = this.gui.add( this.params, 'turnAngle', 180 - JOIN_ANGLE_MAX, 180 - JOIN_ANGLE_MIN, 0.1 )
+			.name( 'Turn (°)' )
 			.listen()
-			.onChange( direction => {
+			.onChange( turn => {
 				this.params.animateAngles = false
 				this.animateAnglesController.updateDisplay()
+				this.setJoinPose( 180 - turn, this.params.joinDirection )
+			} )
+		this.miterLimitController = this.gui.add( this.params, 'miterLimit', 1.2, 6, 0.05 )
+			.name( 'Miter limit' )
+			.onChange( limit => {
+				this.setMiterLimit( limit )
+			} )
+		this.joinDirectionController = this.gui.add( this.params, 'joinDirection', -180, 180, 0.1 )
+			.name( 'Orientation (°)' )
+			.listen()
+			.onChange( direction => {
 				this.setJoinPose( this.params.joinAngle, direction )
 			} )
 		this.gui.add( this.params, 'angleSpeed', 0.03, 0.3, 0.01 )
@@ -524,42 +571,68 @@ class VariableTopologyExample {
 		this.joinAnglePhase = Math.abs( nearestPrimary - this.joinAnglePhase ) < Math.abs( nearestSecondary - this.joinAnglePhase )
 			? nearestPrimary
 			: nearestSecondary
+	}
 
-		const direction = this.params.joinDirection * Math.PI / 180
-		this.joinDirectionPhase = direction + Math.round( ( this.joinDirectionPhase - direction ) / cycle ) * cycle
+	updateEntryTelemetry( entry ) {
+		const position = entry.surface.geometry.getAttribute( 'position' )
+		const index = entry.surface.geometry.getIndex()
+		entry.metrics.vertexCount = position.count
+		entry.metrics.triangleCount = index.count / 3
+		entry.metrics.variableTopology = position.count > entry.metrics.sourcePointCount * 2
+		entry.metrics.badge = formatSpecimenBadge( entry.metrics )
+
+		if ( entry.badgeElement ) {
+			entry.badgeElement.textContent = entry.metrics.badge
+			entry.badgeElement.classList.toggle(
+				'VariableTopologyLabel__meta--clipped',
+				entry.metrics.join === 'miter' && entry.metrics.variableTopology
+			)
+		}
+	}
+
+	updateHudTelemetry() {
+		const opening = Math.round( this.params.joinAngle )
+		const turn = Math.round( this.params.turnAngle )
+		const miterScale = computeMiterScale( this.params.joinAngle )
+		if ( this.metrics?.surface ) {
+			this.metrics.surface.joinAngle = this.params.joinAngle
+			this.metrics.surface.turnAngle = this.params.turnAngle
+			this.metrics.surface.miterScale = Number( miterScale.toFixed( 2 ) )
+			this.metrics.surface.miterLimit = this.params.miterLimit
+		}
+		if ( this.hudTelemetry ) {
+			this.hudTelemetry.textContent = `Opening ${opening}° · Turn ${turn}° · Miter ×${miterScale.toFixed( 2 )}`
+		}
+	}
+
+	setMiterLimit( limit ) {
+		const clampedLimit = Math.max( 1.2, Math.min( 6, limit ) )
+		this.params.miterLimit = clampedLimit
+
+		for ( const entry of this.animatedJoins ) {
+			if ( entry.metrics.join !== 'miter' ) continue
+			entry.surface.miterLimit( clampedLimit )
+			entry.wire.miterLimit( clampedLimit )
+			this.updateEntryTelemetry( entry )
+		}
+		this.updateHudTelemetry()
 	}
 
 	setJoinPose( angle, direction ) {
 		const clampedAngle = Math.max( JOIN_ANGLE_MIN, Math.min( JOIN_ANGLE_MAX, angle ) )
 		const wrappedDirection = ( ( direction + 180 ) % 360 + 360 ) % 360 - 180
 		this.params.joinAngle = clampedAngle
+		this.params.turnAngle = 180 - clampedAngle
 		this.params.joinDirection = wrappedDirection
 
 		for ( const entry of this.animatedJoins ) {
 			writeJoinPose( entry.points, entry.center, clampedAngle, wrappedDirection, SURFACE_Y )
 			writeJoinPose( entry.wirePoints, entry.center, clampedAngle, wrappedDirection, SURFACE_Y + 0.018 )
-
-			// Angle and direction stay inside one fixed-topology band, so retain the
-			// unchanged source index while uploading only the animated vertices.
-			const surfaceIndex = entry.surface.geometry.getIndex()
-			const surfaceIndexVersion = surfaceIndex.version
 			entry.surface.setPositions( entry.points )
-			if ( entry.surface.geometry.getIndex() === surfaceIndex ) surfaceIndex.version = surfaceIndexVersion
-
-			// Three.js derives a transient edge index for wireframe materials. The
-			// motion preserves topology, so retain the source index version and
-			// let WebGPU update only the animated vertex attributes.
-			const wireIndex = entry.wire.geometry.getIndex()
-			const wireIndexVersion = wireIndex.version
 			entry.wire.setPositions( entry.wirePoints )
-			if ( entry.wire.geometry.getIndex() === wireIndex ) wireIndex.version = wireIndexVersion
-
-			const position = entry.surface.geometry.getAttribute( 'position' )
-			const index = entry.surface.geometry.getIndex()
-			entry.metrics.vertexCount = position.count
-			entry.metrics.triangleCount = index.count / 3
-			entry.metrics.variableTopology = position.count > entry.metrics.sourcePointCount * 2
+			this.updateEntryTelemetry( entry )
 		}
+		this.updateHudTelemetry()
 	}
 
 	syncGuiLayout() {
@@ -631,12 +704,17 @@ class VariableTopologyExample {
 				text-transform: uppercase;
 				pointer-events: none;
 				user-select: none;
+				font-variant-numeric: tabular-nums;
 			}
 			.VariableTopologyHud span + span {
 				padding-left: 9px;
 				border-left: 1px solid rgba(148, 163, 184, .22);
 				font-weight: 600;
 				color: rgba(226, 232, 240, .6);
+			}
+			.VariableTopologyHud .VariableTopologyHud__telemetry {
+				color: #fde68a;
+				font-weight: 700;
 			}
 			.VariableTopologyLabel {
 				/* CSS2DRenderer only sets a transform; pin the origin so the page's
@@ -654,6 +732,7 @@ class VariableTopologyExample {
 				letter-spacing: .08em;
 				text-transform: uppercase;
 				white-space: nowrap;
+				font-variant-numeric: tabular-nums;
 			}
 			.VariableTopologyLabel::before {
 				content: '';
@@ -662,6 +741,15 @@ class VariableTopologyExample {
 				border-radius: 50%;
 				background: var(--accent);
 				box-shadow: 0 0 8px var(--accent);
+			}
+			.VariableTopologyLabel__meta {
+				padding-left: 6px;
+				border-left: 1px solid rgba(148, 163, 184, .25);
+				color: rgba(226, 232, 240, .68);
+				font-weight: 600;
+			}
+			.VariableTopologyLabel__meta--clipped {
+				color: #fde047;
 			}
 			@media (max-width: 700px) {
 				.VariableTopologyControls {
@@ -678,6 +766,7 @@ class VariableTopologyExample {
 				}
 				.VariableTopologyHud span + span { display: none; }
 				.VariableTopologyLabel { font-size: 7px; padding: 3px 6px; }
+				.VariableTopologyLabel__meta { display: none; }
 			}
 		`
 		document.head.appendChild( this.hudStyle )
@@ -687,10 +776,13 @@ class VariableTopologyExample {
 		this.hud.setAttribute( 'aria-label', 'Surface topology' )
 		const title = document.createElement( 'span' )
 		title.textContent = 'Joins, caps + reversals'
+		this.hudTelemetry = document.createElement( 'span' )
+		this.hudTelemetry.className = 'VariableTopologyHud__telemetry'
 		const hint = document.createElement( 'span' )
 		hint.textContent = 'Drag to orbit'
-		this.hud.append( title, hint )
+		this.hud.append( title, this.hudTelemetry, hint )
 		document.body.appendChild( this.hud )
+		this.updateHudTelemetry()
 
 		this.createLabels()
 	}
@@ -702,24 +794,47 @@ class VariableTopologyExample {
 		document.body.appendChild( this.labelRenderer.domElement )
 
 		// Each label sits just in front of its specimen, between it and the camera.
-		const entries = SURFACE_EXAMPLES.map( config => ( {
+		const examples = this.metrics?.surface?.examples ?? []
+		const entries = SURFACE_EXAMPLES.map( ( config, index ) => ( {
 			text: config.label,
+			metrics: examples[index] ?? null,
 			color: config.color,
 			x: config.center[0],
 			z: config.center[1] + ( config.kind === 'join' ? 2 : config.kind === 'cap' ? 1.05 : 1.55 ),
 		} ) )
 		entries.push( {
 			text: this.metrics.screen.active ? 'GPU screen path · round' : 'Screen path fallback',
+			metrics: null,
 			color: 0x38BDF8,
 			x: 0,
 			z: SCREEN_PATH_Z + 1.2,
 		} )
 
+		let joinIndex = 0
 		for ( const entry of entries ) {
 			const element = document.createElement( 'div' )
 			element.className = 'VariableTopologyLabel'
-			element.textContent = entry.text
 			element.style.setProperty( '--accent', `#${entry.color.toString( 16 ).padStart( 6, '0' )}` )
+			const titleSpan = document.createElement( 'span' )
+			titleSpan.textContent = entry.text
+			element.appendChild( titleSpan )
+
+			if ( entry.metrics ) {
+				const metaSpan = document.createElement( 'span' )
+				metaSpan.className = 'VariableTopologyLabel__meta'
+				metaSpan.textContent = entry.metrics.badge
+				metaSpan.classList.toggle(
+					'VariableTopologyLabel__meta--clipped',
+					entry.metrics.join === 'miter' && entry.metrics.variableTopology
+				)
+				element.appendChild( metaSpan )
+
+				if ( entry.metrics.kind === 'join' && this.animatedJoins[joinIndex] ) {
+					this.animatedJoins[joinIndex].badgeElement = metaSpan
+					joinIndex++
+				}
+			}
+
 			const label = new CSS2DObject( element )
 			label.position.set( entry.x, SURFACE_Y, entry.z )
 			stage3d.add( label )
@@ -736,10 +851,8 @@ class VariableTopologyExample {
 	update = dt => {
 		if ( this.params.animateAngles ) {
 			this.joinAnglePhase += dt * 0.001 * this.params.angleSpeed * Math.PI * 2
-			this.joinDirectionPhase += dt * 0.001 * this.params.angleSpeed * JOIN_DIRECTION_SPEED_RATIO * Math.PI * 2
 			const angle = JOIN_ANGLE_CENTER + Math.sin( this.joinAnglePhase ) * JOIN_ANGLE_AMPLITUDE
-			const direction = this.joinDirectionPhase * 180 / Math.PI
-			this.setJoinPose( angle, direction )
+			this.setJoinPose( angle, this.params.joinDirection )
 		}
 		this.screenPath?.update( stage3d.camera )
 		this.labelRenderer?.render( stage3d.scene, stage3d.camera )
@@ -760,6 +873,8 @@ class VariableTopologyExample {
 		this.animatedJoins = []
 		this.animateAnglesController = null
 		this.joinAngleController = null
+		this.turnAngleController = null
+		this.miterLimitController = null
 		this.joinDirectionController = null
 
 		if ( this.screenPath ) {
@@ -791,6 +906,7 @@ class VariableTopologyExample {
 		this.hud?.remove()
 		this.hudStyle?.remove()
 		this.hud = null
+		this.hudTelemetry = null
 		this.hudStyle = null
 		for ( const label of this.labels ) {
 			stage3d.remove( label )

@@ -6,17 +6,20 @@ export const createRenderer = ( forceWebGL = false ) => {
 	// r187+ resolve shared bind groups through the renderer's bindings, which
 	// only exist after init(); a missing one falls back to a plain bind group.
 	if ( renderer._bindings === null ) renderer._bindings = undefined
+	renderer.hasCompatibility = () => true
+	renderer.hasFeature = () => false
 	return renderer
 }
 
 // The node builder a render of `object` would get, not built yet.
-export const createShaderBuilder = ( renderer, object, { fogNode = null } = {} ) => {
+export const createShaderBuilder = ( renderer, object, { fogNode = null, lightsNode = null } = {} ) => {
 	const builder = renderer.backend.createNodeBuilder( object, renderer )
 	builder.scene = new Scene()
 	builder.camera = new PerspectiveCamera()
 	builder.material = object.material
 	builder.context.material = object.material
 	builder.fogNode = fogNode
+	if ( lightsNode ) builder.lightsNode = lightsNode
 	return builder
 }
 

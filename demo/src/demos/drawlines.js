@@ -61,6 +61,8 @@ class DrawLinesExample {
 		// flicks smooth instead of jumping between frames.
 		this.timeScale = 0.6
 		this.hasInteracted = false
+		this.hudElement = null
+		this.clearButton = null
 		this.instructionElement = null
 		this.instructionStyle = null
 		this.instructionTimer = 0
@@ -159,11 +161,19 @@ class DrawLinesExample {
 	createInstruction() {
 		this.instructionStyle = document.createElement( 'style' )
 		this.instructionStyle.textContent = `
-			.DrawLinesHint {
+			.DrawLinesHud {
 				position: fixed;
 				top: calc(16px + var(--sait, 0px));
 				left: calc(16px + var(--sail, 0px));
 				z-index: 20;
+				display: flex;
+				align-items: center;
+				gap: 8px;
+				pointer-events: none;
+				user-select: none;
+			}
+			.DrawLinesClear,
+			.DrawLinesHint {
 				padding: 8px 11px;
 				border: 1px solid rgba(118, 255, 178, .28);
 				border-radius: 999px;
@@ -174,27 +184,74 @@ class DrawLinesExample {
 				letter-spacing: .06em;
 				text-transform: uppercase;
 				color: rgba(224, 255, 235, .9);
-				pointer-events: none;
-				user-select: none;
+			}
+			.DrawLinesClear {
+				appearance: none;
+				pointer-events: auto;
+				cursor: pointer;
+				transition: border-color .18s ease, background .18s ease, color .18s ease, transform .18s ease;
+			}
+			.DrawLinesClear:hover,
+			.DrawLinesClear:focus-visible {
+				border-color: rgba(118, 255, 178, .62);
+				background: rgba(10, 32, 22, .86);
+				color: #ffffff;
+				outline: none;
+			}
+			.DrawLinesClear:focus-visible {
+				outline: 2px solid rgba(118, 255, 178, .85);
+				outline-offset: 2px;
+			}
+			.DrawLinesClear:active {
+				transform: scale(.97);
+			}
+			.DrawLinesHint {
 				transition: opacity .24s ease, transform .24s ease;
 			}
 			@media (max-width: 600px) {
-				.DrawLinesHint {
+				.DrawLinesHud {
 					top: calc(10px + var(--sait, 0px));
 					left: calc(10px + var(--sail, 0px));
+					gap: 6px;
+				}
+				.DrawLinesClear,
+				.DrawLinesHint {
 					font-size: 10px;
 				}
 			}
 			@media (prefers-reduced-motion: reduce) {
+				.DrawLinesClear,
 				.DrawLinesHint { transition: none; }
 			}
 		`
 		document.head.appendChild( this.instructionStyle )
 
+		this.hudElement = document.createElement( 'div' )
+		this.hudElement.className = 'DrawLinesHud'
+
+		this.clearButton = document.createElement( 'button' )
+		this.clearButton.type = 'button'
+		this.clearButton.className = 'DrawLinesClear'
+		this.clearButton.textContent = 'Clean up'
+		this.clearButton.setAttribute( 'aria-label', 'Clean up drawn lines' )
+		this.clearButton.addEventListener( 'pointerdown', this.stopPointerPropagation )
+		this.clearButton.addEventListener( 'click', this.onClearClick )
+
 		this.instructionElement = document.createElement( 'div' )
 		this.instructionElement.className = 'DrawLinesHint'
 		this.instructionElement.textContent = 'Drag to add your own stroke'
-		document.body.appendChild( this.instructionElement )
+
+		this.hudElement.append( this.clearButton, this.instructionElement )
+		document.body.appendChild( this.hudElement )
+	}
+
+	stopPointerPropagation = ( event ) => {
+		event.stopPropagation()
+	}
+
+	onClearClick = ( event ) => {
+		event.stopPropagation()
+		this.clearLines()
 	}
 
 	dismissInstruction() {
@@ -429,12 +486,35 @@ class DrawLinesExample {
 	seedPointerFollowers() {
 		for ( let lineIndex = 0; lineIndex < LINES_FOLLOWING_MOUSE; lineIndex++ ) {
 			const line = this.lines[lineIndex]
+			line.speed = 0
 			line.target.copy( this.target ).add( line.offset )
 			line.velocity.set( 0, 0, 0 )
 			for ( let pointIndex = 0; pointIndex < NUM_POINTS; pointIndex++ ) {
 				line.points[pointIndex].copy( line.target )
 			}
 			writePointsToArray( line.points, line.positions )
+		}
+	}
+
+	clearLines = () => {
+		const previousActiveLineCount = this.activeLineCount
+		this.paths.length = 0
+		this.activeStroke = null
+		this.activeLineCount = LINES_FOLLOWING_MOUSE
+		this.mouseSpeed = 0
+
+		this.seedPointerFollowers()
+		for ( let lineIndex = 0; lineIndex < LINES_FOLLOWING_MOUSE; lineIndex++ ) {
+			const line = this.lines[lineIndex]
+			this.meshline?.setPositionRange( line.positions, 0, line.positionRangeOptions )
+		}
+
+		if ( this.widthArray ) {
+			this.widthArray.fill( 0, 0, previousActiveLineCount * VERTICES_PER_LINE )
+		}
+		this.refreshActiveWidthValues()
+		if ( this.meshline && this.activeWidthValues ) {
+			this.meshline.setVertexValues( 'width', this.activeWidthValues, 0 )
 		}
 	}
 
@@ -512,8 +592,13 @@ class DrawLinesExample {
 		onMove.remove( this.onMouseMove )
 		onUp.remove( this.onUp )
 		window.clearTimeout( this.instructionTimer )
+		this.clearButton?.removeEventListener( 'pointerdown', this.stopPointerPropagation )
+		this.clearButton?.removeEventListener( 'click', this.onClearClick )
+		this.hudElement?.remove()
 		this.instructionElement?.remove()
 		this.instructionStyle?.remove()
+		this.hudElement = null
+		this.clearButton = null
 		this.instructionElement = null
 		this.instructionStyle = null
 		this.bloom?.dispose()

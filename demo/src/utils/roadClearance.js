@@ -107,12 +107,46 @@ export function measureRoadSurfaceClearance( points, geometry, heightAt, minimum
 			const a = first * 3
 			const b = second * 3
 			const c = third * 3
+			const ax = positions[a]
+			const ay = positions[a + 1]
+			const az = positions[a + 2]
+			const bx = positions[b]
+			const by = positions[b + 1]
+			const bz = positions[b + 2]
+			const cx = positions[c]
+			const cy = positions[c + 1]
+			const cz = positions[c + 2]
+			const pA = renderedProgress[first]
+			const pB = renderedProgress[second]
+			const pC = renderedProgress[third]
 			measure(
-				( positions[a] + positions[b] + positions[c] ) / 3,
-				( positions[a + 1] + positions[b + 1] + positions[c + 1] ) / 3,
-				( positions[a + 2] + positions[b + 2] + positions[c + 2] ) / 3,
-				( renderedProgress[first] + renderedProgress[second] + renderedProgress[third] ) / 3
+				( ax + bx + cx ) / 3,
+				( ay + by + cy ) / 3,
+				( az + bz + cz ) / 3,
+				( pA + pB + pC ) / 3
 			)
+
+			const maxEdge = Math.max(
+				Math.hypot( bx - ax, by - ay, bz - az ),
+				Math.hypot( cx - bx, cy - by, cz - bz ),
+				Math.hypot( ax - cx, ay - cy, az - cz )
+			)
+			const divisions = Math.min( 24, Math.ceil( maxEdge / 1.2 ) )
+			if ( divisions > 1 ) {
+				for ( let uStep = 1; uStep < divisions; uStep++ ) {
+					const u = uStep / divisions
+					for ( let vStep = 0; vStep <= divisions - uStep; vStep++ ) {
+						const v = vStep / divisions
+						const w = 1 - u - v
+						measure(
+							ax * u + bx * v + cx * w,
+							ay * u + by * v + cy * w,
+							az * u + bz * v + cz * w,
+							pA * u + pB * v + pC * w
+						)
+					}
+				}
+			}
 		}
 	}
 

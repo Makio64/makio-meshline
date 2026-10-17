@@ -15,11 +15,6 @@ const LOCAL_TOLERANCE = 0.012
 // Fixed-data diagnostic from the matching CPU oracle. The runtime deliberately
 // avoids reading the selected count back from the GPU.
 const EXPECTED_RETAINED_SEGMENTS = 1_646
-// Chunk 776 selects stride 32, making it a useful real-data close-up: the HUD
-// can show 129 dense samples becoming four tolerance-bounded straight pieces.
-const PREVIEW_CHUNK_START = 99_328
-const PREVIEW_SEGMENT_COUNT = 128
-const PREVIEW_STRIDE = 32
 
 const createLargeOpenPath = () => {
 	const points = new Float32Array( POINT_COUNT * 3 )
@@ -37,33 +32,6 @@ const createLargeOpenPath = () => {
 	}
 
 	return points
-}
-
-const createSimplificationPreview = points => {
-	const samples = []
-	let minimum = Infinity
-	let maximum = -Infinity
-
-	for ( let local = 0; local <= PREVIEW_SEGMENT_COUNT; local++ ) {
-		const value = points[( PREVIEW_CHUNK_START + local ) * 3 + 2]
-		samples.push( value )
-		minimum = Math.min( minimum, value )
-		maximum = Math.max( maximum, value )
-	}
-
-	const range = Math.max( maximum - minimum, 1e-6 )
-	const source = samples.map( ( value, local ) => ( {
-		x: 4 + local / PREVIEW_SEGMENT_COUNT * 92,
-		y: 29 - ( value - minimum ) / range * 23,
-	} ) )
-	const selected = source.filter( ( _, local ) => local % PREVIEW_STRIDE === 0 )
-
-	return {
-		source,
-		selected,
-		sourceSampleCount: PREVIEW_SEGMENT_COUNT + 1,
-		selectedChordCount: PREVIEW_SEGMENT_COUNT / PREVIEW_STRIDE,
-	}
 }
 
 const requestedMode = ( gpuRequested, simplifyRequested, topologyMode, capType ) => {
@@ -86,13 +54,15 @@ class GpuPathExample {
 			localTolerance: LOCAL_TOLERANCE,
 			joinType: 'miter',
 			capType: 'butt',
-			preview: null,
+			wireframe: false,
 		} )
+		this.points = null
 		this.path = null
 		this.grid = null
 		this.bloom = null
 		this.control = null
 		this.status = null
+		this._buildToken = 0
 	}
 
 	async init() {
@@ -100,6 +70,7 @@ class GpuPathExample {
 		const reportMetrics = query.get( 'metrics' ) === '1'
 		const gpuRequested = query.get( 'gpu' ) !== '0'
 		const simplifyRequested = query.get( 'simplify' ) !== '0'
+		const wireframe = query.get( 'wireframe' ) === '1' || query.get( 'wireframe' ) === 'true'
 		const topologyMode = ['fixed', 'variable', 'bevel', 'round'].includes( query.get( 'topology' ) )
 			? query.get( 'topology' )
 			: 'fixed'
@@ -107,12 +78,12 @@ class GpuPathExample {
 			? query.get( 'cap' )
 			: 'butt'
 		const joinType = topologyMode === 'bevel' || topologyMode === 'round' ? topologyMode : 'miter'
-		const points = createLargeOpenPath()
+		this.points = createLargeOpenPath()
 		Object.assign( this.ui, {
 			mode: requestedMode( gpuRequested, simplifyRequested, topologyMode, capType ),
 			joinType,
 			capType,
-			preview: createSimplificationPreview( points ),
+			wireframe,
 		} )
 		await stage3d.initRender( { background: 0x02050C } )
 
@@ -120,23 +91,40 @@ class GpuPathExample {
 		stage3d.camera.far = 250
 		stage3d.camera.updateProjectionMatrix()
 
-		// Look down on the path like an oscilloscope trace: the dense middle of the
-		// curve reads as a burst in the signal, offset right of the explainer panel.
-		this.control = new OrbitControl( stage3d.camera, 62 )
-		this.control.minRadius = 16
+		this.control = new OrbitControl( stage3d.camera, 56 )
+		this.control.minRadius = 2
 		this.control.maxRadius = 140
 		this.control.minPhi = 0.2
 		this.control._phi = 0.62
 		this.control._theta = Math.PI * 0.5
-		this.control.target.x = window.innerWidth >= 1100 ? -16 : 0
 		this.control.update()
 		stage3d.control = this.control
 		this.createGrid()
 
-		this.path = new MeshLineGPUPath( {
-			lines: points,
-			lineWidth: 0.16,
+		await this._rebuildPath( {
+			gpuRequested,
+			simplifyRequested,
+			topologyMode,
+			joinType,
+			capType,
+		} )
+
+		this.bloom = createBloomPipeline( { strength: 0.65, radius: 0.35, threshold: 0.12 } )
+		stage.onResize.add( this.onResize )
+		stage.onUpdate.add( this.update )
+		window.addEventListener( 'keydown', this.onKeyDown )
+		if ( reportMetrics ) console.info( `[gpuPath] ${JSON.stringify( this.status )}` )
+	}
+
+	async _rebuildPath( { gpuRequested, simplifyRequested, topologyMode = 'fixed', joinType = 'miter', capType = 'butt' } ) {
+		const token = ++this._buildToken
+		const previousPath = this.path
+
+		const nextPath = new MeshLineGPUPath( {
+			lines: this.points,
+			lineWidth: 0.24,
 			color: 0x22d3ee,
+			wireframe: this.ui.wireframe,
 			join: { type: joinType, limit: 3, segments: 8 },
 			cap: { type: capType, segments: 8 },
 		}, {
@@ -144,25 +132,27 @@ class GpuPathExample {
 			simplify: simplifyRequested ? { localTolerance: LOCAL_TOLERANCE } : false,
 			variableTopology: topologyMode === 'variable',
 		} )
-		this.status = this.path.status
-		window.__meshLineGPUPathMetrics = this.status
 
 		// Add the wrapper before preparation so its complete CPU MeshLine remains
 		// visible throughout initialization and on every unsupported/failure path.
-		stage3d.add( this.path )
-		this.onResize()
-		const prepared = gpuRequested ? await this.path.prepare( stage3d.renderer, stage3d.camera ) : false
+		stage3d.add( nextPath )
+		nextPath.resize( stage.width, stage.height )
+		const prepared = gpuRequested ? await nextPath.prepare( stage3d.renderer, stage3d.camera ) : false
+		if ( token !== this._buildToken || !this.points ) {
+			nextPath.dispose()
+			return
+		}
 
-		this.bloom = createBloomPipeline( { strength: 0.65, radius: 0.35, threshold: 0.12 } )
-		stage.onResize.add( this.onResize )
-		stage.onUpdate.add( this.update )
+		previousPath?.dispose()
+		this.path = nextPath
+		this.status = nextPath.status
+		window.__meshLineGPUPathMetrics = this.status
 		Object.assign( this.ui, {
 			backend: !gpuRequested ? 'cpu-requested' : prepared ? 'gpu' : 'cpu-fallback',
 			reason: !gpuRequested ? 'GPU preparation was deliberately skipped' : this.status.reason,
 			joinType: prepared ? this.status.join : joinType,
 			capType: prepared ? this.status.cap : capType,
 		} )
-		if ( reportMetrics ) console.info( `[gpuPath] ${JSON.stringify( this.status )}` )
 	}
 
 	createGrid() {
@@ -189,6 +179,45 @@ class GpuPathExample {
 		return url.toString()
 	}
 
+	setMode = async mode => {
+		if ( mode === this.ui.mode || !this.points ) return
+		this.ui.mode = mode
+		this.ui.backend = 'loading'
+		const href = this.getModeHref( mode )
+		window.history?.replaceState?.( null, '', href )
+		await this._rebuildPath( {
+			gpuRequested: mode !== 'cpu',
+			simplifyRequested: mode === 'gpu-simplified',
+			topologyMode: 'fixed',
+			joinType: 'miter',
+			capType: 'butt',
+		} )
+	}
+
+	setWireframe = enabled => {
+		const active = Boolean( enabled )
+		this.ui.wireframe = active
+		this.path?.wireframe( active )
+		const url = new URL( window.location.href )
+		if ( active ) url.searchParams.set( 'wireframe', '1' )
+		else url.searchParams.delete( 'wireframe' )
+		window.history?.replaceState?.( null, '', url.toString() )
+	}
+
+	toggleWireframe = () => {
+		this.setWireframe( !this.ui.wireframe )
+	}
+
+	onKeyDown = event => {
+		if ( event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey ) return
+		const tag = event.target?.tagName
+		if ( tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' ) return
+		if ( event.key === 'w' || event.key === 'W' ) {
+			event.preventDefault()
+			this.toggleWireframe()
+		}
+	}
+
 	onResize = () => {
 		this.path?.resize( stage.width, stage.height )
 		this.grid?.resize()
@@ -205,8 +234,10 @@ class GpuPathExample {
 	}
 
 	dispose() {
+		this._buildToken++
 		stage.onResize.remove( this.onResize )
 		stage.onUpdate.remove( this.update )
+		window.removeEventListener( 'keydown', this.onKeyDown )
 		this.path?.dispose()
 		this.bloom?.dispose()
 		stage3d.remove( this.grid )
@@ -214,6 +245,7 @@ class GpuPathExample {
 		this.control?.dispose()
 		if ( stage3d.control === this.control ) stage3d.control = null
 		if ( window.__meshLineGPUPathMetrics === this.status ) window.__meshLineGPUPathMetrics = null
+		this.points = null
 		this.path = null
 		this.grid = null
 		this.bloom = null

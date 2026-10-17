@@ -96,9 +96,44 @@ test( 'height gizmo resources are disposed once and references are cleared', asy
 
 	assert.match( dispose, /this\.heightGizmoGeometries\.forEach\( geometry => geometry\.dispose\(\) \)/ )
 	assert.match( dispose, /this\.heightGizmoMaterial\?\.dispose\(\)/ )
+	assert.match( dispose, /this\.bankGizmoMaterial\?\.dispose\(\)/ )
 	assert.match( dispose, /this\.heightGizmoPickMaterial\?\.dispose\(\)/ )
 	assert.match( dispose, /this\.heightGizmo = null/ )
 	assert.match( dispose, /this\.heightGizmoVisuals = \[\]/ )
 	assert.match( dispose, /this\.heightGizmoPickers = \[\]/ )
 	assert.match( dispose, /this\.heightGizmoGeometries = \[\]/ )
+	assert.match( dispose, /this\.bankGizmo = null/ )
+	assert.match( dispose, /this\.bankGizmoVisuals = \[\]/ )
+	assert.match( dispose, /this\.bankGizmoPickers = \[\]/ )
+} )
+
+test( 'the point controller includes a 3D bank rotation gizmo and the HUD exposes Wireframe without Construction or prev/next point buttons', async () => {
+	const [source, hud] = await Promise.all( [
+		readDemo(),
+		readFile( new URL( '../demo/src/components/SurfaceRoad.vue', import.meta.url ), 'utf8' ),
+	] )
+	const create = section( source, 'createHeightGizmo() {', '/** One draggable sphere' )
+	const pointerDown = section( source, 'onPointerDown = event => {', 'onPointerMove = event => {' )
+	const handleRadius = numberConstant( source, 'HANDLE_RADIUS' )
+	const bankRadius = numberConstant( source, 'BANK_GIZMO_RADIUS' )
+	const bankPickCenter = numberConstant( source, 'BANK_GIZMO_PICK_CENTER' )
+
+	assert.match( source, /TorusGeometry/ )
+	assert.match( create, /this\.bankGizmo = new Group\(\)/ )
+	assert.match( create, /bankPicker\.userData\.bankGizmo = true/ )
+	assert.equal( ( bankPickCenter - 0.58 ) > handleRadius, true, 'the rotation arc picker must leave the sphere centre free for XZ dragging' )
+	assert.ok( bankRadius > handleRadius, 'the rotation arc must sit outside the point sphere' )
+	assert.ok(
+		pointerDown.indexOf( 'this.pickBankGizmo()' ) < pointerDown.indexOf( 'this.pickHandle()' ),
+		'the rotation arc picker must be resolved before the point sphere',
+	)
+	assert.match( pointerDown, /const bankGizmoHit = heightGizmoHit \? null : this\.pickBankGizmo\(\)/ )
+	assert.match( pointerDown, /const controlIndex = bankGizmoHit \? this\.selectedIndex : index/ )
+	assert.match( pointerDown, /bankGizmoHit \|\| event\.altKey \? 'bank'/ )
+	assert.match( source, /syncBankGizmo\(\) {/ )
+	assert.match( source, /toggleWireframe\(\) {/ )
+	assert.match( hud, /Wireframe/ )
+	assert.doesNotMatch( hud, /Construction/ )
+	assert.doesNotMatch( hud, /Select previous point/ )
+	assert.doesNotMatch( hud, /Select next point/ )
 } )

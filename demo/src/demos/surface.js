@@ -24,6 +24,8 @@ import { stage } from '@/makio/core/stage'
 import OrbitControl from '@/makio/three/controls/OrbitControl'
 import stage3d from '@/makio/three/stage3d'
 import { isMobile } from '@/makio/utils/detect'
+import keyboard from '@/makio/utils/input/keyboard'
+import { menuOpen } from '@/store'
 
 const POINT_COUNT = 96
 const BASE_CAMERA_RADIUS = 12.5
@@ -175,6 +177,8 @@ class SurfaceExample {
 		this.textures = []
 		this.hudStyle = null
 		this.hud = null
+		this.hudButton = null
+		this.wireframeEnabled = false
 		this.time = 0
 		this.motionQuery = window.matchMedia( '(prefers-reduced-motion: reduce)' )
 		this.reducedMotion = this.motionQuery.matches
@@ -207,6 +211,7 @@ class SurfaceExample {
 		this.createHud()
 		stage.onUpdate.add( this.update )
 		stage.onResize.add( this.onResize )
+		keyboard.onDown.add( this.onKeyDown )
 		if ( this.motionQuery.addEventListener ) this.motionQuery.addEventListener( 'change', this.onMotionPreferenceChange )
 		else this.motionQuery.addListener?.( this.onMotionPreferenceChange )
 	}
@@ -382,9 +387,70 @@ class SurfaceExample {
 			.SurfaceStudioHud__row:nth-child(2) .SurfaceStudioHud__dot { color: #73e2ff; background: currentColor; }
 			.SurfaceStudioHud__row:nth-child(3) .SurfaceStudioHud__dot { color: #ff70b6; background: currentColor; }
 			.SurfaceStudioHud strong { color: rgba(255, 255, 255, .96); font-weight: 720; }
+			.SurfaceStudioWireframe {
+				appearance: none;
+				position: fixed;
+				top: calc(16px + var(--sait, 0px));
+				right: calc(66px + var(--sair, 0px));
+				z-index: 20;
+				display: inline-flex;
+				align-items: center;
+				gap: 8px;
+				height: 36px;
+				padding: 0 12px;
+				border: 1px solid rgba(148, 203, 255, .24);
+				border-radius: 999px;
+				background: rgba(4, 11, 22, .68);
+				box-shadow: 0 12px 32px rgba(0, 0, 0, .26);
+				backdrop-filter: blur(12px);
+				color: rgba(240, 248, 255, .92);
+				font: 700 10px/1 system-ui, sans-serif;
+				letter-spacing: .08em;
+				text-transform: uppercase;
+				cursor: pointer;
+				user-select: none;
+				transition: border-color .18s ease, background .18s ease;
+			}
+			.SurfaceStudioWireframe:hover {
+				border-color: rgba(115, 226, 255, .58);
+				background: rgba(10, 22, 40, .82);
+			}
+			.SurfaceStudioWireframe:focus-visible {
+				outline: 2px solid #73e2ff;
+				outline-offset: 2px;
+			}
+			.SurfaceStudioWireframe[aria-pressed="true"] {
+				border-color: rgba(115, 226, 255, .72);
+				background: rgba(34, 152, 214, .24);
+				color: #fff;
+			}
+			.SurfaceStudioWireframe__dot {
+				width: 7px;
+				height: 7px;
+				border-radius: 50%;
+				background: rgba(148, 163, 184, .65);
+				transition: background .18s ease, box-shadow .18s ease;
+			}
+			.SurfaceStudioWireframe[aria-pressed="true"] .SurfaceStudioWireframe__dot {
+				background: #73e2ff;
+				box-shadow: 0 0 10px #73e2ff;
+			}
+			.SurfaceStudioWireframe__key {
+				padding: 2px 5px;
+				border: 1px solid rgba(255, 255, 255, .24);
+				border-radius: 4px;
+				font: 700 9px/1 system-ui, sans-serif;
+				color: rgba(235, 246, 255, .72);
+			}
 			@media (max-width: 620px) {
 				.SurfaceStudioHud { left: calc(10px + var(--sail, 0px)); top: calc(10px + var(--sait, 0px)); padding: 10px 12px; }
 				.SurfaceStudioHud__row span:last-child { display: none; }
+				.SurfaceStudioWireframe { top: calc(56px + var(--sait, 0px)); right: calc(8px + var(--sair, 0px)); height: 32px; padding: 0 10px; }
+				.SurfaceStudioWireframe__key { display: none; }
+			}
+			@media (prefers-reduced-motion: reduce) {
+				.SurfaceStudioWireframe,
+				.SurfaceStudioWireframe__dot { transition: none; }
 			}
 		`
 		document.head.appendChild( this.hudStyle )
@@ -398,6 +464,20 @@ class SurfaceExample {
 			<span class="SurfaceStudioHud__row"><i class="SurfaceStudioHud__dot"></i><strong>Transport · banked · stretch UV</strong><span>one mapped span</span></span>
 		`
 		document.body.appendChild( this.hud )
+
+		const button = document.createElement( 'button' )
+		button.type = 'button'
+		button.className = 'SurfaceStudioWireframe'
+		button.setAttribute( 'aria-pressed', String( this.wireframeEnabled ) )
+		button.innerHTML = `
+			<span class="SurfaceStudioWireframe__dot" aria-hidden="true"></span>
+			<span>Wireframe</span>
+			<kbd class="SurfaceStudioWireframe__key" aria-hidden="true">W</kbd>
+		`
+		button.addEventListener( 'pointerdown', event => event.stopPropagation() )
+		button.addEventListener( 'click', () => this.toggleWireframe() )
+		document.body.appendChild( button )
+		this.hudButton = button
 	}
 
 	update = ( dt ) => {
@@ -427,6 +507,24 @@ class SurfaceExample {
 		this.fitCamera()
 	}
 
+	onKeyDown = ( key, event ) => {
+		const target = event?.target
+		const isEditable = target?.matches?.( 'input, textarea, select, [contenteditable="true"]' )
+		if (
+			event?.repeat || event?.defaultPrevented || event?.altKey || event?.ctrlKey || event?.metaKey ||
+			menuOpen.value || isEditable
+		) return
+
+		if ( key === 'w' || key === 'W' ) this.toggleWireframe()
+	}
+
+	toggleWireframe() {
+		this.wireframeEnabled = !this.wireframeEnabled
+		this.lines.forEach( line => line.wireframe( this.wireframeEnabled ) )
+		this.hudButton?.setAttribute( 'aria-pressed', String( this.wireframeEnabled ) )
+		return this.wireframeEnabled
+	}
+
 	onMotionPreferenceChange = ( event ) => {
 		this.reducedMotion = event.matches
 	}
@@ -434,8 +532,10 @@ class SurfaceExample {
 	dispose() {
 		stage.onUpdate.remove( this.update )
 		stage.onResize.remove( this.onResize )
+		keyboard.onDown.remove( this.onKeyDown )
 		if ( this.motionQuery.removeEventListener ) this.motionQuery.removeEventListener( 'change', this.onMotionPreferenceChange )
 		else this.motionQuery.removeListener?.( this.onMotionPreferenceChange )
+		this.hudButton?.remove()
 		this.hud?.remove()
 		this.hudStyle?.remove()
 
@@ -470,7 +570,9 @@ class SurfaceExample {
 		this.environmentMap = null
 		this.textures = []
 		this.hud = null
+		this.hudButton = null
 		this.hudStyle = null
+		this.wireframeEnabled = false
 	}
 }
 

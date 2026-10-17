@@ -197,6 +197,7 @@ export default class MeshLine extends Mesh {
 			instanceCount: -1,
 
 			shadow: false,
+			receiveShadow: false,
 
 			// Opt-in CPU subdivision for sharp corners. Disabled by default so dynamic
 			// updates and custom per-vertex attributes preserve a stable topology.
@@ -240,6 +241,7 @@ export default class MeshLine extends Mesh {
 		if ( options.transparent !== undefined ) this.transparent( options.transparent )
 		if ( options.wireframe !== undefined ) this.wireframe( options.wireframe )
 		if ( options.shadow !== undefined ) this.shadow( options.shadow )
+		if ( options.receiveShadow !== undefined ) this.setReceiveShadow( options.receiveShadow )
 		if ( options.dpr !== undefined ) this.dpr( options.dpr )
 		if ( options.frustumCulled !== undefined ) this.setFrustumCulled( options.frustumCulled )
 		if ( options.verbose !== undefined ) this.verbose( options.verbose )
@@ -473,16 +475,36 @@ export default class MeshLine extends Mesh {
 	}
 
 	/**
-	 * Enable or disable shadow casting for this line.
+	 * Enable or disable shadow casting (and optionally shadow receiving) for this line.
 	 * @param {boolean} enabled
+	 * @param {boolean} [receiveShadow]
 	 * @returns {this}
 	 */
-	shadow( enabled ) {
+	shadow( enabled, receiveShadow ) {
 		this._options.shadow = enabled
 		if ( this._built && this.material ) {
 			this.material.setShadow( enabled )
 		}
 		this.castShadow = !!enabled
+		if ( receiveShadow !== undefined ) {
+			this.setReceiveShadow( receiveShadow )
+		}
+		return this
+	}
+
+	/**
+	 * Enable or disable shadow receiving for this line.
+	 * @param {boolean} enabled
+	 * @returns {this}
+	 */
+	setReceiveShadow( enabled ) {
+		const next = !!enabled
+		const changed = this.receiveShadow !== next
+		this._options.receiveShadow = next
+		this.receiveShadow = next
+		if ( changed && this._built && this.material ) {
+			this.material.needsUpdate = true
+		}
 		return this
 	}
 
@@ -1194,6 +1216,10 @@ export default class MeshLine extends Mesh {
 		if ( options.shadow ) {
 			this.material.setShadow( true )
 			this.castShadow = true
+		}
+		if ( options.receiveShadow || this.receiveShadow ) {
+			this.receiveShadow = true
+			this._options.receiveShadow = true
 		}
 
 		if ( !surfaceProfile && buildOptions.instanceCount != -1 ) {

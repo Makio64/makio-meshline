@@ -22,6 +22,8 @@ export interface MeshLineCullingSystemOptions {
 	mode?: 'auto' | 'webgpu'
 	/** Dispatch from the scene's pre-render hook. Defaults to true. */
 	autoUpdate?: boolean
+	/** Optional detached camera whose frustum is culled against when rendering from an observer camera. */
+	cullCamera?: Camera | null
 	/** Unsupported/invalid data either draws all or retains Three CPU culling. */
 	fallback?: 'draw-all' | 'cpu'
 	/** Triangles per spatial chunk. Defaults to 128. */
@@ -106,6 +108,7 @@ export class MeshLineCullingSystem {
 	constructor( renderer: WebGPURenderer, scene: Scene, options?: MeshLineCullingSystemOptions )
 	readonly renderer: WebGPURenderer
 	readonly scene: Scene
+	cullCamera: Camera | null
 	readonly isNativeWebGPU: boolean
 	readonly backendReason: string
 	readonly size: number

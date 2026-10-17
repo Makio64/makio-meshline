@@ -1,5 +1,5 @@
 import { MeshLine, storagePositions } from 'makio-meshline'
-import { attribute, float, mix, smoothstep, uniform, varyingProperty } from 'three/tsl'
+import { attribute, float, Fn, mix, smoothstep, uniform, varyingProperty } from 'three/tsl'
 import {
 	CanvasTexture,
 	DoubleSide,
@@ -17,90 +17,97 @@ import OrbitControl from '@/makio/three/controls/OrbitControl'
 import stage3d from '@/makio/three/stage3d'
 import { createBloomPipeline } from '@/utils/bloomPipeline'
 
-const GRID_X = 72
-const GRID_Z = 52
+const GRID_X = 88
+const GRID_Z = 64
 const WORLD_WIDTH = 15.6
 const WORLD_DEPTH = 11.2
-const LINE_SEGMENTS = 96
+const LINE_SEGMENTS = 128
 const POINT_STRIDE = LINE_SEGMENTS + 1
 const PRIMARY_CAPACITY = 20
 const SECONDARY_CAPACITY = 36
 const HOLD_DURATION = 1.6
 const MORPH_DURATION = 2.6
 
-// Four synoptic sea-level pressure states (hPa) with splitting/merging lows and ridges
+// Four continuous synoptic sea-level pressure states (hPa) with persistent
+// cyclonic & anticyclonic systems that evolve smoothly without boundary clipping
 const SYNOPTIC_STATES = [
 	{
 		id: '00Z',
 		title: '00Z · North Atlantic Cyclone',
-		base: 1013,
-		gradX: -1.5,
-		gradZ: -3.2,
+		base: 1012.5,
 		centers: [
-			{ type: 'L', x: -3.4, z: -0.9, amp: -34, rx: 3.1, rz: 2.5 },
-			{ type: 'H', x: 3.8, z: 1.4, amp: 22, rx: 3.8, rz: 3.0 },
-			{ type: 'L', x: 2.4, z: -2.9, amp: -15, rx: 2.3, rz: 2.0 },
+			{ id: 'L1', type: 'L', x: -3.2, z: -1.1, amp: -31.5, rx: 2.35, rz: 2.05, rot: 0.18, bend: 0.08 },
+			{ id: 'L2', type: 'L', x: -1.6, z: 2.0, amp: -21.0, rx: 1.85, rz: 1.65, rot: -0.22, bend: -0.06 },
+			{ id: 'H1', type: 'H', x: 3.1, z: 0.2, amp: 24.5, rx: 2.75, rz: 2.35, rot: 0.14, bend: 0.07 },
 		],
 	},
 	{
 		id: '06Z',
 		title: '06Z · Ridge Split & Trough',
-		base: 1013,
-		gradX: 0.4,
-		gradZ: -2.8,
+		base: 1012.5,
 		centers: [
-			{ type: 'L', x: -1.6, z: -1.5, amp: -28, rx: 2.8, rz: 2.4 },
-			{ type: 'L', x: -4.4, z: 1.6, amp: -19, rx: 2.3, rz: 2.1 },
-			{ type: 'H', x: 2.9, z: 0.5, amp: 24, rx: 3.4, rz: 2.9 },
+			{ id: 'L1', type: 'L', x: -2.5, z: -1.6, amp: -31.5, rx: 2.35, rz: 2.05, rot: 0.32, bend: 0.1 },
+			{ id: 'L2', type: 'L', x: -2.4, z: 1.65, amp: -21.0, rx: 1.85, rz: 1.65, rot: -0.1, bend: -0.08 },
+			{ id: 'H1', type: 'H', x: 3.3, z: -0.4, amp: 24.5, rx: 2.75, rz: 2.35, rot: -0.15, bend: 0.09 },
 		],
 	},
 	{
 		id: '12Z',
-		title: '12Z · Twin Lows Merging',
-		base: 1012,
-		gradX: 1.8,
-		gradZ: -2.2,
+		title: '12Z · Twin Lows Orbiting',
+		base: 1012.5,
 		centers: [
-			{ type: 'L', x: 0.2, z: -0.4, amp: -31, rx: 3.3, rz: 2.4 },
-			{ type: 'L', x: -3.1, z: 0.8, amp: -22, rx: 2.5, rz: 2.2 },
-			{ type: 'H', x: 4.5, z: -1.2, amp: 21, rx: 3.2, rz: 2.8 },
-			{ type: 'H', x: -4.2, z: -2.6, amp: 15, rx: 2.6, rz: 2.2 },
+			{ id: 'L1', type: 'L', x: -1.8, z: -1.2, amp: -31.5, rx: 2.35, rz: 2.05, rot: 0.1, bend: 0.07 },
+			{ id: 'L2', type: 'L', x: -3.1, z: 1.45, amp: -21.0, rx: 1.85, rz: 1.65, rot: 0.2, bend: -0.05 },
+			{ id: 'H1', type: 'H', x: 2.7, z: 0.6, amp: 24.5, rx: 2.75, rz: 2.35, rot: 0.22, bend: -0.08 },
 		],
 	},
 	{
 		id: '18Z',
 		title: '18Z · Deepening Polar Front',
-		base: 1013,
-		gradX: -0.8,
-		gradZ: -3.5,
+		base: 1012.5,
 		centers: [
-			{ type: 'L', x: 1.9, z: -0.6, amp: -35, rx: 3.4, rz: 2.6 },
-			{ type: 'H', x: -3.2, z: 1.3, amp: 25, rx: 3.7, rz: 2.9 },
-			{ type: 'L', x: -2.6, z: -2.8, amp: -16, rx: 2.3, rz: 1.9 },
+			{ id: 'L1', type: 'L', x: -2.7, z: -0.6, amp: -31.5, rx: 2.35, rz: 2.05, rot: -0.12, bend: -0.07 },
+			{ id: 'L2', type: 'L', x: -1.8, z: 2.35, amp: -21.0, rx: 1.85, rz: 1.65, rot: -0.25, bend: 0.06 },
+			{ id: 'H1', type: 'H', x: 3.0, z: 0.8, amp: 24.5, rx: 2.75, rz: 2.35, rot: 0.08, bend: 0.06 },
 		],
 	},
 ]
 
 const PRESSURE_LEVELS = []
 for ( let p = 982.5; p <= 1032.5; p += 2.5 ) {
+	if ( Math.abs( p - 1012.5 ) < 1e-4 ) continue
 	PRESSURE_LEVELS.push( p )
 }
 
+function boundaryEnvelope( x, z ) {
+	const nx = Math.abs( x ) / ( WORLD_WIDTH * 0.48 )
+	const nz = Math.abs( z ) / ( WORLD_DEPTH * 0.48 )
+	const tx = Math.max( 0, Math.min( 1, ( 1 - nx ) / 0.22 ) )
+	const tz = Math.max( 0, Math.min( 1, ( 1 - nz ) / 0.22 ) )
+	const sx = tx * tx * ( 3 - 2 * tx )
+	const sz = tz * tz * ( 3 - 2 * tz )
+	return sx * sz
+}
+
 function samplePressure( state, x, z ) {
-	let p = state.base + ( x / ( WORLD_WIDTH * 0.5 ) ) * state.gradX + ( z / ( WORLD_DEPTH * 0.5 ) ) * state.gradZ
+	let anomaly = 0
 	for ( const c of state.centers ) {
-		const dx = ( x - c.x ) / c.rx
-		const dz = ( z - c.z ) / c.rz
-		p += c.amp * Math.exp( -( dx * dx + dz * dz ) )
+		const dx = x - c.x
+		const dz = z - c.z
+		const cosR = Math.cos( c.rot || 0 )
+		const sinR = Math.sin( c.rot || 0 )
+		const ux = ( dx * cosR - dz * sinR ) / c.rx
+		const uz = ( dx * sinR + dz * cosR + ( c.bend || 0 ) * dx * dx ) / c.rz
+		anomaly += c.amp * Math.exp( -( ux * ux + uz * uz ) )
 	}
-	return p
+	return state.base + anomaly * boundaryEnvelope( x, z )
 }
 
 function pressureToY( hPa ) {
-	return ( hPa - 1012 ) * 0.022
+	return ( hPa - 1012.5 ) * 0.022
 }
 
-// Extract stitched contour polylines from a scalar grid via marching squares
+// Extract stitched closed contour loops from a scalar grid via marching squares
 function extractIsobarsForState( state ) {
 	const field = new Float32Array( ( GRID_X + 1 ) * ( GRID_Z + 1 ) )
 	for ( let iz = 0; iz <= GRID_Z; iz++ ) {
@@ -168,7 +175,22 @@ function extractIsobarsForState( state ) {
 		const polylines = stitchSegments( segments )
 		const isPrimary = Math.abs( level % 5 ) < 1e-4
 		for ( const poly of polylines ) {
-			const smoothed = chaikinSmooth( poly.points, poly.closed, 2 )
+			const dedup = [poly.points[0]]
+			for ( let i = 1; i < poly.points.length; i++ ) {
+				const prev = dedup[dedup.length - 1]
+				if ( Math.hypot( poly.points[i][0] - prev[0], poly.points[i][1] - prev[1] ) > 0.03 ) {
+					dedup.push( poly.points[i] )
+				}
+			}
+			if ( poly.closed && dedup.length > 2 ) {
+				const last = dedup[dedup.length - 1]
+				if ( Math.hypot( dedup[0][0] - last[0], dedup[0][1] - last[1] ) <= 0.03 ) {
+					dedup.pop()
+				}
+			}
+			if ( dedup.length < 3 ) continue
+
+			const smoothed = chaikinSmooth( dedup, poly.closed, 4 )
 			const packed = new Float32Array( smoothed.length * 3 )
 			const y = pressureToY( level )
 			let length = 0
@@ -208,7 +230,12 @@ function extractIsobarsForState( state ) {
 		}
 	}
 
+	const sortLoops = ( a, b ) => ( a.value - b.value ) || ( b.centroidZ - a.centroidZ )
+	primary.sort( sortLoops )
+	secondary.sort( sortLoops )
+
 	const extrema = state.centers.map( c => ( {
+		id: c.id,
 		type: c.type,
 		x: c.x,
 		z: c.z,
@@ -283,11 +310,33 @@ function chaikinSmooth( points, closed, iterations = 1 ) {
 	return current
 }
 
-// Arc-length resample one contour to `segments + 1` points (with duplicate closing point on loops)
+// Arc-length resample one contour to `segments + 1` points with CCW winding and
+// continuous first-Fourier-harmonic phase locking so closed loops morph without
+// twist or state-boundary phase jumps.
 function resampleContour( line, segments = LINE_SEGMENTS ) {
-	const pts = line.points
-	const count = pts.length / 3
+	const rawPts = line.points
+	const count = rawPts.length / 3
 	const closed = line.closed
+
+	let pts = rawPts
+	if ( closed && count > 2 ) {
+		let signedArea = 0
+		for ( let i = 0; i < count; i++ ) {
+			const j = ( i + 1 ) % count
+			signedArea += rawPts[i * 3] * rawPts[j * 3 + 2] - rawPts[j * 3] * rawPts[i * 3 + 2]
+		}
+		if ( signedArea < 0 ) {
+			pts = new Float32Array( rawPts.length )
+			for ( let i = 0; i < count; i++ ) {
+				const src = ( count - 1 - i ) * 3
+				const dst = i * 3
+				pts[dst] = rawPts[src]
+				pts[dst + 1] = rawPts[src + 1]
+				pts[dst + 2] = rawPts[src + 2]
+			}
+		}
+	}
+
 	const cumulative = new Float64Array( count + ( closed ? 1 : 0 ) )
 	let total = 0
 	for ( let i = 1; i < count; i++ ) {
@@ -302,110 +351,91 @@ function resampleContour( line, segments = LINE_SEGMENTS ) {
 		cumulative[count] = total
 	}
 
-	const out = new Float32Array( ( segments + 1 ) * 3 )
 	const segEndCount = closed ? count : count - 1
-	let seg = 0
-	for ( let s = 0; s <= segments; s++ ) {
-		const target = ( s / segments ) * total
-		while ( seg < segEndCount - 1 && cumulative[seg + 1] < target ) seg++
+	const sampleAtArc = ( arcDist, out, dst ) => {
+		let target = arcDist
+		if ( closed && total > 0 ) {
+			target = ( ( target % total ) + total ) % total
+		} else {
+			target = Math.max( 0, Math.min( total, target ) )
+		}
+		let lo = 0
+		let hi = segEndCount - 1
+		while ( lo < hi ) {
+			const mid = ( lo + hi + 1 ) >> 1
+			if ( cumulative[mid] <= target ) lo = mid
+			else hi = mid - 1
+		}
+		const seg = lo
 		const d0 = cumulative[seg]
 		const d1 = cumulative[seg + 1]
 		const t = d1 > d0 + 1e-8 ? ( target - d0 ) / ( d1 - d0 ) : 0
 		const i0 = seg * 3
 		const i1 = ( ( seg + 1 ) % count ) * 3
-		const dst = s * 3
 		out[dst] = pts[i0] + ( pts[i1] - pts[i0] ) * t
 		out[dst + 1] = pts[i0 + 1] + ( pts[i1 + 1] - pts[i0 + 1] ) * t
 		out[dst + 2] = pts[i0 + 2] + ( pts[i1 + 2] - pts[i0 + 2] ) * t
 	}
-	return out
-}
 
-// Align closed loop phase (cyclic shift + winding direction) or open polyline orientation
-// so pointwise morphing follows the shortest trajectory without twisting.
-function alignContourPair( fromPoints, toPoints, closed ) {
-	const sampleCount = fromPoints.length / 3
-	const uniqueCount = closed ? sampleCount - 1 : sampleCount
-	let bestCost = Infinity
-	let bestReverse = false
-	let bestShift = 0
-
-	const evalCost = ( reverse, shift, step ) => {
-		let cost = 0
-		for ( let i = 0; i < uniqueCount; i += step ) {
-			const j = closed
-				? ( reverse ? ( shift - i + uniqueCount ) % uniqueCount : ( i + shift ) % uniqueCount )
-				: ( reverse ? uniqueCount - 1 - i : i )
-			const dx = fromPoints[i * 3] - toPoints[j * 3]
-			const dz = fromPoints[i * 3 + 2] - toPoints[j * 3 + 2]
-			cost += dx * dx + dz * dz
+	let arcOffset = 0
+	if ( closed && total > 0 ) {
+		const tmp = new Float32Array( 3 )
+		let cx = 0
+		let cz = 0
+		for ( let s = 0; s < segments; s++ ) {
+			sampleAtArc( ( s / segments ) * total, tmp, 0 )
+			cx += tmp[0]
+			cz += tmp[2]
 		}
-		return cost
+		cx /= segments
+		cz /= segments
+
+		let re = 0
+		let im = 0
+		for ( let s = 0; s < segments; s++ ) {
+			sampleAtArc( ( s / segments ) * total, tmp, 0 )
+			const dx = tmp[0] - cx
+			const dz = tmp[2] - cz
+			const r = Math.hypot( dx, dz ) || 1
+			const ux = dx / r
+			const uz = dz / r
+			const theta = ( s / segments ) * Math.PI * 2
+			const cosT = Math.cos( theta )
+			const sinT = Math.sin( theta )
+			re += ux * cosT + uz * sinT
+			im += uz * cosT - ux * sinT
+		}
+		const phase = Math.atan2( im, re )
+		arcOffset = ( -phase / ( Math.PI * 2 ) ) * total
 	}
 
+	const out = new Float32Array( ( segments + 1 ) * 3 )
+	for ( let s = 0; s < segments; s++ ) {
+		sampleAtArc( arcOffset + ( s / segments ) * total, out, s * 3 )
+	}
 	if ( closed ) {
-		for ( const reverse of [false, true] ) {
-			for ( let shift = 0; shift < uniqueCount; shift++ ) {
-				const cost = evalCost( reverse, shift, 2 )
-				if ( cost < bestCost ) {
-					bestCost = cost
-					bestReverse = reverse
-					bestShift = shift
-				}
-			}
-		}
+		const last = segments * 3
+		out[last] = out[0]
+		out[last + 1] = out[1]
+		out[last + 2] = out[2]
 	} else {
-		for ( const reverse of [false, true] ) {
-			const cost = evalCost( reverse, 0, 1 )
-			if ( cost < bestCost ) {
-				bestCost = cost
-				bestReverse = reverse
-			}
-		}
-	}
-
-	const aligned = new Float32Array( toPoints.length )
-	for ( let i = 0; i < uniqueCount; i++ ) {
-		const j = closed
-			? ( bestReverse ? ( bestShift - i + uniqueCount ) % uniqueCount : ( i + bestShift ) % uniqueCount )
-			: ( bestReverse ? uniqueCount - 1 - i : i )
-		aligned[i * 3] = toPoints[j * 3]
-		aligned[i * 3 + 1] = toPoints[j * 3 + 1]
-		aligned[i * 3 + 2] = toPoints[j * 3 + 2]
-	}
-	if ( closed ) {
-		const last = uniqueCount * 3
-		aligned[last] = aligned[0]
-		aligned[last + 1] = aligned[1]
-		aligned[last + 2] = aligned[2]
-	}
-	return aligned
-}
-
-function createContractedLoop( points, cx, cz, scale = 0.22 ) {
-	const out = new Float32Array( points.length )
-	for ( let i = 0; i < points.length; i += 3 ) {
-		out[i] = cx + ( points[i] - cx ) * scale
-		out[i + 1] = points[i + 1]
-		out[i + 2] = cz + ( points[i + 2] - cz ) * scale
+		sampleAtArc( total, out, segments * 3 )
 	}
 	return out
 }
 
-// Match contours between two synoptic states using repo_js_map's track-matching model
+// Match contours of the same hPa isobar level across synoptic states
 function buildIsobarTracks( fromList, toList, capacity ) {
 	const candidates = []
 	for ( let fi = 0; fi < fromList.length; fi++ ) {
 		const f = fromList[fi]
 		for ( let ti = 0; ti < toList.length; ti++ ) {
 			const t = toList[ti]
-			if ( Math.abs( f.value - t.value ) > 2.5 || f.closed !== t.closed ) continue
-			const ratio = Math.max( f.length, t.length ) / Math.max( 1e-4, Math.min( f.length, t.length ) )
-			if ( ratio > 3.2 ) continue
+			if ( Math.abs( f.value - t.value ) > 0.1 || f.closed !== t.closed ) continue
 			const dist = Math.hypot( f.centroidX - t.centroidX, f.centroidZ - t.centroidZ )
 			if ( dist > 6.5 ) continue
-			const levelPenalty = Math.abs( f.value - t.value ) * 0.8
-			const cost = dist + Math.abs( Math.log( ratio ) ) * 1.8 + levelPenalty
+			const ratio = Math.max( f.length, t.length ) / Math.max( 1e-4, Math.min( f.length, t.length ) )
+			const cost = dist + Math.abs( Math.log( ratio ) ) * 0.6
 			candidates.push( { fi, ti, cost } )
 		}
 	}
@@ -422,7 +452,7 @@ function buildIsobarTracks( fromList, toList, capacity ) {
 		const f = fromList[fi]
 		const t = toList[ti]
 		const fromPts = resampleContour( f )
-		const toPts = alignContourPair( fromPts, resampleContour( t ), f.closed )
+		const toPts = resampleContour( t )
 		tracks.push( {
 			value: t.value,
 			closed: f.closed,
@@ -431,38 +461,6 @@ function buildIsobarTracks( fromList, toList, capacity ) {
 			fromOpacity: 1,
 			toOpacity: 1,
 			importance: Math.max( f.length, t.length ) + 100,
-		} )
-	}
-
-	for ( let fi = 0; fi < fromList.length; fi++ ) {
-		if ( usedFrom.has( fi ) ) continue
-		const f = fromList[fi]
-		const fromPts = resampleContour( f )
-		const toPts = f.closed ? createContractedLoop( fromPts, f.centroidX, f.centroidZ, 0.35 ) : fromPts
-		tracks.push( {
-			value: f.value,
-			closed: f.closed,
-			fromPoints: fromPts,
-			toPoints: toPts,
-			fromOpacity: 1,
-			toOpacity: 0,
-			importance: f.length,
-		} )
-	}
-
-	for ( let ti = 0; ti < toList.length; ti++ ) {
-		if ( usedTo.has( ti ) ) continue
-		const t = toList[ti]
-		const toPts = resampleContour( t )
-		const fromPts = t.closed ? createContractedLoop( toPts, t.centroidX, t.centroidZ, 0.35 ) : toPts
-		tracks.push( {
-			value: t.value,
-			closed: t.closed,
-			fromPoints: fromPts,
-			toPoints: toPts,
-			fromOpacity: 0,
-			toOpacity: 1,
-			importance: t.length,
 		} )
 	}
 
@@ -522,32 +520,35 @@ class IsobarBank {
 		const metaNode = attribute( metaName, 'vec4' )
 		const trackAlpha = varyingProperty( 'float', `vIsobar${name}Alpha` )
 		const easedMorph = smoothstep( float( 0 ), float( 1 ), uMorph )
+		const periodicGradient = Fn( ( [factor] ) => float( 0.5 ).sub( factor.mul( Math.PI * 2 ).cos().mul( 0.5 ) ) )
 
 		if ( isWebGPU ) {
 			const positionNode = storagePositions( this.fromAttribute, {
 				pointsPerLine: POINT_STRIDE,
 				toBuffer: this.toAttribute,
 				morph: easedMorph,
-				closed: metaNode.z,
+				closed: true,
 			} )
 
 			this.mesh = new MeshLine()
 				.instances( capacity )
 				.segments( LINE_SEGMENTS )
+				.closed( true )
 				.gpuPositionNode( positionNode )
 				.lineWidth( lineWidth )
 				.color( color )
 				.gradientColor( gradientColor )
+				.gradientFn( periodicGradient )
 				.opacity( opacity )
 				// Transparent lines already skip depth writes unless asked otherwise.
 				.transparent( true )
 				.sizeAttenuation( true )
 				.join( { type: 'round' } )
-				.colorFn( baseColor => {
+				.colorFn( Fn( ( [baseColor] ) => {
 					trackAlpha.assign( mix( metaNode.x, metaNode.y, easedMorph ) )
 					return baseColor
-				} )
-				.opacityFn( alpha => alpha.mul( trackAlpha ) )
+				} ) )
+				.opacityFn( Fn( ( [alpha] ) => alpha.mul( trackAlpha ) ) )
 				.build()
 			this.mesh.geometry.setAttribute( metaName, this.metaAttribute )
 			this.mesh.frustumCulled = false
@@ -555,11 +556,12 @@ class IsobarBank {
 			// Portable WebGL2 fallback: single batched multi-line MeshLine updated on CPU
 			const placeholder = [new Float32Array( POINT_STRIDE * 3 )]
 			this.mesh = new MeshLine()
-				.lines( placeholder, false )
+				.lines( placeholder, true )
 				.dynamic( true )
 				.lineWidth( lineWidth )
 				.color( color )
 				.gradientColor( gradientColor )
+				.gradientFn( periodicGradient )
 				.opacity( opacity )
 				.transparent( true )
 				.sizeAttenuation( true )
@@ -622,7 +624,7 @@ class IsobarBank {
 		for ( const track of this.activeTracks ) {
 			const alpha = track.fromOpacity + ( track.toOpacity - track.fromOpacity ) * t
 			if ( alpha < 0.08 ) continue
-			const pts = new Float32Array( track.fromPoints.length )
+			const pts = new Float32Array( track.fromPoints.length - 3 )
 			for ( let i = 0; i < pts.length; i++ ) {
 				pts[i] = track.fromPoints[i] + ( track.toPoints[i] - track.fromPoints[i] ) * t
 			}
@@ -757,16 +759,18 @@ class IsobarsExample {
 		const extremaTracks = []
 		const usedTo = new Set()
 		for ( const f of fromFrame.extrema ) {
-			let bestIdx = -1
-			let bestDist = Infinity
-			toFrame.extrema.forEach( ( t, idx ) => {
-				if ( usedTo.has( idx ) || t.type !== f.type ) return
-				const d = Math.hypot( f.x - t.x, f.z - t.z )
-				if ( d < bestDist && d < 6.5 ) {
-					bestDist = d
-					bestIdx = idx
-				}
-			} )
+			let bestIdx = toFrame.extrema.findIndex( ( t, idx ) => !usedTo.has( idx ) && f.id && t.id === f.id )
+			if ( bestIdx < 0 ) {
+				let bestDist = Infinity
+				toFrame.extrema.forEach( ( t, idx ) => {
+					if ( usedTo.has( idx ) || t.type !== f.type ) return
+					const d = Math.hypot( f.x - t.x, f.z - t.z )
+					if ( d < bestDist && d < 6.5 ) {
+						bestDist = d
+						bestIdx = idx
+					}
+				} )
+			}
 			if ( bestIdx >= 0 ) {
 				usedTo.add( bestIdx )
 				const t = toFrame.extrema[bestIdx]
@@ -1089,8 +1093,7 @@ class IsobarsExample {
 			el.lastChild.textContent = String( val )
 		} )
 
-		// Project hPa value pills on primary contours
-		const midPointIndex = Math.floor( LINE_SEGMENTS * 0.5 ) * 3
+		// Project hPa value pills on primary contours at staggered angles around the rings
 		this.labelEls.forEach( ( el, i ) => {
 			const track = pair.primary[i]
 			if ( !track ) {
@@ -1102,9 +1105,11 @@ class IsobarsExample {
 				el.style.display = 'none'
 				return
 			}
-			const x = track.fromPoints[midPointIndex] + ( track.toPoints[midPointIndex] - track.fromPoints[midPointIndex] ) * t
-			const y = track.fromPoints[midPointIndex + 1] + ( track.toPoints[midPointIndex + 1] - track.fromPoints[midPointIndex + 1] ) * t + 0.08
-			const z = track.fromPoints[midPointIndex + 2] + ( track.toPoints[midPointIndex + 2] - track.fromPoints[midPointIndex + 2] ) * t
+			const sampleStep = ( Math.floor( LINE_SEGMENTS * 0.18 ) + i * 19 ) % LINE_SEGMENTS
+			const sampleIndex = sampleStep * 3
+			const x = track.fromPoints[sampleIndex] + ( track.toPoints[sampleIndex] - track.fromPoints[sampleIndex] ) * t
+			const y = track.fromPoints[sampleIndex + 1] + ( track.toPoints[sampleIndex + 1] - track.fromPoints[sampleIndex + 1] ) * t + 0.08
+			const z = track.fromPoints[sampleIndex + 2] + ( track.toPoints[sampleIndex + 2] - track.fromPoints[sampleIndex + 2] ) * t
 
 			this.projScratch.set( x, y, z ).project( camera )
 			if ( this.projScratch.z > 1 ) {

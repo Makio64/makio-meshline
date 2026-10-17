@@ -39,6 +39,7 @@ export const MeshLine = forwardRef( function MeshLine( {
 	transparent = false,
 	wireframe = false,
 	shadow = false,
+	receiveShadow = false,
 	sizeAttenuation = true,
 	antialias = false,
 	dpr,
@@ -198,6 +199,7 @@ export const MeshLine = forwardRef( function MeshLine( {
 		transparent: transparent || opacity < 1 || alphaMap != null,
 		wireframe,
 		shadow,
+		receiveShadow,
 		dpr,
 		verbose,
 	} ), [
@@ -214,6 +216,7 @@ export const MeshLine = forwardRef( function MeshLine( {
 		transparent,
 		wireframe,
 		shadow,
+		receiveShadow,
 		dpr,
 		verbose,
 	] )
@@ -280,6 +283,7 @@ export const MeshLine = forwardRef( function MeshLine( {
 		line.alphaTest( liveOptions.alphaTest )
 		line.wireframe( liveOptions.wireframe )
 		line.shadow( liveOptions.shadow )
+		line.setReceiveShadow( liveOptions.receiveShadow )
 		line.gradientColor( liveOptions.gradientColor )
 		line.map( liveOptions.map )
 		line.alphaMap( liveOptions.alphaMap )

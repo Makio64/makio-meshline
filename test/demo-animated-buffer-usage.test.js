@@ -20,3 +20,14 @@ test( 'fully animated line demos keep fixed topology in reusable dynamic buffers
 	assert.match( waves, /if \( !this\.linePositions \)/ )
 	assert.match( waves, /new Float32Array\( FLOATS_PER_LINE \)/ )
 } )
+
+test( 'Flying Baguettes pairs fake 3D normals and lighting with a live flat-mode toggle', async () => {
+	const baguettes = await readDemo( 'baguettes' )
+
+	assert.match( baguettes, /\.fragmentColorFn\(/ )
+	assert.match( baguettes, /id: 'lit', label: '3D Lit'/ )
+	assert.match( baguettes, /id: 'flat', label: 'Flat'/ )
+	assert.match( baguettes, /id: 'normals', label: 'Normals'/ )
+	assert.match( baguettes, /this\.shadingModeUniform\.value = mode === 'flat' \? 0 : mode === 'normals' \? 2 : 1/ )
+	assert.match( baguettes, /this\.hud\?\.remove\(\)/ )
+} )

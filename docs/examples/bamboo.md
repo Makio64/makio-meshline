@@ -28,7 +28,7 @@ const stalks = new MeshLine()
   .widthFn( Fn( ( [width] ) => {
     return width.mul( attribute( 'instanceTransform', 'vec4' ).w )
   } ) )
-  .shadow( true )
+  .shadow( true, true )
   .positionFn( Fn( ( [position, progress] ) => {
     const transform = attribute( 'instanceTransform', 'vec4' )
     const lean = attribute( 'instanceLean', 'vec3' )

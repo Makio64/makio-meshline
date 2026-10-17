@@ -281,15 +281,7 @@ class GpuSimplificationPrototypeExample {
 			this.control.maxPhi = Math.PI * 0.5 + 0.75
 			this.control.extraPhiMouse = false
 			this.control.extraThetaMouse = false
-			// Slide the camera, not just its aim, so the flat drawing stays square
-			// while it moves clear of the tuning panel on wide screens.
-			if ( stage.width >= 900 ) {
-				const halfWidth = Math.tan( stage3d.camera.fov * Math.PI / 360 ) * this.control.radius * stage3d.camera.aspect
-				this.control.cameraOffset.x = halfWidth * 0.3
-				this.control.target.x = halfWidth * 0.3
-			}
 			this.control.update()
-			this.control.enabled = false
 			stage3d.control = this.control
 			this.bloom = createBloomPipeline( { strength: 0.55, radius: 0.3, threshold: 0.15 } )
 
@@ -1340,6 +1332,21 @@ class GpuSimplificationPrototypeExample {
 				}
 			}
 
+			if (
+				!( Number.isFinite( gpuComputeMs ) && gpuComputeMs > 0 ) &&
+				renderer.backend?.device?.queue?.onSubmittedWorkDone
+			) {
+				const queueStart = performance.now()
+				if ( cpuSubmitMs === null ) cpuSubmitMs = this._dispatch()
+				await renderer.backend.device.queue.onSubmittedWorkDone()
+				gpuComputeMs = performance.now() - queueStart
+				timingSource = 'queue-completion-wall-time'
+			}
+			if ( !( Number.isFinite( gpuComputeMs ) && gpuComputeMs > 0 ) && Number.isFinite( cpuSubmitMs ) ) {
+				gpuComputeMs = cpuSubmitMs
+				timingSource = 'cpu-submit-time'
+			}
+
 			if ( generation !== this._measurementGeneration || this._disposed ) return
 			await this._readState( generation )
 			if ( generation !== this._measurementGeneration || this._disposed ) return
@@ -1456,15 +1463,18 @@ class GpuSimplificationPrototypeExample {
 			return
 		}
 		this._uploadDataset()
-		this.ui.retainedPointCount = null
 		this._queueRebuild( `${this.dataset.label} relaxed and simplified` )
 	}
 
 	setSimplificationLevel = ( level, commit = false ) => {
 		if ( this._disposed || this.metrics?.fallback ) return
+		if ( this.view.detail !== 'after' ) {
+			this.view.detail = 'after'
+			this.ui.detail = 'after'
+			this._syncView()
+		}
 		this.settings = resolveSimplificationSettings( level, WORLD_SIZE )
 		this._applySettings()
-		this.ui.retainedPointCount = null
 		this.ui.busy = true
 		this.ui.status = commit ? 'Measuring the settled result…' : 'Previewing…'
 		if ( commit ) this._queueRebuild( 'Simplified' )
@@ -1475,7 +1485,6 @@ class GpuSimplificationPrototypeExample {
 		if ( this._disposed || this.metrics?.fallback ) return
 		this.relaxIterations = resolveRelaxIterations( iterations )
 		this._applySettings()
-		this.ui.retainedPointCount = null
 		this.ui.busy = true
 		this.ui.status = commit ? 'Measuring the settled result…' : 'Relaxing…'
 		if ( commit ) {
@@ -1524,12 +1533,8 @@ class GpuSimplificationPrototypeExample {
 		this._pendingRebuildTimer = window.setTimeout( () => {
 			this._pendingRebuildTimer = null
 			if ( this._disposed || this.metrics?.fallback || this._measurementActive ) return
-			try {
-				this._dispatch()
-			} catch ( error ) {
-				this._activateCpuFallback( 'GPU simplification update failed; drawing the source lines.', error )
-			}
-		}, 30 )
+			this._queueRebuild( 'Simplified' )
+		}, 45 )
 	}
 
 	_syncView() {

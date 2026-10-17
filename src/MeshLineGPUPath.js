@@ -165,7 +165,7 @@ const createGPUResourcePlan = ( {
 	const maximumVertexCount = safeIntegerProduct(
 		'indirect vertex count',
 		advancedTopology ? primitiveCapacity : segmentCount,
-		advancedTopology ? 3 : 6
+		advancedTopology ? 6 : 12
 	)
 	const byteLength = ( label, count, components = STORAGE_COMPONENTS ) => safeIntegerProduct(
 		`${label} byte length`,
@@ -185,7 +185,7 @@ const createGPUResourcePlan = ( {
 			primitiveStates: simplify && advancedTopology ? byteLength( 'primitive state storage', segmentCount ) : 0,
 			primitives: advancedTopology ? byteLength( 'primitive storage', primitiveCapacity, PRIMITIVE_RECORD_COMPONENTS ) : 0,
 		},
-		indirectBytes: byteLength( 'indirect storage', 4, 1 ),
+		indirectBytes: byteLength( 'indirect storage', 8, 1 ),
 	}
 }
 
@@ -853,7 +853,6 @@ const getUnsupportedReason = ( options, fallback ) => {
 	if ( options.shadow ) return 'shadow passes are not supported by the experimental GPU path'
 	if ( options.instanceCount != null && options.instanceCount >= 0 ) return 'instancing is not supported by the experimental GPU path'
 	if ( options.smoothSharpBends ) return 'CPU topology smoothing is not composable with the experimental GPU path'
-	if ( options.wireframe ) return 'wireframe rendering is not supported by the experimental GPU path'
 
 	const unsupportedOptions = [
 		'widthCallback',
@@ -1076,6 +1075,22 @@ export class MeshLineGPUPath extends Group {
 		return this
 	}
 
+	wireframe( enabled = true ) {
+		const active = Boolean( enabled )
+		this.lineOptions.wireframe = active
+		this.fallback.wireframe( active )
+		if ( this._resources?.wireframeNode ) {
+			this._resources.wireframeNode.value = active ? 1 : 0
+		}
+		if ( this.gpuMesh ) {
+			this.gpuMesh.isLineSegments = active
+			if ( this.gpuMesh.geometry ) {
+				this.gpuMesh.geometry.indirectOffset = active ? 16 : 0
+			}
+		}
+		return this
+	}
+
 	async setSimplificationTolerance( localTolerance ) {
 		localTolerance = Number( localTolerance )
 		if ( !Number.isFinite( localTolerance ) || localTolerance < 0 ) {
@@ -1168,20 +1183,25 @@ export class MeshLineGPUPath extends Group {
 				: new StorageBufferAttribute( primitiveCapacity, PRIMITIVE_RECORD_COMPONENTS, Uint32Array )
 			: null
 		const initialVertexCount = rawPrimitiveRecords ? rawPrimitiveRecords.length / PRIMITIVE_RECORD_COMPONENTS * 3 : segmentCount * 6
-		const indirectAttribute = new IndirectStorageBufferAttribute( new Uint32Array( [initialVertexCount, 1, 0, 0] ), 1 )
+		const indirectAttribute = new IndirectStorageBufferAttribute(
+			new Uint32Array( [initialVertexCount, 1, 0, 0, initialVertexCount * 2, 1, 0, 0] ),
+			1
+		)
 
 		const points = storage( pointAttribute, 'vec4', pointCount ).toReadOnly()
 		const segments = segmentAttribute ? storage( segmentAttribute, 'uvec4', segmentCount ) : null
 		const primitives = primitiveAttribute ? storage( primitiveAttribute, 'uvec2', primitiveAttribute.count ) : null
 		const toleranceNode = simplify ? uniform( this.gpuOptions.localTolerance ) : null
 		const resolutionNode = uniform( this._resolution.clone() )
+		const wireframe = Boolean( this.lineOptions.wireframe )
+		const wireframeNode = uniform( uint( wireframe ? 1 : 0 ) )
 		const computeNodes = []
 
 		if ( simplify ) {
 			const chunks = storage( chunkAttribute, 'uvec4', chunkCount ).toReadOnly()
 			const errors = storage( errorAttribute, 'float', chunkCount * levelCount )
 			const states = storage( stateAttribute, 'uvec4', chunkCount )
-			const indirect = storage( indirectAttribute, 'uint', 4 )
+			const indirect = storage( indirectAttribute, 'uint', 8 )
 
 			const errorNode = Fn( () => {
 				const invocation = instanceIndex.toUint()
@@ -1241,10 +1261,15 @@ export class MeshLineGPUPath extends Group {
 							states.element( i ).assign( uvec4( state.x, state.y, running, state.w ) )
 							running.addAssign( state.y )
 						} )
-						indirect.element( uint( 0 ) ).assign( advancedTopology ? running : running.mul( uint( 6 ) ) )
+						const triVertices = advancedTopology ? running : running.mul( uint( 6 ) )
+						indirect.element( uint( 0 ) ).assign( triVertices )
 						indirect.element( uint( 1 ) ).assign( uint( 1 ) )
 						indirect.element( uint( 2 ) ).assign( uint( 0 ) )
 						indirect.element( uint( 3 ) ).assign( uint( 0 ) )
+						indirect.element( uint( 4 ) ).assign( triVertices.mul( uint( 2 ) ) )
+						indirect.element( uint( 5 ) ).assign( uint( 1 ) )
+						indirect.element( uint( 6 ) ).assign( uint( 0 ) )
+						indirect.element( uint( 7 ) ).assign( uint( 0 ) )
 					} )
 				} )().compute( 1 )
 			} else {
@@ -1286,10 +1311,15 @@ export class MeshLineGPUPath extends Group {
 
 					If( lane.equal( uint( 0 ) ), () => {
 						const total = prefixShared.element( uint( PREFIX_WORKGROUP_SIZE - 1 ) )
-						indirect.element( uint( 0 ) ).assign( advancedTopology ? total : total.mul( uint( 6 ) ) )
+						const triVertices = advancedTopology ? total : total.mul( uint( 6 ) )
+						indirect.element( uint( 0 ) ).assign( triVertices )
 						indirect.element( uint( 1 ) ).assign( uint( 1 ) )
 						indirect.element( uint( 2 ) ).assign( uint( 0 ) )
 						indirect.element( uint( 3 ) ).assign( uint( 0 ) )
+						indirect.element( uint( 4 ) ).assign( triVertices.mul( uint( 2 ) ) )
+						indirect.element( uint( 5 ) ).assign( uint( 1 ) )
+						indirect.element( uint( 6 ) ).assign( uint( 0 ) )
+						indirect.element( uint( 7 ) ).assign( uint( 0 ) )
 					} )
 				} )().compute( PREFIX_WORKGROUP_SIZE, [PREFIX_WORKGROUP_SIZE] )
 			}
@@ -1361,7 +1391,9 @@ export class MeshLineGPUPath extends Group {
 								primitiveStates.element( i ).assign( uvec4( state.x, running, 0, 0 ) )
 								running.addAssign( state.x )
 							} )
-							indirect.element( uint( 0 ) ).assign( running.mul( uint( 3 ) ) )
+							const triVertices = running.mul( uint( 3 ) )
+							indirect.element( uint( 0 ) ).assign( triVertices )
+							indirect.element( uint( 4 ) ).assign( triVertices.mul( uint( 2 ) ) )
 						} )
 					} )().compute( 1 )
 				} else {
@@ -1400,9 +1432,9 @@ export class MeshLineGPUPath extends Group {
 							running.addAssign( state.x )
 						} )
 						If( lane.equal( uint( 0 ) ), () => {
-							indirect.element( uint( 0 ) ).assign(
-								primitivePrefixShared.element( uint( PREFIX_WORKGROUP_SIZE - 1 ) ).mul( uint( 3 ) )
-							)
+							const triVertices = primitivePrefixShared.element( uint( PREFIX_WORKGROUP_SIZE - 1 ) ).mul( uint( 3 ) )
+							indirect.element( uint( 0 ) ).assign( triVertices )
+							indirect.element( uint( 4 ) ).assign( triVertices.mul( uint( 2 ) ) )
 						} )
 					} )().compute( PREFIX_WORKGROUP_SIZE, [PREFIX_WORKGROUP_SIZE] )
 				}
@@ -1450,7 +1482,7 @@ export class MeshLineGPUPath extends Group {
 		// with the stroked centerline; one instance-rate element keeps that fetch
 		// in bounds for every vertex of the indirect draw.
 		geometry.setAttribute( 'position', new InstancedBufferAttribute( new Float32Array( [0, 0, 0] ), 3 ) )
-		geometry.setIndirect( indirectAttribute )
+		geometry.setIndirect( indirectAttribute, wireframe ? 16 : 0 )
 		const fallbackBox = this.fallback.geometry?.boundingBox
 		const fallbackSphere = this.fallback.geometry?.boundingSphere
 		geometry.boundingBox = fallbackBox?.clone?.() ?? new Box3().setFromArray( this._points )
@@ -1461,6 +1493,7 @@ export class MeshLineGPUPath extends Group {
 			segments,
 			primitives,
 			resolutionNode,
+			wireframeNode,
 			simplify,
 			pointCount,
 			topology,
@@ -1468,6 +1501,7 @@ export class MeshLineGPUPath extends Group {
 		} )
 		const gpuMesh = new Mesh( geometry, material )
 		gpuMesh.name = `${this.name || 'MeshLineGPUPath'}:GPU`
+		gpuMesh.isLineSegments = wireframe
 		gpuMesh.frustumCulled = false
 		gpuMesh.castShadow = false
 		gpuMesh.receiveShadow = false
@@ -1486,6 +1520,7 @@ export class MeshLineGPUPath extends Group {
 			indirectAttribute,
 			toleranceNode,
 			resolutionNode,
+			wireframeNode,
 		}
 
 		this.status.pointCount = pointCount
@@ -1513,7 +1548,7 @@ export class MeshLineGPUPath extends Group {
 		this.status.reversalSplitting = simplify ? 'retained-points-only' : 'source-and-projected'
 	}
 
-	_createGPUMaterial( { points, segments, primitives, resolutionNode, simplify, pointCount, topology, topologyLayout } ) {
+	_createGPUMaterial( { points, segments, primitives, resolutionNode, wireframeNode, simplify, pointCount, topology, topologyLayout } ) {
 		// Read the live CPU oracle after `MeshLine.build()` has validated and
 		// Float32-bounded every value used by the GPU profile.
 		const lineWidth = Number( this.fallback.material.lineWidth?.value ?? this.lineOptions.lineWidth ?? 0.3 )
@@ -1620,6 +1655,10 @@ export class MeshLineGPUPath extends Group {
 		} )
 
 		const material = new MeshLineGPUPathMaterial( { side: DoubleSide } )
+		const rawVertex = vertexIndex.toUint()
+		const wireCorner = rawVertex.mod( uint( 6 ) ).add( uint( 1 ) ).div( uint( 2 ) ).mod( uint( 3 ) )
+		const wireVertex = rawVertex.div( uint( 6 ) ).mul( uint( 3 ) ).add( wireCorner )
+		const effectiveVertex = rawVertex.mul( uint( 1 ).sub( wireframeNode ) ).add( wireVertex.mul( wireframeNode ) ).toVar()
 		// Each branch fetches and clips its segment outside the vertex Fn, so the
 		// stroke and, in builds that read one, the position accessors share it:
 		// `centerline` is the local point a vertex is stroked from.
@@ -1632,8 +1671,8 @@ export class MeshLineGPUPath extends Group {
 		// defined ahead of the branch.
 		let centerline
 		if ( !topologyLayout.advanced ) {
-			const triangleVertex = vertexIndex.toUint().mod( uint( 6 ) )
-			const segmentIndex = vertexIndex.toUint().div( uint( 6 ) ).toVar()
+			const triangleVertex = effectiveVertex.mod( uint( 6 ) )
+			const segmentIndex = effectiveVertex.div( uint( 6 ) ).toVar()
 			const rawPrevious = segmentIndex.greaterThan( uint( 0 ) ).select( segmentIndex.sub( uint( 1 ) ), uint( 0 ) )
 			const rawNext = min( segmentIndex.add( uint( 2 ) ), uint( pointCount - 1 ) )
 			const record = ( simplify
@@ -1660,7 +1699,7 @@ export class MeshLineGPUPath extends Group {
 			const bodyRange = clipRange( aRaw, bRaw, clipPadding ).toVar()
 			const previousRange = clipRange( previousRaw, aRaw, clipPadding ).toVar()
 			const nextRange = clipRange( bRaw, nextRaw, clipPadding ).toVar()
-			const fetched = [segmentIndex, record, usesB, positiveSide, previousRaw, aRaw, bRaw, nextRaw, bodyRange, previousRange, nextRange]
+			const fetched = [effectiveVertex, segmentIndex, record, usesB, positiveSide, previousRaw, aRaw, bRaw, nextRaw, bodyRange, previousRange, nextRange]
 			// A vertex is stroked from its body's clipped A or B end. Those are
 			// mixes of homogeneous clip positions, so the same mixes of the local
 			// points are exactly where they come from. The end is picked without
@@ -1771,10 +1810,10 @@ export class MeshLineGPUPath extends Group {
 				return bodyVisible.and( projectedBodyVisible ).select( finalPosition, vec4( 2, 2, 2, 1 ) )
 			} )()
 		} else {
-			const primitive = primitives.element( vertexIndex.toUint().div( uint( 3 ) ) )
+			const primitive = primitives.element( effectiveVertex.div( uint( 3 ) ) )
 			const primitiveType = primitive.x.mod( uint( 1 << PRIMITIVE_TYPE_BITS ) ).toVar()
 			const primitiveSlot = primitive.x.div( uint( 1 << PRIMITIVE_TYPE_BITS ) ).toVar()
-			const triangleVertex = vertexIndex.toUint().mod( uint( 3 ) ).toVar()
+			const triangleVertex = effectiveVertex.mod( uint( 3 ) ).toVar()
 			const record = segments.element( primitive.y ).toVar()
 			const mvp = cameraProjectionMatrix.mul( modelViewMatrix )
 			const previousRaw = mvp.mul( vec4( points.element( record.x ).xyz, 1 ) ).toVar()
@@ -1789,7 +1828,7 @@ export class MeshLineGPUPath extends Group {
 				triangleVertex.equal( uint( 2 ) ),
 				triangleVertex.notEqual( uint( 1 ) )
 			).toVar()
-			const fetched = [primitiveType, primitiveSlot, triangleVertex, record, previousRaw, aRaw, bRaw, nextRaw, bodyRange, previousRange, nextRange, bodyA, usesB]
+			const fetched = [effectiveVertex, primitiveType, primitiveSlot, triangleVertex, record, previousRaw, aRaw, bRaw, nextRaw, bodyRange, previousRange, nextRange, bodyA, usesB]
 			// Bodies are stroked from their clipped A or B end, as in the fixed
 			// strip. Joins and end caps are stroked from B and start caps from A,
 			// and only while that end is unclipped. Picked without conditionals

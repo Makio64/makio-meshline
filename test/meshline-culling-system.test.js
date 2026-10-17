@@ -488,3 +488,39 @@ test( 'large chunks compact cooperatively in a per-chunk workgroup pass', async 
 	system.dispose()
 	line.dispose()
 } )
+
+test( 'cullCamera allows an observer camera to view the prepared frustum culling result', () => {
+	const renderer = createNativeRendererStub()
+	const scene = new Scene()
+	const passCamera = new PerspectiveCamera( 50, 1, 0.1, 100 )
+	passCamera.position.z = 8
+	const observerCamera = new PerspectiveCamera( 60, 1, 1, 500 )
+	observerCamera.position.set( 0, 120, 120 )
+	const line = createLine()
+	const system = MeshLineCullingSystem.attach( renderer, scene, {
+		cullCamera: passCamera,
+		chunkSize: 2,
+		mode: 'webgpu',
+	} )
+	const handle = system.add( line )
+
+	// Frame 1 warm-up from observer camera.
+	scene.onBeforeRender( renderer, scene, observerCamera )
+	line.onBeforeRender( renderer, scene, observerCamera, line.geometry, line.material, null )
+	line.onAfterRender( renderer, scene, observerCamera, line.geometry, line.material, null )
+	scene.onAfterRender( renderer, scene, observerCamera )
+	assert.equal( handle.warmedUp, true )
+
+	// Frame 2 dispatches culling against passCamera while rendering from observerCamera.
+	scene.onBeforeRender( renderer, scene, observerCamera )
+	assert.equal( handle.active, true )
+	line.onBeforeRender( renderer, scene, observerCamera, line.geometry, line.material, null )
+	assert.equal( line.geometry.getIndex(), handle._resources.outputAttribute )
+	assert.equal( line.geometry.getIndirect().isIndirectStorageBufferAttribute, true )
+	line.onAfterRender( renderer, scene, observerCamera, line.geometry, line.material, null )
+	scene.onAfterRender( renderer, scene, observerCamera )
+
+	system.dispose()
+	line.dispose()
+} )
+

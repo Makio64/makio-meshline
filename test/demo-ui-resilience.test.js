@@ -40,18 +40,21 @@ test( 'ExampleView exposes recovery actions and watches runtime GPU failures', a
 } )
 
 test( 'embedded demos hide navigation chrome and keep async components raw', async () => {
-	const [app, exampleView, codeButton] = await Promise.all( [
+	const [app, exampleView, codeButton, venus] = await Promise.all( [
 		read( 'demo/src/App.vue' ),
 		read( 'demo/src/ExampleView.vue' ),
 		read( 'demo/src/components/ui/CodeButton.vue' ),
+		read( 'demo/src/components/Venus.vue' ),
 	] )
 
 	assert.match( app, /markRaw\( defineAsyncComponent/ )
 	assert.match( app, /searchParams\.has\( 'noUI' \)/ )
 	assert.match( exampleView, /CodeButton v-if="codeUrl && !hideChrome"/ )
 	assert.match( exampleView, /searchParams\.has\( 'noUI' \)/ )
+	assert.doesNotMatch( exampleView, /class="bottom"/ )
 	assert.match( codeButton, /\.CodeButton-center[\s\S]*?left 50%[\s\S]*?bottom calc\( 18px \+ var\( --saib, 0px \) \)[\s\S]*?transform translateX\( -50% \)/ )
 	assert.match( codeButton, /\.CodeButton-source[\s\S]*?bottom calc\( 18px \+ var\( --saib, 0px \) \)[\s\S]*?right calc\( 18px \+ var\( --sair, 0px \) \)/ )
+	assert.match( venus, /\.morph-ui[\s\S]*?top calc\( 18px \+ var\( --sait, 0px \) \)[\s\S]*?left 50%[\s\S]*?transform translateX\( -50% \)/ )
 } )
 
 test( 'demo rendering caps pixel density and keeps the inspector opt-in', async () => {
@@ -78,6 +81,19 @@ test( 'compact demos preserve the canvas until a panel is requested', async () =
 	assert.match( sandboxView, /id: 'controls', label: 'Controls'/ )
 	assert.match( sandboxView, /id: 'code', label: 'Code'/ )
 	assert.match( topology, /compact && this\.isCompactGui !== true \) this\.gui\.close\(\)/ )
+} )
+
+test( 'Variable Topology sweeps the full join angle range with live telemetry and static orientation', async () => {
+	const source = await read( 'demo/src/demos/variableTopology.js' )
+
+	assert.match( source, /const JOIN_ANGLE_MIN = 20/ )
+	assert.match( source, /const JOIN_ANGLE_MAX = 165/ )
+	assert.match( source, /\.name\( 'Opening \(°\)' \)/ )
+	assert.match( source, /\.name\( 'Turn \(°\)' \)/ )
+	assert.match( source, /\.name\( 'Miter limit' \)/ )
+	assert.match( source, /Opening \$\{opening\}° · Turn \$\{turn\}° · Miter ×\$\{miterScale\.toFixed\( 2 \)\}/ )
+	assert.match( source, /side: wireframe \? FrontSide : DoubleSide/ )
+	assert.doesNotMatch( source, /joinDirectionPhase/ )
 } )
 
 test( 'the shadow showcase keeps debug helpers out of the composition', async () => {

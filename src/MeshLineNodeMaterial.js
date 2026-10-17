@@ -1,4 +1,4 @@
-import { assign, attribute, bool, cameraNear, cameraProjectionMatrix, cameraWorldMatrix, dFdx, dFdy, Discard, dot, float, Fn, If, inverseSqrt, max, min, mix, mod, modelViewMatrix, modelWorldMatrixInverse, nodeObject, positionGeometry, positionLocal, positionPrevious, smoothstep, step, texture, uint, uniform, uv, varying, varyingProperty, vec2, vec3, vec4, vertexIndex } from 'three/tsl'
+import { assign, attribute, bool, cameraNear, cameraProjectionMatrix, cameraWorldMatrix, dFdx, dFdy, Discard, dot, float, Fn, If, inverseSqrt, max, min, mix, mod, modelViewMatrix, modelWorldMatrixInverse, nodeObject, normalView, normalWorld, positionGeometry, positionLocal, positionPrevious, positionWorld, smoothstep, step, texture, uint, uniform, uv, varying, varyingProperty, vec2, vec3, vec4, vertexIndex } from 'three/tsl'
 import { Color, DoubleSide, MeshBasicNodeMaterial, Node, NormalBlending, Vector2 } from 'three/webgpu'
 
 const DEFAULT_MITER_LIMIT = 4
@@ -48,6 +48,9 @@ const vProgress = varyingProperty( 'float', 'vProgress' )
 const vColor = varyingProperty( 'vec4', 'vColor' )
 // View-space depth of the emitted vertex, read by scene fog (see setupShaders).
 const vViewZ = varyingProperty( 'float', 'vViewZ' )
+// View-space perpendicular direction (xy) and world/view half-width (z) for
+// reconstructing a 3D tube normal and surface position on shadow-receiving lines.
+const vShadowTube = varyingProperty( 'vec3', 'vShadowTube' )
 const vertexSide = float( 1 ).sub( float( vertexIndex.bitAnd( uint( 1 ) ) ).mul( 2 ) )
 // Billboard geometry stores [incoming+, incoming-, outgoing+, outgoing-] for
 // every logical point. The sign owns the incident body and the magnitude owns
@@ -577,12 +580,67 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 		return position
 	}
 
+	setupNormal() {
+		if ( this.normalNode ) return vec3( this.normalNode )
+		if ( this._receivingShadows ) {
+			const across = ( this._fragmentSide ?? lineCoord.y ).clamp( -1, 1 )
+			const arch = float( 1 ).sub( across.mul( across ) ).max( 0 ).sqrt()
+			const perpLen = vShadowTube.xy.length()
+			const perp = perpLen.greaterThan( float( 1e-4 ) ).select( vShadowTube.xy.div( perpLen ), vec2( 1, 0 ) )
+			return vec3( perp.mul( across ), arch ).normalize()
+		}
+		return vec3( 0, 0, 1 )
+	}
+
+	setupLightingModel( builder ) {
+		const lightingModel = super.setupLightingModel( builder )
+		if ( !builder?.object?.receiveShadow ) return lightingModel
+
+		let receivedShadowMask = null
+		const originalDirect = lightingModel.direct?.bind( lightingModel )
+		const originalIndirect = lightingModel.indirect?.bind( lightingModel )
+
+		lightingModel.direct = ( lightData, directBuilder ) => {
+			if ( originalDirect ) originalDirect( lightData, directBuilder )
+			const lightNode = lightData?.lightNode
+			if (
+				directBuilder?.object?.receiveShadow === true &&
+				directBuilder?.renderer?.shadowMap?.enabled === true &&
+				lightNode?.light?.castShadow === true &&
+				lightNode.shadowNode !== null
+			) {
+				const shadowColor = vec3( lightNode.shadowNode )
+				const dotNL = lightData.lightDirection
+					? normalView.dot( lightData.lightDirection ).clamp()
+					: float( 1 )
+				const ambientFloor = float( 0.48 )
+				const directShare = float( 1 ).sub( ambientFloor ).mul( dotNL )
+				const shadowFactor = vec3( ambientFloor ).add( directShare.mul( shadowColor ) )
+				receivedShadowMask = receivedShadowMask
+					? receivedShadowMask.mul( shadowFactor )
+					: shadowFactor.toVar( 'meshLineReceivedShadowMask' )
+			}
+		}
+
+		lightingModel.indirect = indirectBuilder => {
+			if ( originalIndirect ) originalIndirect( indirectBuilder )
+			if ( receivedShadowMask && indirectBuilder?.context?.reflectedLight?.indirectDiffuse ) {
+				indirectBuilder.context.reflectedLight.indirectDiffuse.mulAssign( receivedShadowMask )
+			}
+			receivedShadowMask = null
+		}
+
+		return lightingModel
+	}
+
 	setupShaders( builder ) {
 
 		// Resolved per build: wireframe draws the raw triangles, which a fold
 		// clip would only cut holes into.
 		const foldMode = this.wireframe ? 'off' : ( this._foldModeRequested ?? 'off' )
 		this._foldMode = foldMode
+		const receivingShadows = builder.object?.receiveShadow === true && builder.renderer?.shadowMap?.enabled === true
+		this._receivingShadows = receivingShadows
 
 		// Scene fog reads `positionView`: r183+ rebuild it per fragment from the
 		// clip position with an inverse projection, r180-r182 interpolate a vec3
@@ -599,6 +657,7 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 		// Fragment hooks need an interpolated float. Reusing the IndexNode there
 		// would expose the provoking vertex's integer index for the whole triangle.
 		const fragmentSide = varying( lineSide, 'vSide' )
+		this._fragmentSide = fragmentSide
 		const endpoint = this._endpointAttribute ? this._endpointAttribute.toVar( 'varEndpoint' ) : float( 0 )
 		const endpointMarker = this._needsEndpointMetadata ? endpoint.x : float( 0 )
 
@@ -609,6 +668,9 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 		const placed = !!( this.positionFn || this.gpuPositionNode )
 		const linePosition = placed ? pos.toVar( 'linePosition' ) : pos
 		this._placedPositionNode = placed ? nodeObject( new PlacedPositionNode( linePosition ) ) : null
+		if ( receivingShadows && !this.receivedShadowPositionNode ) {
+			builder.context.shadowPositionWorld = positionWorld.add( normalWorld.mul( vShadowTube.z ) )
+		}
 
 		this.vertexNode = Fn( () => {
 
@@ -831,6 +893,11 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 				w.div( max( dirSumLen, this._miterThreshold ) ),
 				miterBlend
 			).toVar( 'miterHalfWidth' )
+
+			if ( receivingShadows ) {
+				const shadowHalfWidth = this.sizeAttenuation ? w.mul( 0.5 ) : float( 0 )
+				vShadowTube.assign( vec3( unitPerp, shadowHalfWidth ) )
+			}
 
 			const normal = vec4( 0, 0, 0, 1 ).toVar( 'normal' )
 			normal.xy.assign( unitPerp.mul( miterHalfWidth ) )
