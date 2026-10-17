@@ -33,31 +33,32 @@
 				title="Delete selected point (Delete / Backspace)"
 				@click="removeSelected"
 			>Delete</button>
+			<template v-if="!hideSaves">
+				<span class="SurfaceRoadHud__divider" aria-hidden="true" />
+				<button
+					class="SurfaceRoadHud__btn SurfaceRoadSaves__trigger"
+					:class="{ 'is-active': savesOpen }"
+					type="button"
+					:aria-expanded="savesOpen"
+					:aria-label="savesOpen ? 'Collapse saved roads' : 'Expand saved roads'"
+					@click="savesOpen = !savesOpen"
+				>
+					<span>Saves</span>
+					<span v-if="ui.saves.length" class="SurfaceRoadSaves__badge">{{ ui.saves.length }}</span>
+				</button>
+			</template>
 		</div>
 	</div>
 
 	<aside
-		v-if="!hideSaves"
+		v-if="!hideSaves && savesOpen"
 		class="SurfaceRoadSaves"
-		:class="{ 'is-collapsed': !savesOpen }"
 		aria-label="Saved roads"
 		@pointerdown.stop
 		@touchstart.stop
 		@wheel.stop
 	>
-		<button
-			v-if="!savesOpen"
-			class="SurfaceRoadSaves__trigger"
-			type="button"
-			:aria-expanded="savesOpen"
-			aria-label="Expand saved roads"
-			@click="savesOpen = true"
-		>
-			<span>Saves</span>
-			<span v-if="ui.saves.length" class="SurfaceRoadSaves__badge">{{ ui.saves.length }}</span>
-		</button>
-
-		<div v-else class="SurfaceRoadSaves__panel">
+		<div class="SurfaceRoadSaves__panel">
 			<header class="SurfaceRoadSaves__header">
 				<div class="SurfaceRoadSaves__heading">
 					<span class="SurfaceRoadSaves__title">Saves</span>
@@ -283,52 +284,25 @@ export default {
 
 .SurfaceRoadSaves
 	position fixed
-	left calc( 18px + var( --sail, 0px ) )
-	bottom calc( 18px + var( --saib, 0px ) )
+	left 50%
+	top calc( 64px + var( --sait, 0px ) )
+	transform translateX( -50% )
 	z-index 20
 	color rgba( 244, 245, 247, 0.86 )
 	font 500 12px/1 'Inter', system-ui, -apple-system, sans-serif
 	user-select none
 
-	&__trigger
-		appearance none
-		box-sizing border-box
-		display inline-flex
-		align-items center
-		justify-content center
-		gap 6px
-		min-height 40px
-		margin 0
-		padding 4px 14px
-		border-radius 999px
-		background rgba( 8, 9, 12, 0.7 )
-		border 1px solid rgba( 255, 255, 255, 0.1 )
-		box-shadow 0 12px 30px rgba( 0, 0, 0, 0.3 )
-		backdrop-filter blur( 14px )
-		-webkit-backdrop-filter blur( 14px )
-		color rgba( 244, 245, 247, 0.78 )
-		font inherit
-		cursor pointer
-		transition background 0.16s ease, border-color 0.16s ease, color 0.16s ease
-
-		&:hover,
-		&:focus-visible
-			background rgba( 20, 23, 32, 0.86 )
-			border-color rgba( 255, 255, 255, 0.24 )
-			color #ffffff
-			outline none
-
 	&__badge
 		display inline-flex
 		align-items center
 		justify-content center
-		min-width 18px
-		height 18px
-		padding 0 5px
+		min-width 16px
+		height 16px
+		padding 0 4px
 		border-radius 999px
-		background rgba( 255, 255, 255, 0.12 )
-		color rgba( 244, 245, 247, 0.9 )
-		font-size 11px
+		background rgba( 255, 255, 255, 0.14 )
+		color rgba( 244, 245, 247, 0.92 )
+		font-size 10px
 
 	&__panel
 		box-sizing border-box

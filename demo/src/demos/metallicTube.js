@@ -258,45 +258,76 @@ class MetallicTubeExample {
 		const hud = document.createElement( 'div' )
 		hud.style.cssText = [
 			'position:fixed',
-			'top:calc(14px + var(--sait, 0px))',
-			'left:calc(14px + var(--sail, 0px))',
+			'top:calc(18px + var(--sait, 0px))',
+			'left:calc(18px + var(--sail, 0px))',
 			'z-index:20',
-			'display:flex',
+			'display:inline-flex',
 			'align-items:center',
-			'gap:10px',
-			'padding:7px 11px',
-			'border:1px solid rgba(148,163,184,0.18)',
+			'gap:8px',
+			'min-height:36px',
+			'padding:6px 14px',
+			'border:1px solid rgba(255,255,255,0.1)',
 			'border-radius:999px',
-			'background:rgba(4,6,12,0.72)',
-			'backdrop-filter:blur(10px)',
-			'color:#e2e8f0',
-			'font:600 11px/1 system-ui,sans-serif',
+			'background:rgba(8,9,12,0.7)',
+			'box-shadow:0 12px 30px rgba(0,0,0,0.28)',
+			'backdrop-filter:blur(14px)',
+			'-webkit-backdrop-filter:blur(14px)',
+			'color:rgba(244,245,247,0.88)',
+			"font:600 10px/1.2 'Inter',system-ui,sans-serif",
 			'letter-spacing:0.06em',
+			'pointer-events:none',
 			'user-select:none',
 		].join( ';' )
 
+		const dot = document.createElement( 'span' )
+		dot.style.cssText = 'width:6px;height:6px;border-radius:50%;background:#38bdf8;box-shadow:0 0 10px #38bdf8'
+
 		const label = document.createElement( 'span' )
 		label.textContent = 'ANALYTIC CYLINDER NORMAL · ROUND JOIN'
-		label.style.opacity = '0.78'
+
+		hud.append( dot, label )
+
+		const bar = document.createElement( 'div' )
+		bar.style.cssText = [
+			'position:fixed',
+			'top:calc(18px + var(--sait, 0px))',
+			'left:50%',
+			'transform:translateX(-50%)',
+			'z-index:20',
+			'display:inline-flex',
+			'align-items:center',
+			'padding:4px',
+			'border:1px solid rgba(255,255,255,0.12)',
+			'border-radius:999px',
+			'background:rgba(8,9,12,0.72)',
+			'box-shadow:0 12px 30px rgba(0,0,0,0.32)',
+			'backdrop-filter:blur(14px)',
+			'-webkit-backdrop-filter:blur(14px)',
+			'user-select:none',
+		].join( ';' )
 
 		const button = document.createElement( 'button' )
 		button.type = 'button'
 		button.textContent = 'Wireframe (W)'
 		button.style.cssText = [
-			'padding:4px 9px',
-			'border:1px solid rgba(148,163,184,0.28)',
+			'min-height:30px',
+			'padding:0 12px',
+			'border:1px solid transparent',
 			'border-radius:999px',
-			'background:rgba(30,41,59,0.65)',
-			'color:#f8fafc',
-			'font:600 10px/1 system-ui,sans-serif',
-			'letter-spacing:0.05em',
+			'background:transparent',
+			'color:rgba(244,245,247,0.78)',
+			"font:650 11px/1 'Inter',system-ui,sans-serif",
+			'letter-spacing:0.06em',
+			'text-transform:uppercase',
 			'cursor:pointer',
 		].join( ';' )
+		button.addEventListener( 'pointerdown', event => event.stopPropagation() )
 		button.addEventListener( 'click', () => this.toggleWireframe() )
 
-		hud.append( label, button )
-		document.body.appendChild( hud )
+		bar.appendChild( button )
+		document.body.append( hud, bar )
 		this.hud = hud
+		this.hudBar = bar
 		this.hudButton = button
 	}
 
@@ -350,11 +381,14 @@ class MetallicTubeExample {
 		this.line?.wireframe( this.wireframeEnabled )
 		if ( this.hudButton ) {
 			this.hudButton.style.background = this.wireframeEnabled
-				? 'rgba(56,189,248,0.28)'
-				: 'rgba(30,41,59,0.65)'
+				? 'rgba(56,189,248,0.22)'
+				: 'transparent'
 			this.hudButton.style.borderColor = this.wireframeEnabled
-				? 'rgba(56,189,248,0.65)'
-				: 'rgba(148,163,184,0.28)'
+				? 'rgba(56,189,248,0.55)'
+				: 'transparent'
+			this.hudButton.style.color = this.wireframeEnabled
+				? '#ffffff'
+				: 'rgba(244,245,247,0.78)'
 		}
 		return this.wireframeEnabled
 	}
@@ -365,7 +399,9 @@ class MetallicTubeExample {
 		keyboard.onDown.remove( this.onKeyDown )
 		window.removeEventListener( 'resize', this.onResize )
 
+		this.hudBar?.remove()
 		this.hud?.remove()
+		this.hudBar = null
 		this.hud = null
 		this.hudButton = null
 

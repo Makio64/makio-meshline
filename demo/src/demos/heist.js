@@ -14,6 +14,7 @@ import stage3d from '@/makio/three/stage3d'
 import { isMobile } from '@/makio/utils/detect'
 import mouse, { onLeave, onMove, onUp } from '@/makio/utils/input/mouse'
 import random from '@/makio/utils/random'
+import { createDemoHint } from '@/utils/demoHint'
 import { centerAndScaleModel } from '@/utils/modelUtils'
 
 const ROOM_SIZE = 10
@@ -38,6 +39,7 @@ const _mouseVec = new Vector2()
 class HeistExample {
 	constructor() {
 		this.uiComponent = markRaw( HeistUI )
+		this.hint = null
 		this.line = null
 		this.scanLine = null
 		this.suzanne = null
@@ -100,6 +102,7 @@ class HeistExample {
 		this.initLasers()
 		this.initScanBeams()
 		this.initRenderPipeline()
+		this.hint = createDemoHint( 'Hover lasers to trigger alarm · drag to orbit', { accent: '#ff3366', hideAfter: 9000 } )
 
 		// Raycaster.params.Line.threshold is a RADIUS (distance-from-segment), so
 		// the picker uses both a wider hidden line and a larger pixel neighborhood.
@@ -617,6 +620,8 @@ class HeistExample {
 		this.environmentMap = null
 		stage3d.scene.backgroundNode = null
 		stage3d.control?.dispose()
+		this.hint?.remove()
+		this.hint = null
 	}
 }
 

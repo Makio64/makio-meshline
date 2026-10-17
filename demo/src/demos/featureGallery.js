@@ -260,13 +260,14 @@ class FeatureGalleryExample {
 		style.textContent = `
 			.FeatureGalleryInspector {
 				position: fixed;
-				left: calc( 18px + var( --sail, 0px ) );
-				bottom: calc( 62px + var( --saib, 0px ) );
+				top: calc( 18px + var( --sait, 0px ) );
+				left: 50%;
+				transform: translateX( -50% );
 				z-index: 25;
 				width: min( 420px, calc( 100vw - 36px ) );
 				padding: 12px 14px;
-				border-radius: 14px;
-				background: rgba( 8, 13, 23, 0.88 );
+				border-radius: 16px;
+				background: rgba( 8, 9, 12, 0.84 );
 				border: 1px solid rgba( 103, 232, 249, 0.28 );
 				box-shadow: 0 16px 38px rgba( 0, 0, 0, 0.45 );
 				backdrop-filter: blur( 14px );

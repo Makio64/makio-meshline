@@ -4,14 +4,17 @@
 		type="button"
 		class="BurgerButton"
 		:class="{ cross: isOpen }"
-		:aria-expanded="isOpen"
-		:aria-label="isOpen ? 'Close example menu' : 'Open example menu'"
+		:aria-expanded="String( isOpen )"
 		aria-controls="examples-menu"
+		title="Browse all demos (M)"
 		@click="toggle"
 	>
-		<span />
-		<span />
-		<span />
+		<span class="BurgerButton-icon" aria-hidden="true">
+			<span />
+			<span />
+			<span />
+		</span>
+		<span class="BurgerButton-label">Demos</span>
 	</button>
 </template>
 
@@ -23,23 +26,17 @@ export default {
 	props: {
 		color: {
 			type: String,
-			default: 'black'
+			default: 'white'
 		},
 		spacing: {
 			type: String,
-			default: '6'
+			default: '4'
 		}
 	},
 	computed: {
 		isOpen() {
 			return menuOpen.value
 		},
-		spacingPx() {
-			return this.spacing + 'px'
-		},
-		doubleSpacingPx() {
-			return ( this.spacing * 2 ) + 'px'
-		}
 	},
 	methods: {
 		toggle() {
@@ -53,84 +50,95 @@ export default {
 .BurgerButton
 	z-index 10000
 	position fixed
-	top calc(12px + var(--sait, 0px))
-	right calc(12px + var(--sair, 0px))
+	top calc( 18px + var( --sait, 0px ) )
+	right calc( 18px + var( --sair, 0px ) )
 	box-sizing border-box
-	width 44px
-	height 44px
-	padding 0
+	display inline-flex
+	align-items center
+	justify-content center
+	gap 7px
+	min-height 40px
+	padding 4px 13px
 	appearance none
 	cursor pointer
-	border 1px solid rgba(255,255,255,.16)
-	border-radius 13px
-	background rgba(6,9,16,.42)
-	box-shadow inset 0 1px rgba(255,255,255,.08), 0 10px 30px -16px rgba(0,0,0,.8)
-	backdrop-filter blur(10px)
-	transition border-color .18s ease, background .18s ease, box-shadow .18s ease
+	user-select none
+	border-radius 999px
+	background rgba( 8, 9, 12, 0.7 )
+	border 1px solid rgba( 255, 255, 255, 0.1 )
+	box-shadow 0 12px 30px rgba( 0, 0, 0, 0.3 )
+	backdrop-filter blur( 14px )
+	-webkit-backdrop-filter blur( 14px )
+	color rgba( 244, 245, 247, 0.78 )
+	font 500 12px/1 'Inter', system-ui, -apple-system, sans-serif
+	transition background 0.16s ease, border-color 0.16s ease, color 0.16s ease
 
 	&:hover,
 	&:focus-visible,
 	&.cross
-		border-color rgba(255,255,255,.4)
-		background rgba(16,21,34,.78)
-		box-shadow inset 0 1px rgba(255,255,255,.1), 0 12px 32px -14px rgba(0,0,0,.9)
+		background rgba( 20, 23, 32, 0.86 )
+		border-color rgba( 255, 255, 255, 0.24 )
+		color #ffffff
+		outline none
 
 	&:focus-visible
-		outline 2px solid rgba(255,255,255,.85)
+		outline 2px solid rgba( 255, 255, 255, 0.75 )
 		outline-offset 2px
 
+.BurgerButton-icon
+	position relative
+	display inline-block
+	width 14px
+	height 12px
+	flex-shrink 0
+
 	span
-		background-color v-bind(color)
-		height 2px
 		position absolute
-		width 22px
-		left 10px
+		left 0
+		width 14px
+		height 1.5px
 		border-radius 2px
+		background currentColor
 		transform-origin center
-		transition top .24s ease, transform .24s ease, opacity .18s ease
+		transition top 0.2s ease, transform 0.2s ease, opacity 0.16s ease
+
 		&:first-child
-			top 11px
+			top 1px
+
 		&:nth-child(2)
-			top calc(11px + v-bind(spacingPx))
+			top 5.25px
+
 		&:last-child
-			top calc(11px + v-bind(doubleSpacingPx))
+			top 9.5px
 
-	&.cross
-		span:nth-child(2)
-			opacity 0
-		span:first-child,
-		span:last-child
-			top calc(11px + v-bind(spacingPx))
-		span:first-child
-			transform rotate(45deg)
-		span:last-child
-			transform rotate(-45deg)
+.BurgerButton.cross .BurgerButton-icon
+	span:nth-child(2)
+		opacity 0
 
-	@media (max-width: 720px)
-		top calc(8px + var(--sait, 0px))
-		right calc(8px + var(--sair, 0px))
-		width 40px
-		height 40px
-		border-radius 11px
+	span:first-child,
+	span:last-child
+		top 5.25px
 
-		span
-			width 20px
-			left 9px
-			&:first-child
-				top 9px
-			&:nth-child(2)
-				top calc(9px + v-bind(spacingPx))
-			&:last-child
-				top calc(9px + v-bind(doubleSpacingPx))
+	span:first-child
+		transform rotate( 45deg )
 
-		&.cross
-			span:first-child,
-			span:last-child
-				top calc(9px + v-bind(spacingPx))
+	span:last-child
+		transform rotate( -45deg )
 
-	@media (prefers-reduced-motion: reduce)
+.BurgerButton-label
+	letter-spacing -0.01em
+
+@media (max-width: 640px)
+	.BurgerButton
+		top calc( 12px + var( --sait, 0px ) )
+		right calc( 12px + var( --sair, 0px ) )
+		min-height 34px
+		padding 4px 11px
+
+	.BurgerButton-label
+		display none
+
+@media (prefers-reduced-motion: reduce)
+	.BurgerButton,
+	.BurgerButton-icon span
 		transition none
-
-		span
-			transition none
 </style>

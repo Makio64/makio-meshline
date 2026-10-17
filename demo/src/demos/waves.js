@@ -6,6 +6,7 @@ import { stage } from '@/makio/core/stage'
 import OrbitControl from '@/makio/three/controls/OrbitControl'
 import stage3d from '@/makio/three/stage3d'
 import { createBloomPipeline } from '@/utils/bloomPipeline'
+import { createDemoHint } from '@/utils/demoHint'
 
 const LINE_COUNT = 56
 const POINTS_PER_LINE = 180
@@ -35,6 +36,7 @@ class WavesExample {
 		this.sun = null
 		this.bloom = null
 		this.control = null
+		this.hint = null
 		this.linePositions = null
 		this.time = 0
 		this.reducedMotion = window.matchMedia?.( '(prefers-reduced-motion: reduce)' ).matches === true
@@ -66,6 +68,7 @@ class WavesExample {
 		this.initScene()
 		this.createSun()
 		this.bloom = createBloomPipeline( { strength: 0.45, radius: 0.5, threshold: 0.3 } )
+		this.hint = createDemoHint( `${LINE_COUNT} dynamic wave lines · ${SUN_STRIPES} retro sun stripes`, { accent: '#ff3d8b', hideAfter: 9000 } )
 
 		window.addEventListener( 'resize', this.onResize )
 		stage.onUpdate.add( this.update )
@@ -185,6 +188,8 @@ class WavesExample {
 	dispose() {
 		stage.onUpdate.remove( this.update )
 		window.removeEventListener( 'resize', this.onResize )
+		this.hint?.remove()
+		this.hint = null
 		this.control?.dispose()
 		if ( stage3d.control === this.control ) stage3d.control = null
 		this.control = null

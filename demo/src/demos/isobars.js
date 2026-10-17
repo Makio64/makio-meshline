@@ -855,73 +855,134 @@ class IsobarsExample {
 				font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
 				user-select: none;
 			}
-			.IsobarHud {
+			.IsobarInfo {
 				position: fixed;
-				left: calc(16px + var(--sail, 0px));
-				bottom: calc(16px + var(--saib, 0px));
+				left: calc(18px + var(--sail, 0px));
+				top: calc(18px + var(--sait, 0px));
 				z-index: 20;
-				display: flex;
-				flex-direction: column;
+				display: inline-flex;
+				align-items: center;
 				gap: 8px;
-				max-width: min(520px, calc(100vw - 32px));
-				padding: 11px 13px;
-				border: 1px solid rgba(148, 203, 255, 0.2);
-				border-radius: 14px;
-				background: rgba(6, 13, 26, 0.78);
-				box-shadow: 0 14px 40px rgba(0, 0, 0, 0.35);
-				backdrop-filter: blur(12px);
-				color: #f1f5f9;
-				font: 600 11px/1.2 system-ui, sans-serif;
+				min-height: 36px;
+				padding: 6px 14px;
+				border: 1px solid rgba(255, 255, 255, 0.1);
+				border-radius: 999px;
+				background: rgba(8, 9, 12, 0.7);
+				box-shadow: 0 12px 30px rgba(0, 0, 0, 0.28);
+				backdrop-filter: blur(14px);
+				-webkit-backdrop-filter: blur(14px);
+				color: rgba(244, 245, 247, 0.86);
+				font: 600 10px/1.2 'Inter', system-ui, -apple-system, sans-serif;
+				letter-spacing: 0.06em;
+				text-transform: uppercase;
+				pointer-events: none;
 				user-select: none;
 			}
-			.IsobarHud__top {
-				display: flex;
-				align-items: center;
-				justify-content: space-between;
-				gap: 12px;
+			.IsobarInfo::before {
+				content: '';
+				width: 6px;
+				height: 6px;
+				border-radius: 50%;
+				background: #7dd3fc;
+				box-shadow: 0 0 10px #7dd3fc;
 			}
 			.IsobarHud__title {
-				font-size: 10px;
-				font-weight: 800;
-				letter-spacing: 0.12em;
-				text-transform: uppercase;
-				color: #fff2bf;
+				color: rgba(244, 245, 247, 0.68);
 			}
 			.IsobarHud__status {
 				font-variant-numeric: tabular-nums;
-				color: #93c5fd;
-				font-size: 11px;
+				color: #fff;
+				font-weight: 700;
+			}
+			.IsobarHud {
+				position: fixed;
+				top: calc(18px + var(--sait, 0px));
+				left: 50%;
+				transform: translateX(-50%);
+				z-index: 20;
+				display: inline-flex;
+				align-items: center;
+				gap: 4px;
+				max-width: calc(100vw - 24px);
+				padding: 4px;
+				border: 1px solid rgba(255, 255, 255, 0.12);
+				border-radius: 999px;
+				background: rgba(8, 9, 12, 0.72);
+				box-shadow: 0 12px 30px rgba(0, 0, 0, 0.32);
+				backdrop-filter: blur(14px);
+				-webkit-backdrop-filter: blur(14px);
+				color: #f1f5f9;
+				font: 650 10px/1 'Inter', system-ui, -apple-system, sans-serif;
+				letter-spacing: 0.05em;
+				text-transform: uppercase;
+				user-select: none;
 			}
 			.IsobarHud__states {
-				display: flex;
-				flex-wrap: wrap;
-				gap: 6px;
+				display: inline-flex;
+				align-items: center;
+				gap: 3px;
+			}
+			.IsobarHud__divider {
+				width: 1px;
+				height: 16px;
+				margin: 0 2px;
+				background: rgba(255, 255, 255, 0.12);
 			}
 			.IsobarHud__btn {
-				padding: 5px 10px;
-				border: 1px solid rgba(148, 163, 184, 0.25);
+				appearance: none;
+				min-height: 30px;
+				padding: 0 11px;
+				border: 1px solid transparent;
 				border-radius: 999px;
-				background: rgba(15, 23, 42, 0.7);
-				color: #e2e8f0;
-				font: 600 10px/1 system-ui, sans-serif;
-				letter-spacing: 0.04em;
+				background: transparent;
+				color: rgba(244, 245, 247, 0.68);
+				font: inherit;
+				letter-spacing: inherit;
+				text-transform: inherit;
+				white-space: nowrap;
 				cursor: pointer;
-				transition: background 0.15s, border-color 0.15s;
+				transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+			}
+			.IsobarHud__btn:hover {
+				color: #fff;
+				background: rgba(255, 255, 255, 0.07);
 			}
 			.IsobarHud__btn.is-active {
-				background: rgba(56, 189, 248, 0.25);
-				border-color: rgba(125, 211, 252, 0.75);
+				background: rgba(56, 189, 248, 0.2);
+				border-color: rgba(125, 211, 252, 0.52);
 				color: #fff;
 			}
 			.IsobarHud__scrubber {
-				display: flex;
+				display: inline-flex;
 				align-items: center;
-				gap: 8px;
+				gap: 6px;
+				padding-right: 8px;
 			}
 			.IsobarHud__slider {
-				flex: 1;
+				width: 72px;
 				accent-color: #38bdf8;
 				cursor: pointer;
+			}
+			@media (max-width: 820px) {
+				.IsobarInfo {
+					left: calc(12px + var(--sail, 0px));
+					top: calc(58px + var(--sait, 0px));
+					min-height: 30px;
+					padding: 4px 11px;
+					font-size: 9px;
+				}
+				.IsobarHud {
+					top: calc(12px + var(--sait, 0px));
+					padding: 3px;
+				}
+				.IsobarHud__btn {
+					min-height: 27px;
+					padding: 0 8px;
+					font-size: 9px;
+				}
+				.IsobarHud__slider {
+					width: 52px;
+				}
 			}
 			.IsobarMarker {
 				position: absolute;
@@ -987,18 +1048,21 @@ class IsobarsExample {
 			this.labelEls.push( el )
 		}
 
+		const infoHud = document.createElement( 'div' )
+		infoHud.className = 'IsobarInfo'
+		const title = document.createElement( 'span' )
+		title.className = 'IsobarHud__title'
+		title.textContent = 'Isobars ·'
+		this.statusEl = document.createElement( 'span' )
+		this.statusEl.className = 'IsobarHud__status'
+		infoHud.append( title, this.statusEl )
+		document.body.appendChild( infoHud )
+		this.infoHud = infoHud
+
 		const hud = document.createElement( 'aside' )
 		hud.className = 'IsobarHud'
 		hud.setAttribute( 'aria-label', 'Isobar synoptic transition controls' )
-
-		const top = document.createElement( 'div' )
-		top.className = 'IsobarHud__top'
-		const title = document.createElement( 'span' )
-		title.className = 'IsobarHud__title'
-		title.textContent = 'Isobar Contour Track Morphing'
-		this.statusEl = document.createElement( 'span' )
-		this.statusEl.className = 'IsobarHud__status'
-		top.append( title, this.statusEl )
+		hud.addEventListener( 'pointerdown', e => e.stopPropagation() )
 
 		const statesRow = document.createElement( 'div' )
 		statesRow.className = 'IsobarHud__states'
@@ -1011,6 +1075,10 @@ class IsobarsExample {
 			statesRow.appendChild( btn )
 			this.stateButtons.push( btn )
 		} )
+
+		const divider = document.createElement( 'span' )
+		divider.className = 'IsobarHud__divider'
+		divider.setAttribute( 'aria-hidden', 'true' )
 
 		const scrubber = document.createElement( 'div' )
 		scrubber.className = 'IsobarHud__scrubber'
@@ -1034,7 +1102,7 @@ class IsobarsExample {
 		} )
 		scrubber.append( this.playBtn, this.sliderEl )
 
-		hud.append( top, statesRow, scrubber )
+		hud.append( statesRow, divider, scrubber )
 		document.body.appendChild( hud )
 		this.hud = hud
 		this.syncPlayButton()
@@ -1153,9 +1221,11 @@ class IsobarsExample {
 		stage.onUpdate.remove( this.update )
 		stage.onResize.remove( this.onResize )
 
+		this.infoHud?.remove()
 		this.hud?.remove()
 		this.overlayRoot?.remove()
 		this.hudStyle?.remove()
+		this.infoHud = null
 		this.hud = null
 		this.overlayRoot = null
 		this.hudStyle = null

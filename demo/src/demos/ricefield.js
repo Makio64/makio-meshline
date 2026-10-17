@@ -68,8 +68,9 @@ function ensureHudStyle() {
 	style.textContent = `
 		.RicefieldQualityHud {
 			position: fixed;
-			left: calc(18px + var(--sail, 0px));
-			bottom: calc(18px + var(--saib, 0px));
+			top: calc(18px + var(--sait, 0px));
+			left: 50%;
+			transform: translateX(-50%);
 			z-index: 1000;
 			display: inline-flex;
 			align-items: center;
@@ -124,10 +125,9 @@ function ensureHudStyle() {
 			box-shadow: 0 0 8px #fbbf24;
 			opacity: 1;
 		}
-		@media (max-width: 640px) {
+		@media (max-width: 720px) {
 			.RicefieldQualityHud {
-				left: calc(12px + var(--sail, 0px));
-				bottom: calc(58px + var(--saib, 0px));
+				top: calc(12px + var(--sait, 0px));
 				padding: 3px;
 				font-size: 10px;
 			}

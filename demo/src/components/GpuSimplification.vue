@@ -1,73 +1,73 @@
 <template>
-	<aside
-		v-if="ui.visible"
-		class="GpuSimplificationHud"
-		aria-label="Simplification controls"
-		@pointerdown.stop
-		@touchstart.stop
-		@wheel.stop
-	>
-		<div class="GpuSimplificationHud__telemetry" aria-live="polite">
-			<div class="GpuSimplificationHud__polys">
-				<strong class="GpuSimplificationHud__value">{{ polyCountLabel }}</strong>
-				<span class="GpuSimplificationHud__unit">polys</span>
-				<span v-if="reductionTag" class="GpuSimplificationHud__tag">{{ reductionTag }}</span>
-			</div>
-			<div class="GpuSimplificationHud__time" title="GPU compute time">
-				<i class="GpuSimplificationHud__dot" :class="{ 'is-busy': ui.busy }" aria-hidden="true" />
-				<strong>{{ gpuTimeLabel }}</strong>
-			</div>
+	<div v-if="ui.visible" class="GpuSimplificationOverlay">
+		<div class="GpuSimplificationInfo" aria-live="polite">
+			<i class="GpuSimplificationHud__dot" :class="{ 'is-busy': ui.busy }" aria-hidden="true" />
+			<strong class="GpuSimplificationHud__value">{{ polyCountLabel }}</strong>
+			<span class="GpuSimplificationHud__unit">polys</span>
+			<span v-if="reductionTag" class="GpuSimplificationHud__tag">{{ reductionTag }}</span>
+			<span class="GpuSimplificationInfo__sep" aria-hidden="true">·</span>
+			<strong class="GpuSimplificationInfo__time" title="GPU compute time">{{ gpuTimeLabel }}</strong>
 		</div>
 
-		<div class="GpuSimplificationHud__slider">
-			<div class="GpuSimplificationHud__sliderHead">
-				<label for="gpu-simplification-level">Simplify</label>
-				<strong>{{ ui.level === 0 ? 'Lossless' : `${ui.level}%` }}</strong>
-			</div>
-			<input
-				id="gpu-simplification-level"
-				type="range"
-				min="0"
-				max="100"
-				step="1"
-				:value="ui.level"
-				:style="{ '--slider-progress': `${ui.level}%` }"
-				:disabled="controlsDisabled"
-				:aria-valuetext="`simplification level ${ui.level} percent`"
-				@input="api.setSimplificationLevel( Number( $event.target.value ), false )"
-				@change="api.setSimplificationLevel( Number( $event.target.value ), true )"
-			>
-		</div>
+		<aside
+			class="GpuSimplificationHud"
+			aria-label="Simplification controls"
+			@pointerdown.stop
+			@touchstart.stop
+			@wheel.stop
+		>
+			<div class="GpuSimplificationHud__bar" role="toolbar" aria-label="Dataset and view controls">
+				<button
+					v-for="dataset in api.datasets"
+					:key="dataset.id"
+					type="button"
+					class="GpuSimplificationHud__btn"
+					:class="{ 'is-active': ui.datasetId === dataset.id }"
+					:aria-pressed="String( ui.datasetId === dataset.id )"
+					@click="api.setDataset( dataset.id )"
+				>{{ dataset.label }}</button>
 
-		<div class="GpuSimplificationHud__bar" role="toolbar" aria-label="Dataset and view controls">
-			<button
-				v-for="dataset in api.datasets"
-				:key="dataset.id"
-				type="button"
-				class="GpuSimplificationHud__btn"
-				:class="{ 'is-active': ui.datasetId === dataset.id }"
-				:aria-pressed="String( ui.datasetId === dataset.id )"
-				@click="api.setDataset( dataset.id )"
-			>{{ dataset.label }}</button>
-			<span class="GpuSimplificationHud__divider" aria-hidden="true" />
-			<button
-				type="button"
-				class="GpuSimplificationHud__btn"
-				:class="{ 'is-active': ui.detail === 'before' }"
-				:aria-pressed="String( ui.detail === 'before' )"
-				:disabled="controlsDisabled"
-				@click="toggleOriginal"
-			>Original</button>
-			<button
-				type="button"
-				class="GpuSimplificationHud__btn"
-				:class="{ 'is-active': ui.renderMode === 'wireframe' }"
-				:aria-pressed="String( ui.renderMode === 'wireframe' )"
-				title="Toggle wireframe (W)"
-				@click="toggleWireframe"
-			>Wireframe</button>
-		</div>
-	</aside>
+				<span class="GpuSimplificationHud__divider" aria-hidden="true" />
+
+				<div class="GpuSimplificationHud__slider">
+					<label for="gpu-simplification-level">Simplify</label>
+					<input
+						id="gpu-simplification-level"
+						type="range"
+						min="0"
+						max="100"
+						step="1"
+						:value="ui.level"
+						:style="{ '--slider-progress': `${ui.level}%` }"
+						:disabled="controlsDisabled"
+						:aria-valuetext="`simplification level ${ui.level} percent`"
+						@input="api.setSimplificationLevel( Number( $event.target.value ), false )"
+						@change="api.setSimplificationLevel( Number( $event.target.value ), true )"
+					>
+					<strong>{{ ui.level === 0 ? '0%' : `${ui.level}%` }}</strong>
+				</div>
+
+				<span class="GpuSimplificationHud__divider" aria-hidden="true" />
+
+				<button
+					type="button"
+					class="GpuSimplificationHud__btn"
+					:class="{ 'is-active': ui.detail === 'before' }"
+					:aria-pressed="String( ui.detail === 'before' )"
+					:disabled="controlsDisabled"
+					@click="toggleOriginal"
+				>Original</button>
+				<button
+					type="button"
+					class="GpuSimplificationHud__btn"
+					:class="{ 'is-active': ui.renderMode === 'wireframe' }"
+					:aria-pressed="String( ui.renderMode === 'wireframe' )"
+					title="Toggle wireframe (W)"
+					@click="toggleWireframe"
+				>Wireframe</button>
+			</div>
+		</aside>
+	</div>
 </template>
 
 <script>
@@ -139,76 +139,76 @@ export default {
 </script>
 
 <style lang="stylus" scoped>
-.GpuSimplificationHud
+.GpuSimplificationInfo
 	position fixed
 	left calc(18px + var(--sail, 0px))
 	top calc(18px + var(--sait, 0px))
 	z-index 20
-	display grid
-	gap 10px
-	box-sizing border-box
-	width 288px
-	max-width calc(100vw - 84px)
-	padding 12px 14px
+	display inline-flex
+	align-items center
+	gap 6px
+	min-height 36px
+	padding 6px 14px
 	border 1px solid rgba(255, 255, 255, .1)
-	border-radius 16px
-	background rgba(8, 12, 22, .76)
-	box-shadow 0 16px 40px rgba(0, 0, 0, .36)
-	backdrop-filter blur(16px)
-	-webkit-backdrop-filter blur(16px)
-	color rgba(235, 245, 255, .86)
-	font 500 11px/1.2 'Inter', system-ui, -apple-system, sans-serif
+	border-radius 999px
+	background rgba(8, 9, 12, .7)
+	box-shadow 0 12px 30px rgba(0, 0, 0, .28)
+	backdrop-filter blur(14px)
+	-webkit-backdrop-filter blur(14px)
+	color rgba(244, 245, 247, .82)
+	font 600 10px/1.2 'Inter', system-ui, -apple-system, sans-serif
 	font-variant-numeric tabular-nums
-	text-align left
+	letter-spacing .05em
+	text-transform uppercase
+	pointer-events none
 	user-select none
 
-	&__telemetry
-		display flex
-		align-items center
-		justify-content space-between
-		gap 8px
+	&__sep
+		opacity .4
 
-	&__polys
-		display flex
-		align-items baseline
-		gap 5px
-		min-width 0
+	&__time
+		color #f8fafc
+		font-weight 700
+
+.GpuSimplificationHud
+	position fixed
+	top calc(18px + var(--sait, 0px))
+	left 50%
+	transform translateX(-50%)
+	z-index 20
+	display inline-flex
+	align-items center
+	max-width calc(100vw - 24px)
+	padding 4px
+	border 1px solid rgba(255, 255, 255, .12)
+	border-radius 999px
+	background rgba(8, 9, 12, .72)
+	box-shadow 0 12px 30px rgba(0, 0, 0, .32)
+	backdrop-filter blur(14px)
+	-webkit-backdrop-filter blur(14px)
+	color rgba(235, 245, 255, .86)
+	font 650 10px/1 'Inter', system-ui, -apple-system, sans-serif
+	font-variant-numeric tabular-nums
+	letter-spacing .05em
+	text-transform uppercase
+	user-select none
 
 	&__value
 		color #fff
-		font-size 20px
+		font-size 12px
 		font-weight 760
-		letter-spacing -.03em
-		line-height 1
+		letter-spacing -.01em
 
 	&__unit
-		color rgba(190, 214, 235, .64)
-		font-size 11px
-		font-weight 600
+		color rgba(190, 214, 235, .68)
 
 	&__tag
-		margin-left 2px
 		padding 2px 6px
 		border-radius 999px
-		background rgba(56, 189, 248, .14)
+		background rgba(56, 189, 248, .16)
 		color #7dd3fc
-		font-size 10px
+		font-size 9px
 		font-weight 700
-		line-height 1.1
-
-	&__time
-		display inline-flex
-		align-items center
-		gap 6px
-		padding 4px 9px
-		border 1px solid rgba(255, 255, 255, .09)
-		border-radius 999px
-		background rgba(255, 255, 255, .04)
-		color #f8fafc
-		font-size 11px
-		font-weight 700
-		line-height 1
-		flex-shrink 0
 
 	&__dot
 		width 6px
@@ -223,21 +223,35 @@ export default {
 			box-shadow 0 0 8px rgba(56, 189, 248, .85)
 
 	&__slider
-		display grid
-		gap 3px
+		display inline-flex
+		align-items center
+		gap 7px
+		padding 0 8px
+
+		label
+			color rgba(203, 225, 245, .68)
+			font-size 9.5px
+			font-weight 650
+
+		strong
+			min-width 28px
+			text-align right
+			color #fff
+			font-size 10px
+			font-weight 700
 
 		input[type='range']
-			--slider-track-size 5px
-			--slider-thumb-size 14px
+			--slider-track-size 4px
+			--slider-thumb-size 12px
 			--slider-track-radius 999px
 			--slider-thumb-radius 50%
-			--slider-track-color rgba(255, 255, 255, .14)
+			--slider-track-color rgba(255, 255, 255, .16)
 			--slider-fill-color #38bdf8
 			--slider-thumb-color #e0f2fe
 			--slider-progress 58%
 			appearance none
-			inline-size 100%
-			block-size 20px
+			inline-size 78px
+			block-size 18px
 			margin 0
 			padding 0
 			border 0
@@ -288,48 +302,29 @@ export default {
 			opacity .4
 			cursor not-allowed
 
-	&__sliderHead
-		display flex
-		align-items baseline
-		justify-content space-between
-		gap 8px
-
-		label
-			font-size 10px
-			font-weight 600
-			color rgba(203, 225, 245, .68)
-
-		strong
-			font-size 10px
-			font-weight 700
-			color rgba(235, 245, 255, .92)
-
 	&__bar
-		display flex
+		display inline-flex
 		align-items center
 		gap 3px
-		padding 3px
-		border 1px solid rgba(255, 255, 255, .08)
-		border-radius 999px
-		background rgba(0, 0, 0, .28)
 
 	&__divider
 		width 1px
-		height 14px
-		margin 0 1px
+		height 16px
+		margin 0 2px
 		background rgba(255, 255, 255, .12)
 		flex-shrink 0
 
 	&__btn
 		appearance none
-		flex 1
-		min-height 26px
-		padding 0 8px
+		min-height 30px
+		padding 0 11px
 		border 1px solid transparent
 		border-radius 999px
 		background transparent
-		color rgba(226, 242, 252, .68)
-		font 600 10px/1 system-ui, -apple-system, sans-serif
+		color rgba(244, 245, 247, .68)
+		font inherit
+		letter-spacing inherit
+		text-transform inherit
 		white-space nowrap
 		cursor pointer
 		transition background .15s ease, color .15s ease, border-color .15s ease
@@ -337,7 +332,7 @@ export default {
 		&:hover,
 		&:focus-visible
 			color #fff
-			background rgba(255, 255, 255, .08)
+			background rgba(255, 255, 255, .07)
 			outline none
 
 		&:focus-visible
@@ -345,23 +340,34 @@ export default {
 			outline-offset 2px
 
 		&.is-active
-			border-color rgba(255, 255, 255, .16)
-			background rgba(255, 255, 255, .14)
+			border-color rgba(56, 189, 248, .48)
+			background rgba(56, 189, 248, .18)
 			color #fff
 
 		&:disabled
 			opacity .4
 			cursor not-allowed
 
-@media (max-width: 620px)
-	.GpuSimplificationHud
-		left calc(10px + var(--sail, 0px))
-		top calc(10px + var(--sait, 0px))
-		width auto
-		max-width calc(100vw - 76px)
-		padding 10px 12px
-		gap 8px
+@media (max-width: 820px)
+	.GpuSimplificationInfo
+		left calc(12px + var(--sail, 0px))
+		top calc(58px + var(--sait, 0px))
+		min-height 30px
+		padding 4px 11px
+		font-size 9px
 
-		&__value
-			font-size 18px
+	.GpuSimplificationHud
+		top calc(12px + var(--sait, 0px))
+		padding 3px
+
+		&__slider label
+			display none
+
+		&__slider input[type='range']
+			inline-size 56px
+
+		&__btn
+			min-height 27px
+			padding 0 8px
+			font-size 9px
 </style>

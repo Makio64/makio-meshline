@@ -15,6 +15,7 @@ import OrbitControl from '@/makio/three/controls/OrbitControl'
 import stage3d from '@/makio/three/stage3d'
 import { backInOut } from '@/makio/tsl/easing'
 import { isMobile } from '@/makio/utils/detect'
+import { createDemoHint } from '@/utils/demoHint'
 import { centerAndScaleModel } from '@/utils/modelUtils'
 
 class VenusExample {
@@ -37,6 +38,7 @@ class VenusExample {
 		this.morph = uniform( 0 )
 		this.opacity = uniform( 0 )
 		this.gui = null
+		this.hint = null
 		this.texA = null
 		this.texB = null
 		this.activeA = null
@@ -58,6 +60,7 @@ class VenusExample {
 		await this.loadModels()
 		await this.initScene()
 		await this.initRenderPipeline()
+		this.hint = createDemoHint( 'BVH-traced contour rings · GPU morph · drag to orbit', { accent: '#fb923c', hideAfter: 9000 } )
 
 		setTimeout( () => {
 			animate( this.opacity, { value: 1, duration: 1.8, delay: 0.01, ease: 'outExpo' } )
@@ -426,6 +429,8 @@ class VenusExample {
 	}
 
 	dispose() {
+		this.hint?.remove()
+		this.hint = null
 		utils.remove( [this.opacity, this.morph, stage3d.control].filter( Boolean ) )
 		stage3d.renderPipeline = null
 		stage3d.renderer.toneMapping = NoToneMapping

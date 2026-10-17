@@ -2,6 +2,7 @@ import { circlePositions, MeshLine } from 'makio-meshline'
 
 import OrbitControl from '@/makio/three/controls/OrbitControl'
 import stage3d from '@/makio/three/stage3d'
+import { createDemoHint } from '@/utils/demoHint'
 
 const POINTS = circlePositions( 64, 3 )
 
@@ -9,6 +10,7 @@ class BasicExample {
 	constructor() {
 		this.line = null
 		this.control = null
+		this.hint = null
 	}
 
 	async init() {
@@ -24,6 +26,7 @@ class BasicExample {
 			.gradientColor( 0xffffff )
 
 		stage3d.add( this.line )
+		this.hint = createDemoHint( '64-segment closed loop · gradient stroke · drag to orbit', { accent: '#ff8800', hideAfter: 9000 } )
 		window.addEventListener( 'resize', this.onWindowResize )
 	}
 
@@ -33,6 +36,8 @@ class BasicExample {
 
 	dispose() {
 		window.removeEventListener( 'resize', this.onWindowResize )
+		this.hint?.remove()
+		this.hint = null
 		stage3d.remove( this.line )
 		this.line?.dispose()
 		this.control?.dispose()

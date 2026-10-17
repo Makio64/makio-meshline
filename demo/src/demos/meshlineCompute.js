@@ -130,8 +130,15 @@ class MeshLineComputeExample {
 	createGui() {
 		const urlParams = new URLSearchParams( window.location.search )
 		const hasNoMenu = urlParams.has( 'noUI' )
-		this.gui = new GUI( { width: hasNoMenu ? 220 : 260 } )
-		this.gui.domElement.style.right = hasNoMenu ? '0' : '60px'
+		this.gui = new GUI( { width: hasNoMenu ? 220 : 250 } )
+		Object.assign( this.gui.domElement.style, {
+			top: 'calc(18px + var(--sait, 0px))',
+			left: '50%',
+			right: 'auto',
+			transform: 'translateX(-50%)',
+			borderRadius: '14px',
+			overflow: 'hidden',
+		} )
 		if ( hasNoMenu || stage.width <= 700 ) this.gui.close()
 		this.gui.add( this.params, 'mode', MODE_LABELS ).onChange( value => this.line?.mode( value ) )
 		this.gui.add( this.params, 'curveCount', 16, 320, 1 ).onFinishChange( () => this.createLine() )

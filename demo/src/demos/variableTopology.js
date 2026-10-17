@@ -682,25 +682,33 @@ class VariableTopologyExample {
 		this.hudStyle = document.createElement( 'style' )
 		this.hudStyle.textContent = `
 			.VariableTopologyControls {
+				top: calc(18px + var(--sait, 0px)) !important;
+				left: 50% !important;
+				right: auto !important;
+				transform: translateX(-50%);
 				z-index: 24 !important;
+				border-radius: 14px !important;
+				overflow: hidden;
 			}
 			.VariableTopologyHud {
 				position: fixed;
-				top: calc(16px + var(--sait, 0px));
-				left: calc(16px + var(--sail, 0px));
+				top: calc(18px + var(--sait, 0px));
+				left: calc(18px + var(--sail, 0px));
 				z-index: 20;
-				display: flex;
+				display: inline-flex;
 				align-items: center;
 				gap: 9px;
-				padding: 8px 12px;
-				border: 1px solid rgba(148, 163, 184, .18);
+				min-height: 36px;
+				padding: 6px 14px;
+				border: 1px solid rgba(255, 255, 255, .1);
 				border-radius: 999px;
-				background: rgba(2, 6, 23, .66);
-				box-shadow: 0 10px 34px rgba(2, 6, 23, .3);
-				backdrop-filter: blur(10px);
+				background: rgba(8, 9, 12, .7);
+				box-shadow: 0 12px 30px rgba(0, 0, 0, .28);
+				backdrop-filter: blur(14px);
+				-webkit-backdrop-filter: blur(14px);
 				color: #f8fafc;
-				font: 750 10px/1 system-ui, sans-serif;
-				letter-spacing: .12em;
+				font: 600 10px/1.2 'Inter', system-ui, sans-serif;
+				letter-spacing: .06em;
 				text-transform: uppercase;
 				pointer-events: none;
 				user-select: none;

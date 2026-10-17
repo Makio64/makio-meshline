@@ -21,10 +21,11 @@ test( 'Draw Lines keeps inactive capacity out of its animation hot path', async 
 	assert.doesNotMatch( update, /\.setPositions\(/ )
 } )
 
-test( 'Draw Lines exposes a top-left cleanup button that resets drawn strokes without starting a stroke', async () => {
+test( 'Draw Lines exposes a top-middle cleanup button and top-left hint that reset drawn strokes without starting a stroke', async () => {
 	const source = await readDemo()
 
-	assert.match( source, /\.DrawLinesHud \{[\s\S]*?top: calc\(16px \+ var\(--sait, 0px\)\);[\s\S]*?left: calc\(16px \+ var\(--sail, 0px\)\);/ )
+	assert.match( source, /\.DrawLinesHud \{[\s\S]*?top: calc\(18px \+ var\(--sait, 0px\)\);[\s\S]*?left: 50%;[\s\S]*?transform: translateX\(-50%\);/ )
+	assert.match( source, /\.DrawLinesHint \{[\s\S]*?top: calc\(18px \+ var\(--sait, 0px\)\);[\s\S]*?left: calc\(18px \+ var\(--sail, 0px\)\);/ )
 	assert.match( source, /this\.clearButton\.className = 'DrawLinesClear'/ )
 	assert.match( source, /this\.clearButton\.textContent = 'Clean up'/ )
 	assert.match( source, /this\.clearButton\.addEventListener\( 'pointerdown', this\.stopPointerPropagation \)/ )

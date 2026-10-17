@@ -520,17 +520,18 @@ class GpuCullingExample {
 				top: calc(18px + var(--sait, 0px));
 				z-index: 20;
 				display: grid;
-				gap: 10px;
+				gap: 8px;
 				box-sizing: border-box;
-				width: min(286px, calc(100vw - 84px));
-				padding: 13px 15px 14px;
-				border: 1px solid rgba(56, 189, 248, .22);
+				width: min(260px, calc(100vw - 84px));
+				padding: 11px 14px;
+				border: 1px solid rgba(255, 255, 255, .1);
 				border-radius: 16px;
-				background: linear-gradient(155deg, rgba(4, 14, 26, .84), rgba(3, 8, 18, .68));
-				box-shadow: 0 18px 50px rgba(0, 0, 0, .38);
+				background: rgba(8, 9, 12, .72);
+				box-shadow: 0 14px 36px rgba(0, 0, 0, .34);
 				backdrop-filter: blur(14px);
+				-webkit-backdrop-filter: blur(14px);
 				color: rgba(226, 242, 252, .78);
-				font: 500 11px/1.3 system-ui, sans-serif;
+				font: 500 11px/1.3 'Inter', system-ui, -apple-system, sans-serif;
 				text-align: left;
 				pointer-events: none;
 				user-select: none;
@@ -539,8 +540,8 @@ class GpuCullingExample {
 			.GpuCullingHud__title {
 				color: #fff;
 				font-size: 10px;
-				font-weight: 800;
-				letter-spacing: .14em;
+				font-weight: 750;
+				letter-spacing: .1em;
 				text-transform: uppercase;
 			}
 			.GpuCullingHud__badge {
@@ -553,8 +554,8 @@ class GpuCullingExample {
 				background: rgba(250, 204, 21, .1);
 				color: #fde68a;
 				font-size: 9px;
-				font-weight: 750;
-				letter-spacing: .07em;
+				font-weight: 700;
+				letter-spacing: .06em;
 				text-transform: uppercase;
 			}
 			.GpuCullingHud__badge::before {
@@ -580,41 +581,63 @@ class GpuCullingExample {
 				background: rgba(148, 163, 184, .1);
 				color: #cbd5e1;
 			}
-			.GpuCullingHud__summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-			.GpuCullingHud__big { display: grid; gap: 3px; color: #fff; }
+			.GpuCullingHud__summary { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+			.GpuCullingHud__big { display: grid; gap: 2px; color: #fff; }
 			.GpuCullingHud__statRow { display: flex; align-items: baseline; gap: 6px; }
-			.GpuCullingHud__percent { font-size: 32px; font-weight: 780; line-height: 1; letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
-			.GpuCullingHud__label { color: rgba(186, 230, 253, .78); font-size: 11px; font-weight: 600; }
-			.GpuCullingHud__metric { color: rgba(203, 225, 240, .66); font-size: 10.5px; font-variant-numeric: tabular-nums; }
-			.GpuCullingHud__ring { display: block; flex: none; width: ${MAP_SIZE}px; height: ${MAP_SIZE}px; }
-			.GpuCullingHud__actions { display: flex; align-items: center; gap: 6px; }
-			.GpuCullingHud__btn {
-				pointer-events: auto;
-				flex: 1;
-				padding: 6px 10px;
-				border: 1px solid rgba(56, 189, 248, .35);
+			.GpuCullingHud__percent { font-size: 26px; font-weight: 760; line-height: 1; letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
+			.GpuCullingHud__label { color: rgba(186, 230, 253, .74); font-size: 10px; font-weight: 600; }
+			.GpuCullingHud__metric { color: rgba(203, 225, 240, .64); font-size: 10px; font-variant-numeric: tabular-nums; }
+			.GpuCullingHud__ring { display: block; flex: none; width: 52px; height: 52px; }
+			.GpuCullingHud__actions {
+				position: fixed;
+				top: calc(18px + var(--sait, 0px));
+				left: 50%;
+				transform: translateX(-50%);
+				z-index: 20;
+				display: inline-flex;
+				align-items: center;
+				gap: 3px;
+				padding: 4px;
+				border: 1px solid rgba(255, 255, 255, .12);
 				border-radius: 999px;
-				background: rgba(56, 189, 248, .1);
-				color: #e0f2fe;
-				font: 700 9.5px/1 system-ui, sans-serif;
+				background: rgba(8, 9, 12, .72);
+				box-shadow: 0 12px 30px rgba(0, 0, 0, .32);
+				backdrop-filter: blur(14px);
+				-webkit-backdrop-filter: blur(14px);
+				user-select: none;
+			}
+			.GpuCullingHud__btn {
+				appearance: none;
+				pointer-events: auto;
+				display: inline-flex;
+				align-items: center;
+				gap: 6px;
+				min-height: 30px;
+				padding: 0 12px;
+				border: 1px solid transparent;
+				border-radius: 999px;
+				background: transparent;
+				color: rgba(244, 245, 247, .72);
+				font: 650 11px/1 'Inter', system-ui, -apple-system, sans-serif;
 				letter-spacing: .06em;
 				text-transform: uppercase;
 				text-align: center;
 				cursor: pointer;
-				transition: border-color .15s, background .15s;
+				transition: border-color .16s ease, background .16s ease, color .16s ease;
 			}
-			.GpuCullingHud__btn:hover { border-color: #7dd3fc; background: rgba(56, 189, 248, .18); }
-			.GpuCullingHud__btn:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
-			.GpuCullingHud__btn--secondary {
-				border-color: rgba(148, 163, 184, .28);
-				background: rgba(148, 163, 184, .09);
-				color: #e2e8f0;
+			.GpuCullingHud__btn:hover { color: #fff; background: rgba(255, 255, 255, .07); }
+			.GpuCullingHud__btn:focus-visible { outline: 2px solid #7dd3fc; outline-offset: 2px; }
+			.GpuCullingHud__btn[aria-pressed="true"] {
+				border-color: rgba(56, 189, 248, .48);
+				background: rgba(56, 189, 248, .18);
+				color: #fff;
 			}
-			.GpuCullingHud__btn--secondary:hover { border-color: #cbd5e1; background: rgba(148, 163, 184, .16); }
-			@media (max-width: 620px) {
-				.GpuCullingHud { left: calc(10px + var(--sail, 0px)); top: calc(10px + var(--sait, 0px)); width: auto; max-width: calc(100vw - 76px); padding: 10px 12px; gap: 8px; }
-				.GpuCullingHud__percent { font-size: 24px; }
-				.GpuCullingHud__ring { width: 54px; height: 54px; }
+			@media (max-width: 720px) {
+				.GpuCullingHud { left: calc(12px + var(--sail, 0px)); top: calc(58px + var(--sait, 0px)); width: auto; max-width: calc(100vw - 24px); padding: 9px 12px; gap: 6px; }
+				.GpuCullingHud__percent { font-size: 22px; }
+				.GpuCullingHud__ring { width: 44px; height: 44px; }
+				.GpuCullingHud__actions { top: calc(12px + var(--sait, 0px)); padding: 3px; }
+				.GpuCullingHud__btn { min-height: 27px; padding: 0 10px; font-size: 10px; }
 			}
 		`
 		document.head.appendChild( this.hudStyle )
@@ -661,6 +684,8 @@ class GpuCullingExample {
 
 		const actions = document.createElement( 'div' )
 		actions.className = 'GpuCullingHud__actions'
+		actions.setAttribute( 'role', 'group' )
+		actions.setAttribute( 'aria-label', 'GPU culling controls' )
 
 		const toggle = document.createElement( 'button' )
 		toggle.type = 'button'
@@ -674,10 +699,13 @@ class GpuCullingExample {
 		viewToggle.addEventListener( 'click', this.onViewToggle )
 		viewToggle.addEventListener( 'pointerdown', event => event.stopPropagation() )
 
+		const noUI = new URLSearchParams( window.location.search ).has( 'noUI' )
 		actions.append( toggle, viewToggle )
-		this.hud.append( header, summary, actions )
-		this.hud.hidden = new URLSearchParams( window.location.search ).has( 'noUI' )
-		document.body.appendChild( this.hud )
+		actions.hidden = noUI
+		this.hud.append( header, summary )
+		this.hud.hidden = noUI
+		document.body.append( this.hud, actions )
+		this.actionsHud = actions
 
 		this.hudElements = { badge, metric, percent, percentLabel, ring, toggle, viewToggle }
 		this.updateHud()
@@ -836,8 +864,10 @@ class GpuCullingExample {
 		stage.onUpdate.remove( this.update )
 		this.hudElements?.toggle.removeEventListener( 'click', this.onToggle )
 		this.hudElements?.viewToggle.removeEventListener( 'click', this.onViewToggle )
+		this.actionsHud?.remove()
 		this.hud?.remove()
 		this.hudStyle?.remove()
+		this.actionsHud = null
 		this.culling?.dispose()
 		if ( this.line ) {
 			stage3d.remove( this.line )

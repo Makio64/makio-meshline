@@ -7,22 +7,24 @@ const ensureStyle = () => {
 	style.textContent = `
 		.DemoHint {
 			position: fixed;
-			left: calc(16px + var(--sail, 0px));
-			top: calc(16px + var(--sait, 0px));
+			left: calc(18px + var(--sail, 0px));
+			top: calc(18px + var(--sait, 0px));
 			z-index: 20;
 			display: inline-flex;
 			align-items: center;
 			gap: 8px;
-			max-width: calc(100vw - 96px);
-			padding: 8px 12px;
-			border: 1px solid rgba(255, 255, 255, .14);
+			min-height: 36px;
+			max-width: min(420px, calc(100vw - 96px));
+			padding: 6px 14px;
+			border: 1px solid rgba(255, 255, 255, .1);
 			border-radius: 999px;
-			background: rgba(4, 7, 16, .62);
-			box-shadow: 0 10px 30px rgba(0, 0, 0, .28);
-			backdrop-filter: blur(8px);
-			color: rgba(236, 242, 255, .9);
-			font: 650 10px/1.2 system-ui, sans-serif;
-			letter-spacing: .07em;
+			background: rgba(8, 9, 12, .7);
+			box-shadow: 0 12px 30px rgba(0, 0, 0, .28);
+			backdrop-filter: blur(14px);
+			-webkit-backdrop-filter: blur(14px);
+			color: rgba(244, 245, 247, .88);
+			font: 600 10px/1.25 'Inter', system-ui, -apple-system, sans-serif;
+			letter-spacing: .06em;
 			text-transform: uppercase;
 			pointer-events: none;
 			user-select: none;
@@ -41,8 +43,14 @@ const ensureStyle = () => {
 			opacity: 0;
 			transform: translateY(-4px);
 		}
-		@media (max-width: 600px) {
-			.DemoHint { left: calc(10px + var(--sail, 0px)); top: calc(10px + var(--sait, 0px)); font-size: 9px; }
+		@media (max-width: 720px) {
+			.DemoHint {
+				left: calc(12px + var(--sail, 0px));
+				top: calc(58px + var(--sait, 0px));
+				min-height: 30px;
+				padding: 4px 11px;
+				font-size: 9px;
+			}
 		}
 		@media (prefers-reduced-motion: reduce) { .DemoHint { transition: none; } }
 	`

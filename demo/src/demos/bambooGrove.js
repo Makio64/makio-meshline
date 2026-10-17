@@ -599,124 +599,130 @@ class BambooGroveExample {
 		this.hudStyle.textContent = `
 			.BambooGroveHud {
 				position: fixed;
-				top: calc(16px + var(--sait, 0px));
-				right: calc(66px + var(--sair, 0px));
+				top: calc(18px + var(--sait, 0px));
+				left: 50%;
+				transform: translateX(-50%);
 				z-index: 20;
-				display: flex;
-				flex-wrap: wrap;
-				justify-content: flex-end;
+				display: inline-flex;
 				align-items: center;
-				gap: 6px;
+				gap: 4px;
+				max-width: calc(100vw - 24px);
+				padding: 4px;
+				border: 1px solid rgba(255, 255, 255, .12);
+				border-radius: 999px;
+				background: rgba(8, 12, 10, .72);
+				box-shadow: 0 12px 30px rgba(0, 0, 0, .3);
+				backdrop-filter: blur(14px);
+				-webkit-backdrop-filter: blur(14px);
 			}
 			.BambooGroveParts {
 				display: inline-flex;
 				align-items: center;
-				gap: 4px;
-				padding: 3px;
-				border: 1px solid rgba(190, 242, 100, .24);
-				border-radius: 999px;
-				background: rgba(14, 24, 14, .68);
-				box-shadow: 0 12px 32px rgba(0, 0, 0, .24);
-				backdrop-filter: blur(12px);
+				gap: 3px;
+			}
+			.BambooGroveDivider {
+				width: 1px;
+				height: 16px;
+				margin: 0 2px;
+				background: rgba(255, 255, 255, .12);
 			}
 			.BambooGrovePartBtn {
 				appearance: none;
 				display: inline-flex;
 				align-items: center;
 				gap: 6px;
-				height: 28px;
-				padding: 0 10px;
+				height: 30px;
+				padding: 0 11px;
 				border: 1px solid transparent;
 				border-radius: 999px;
 				background: transparent;
-				color: rgba(212, 228, 198, .62);
-				font: 700 10px/1 system-ui, sans-serif;
+				color: rgba(244, 245, 247, .64);
+				font: 650 10px/1 'Inter', system-ui, -apple-system, sans-serif;
 				letter-spacing: .06em;
 				text-transform: uppercase;
 				cursor: pointer;
 				user-select: none;
-				transition: border-color .18s ease, background .18s ease, color .18s ease, opacity .18s ease;
+				transition: border-color .16s ease, background .16s ease, color .16s ease, opacity .16s ease;
 			}
 			.BambooGrovePartBtn:hover {
-				color: rgba(242, 250, 232, .95);
-				background: rgba(255, 255, 255, .06);
+				color: #ffffff;
+				background: rgba(255, 255, 255, .07);
 			}
 			.BambooGrovePartBtn:focus-visible {
 				outline: 2px solid #a3e635;
 				outline-offset: 2px;
 			}
 			.BambooGrovePartBtn[aria-pressed="true"] {
-				border-color: rgba(163, 230, 53, .55);
-				background: rgba(63, 114, 34, .42);
+				border-color: rgba(163, 230, 53, .48);
+				background: rgba(163, 230, 53, .16);
 				color: #f4fce8;
 			}
 			.BambooGrovePartBtn[aria-pressed="false"] {
-				opacity: .68;
-				text-decoration: line-through;
+				opacity: .56;
 			}
 			.BambooGroveWireframe {
 				appearance: none;
 				position: fixed;
-				top: calc(16px + var(--sait, 0px));
-				right: calc(66px + var(--sair, 0px));
+				top: calc(18px + var(--sait, 0px));
+				left: 50%;
+				transform: translateX(-50%);
 				z-index: 20;
 				display: inline-flex;
 				align-items: center;
-				gap: 8px;
-				height: 36px;
-				padding: 0 12px;
-				border: 1px solid rgba(190, 242, 100, .28);
+				gap: 6px;
+				height: 30px;
+				padding: 0 11px;
+				border: 1px solid transparent;
 				border-radius: 999px;
-				background: rgba(14, 24, 14, .68);
-				box-shadow: 0 12px 32px rgba(0, 0, 0, .24);
-				backdrop-filter: blur(12px);
-				color: rgba(242, 250, 232, .92);
-				font: 700 10px/1 system-ui, sans-serif;
-				letter-spacing: .08em;
+				background: transparent;
+				color: rgba(244, 245, 247, .72);
+				font: 650 10px/1 'Inter', system-ui, -apple-system, sans-serif;
+				letter-spacing: .06em;
 				text-transform: uppercase;
 				cursor: pointer;
 				user-select: none;
-				transition: border-color .18s ease, background .18s ease;
+				transition: border-color .16s ease, background .16s ease, color .16s ease;
 			}
 			.BambooGroveHud .BambooGroveWireframe {
 				position: static;
+				transform: none;
 			}
 			.BambooGroveWireframe:hover {
-				border-color: rgba(163, 230, 53, .62);
-				background: rgba(20, 36, 18, .82);
+				color: #ffffff;
+				background: rgba(255, 255, 255, .07);
 			}
 			.BambooGroveWireframe:focus-visible {
 				outline: 2px solid #a3e635;
 				outline-offset: 2px;
 			}
 			.BambooGroveWireframe[aria-pressed="true"] {
-				border-color: rgba(163, 230, 53, .78);
-				background: rgba(63, 114, 34, .46);
+				border-color: rgba(163, 230, 53, .55);
+				background: rgba(163, 230, 53, .2);
 				color: #fff;
 			}
 			.BambooGroveWireframe__dot {
-				width: 7px;
-				height: 7px;
+				width: 6px;
+				height: 6px;
 				border-radius: 50%;
-				background: rgba(163, 184, 148, .65);
-				transition: background .18s ease, box-shadow .18s ease;
+				background: rgba(163, 184, 148, .55);
+				transition: background .16s ease, box-shadow .16s ease;
 			}
 			.BambooGrovePartBtn[aria-pressed="true"] .BambooGroveWireframe__dot,
 			.BambooGroveWireframe[aria-pressed="true"] .BambooGroveWireframe__dot {
 				background: #a3e635;
-				box-shadow: 0 0 10px #a3e635;
+				box-shadow: 0 0 8px #a3e635;
 			}
 			.BambooGroveWireframe__key {
-				padding: 2px 5px;
-				border: 1px solid rgba(255, 255, 255, .24);
+				padding: 2px 4px;
+				border: 1px solid rgba(255, 255, 255, .18);
 				border-radius: 4px;
 				font: 700 9px/1 system-ui, sans-serif;
-				color: rgba(242, 250, 232, .74);
+				color: rgba(242, 250, 232, .66);
 			}
-			@media (max-width: 620px) {
-				.BambooGroveHud { top: calc(56px + var(--sait, 0px)); right: calc(8px + var(--sair, 0px)); left: 8px; }
-				.BambooGroveWireframe { top: calc(56px + var(--sait, 0px)); right: calc(8px + var(--sair, 0px)); height: 32px; padding: 0 10px; }
-				.BambooGrovePartBtn { height: 26px; padding: 0 8px; }
+			@media (max-width: 720px) {
+				.BambooGroveHud { top: calc(12px + var(--sait, 0px)); padding: 3px; gap: 2px; }
+				.BambooGrovePartBtn,
+				.BambooGroveWireframe { height: 27px; padding: 0 8px; font-size: 9px; }
 				.BambooGroveWireframe__key { display: none; }
 			}
 			@media (prefers-reduced-motion: reduce) {
@@ -763,7 +769,12 @@ class BambooGroveExample {
 		`
 		button.addEventListener( 'click', () => this.toggleWireframe() )
 
+		const divider = document.createElement( 'span' )
+		divider.className = 'BambooGroveDivider'
+		divider.setAttribute( 'aria-hidden', 'true' )
+
 		hudRoot.appendChild( partsGroup )
+		hudRoot.appendChild( divider )
 		hudRoot.appendChild( button )
 		document.body.appendChild( hudRoot )
 		this.hudRoot = hudRoot

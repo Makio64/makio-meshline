@@ -32,6 +32,7 @@ import stage from '@/makio/core/stage'
 import OrbitControl from '@/makio/three/controls/OrbitControl'
 import stage3d from '@/makio/three/stage3d'
 import { random, randomInt } from '@/makio/utils/random'
+import { createDemoHint } from '@/utils/demoHint'
 import { fitRoadControlsToSurface, measureRoadSurfaceClearance } from '@/utils/roadClearance'
 import { createRoadPaintNode, createRoadPaintUniforms, pinRoadPaintToControls } from '@/utils/roadPaint'
 import { planRoadPath } from '@/utils/roadPath'
@@ -371,6 +372,7 @@ class SurfaceRoadExample {
 		if ( !this.restoreSavedRoad() ) this.updateRoad()
 
 		this.addInteraction()
+		this.hint = createDemoHint( 'Drag nodes to sculpt · Shift height · Alt bank', { accent: '#ff9f43', hideAfter: 10000 } )
 		stage.onUpdate.add( this.update )
 		stage.onResize.add( this.onResize )
 	}
@@ -1873,6 +1875,8 @@ class SurfaceRoadExample {
 		stage.onUpdate.remove( this.update )
 		stage.onResize.remove( this.onResize )
 		this.removeInteraction()
+		this.hint?.remove()
+		this.hint = null
 
 		for ( const ribbon of [this.road, this.debugPolygon, this.debugPath] ) {
 			if ( !ribbon ) continue

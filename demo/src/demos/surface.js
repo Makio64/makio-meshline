@@ -361,75 +361,78 @@ class SurfaceExample {
 				left: calc(18px + var(--sail, 0px));
 				top: calc(18px + var(--sait, 0px));
 				z-index: 20;
-				display: grid;
-				gap: 8px;
-				max-width: min(330px, calc(100vw - 84px));
-				padding: 13px 15px;
-				border: 1px solid rgba(148, 203, 255, .18);
-				border-radius: 14px;
-				background: rgba(4, 11, 22, .66);
-				box-shadow: 0 18px 50px rgba(0, 0, 0, .24);
-				backdrop-filter: blur(12px);
-				color: rgba(235, 246, 255, .78);
-				font: 500 11px/1.35 system-ui, sans-serif;
-				text-align: left;
+				display: inline-flex;
+				flex-wrap: wrap;
+				align-items: center;
+				gap: 10px;
+				min-height: 36px;
+				max-width: min(440px, calc(100vw - 96px));
+				padding: 6px 14px;
+				border: 1px solid rgba(255, 255, 255, .1);
+				border-radius: 999px;
+				background: rgba(8, 9, 12, .7);
+				box-shadow: 0 12px 30px rgba(0, 0, 0, .28);
+				backdrop-filter: blur(14px);
+				-webkit-backdrop-filter: blur(14px);
+				color: rgba(244, 245, 247, .82);
+				font: 600 10px/1.25 'Inter', system-ui, -apple-system, sans-serif;
+				letter-spacing: .05em;
+				text-transform: uppercase;
 				pointer-events: none;
 			}
-			.SurfaceStudioHud__title {
-				color: #fff;
-				font-size: 10px;
-				font-weight: 800;
-				letter-spacing: .14em;
-				text-transform: uppercase;
-			}
-			.SurfaceStudioHud__row { display: flex; gap: 8px; align-items: baseline; }
-			.SurfaceStudioHud__dot { width: 7px; height: 7px; flex: none; border-radius: 50%; box-shadow: 0 0 12px currentColor; }
+			.SurfaceStudioHud__title { display: none; }
+			.SurfaceStudioHud__row { display: inline-flex; gap: 6px; align-items: center; }
+			.SurfaceStudioHud__dot { width: 6px; height: 6px; flex: none; border-radius: 50%; box-shadow: 0 0 10px currentColor; }
 			.SurfaceStudioHud__row:nth-child(2) .SurfaceStudioHud__dot { color: #73e2ff; background: currentColor; }
 			.SurfaceStudioHud__row:nth-child(3) .SurfaceStudioHud__dot { color: #ff70b6; background: currentColor; }
-			.SurfaceStudioHud strong { color: rgba(255, 255, 255, .96); font-weight: 720; }
+			.SurfaceStudioHud strong { color: rgba(255, 255, 255, .94); font-weight: 680; }
+			.SurfaceStudioHud__row span { display: none; }
 			.SurfaceStudioWireframe {
 				appearance: none;
 				position: fixed;
-				top: calc(16px + var(--sait, 0px));
-				right: calc(66px + var(--sair, 0px));
+				top: calc(18px + var(--sait, 0px));
+				left: 50%;
+				transform: translateX(-50%);
 				z-index: 20;
 				display: inline-flex;
 				align-items: center;
-				gap: 8px;
-				height: 36px;
-				padding: 0 12px;
-				border: 1px solid rgba(148, 203, 255, .24);
+				gap: 6px;
+				height: 38px;
+				padding: 4px 14px;
+				border: 1px solid rgba(255, 255, 255, .12);
 				border-radius: 999px;
-				background: rgba(4, 11, 22, .68);
-				box-shadow: 0 12px 32px rgba(0, 0, 0, .26);
-				backdrop-filter: blur(12px);
-				color: rgba(240, 248, 255, .92);
-				font: 700 10px/1 system-ui, sans-serif;
-				letter-spacing: .08em;
+				background: rgba(8, 9, 12, .72);
+				box-shadow: 0 12px 30px rgba(0, 0, 0, .3);
+				backdrop-filter: blur(14px);
+				-webkit-backdrop-filter: blur(14px);
+				color: rgba(244, 245, 247, .86);
+				font: 650 11px/1 'Inter', system-ui, -apple-system, sans-serif;
+				letter-spacing: .06em;
 				text-transform: uppercase;
 				cursor: pointer;
 				user-select: none;
-				transition: border-color .18s ease, background .18s ease;
+				transition: border-color .16s ease, background .16s ease, color .16s ease;
 			}
 			.SurfaceStudioWireframe:hover {
-				border-color: rgba(115, 226, 255, .58);
-				background: rgba(10, 22, 40, .82);
+				border-color: rgba(115, 226, 255, .48);
+				background: rgba(16, 24, 38, .84);
+				color: #ffffff;
 			}
 			.SurfaceStudioWireframe:focus-visible {
 				outline: 2px solid #73e2ff;
 				outline-offset: 2px;
 			}
 			.SurfaceStudioWireframe[aria-pressed="true"] {
-				border-color: rgba(115, 226, 255, .72);
-				background: rgba(34, 152, 214, .24);
+				border-color: rgba(115, 226, 255, .64);
+				background: rgba(34, 152, 214, .22);
 				color: #fff;
 			}
 			.SurfaceStudioWireframe__dot {
-				width: 7px;
-				height: 7px;
+				width: 6px;
+				height: 6px;
 				border-radius: 50%;
 				background: rgba(148, 163, 184, .65);
-				transition: background .18s ease, box-shadow .18s ease;
+				transition: background .16s ease, box-shadow .16s ease;
 			}
 			.SurfaceStudioWireframe[aria-pressed="true"] .SurfaceStudioWireframe__dot {
 				background: #73e2ff;
@@ -437,15 +440,14 @@ class SurfaceExample {
 			}
 			.SurfaceStudioWireframe__key {
 				padding: 2px 5px;
-				border: 1px solid rgba(255, 255, 255, .24);
+				border: 1px solid rgba(255, 255, 255, .2);
 				border-radius: 4px;
 				font: 700 9px/1 system-ui, sans-serif;
-				color: rgba(235, 246, 255, .72);
+				color: rgba(235, 246, 255, .68);
 			}
-			@media (max-width: 620px) {
-				.SurfaceStudioHud { left: calc(10px + var(--sail, 0px)); top: calc(10px + var(--sait, 0px)); padding: 10px 12px; }
-				.SurfaceStudioHud__row span:last-child { display: none; }
-				.SurfaceStudioWireframe { top: calc(56px + var(--sait, 0px)); right: calc(8px + var(--sair, 0px)); height: 32px; padding: 0 10px; }
+			@media (max-width: 720px) {
+				.SurfaceStudioHud { left: calc(12px + var(--sail, 0px)); top: calc(58px + var(--sait, 0px)); min-height: 30px; padding: 4px 11px; font-size: 9px; }
+				.SurfaceStudioWireframe { top: calc(12px + var(--sait, 0px)); height: 34px; padding: 0 12px; font-size: 10px; }
 				.SurfaceStudioWireframe__key { display: none; }
 			}
 			@media (prefers-reduced-motion: reduce) {

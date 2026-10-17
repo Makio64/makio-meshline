@@ -163,38 +163,51 @@ class DrawLinesExample {
 		this.instructionStyle.textContent = `
 			.DrawLinesHud {
 				position: fixed;
-				top: calc(16px + var(--sait, 0px));
-				left: calc(16px + var(--sail, 0px));
+				top: calc(18px + var(--sait, 0px));
+				left: 50%;
+				transform: translateX(-50%);
 				z-index: 20;
-				display: flex;
+				display: inline-flex;
 				align-items: center;
-				gap: 8px;
-				pointer-events: none;
-				user-select: none;
-			}
-			.DrawLinesClear,
-			.DrawLinesHint {
-				padding: 8px 11px;
-				border: 1px solid rgba(118, 255, 178, .28);
+				padding: 4px;
+				border: 1px solid rgba(255, 255, 255, .12);
 				border-radius: 999px;
-				background: rgba(3, 12, 8, .7);
-				box-shadow: 0 8px 28px rgba(0, 0, 0, .28);
-				backdrop-filter: blur(8px);
-				font: 650 11px/1 system-ui, sans-serif;
-				letter-spacing: .06em;
-				text-transform: uppercase;
-				color: rgba(224, 255, 235, .9);
+				background: rgba(8, 12, 10, .72);
+				box-shadow: 0 12px 30px rgba(0, 0, 0, .28);
+				backdrop-filter: blur(14px);
+				-webkit-backdrop-filter: blur(14px);
+				user-select: none;
 			}
 			.DrawLinesClear {
 				appearance: none;
+				display: inline-flex;
+				align-items: center;
+				gap: 6px;
+				min-height: 30px;
+				padding: 0 12px;
+				border: 1px solid rgba(118, 255, 178, .34);
+				border-radius: 999px;
+				background: rgba(118, 255, 178, .12);
+				font: 650 11px/1 'Inter', system-ui, -apple-system, sans-serif;
+				letter-spacing: .06em;
+				text-transform: uppercase;
+				color: rgba(232, 255, 242, .94);
 				pointer-events: auto;
 				cursor: pointer;
-				transition: border-color .18s ease, background .18s ease, color .18s ease, transform .18s ease;
+				transition: border-color .16s ease, background .16s ease, color .16s ease, transform .16s ease;
+			}
+			.DrawLinesClear::before {
+				content: '';
+				width: 6px;
+				height: 6px;
+				border-radius: 50%;
+				background: #76ffb2;
+				box-shadow: 0 0 8px #76ffb2;
 			}
 			.DrawLinesClear:hover,
 			.DrawLinesClear:focus-visible {
-				border-color: rgba(118, 255, 178, .62);
-				background: rgba(10, 32, 22, .86);
+				border-color: rgba(118, 255, 178, .68);
+				background: rgba(118, 255, 178, .22);
 				color: #ffffff;
 				outline: none;
 			}
@@ -206,17 +219,53 @@ class DrawLinesExample {
 				transform: scale(.97);
 			}
 			.DrawLinesHint {
+				position: fixed;
+				top: calc(18px + var(--sait, 0px));
+				left: calc(18px + var(--sail, 0px));
+				z-index: 20;
+				display: inline-flex;
+				align-items: center;
+				gap: 8px;
+				min-height: 36px;
+				padding: 6px 14px;
+				border: 1px solid rgba(255, 255, 255, .1);
+				border-radius: 999px;
+				background: rgba(8, 9, 12, .7);
+				box-shadow: 0 12px 30px rgba(0, 0, 0, .28);
+				backdrop-filter: blur(14px);
+				-webkit-backdrop-filter: blur(14px);
+				font: 600 10px/1.25 'Inter', system-ui, -apple-system, sans-serif;
+				letter-spacing: .06em;
+				text-transform: uppercase;
+				color: rgba(244, 245, 247, .88);
+				pointer-events: none;
+				user-select: none;
 				transition: opacity .24s ease, transform .24s ease;
 			}
-			@media (max-width: 600px) {
+			.DrawLinesHint::before {
+				content: '';
+				width: 6px;
+				height: 6px;
+				border-radius: 50%;
+				background: #76ffb2;
+				box-shadow: 0 0 10px #76ffb2;
+			}
+			@media (max-width: 720px) {
 				.DrawLinesHud {
-					top: calc(10px + var(--sait, 0px));
-					left: calc(10px + var(--sail, 0px));
-					gap: 6px;
+					top: calc(12px + var(--sait, 0px));
+					padding: 3px;
 				}
-				.DrawLinesClear,
-				.DrawLinesHint {
+				.DrawLinesClear {
+					min-height: 27px;
+					padding: 0 10px;
 					font-size: 10px;
+				}
+				.DrawLinesHint {
+					top: calc(58px + var(--sait, 0px));
+					left: calc(12px + var(--sail, 0px));
+					min-height: 30px;
+					padding: 4px 11px;
+					font-size: 9px;
 				}
 			}
 			@media (prefers-reduced-motion: reduce) {
@@ -241,8 +290,8 @@ class DrawLinesExample {
 		this.instructionElement.className = 'DrawLinesHint'
 		this.instructionElement.textContent = 'Drag to add your own stroke'
 
-		this.hudElement.append( this.clearButton, this.instructionElement )
-		document.body.appendChild( this.hudElement )
+		this.hudElement.append( this.clearButton )
+		document.body.append( this.hudElement, this.instructionElement )
 	}
 
 	stopPointerPropagation = ( event ) => {

@@ -1,55 +1,40 @@
 <template>
-	<aside
-		class="GpuPathHud"
-		:class="{ 'GpuPathHud--collapsed': !expanded }"
-		aria-label="GPU path controls"
-		@pointerdown.stop
-		@touchstart.stop
-		@wheel.stop
-	>
-		<header class="GpuPathHud__header">
-			<span class="GpuPathHud__title">
-				<i :class="`GpuPathHud__dot GpuPathHud__dot--${badgeTone}`" aria-hidden="true" />
-				GPU Path
-			</span>
-			<button
-				class="GpuPathHud__collapse"
-				type="button"
-				:aria-expanded="expanded"
-				:aria-label="expanded ? 'Collapse GPU path controls' : 'Expand GPU path controls'"
-				@click="expanded = !expanded"
-			>{{ expanded ? 'Hide' : 'Show' }}</button>
-		</header>
+	<div class="GpuPathOverlay">
+		<div class="GpuPathInfo" aria-live="polite">
+			<i :class="`GpuPathHud__dot GpuPathHud__dot--${badgeTone}`" aria-hidden="true" />
+			<span><strong>{{ formatCount( ui.pointCount ) }}</strong> pts</span>
+			<span class="GpuPathInfo__sep" aria-hidden="true">·</span>
+			<span><strong>{{ segmentSummary }}</strong> segs</span>
+			<span class="GpuPathInfo__sep" aria-hidden="true">·</span>
+			<strong>{{ badgeLabel }}</strong>
+			<template v-if="ui.mode === 'gpu-topology'">
+				<span class="GpuPathInfo__sep" aria-hidden="true">·</span>
+				<span>{{ ui.joinType }} / {{ ui.capType }}</span>
+			</template>
+		</div>
 
-		<div v-if="expanded" class="GpuPathHud__body">
-			<div class="GpuPathHud__stats" aria-live="polite">
-				<div>
-					<span>Points</span>
-					<strong>{{ formatCount( ui.pointCount ) }}</strong>
-				</div>
-				<div>
-					<span>Segments</span>
-					<strong>{{ segmentSummary }}</strong>
-				</div>
-				<div>
-					<span>Backend</span>
-					<strong>{{ badgeLabel }}</strong>
-				</div>
-			</div>
-
+		<aside
+			class="GpuPathHud"
+			aria-label="GPU path controls"
+			@pointerdown.stop
+			@touchstart.stop
+			@wheel.stop
+		>
 			<div class="GpuPathHud__modes" role="group" aria-label="GPU path mode">
 				<button
 					v-for="mode in modes"
 					:key="mode.key"
 					type="button"
+					class="GpuPathHud__btn"
 					:aria-pressed="mode.key === ui.mode"
 					@click="api.setMode( mode.key )"
-				>{{ mode.label }}</button>
+				>
+					<span class="GpuPathHud__btnDot" aria-hidden="true" />
+					<span>{{ mode.label }}</span>
+				</button>
 			</div>
 
-			<p v-if="ui.mode === 'gpu-topology'" class="GpuPathHud__advancedMode">
-				{{ ui.joinType }} joins · {{ ui.capType }} caps
-			</p>
+			<span class="GpuPathHud__divider" aria-hidden="true" />
 
 			<button
 				class="GpuPathHud__wireframe"
@@ -63,10 +48,8 @@
 				</span>
 				<kbd>W</kbd>
 			</button>
-
-			<p v-if="ui.backend === 'cpu-fallback'" class="GpuPathHud__fallbackReason">{{ ui.reason }}</p>
-		</div>
-	</aside>
+		</aside>
+	</div>
 </template>
 
 <script>
@@ -77,11 +60,6 @@ export default {
 	inheritAttrs: false,
 	props: {
 		api: { type: Object, required: true },
-	},
-	data() {
-		return {
-			expanded: true,
-		}
 	},
 	computed: {
 		ui() {
@@ -128,49 +106,65 @@ export default {
 </script>
 
 <style lang="stylus" scoped>
-.GpuPathHud
+.GpuPathInfo
 	position fixed
-	top 18px
-	left 18px
-	z-index 30
-	box-sizing border-box
-	width 256px
-	max-width calc(100vw - 92px)
-	padding 12px
-	border 1px solid rgba(114, 225, 255, .2)
-	border-radius 14px
-	background linear-gradient(145deg, rgba(7, 15, 28, .92), rgba(4, 8, 18, .84))
-	box-shadow 0 18px 48px rgba(0, 0, 0, .38), inset 0 1px rgba(255, 255, 255, .07)
+	top calc(18px + var(--sait, 0px))
+	left calc(18px + var(--sail, 0px))
+	z-index 25
+	display inline-flex
+	align-items center
+	gap 7px
+	min-height 36px
+	max-width unquote( 'min(440px, calc(100vw - 96px))' )
+	padding 6px 14px
+	border 1px solid rgba(255, 255, 255, .1)
+	border-radius 999px
+	background rgba(8, 9, 12, .7)
+	box-shadow 0 12px 30px rgba(0, 0, 0, .28)
 	backdrop-filter blur(14px)
 	-webkit-backdrop-filter blur(14px)
-	font 500 11px/1.35 system-ui, -apple-system, sans-serif
-	text-align left
+	font 600 10px/1.2 'Inter', system-ui, -apple-system, sans-serif
+	font-variant-numeric tabular-nums
+	letter-spacing .05em
+	text-transform uppercase
+	color rgba(244, 245, 247, .74)
+	pointer-events none
+	user-select none
+
+	strong
+		color #fff
+		font-weight 700
+
+	&__sep
+		opacity .4
+
+.GpuPathHud
+	position fixed
+	top calc(18px + var(--sait, 0px))
+	left 50%
+	transform translateX(-50%)
+	z-index 30
+	display inline-flex
+	align-items center
+	gap 4px
+	padding 4px
+	border 1px solid rgba(255, 255, 255, .12)
+	border-radius 999px
+	background rgba(8, 9, 12, .72)
+	box-shadow 0 12px 30px rgba(0, 0, 0, .32)
+	backdrop-filter blur(14px)
+	-webkit-backdrop-filter blur(14px)
+	font 650 11px/1 'Inter', system-ui, -apple-system, sans-serif
+	letter-spacing .06em
+	text-transform uppercase
 	color #f3f8ff
 	user-select none
 
-	&--collapsed
-		width auto
-
-	&__header
-		display flex
-		align-items center
-		justify-content space-between
-		gap 12px
-
-	&__title
-		display inline-flex
-		align-items center
-		gap 8px
-		font-size 11px
-		font-weight 750
-		letter-spacing .08em
-		text-transform uppercase
-		color #e8f6ff
-
 	&__dot
-		width 7px
-		height 7px
+		width 6px
+		height 6px
 		border-radius 50%
+		flex-shrink 0
 
 		&--gpu
 			background #48ecc4
@@ -183,141 +177,100 @@ export default {
 		&--loading
 			background #778896
 
-	&__collapse
-		appearance none
-		padding 4px 8px
-		border 1px solid rgba(255, 255, 255, .13)
-		border-radius 7px
-		background rgba(255, 255, 255, .05)
-		font inherit
-		font-size 10px
-		color rgba(255, 255, 255, .72)
-		cursor pointer
-
-		&:hover,
-		&:focus-visible
-			border-color rgba(104, 225, 255, .58)
-			color #fff
-
-		&:focus-visible
-			outline 2px solid #6de4ff
-			outline-offset 2px
-
-	&__body
-		margin-top 10px
-
-	&__stats
-		display grid
-		gap 5px
-		padding 8px 10px
-		border 1px solid rgba(255, 255, 255, .08)
-		border-radius 10px
-		background rgba(1, 6, 13, .42)
-
-		div
-			display flex
-			align-items baseline
-			justify-content space-between
-			gap 8px
-
-		span
-			font-size 10px
-			color rgba(187, 210, 222, .68)
-
-		strong
-			font-size 11px
-			font-weight 700
-			font-variant-numeric tabular-nums
-			color #f8fdff
-
 	&__modes
-		display grid
-		grid-template-columns repeat(3, minmax(0, 1fr))
-		gap 4px
-		margin-top 8px
-		padding 3px
-		border 1px solid rgba(255, 255, 255, .09)
-		border-radius 9px
-		background rgba(0, 0, 0, .24)
-
-		button
-			appearance none
-			padding 6px 4px
-			border 1px solid transparent
-			border-radius 6px
-			background transparent
-			font inherit
-			font-size 10px
-			font-weight 700
-			text-align center
-			color rgba(229, 240, 247, .64)
-			cursor pointer
-			transition border-color .16s ease, background .16s ease, color .16s ease
-
-			&:hover,
-			&:focus-visible
-				color #fff
-				background rgba(255, 255, 255, .07)
-
-			&:focus-visible
-				outline 2px solid #6de4ff
-				outline-offset 1px
-
-			&[aria-pressed='true']
-				border-color rgba(74, 221, 255, .38)
-				background rgba(25, 170, 207, .17)
-				box-shadow inset 0 1px rgba(255, 255, 255, .07)
-				color #baf4ff
-
-	&__advancedMode
-		margin 7px 0 0
-		padding 5px 8px
-		border-radius 7px
-		background rgba(129, 94, 229, .15)
-		font-size 10px
-		color #d9ccff
-
-	&__wireframe
-		appearance none
-		display flex
+		display inline-flex
 		align-items center
-		justify-content space-between
-		width 100%
-		margin-top 8px
-		padding 7px 10px
-		border 1px solid rgba(255, 255, 255, .11)
-		border-radius 9px
-		background rgba(255, 255, 255, .04)
+		gap 3px
+
+	&__btn
+		appearance none
+		display inline-flex
+		align-items center
+		gap 6px
+		min-height 30px
+		padding 0 12px
+		border 1px solid transparent
+		border-radius 999px
+		background transparent
 		font inherit
-		font-size 11px
-		font-weight 650
-		color rgba(235, 245, 252, .84)
+		letter-spacing inherit
+		text-transform inherit
+		color rgba(244, 245, 247, .68)
 		cursor pointer
 		transition border-color .16s ease, background .16s ease, color .16s ease
 
 		&:hover,
 		&:focus-visible
-			border-color rgba(104, 225, 255, .45)
 			color #fff
+			background rgba(255, 255, 255, .07)
 
 		&:focus-visible
 			outline 2px solid #6de4ff
-			outline-offset 1px
+			outline-offset 2px
 
 		&[aria-pressed='true']
 			border-color rgba(74, 221, 255, .48)
-			background rgba(25, 170, 207, .18)
-			color #baf4ff
+			background rgba(25, 170, 207, .2)
+			color #fff
+
+			.GpuPathHud__btnDot
+				background #43e9ff
+				box-shadow 0 0 8px #43e9ff
+				opacity 1
+
+	&__btnDot
+		width 6px
+		height 6px
+		border-radius 50%
+		background currentColor
+		opacity .5
+
+	&__divider
+		width 1px
+		height 16px
+		margin 0 2px
+		background rgba(255, 255, 255, .12)
+
+	&__wireframe
+		appearance none
+		display inline-flex
+		align-items center
+		gap 7px
+		min-height 30px
+		padding 0 11px
+		border 1px solid transparent
+		border-radius 999px
+		background transparent
+		font inherit
+		letter-spacing inherit
+		text-transform inherit
+		color rgba(244, 245, 247, .74)
+		cursor pointer
+		transition border-color .16s ease, background .16s ease, color .16s ease
+
+		&:hover,
+		&:focus-visible
+			color #fff
+			background rgba(255, 255, 255, .07)
+
+		&:focus-visible
+			outline 2px solid #6de4ff
+			outline-offset 2px
+
+		&[aria-pressed='true']
+			border-color rgba(74, 221, 255, .52)
+			background rgba(25, 170, 207, .22)
+			color #fff
 
 			.GpuPathHud__wireframeLabel i
 				background #43e9ff
 				box-shadow 0 0 8px rgba(67, 233, 255, .9)
 
 		kbd
-			padding 2px 5px
-			border 1px solid rgba(255, 255, 255, .14)
-			border-radius 5px
-			background rgba(0, 0, 0, .28)
+			padding 2px 4px
+			border 1px solid rgba(255, 255, 255, .16)
+			border-radius 4px
+			background rgba(0, 0, 0, .25)
 			font-family ui-monospace, SFMono-Regular, Menlo, monospace
 			font-size 9px
 			font-weight 600
@@ -326,33 +279,38 @@ export default {
 	&__wireframeLabel
 		display inline-flex
 		align-items center
-		gap 7px
+		gap 6px
 
 		i
-			width 7px
-			height 7px
+			width 6px
+			height 6px
 			border-radius 50%
-			background rgba(255, 255, 255, .24)
+			background rgba(255, 255, 255, .32)
 			transition background .16s ease, box-shadow .16s ease
 
-	&__fallbackReason
-		margin 8px 0 0
-		padding 6px 8px
-		border 1px solid rgba(255, 179, 71, .2)
-		border-radius 7px
-		background rgba(255, 151, 37, .08)
+@media (max-width: 760px)
+	.GpuPathInfo
+		top calc(58px + var(--sait, 0px))
+		left calc(12px + var(--sail, 0px))
+		min-height 30px
+		padding 4px 11px
 		font-size 9px
-		line-height 1.4
-		color rgba(255, 218, 167, .82)
 
-@media (max-width: 620px)
 	.GpuPathHud
-		top 60px
-		left 8px
-		width 236px
+		top calc(12px + var(--sait, 0px))
+		padding 3px
+		font-size 10px
+
+		&__btn,
+		&__wireframe
+			min-height 27px
+			padding 0 9px
+
+		kbd
+			display none
 
 @media (prefers-reduced-motion: reduce)
-	.GpuPathHud__modes button,
+	.GpuPathHud__btn,
 	.GpuPathHud__wireframe,
 	.GpuPathHud__wireframeLabel i
 		transition none
