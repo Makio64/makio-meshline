@@ -7,23 +7,7 @@ import { WebGPURenderer } from 'three/webgpu'
 import { MeshLine } from './MeshLine.jsx'
 
 const circlePoints = circlePositions( 64, 3 )
-const roadPoints = new Float32Array( [
-	-4.5,
-	-2.2,
-	0,
-	-2.4,
-	-1.55,
-	0,
-	-0.5,
-	-2.35,
-	0,
-	1.8,
-	-1.45,
-	0,
-	4.5,
-	-2.05,
-	0,
-] )
+const roadPoints = new Float32Array( [-4.5, -2.2, 0, -2.4, -1.55, 0, -0.5, -2.35, 0, 1.8, -1.45, 0, 4.5, -2.05, 0] )
 const roadSurface = {
 	frame: 'fixed-up',
 	up: [0, 0, 1],
@@ -95,6 +79,7 @@ export default function App() {
 	return (
 		<Canvas
 			camera={{ position: [0, 0, 10] }}
+			dpr={[1, 2]}
 			gl={createRenderer}
 		>
 			<ambientLight intensity={0.9} />

@@ -37,7 +37,7 @@ const PAGE_DESCRIPTIONS = {
   'examples/compute-curves.md': 'Render autonomous WebGPU storage-buffer curves with MeshLineCompute, glowing dashes, textures, and mouse-driven flow forces.',
   'examples/vertex-colors.md': 'Color each point in a Makio MeshLine with per-vertex RGB values for gradients, data-driven color ramps, and stylized trails.',
   'examples/shadow.md': 'See how Makio MeshLine lines cast shadows in Three.js, including dashed shadow behavior, spotlights, and custom shadow appearance.',
-  'examples/road.md': 'Build a textured world-space road from a Float32Array path with stable surface frames, banking, distance UVs, and true variable topology.',
+  'examples/road.md': 'Explore an adaptive 3D road planner with authored XYZ controls, elevation, per-point banking, strict tessellation budgets, transport frames, and distance UVs.',
   'examples/bamboo.md': 'Build a procedural bamboo grove with Makio MeshLine instancing, custom TSL transforms, and shadow-casting line templates.',
   'examples/ricefield.md': 'Use Makio MeshLine instancing to render thousands of stylized grass or rice blades with small line templates and per-instance transforms.',
   'examples/venus-and-david.md': 'Morph one instanced MeshLine layout between sampled sculpture positions using TSL attributes and a single interpolation uniform.',
@@ -100,16 +100,20 @@ function createHomeSchema( description ) {
     '@context': 'https://schema.org',
     '@type': 'SoftwareSourceCode',
     name: SITE_TITLE,
+    version: '2.0.0',
     description,
     url: SITE_URL,
     codeRepository: REPO_URL,
-    programmingLanguage: 'JavaScript',
-    runtimePlatform: 'WebGPU, WebGL2',
+    downloadUrl: 'https://www.npmjs.com/package/makio-meshline',
+    discussionUrl: DEMO_URL,
+    programmingLanguage: ['JavaScript', 'TypeScript'],
+    runtimePlatform: 'Three.js WebGPU, WebGL2',
     license: `${REPO_URL}/blob/main/LICENSE`,
     image: SITE_IMAGE,
     author: {
       '@type': 'Person',
       name: 'David Ronai',
+      alternateName: 'Makio64',
       url: 'https://github.com/Makio64'
     },
     keywords: [
@@ -120,8 +124,36 @@ function createHomeSchema( description ) {
       'webgpu',
       'webgl2',
       'tsl',
-      'instancing'
+      'instancing',
+      'road surface',
+      'ribbon',
+      'contour isobars',
+      'gpu culling',
+      'storage buffer',
+      'react-three-fiber',
+      'vue'
     ]
+  } )
+}
+
+function createArticleSchema( title, description, canonicalUrl ) {
+  return JSON.stringify( {
+    '@context': 'https://schema.org',
+    '@type': 'TechArticle',
+    headline: title,
+    description,
+    url: canonicalUrl,
+    image: SITE_IMAGE,
+    author: {
+      '@type': 'Person',
+      name: 'David Ronai',
+      url: 'https://github.com/Makio64'
+    },
+    isPartOf: {
+      '@type': 'WebSite',
+      name: SITE_TITLE,
+      url: SITE_URL
+    }
   } )
 }
 
@@ -137,11 +169,13 @@ export default defineConfig( {
   },
   head: [
     ['meta', { name: 'author', content: 'David Ronai (Makio64)' }],
-    ['meta', { name: 'keywords', content: 'three.js meshline, wide lines, thick lines, webgpu, webgl2, tsl, instancing, dashed lines, gradient lines' }],
+    ['meta', { name: 'keywords', content: 'three.js meshline, wide lines, thick lines, webgpu, webgl2, tsl, instancing, dashed lines, gradient lines, road surface, ribbon, isobars, contour lines, gpu culling, react-three-fiber, vue' }],
     ['meta', { name: 'theme-color', content: '#101216' }],
     ['meta', { name: 'twitter:site', content: X_HANDLE }],
     ['meta', { property: 'og:site_name', content: SITE_TITLE }],
-    ['meta', { property: 'og:locale', content: 'en_US' }]
+    ['meta', { property: 'og:locale', content: 'en_US' }],
+    ['link', { rel: 'alternate', type: 'text/plain', href: `${SITE_URL}/llms.txt`, title: 'LLM Context Summary' }],
+    ['link', { rel: 'alternate', type: 'text/plain', href: `${SITE_URL}/llms-full.txt`, title: 'LLM Complete Reference' }]
   ],
   transformPageData( pageData ) {
     return {
@@ -162,6 +196,7 @@ export default defineConfig( {
       ['meta', { property: 'og:description', content: description }],
       ['meta', { property: 'og:url', content: canonicalUrl }],
       ['meta', { property: 'og:image', content: SITE_IMAGE }],
+      ['meta', { property: 'og:image:alt', content: `${SITE_TITLE} — TSL-powered wide lines and road surfaces for Three.js WebGPU & WebGL2` }],
       ['meta', { property: 'og:image:type', content: 'image/svg+xml' }],
       ['meta', { property: 'og:image:width', content: '1200' }],
       ['meta', { property: 'og:image:height', content: '630' }],
@@ -169,11 +204,14 @@ export default defineConfig( {
       ['meta', { name: 'twitter:creator', content: X_HANDLE }],
       ['meta', { name: 'twitter:title', content: title }],
       ['meta', { name: 'twitter:description', content: description }],
-      ['meta', { name: 'twitter:image', content: SITE_IMAGE }]
+      ['meta', { name: 'twitter:image', content: SITE_IMAGE }],
+      ['meta', { name: 'twitter:image:alt', content: `${SITE_TITLE} — TSL-powered wide lines and road surfaces for Three.js WebGPU & WebGL2` }]
     ]
 
     if ( isHomePage ) {
       head.push( ['script', { type: 'application/ld+json' }, createHomeSchema( description )] )
+    } else if ( !pageData.isNotFound ) {
+      head.push( ['script', { type: 'application/ld+json' }, createArticleSchema( title, description, canonicalUrl )] )
     }
 
     return head

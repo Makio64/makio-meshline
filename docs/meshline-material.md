@@ -74,8 +74,9 @@ const material = new MeshLineNodeMaterial({
 
 ```js
 import { lineCoord } from 'makio-meshline'
+import { Fn } from 'three/tsl'
 
-line.fragmentColorFn( color => color.mul( lineCoord.y.abs().oneMinus() ) )
+line.fragmentColorFn( Fn( ( [color] ) => color.mul( lineCoord.y.abs().oneMinus() ) ) )
 ```
 
 | Channel | Meaning |
@@ -195,6 +196,18 @@ const material = new MeshLineNodeMaterial({
 });
 ```
 
+### Fog
+
+Lines follow `scene.fog` (`Fog` or `FogExp2`) like any mesh, including lines placed by `positionFn` or `gpuPositionNode`: every instance and every GPU-computed point fades by its own view depth, not by its template's. The vertex stage passes that depth to the fog in a single varying, declared only while the scene has fog and `material.fog` is `true`, so unfogged lines pay nothing. Set `line.material.fog = false` to keep a line out of the fog.
+
+The depth is taken after `positionFn` / `gpuPositionNode` and before `vertexFn`, which works in clip space. A custom `scene.fogNode` that also reads `positionWorld`, such as `exponentialHeightFogFactor`, gets its height from the same placed line (see [Position Accessors](#position-accessors)).
+
+### Position Accessors
+
+Three derives `positionLocal`, `positionWorld` and `positionWorldDirection` from the geometry's `position` attribute, as well as the vertex-stage `positionView` behind hardware clip distances, and before r183 the fragment-stage one. A line placed by `positionFn` or `gpuPositionNode` only uses that attribute as a template, so the material points these accessors, and `positionPrevious` for motion vectors, at the placed line instead. Fragment hooks such as `fragmentColorFn` or `discardFn`, a custom `scene.fogNode`, clipping planes and TRAA or motion blur all see where each instance and GPU-computed point is drawn.
+
+The value is the centerline after `positionFn` / `gpuPositionNode` and before `vertexFn`, so it is constant across the stroke's width. From r183, three rebuilds the fragment-stage `positionView` from the emitted clip position, which also includes the stroke offset. Only builds whose shaders read one of these accessors compute them; other lines pay nothing. `positionGeometry` always returns the raw template.
+
 
 ## Usage Examples
 
@@ -257,34 +270,34 @@ For detailed hook examples with complete code, see [Material Hooks for Custom Ef
 
 ### Hook Function Signatures
 
-All hook functions receive relevant parameters and should return appropriate values:
+Wrap hooks with `Fn( ( [arg1, arg2, ...] ) => ... )` from `'three/tsl'` (note the array destructuring in the parameter list):
 
 ```typescript
 // Position hooks
-positionFn: (position: Node, progress: Node) => Node<vec3>
-previousFn: (position: Node, progress: Node) => Node<vec3>
-nextFn: (position: Node, progress: Node) => Node<vec3>
+positionFn: Fn( ( [position, progress] ) => Node<vec3> )
+previousFn: Fn( ( [position, progress] ) => Node<vec3> )
+nextFn: Fn( ( [position, progress] ) => Node<vec3> )
 
 // Width/Normal hooks
-widthFn: (width: Node, progress: Node, side: Node) => Node<float>
-normalFn: (normal: Node, dir: Node, dir1: Node, dir2: Node, progress: Node, side: Node) => Node<vec4>
+widthFn: Fn( ( [width, progress, side] ) => Node<float> )
+normalFn: Fn( ( [normal, dir, dir1, dir2, progress, side] ) => Node<vec4> )
 
 // Color hooks
-colorFn: (color: Node, progress: Node, side: Node) => Node<vec4>
-gradientFn: (gradientFactor: Node, side: Node) => Node<float>
-fragmentColorFn: (color: Node, uv: Node, progress: Node, side: Node) => Node<vec4>
+colorFn: Fn( ( [color, progress, side] ) => Node<vec4> )
+gradientFn: Fn( ( [gradientFactor, side] ) => Node<float> )
+fragmentColorFn: Fn( ( [color, uv, progress, side] ) => Node<vec4> )
 
 // Alpha hooks
-opacityFn: (alpha: Node, progress: Node, side: Node) => Node<float>
-fragmentAlphaFn: (alpha: Node, uv: Node, progress: Node, side: Node) => Node<float>
+opacityFn: Fn( ( [alpha, progress, side] ) => Node<float> )
+fragmentAlphaFn: Fn( ( [alpha, uv, progress, side] ) => Node<float> )
 
 // UV/Dash hooks
-uvFn: (uv: Node, progress: Node, side: Node) => Node<vec2>
-dashFn: (cyclePosition: Node, progress: Node, side: Node) => Node<float>
+uvFn: Fn( ( [uv, progress, side] ) => Node<vec2> )
+dashFn: Fn( ( [cyclePosition, progress, side] ) => Node<float> )
 
 // Control hooks
-vertexFn: (finalPosition: Node, normal: Node, progress: Node, side: Node) => Node<vec4>
-discardFn: (progress: Node, side: Node, uv: Node) => Node<bool>
+vertexFn: Fn( ( [finalPosition, normal, progress, side] ) => Node<vec4> )
+discardFn: Fn( ( [progress, side, uv] ) => Node<bool> )
 ```
 
 ### Performance Considerations

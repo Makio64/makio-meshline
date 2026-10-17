@@ -28,9 +28,11 @@ The gate runs lint, all runtime and declaration tests, the demo and documentatio
 
 | Profile | Three.js | Coverage |
 |---|---:|---|
-| Minimum core | r180.0 | Root runtime and declarations |
-| Minimum optional entries | r183.0 | Root, `gpu-culling`, and `gpu-path` runtime and declarations |
-| Pinned current | Workspace manifest | Root and optional-entry runtime and declarations |
+| Minimum core | r180.0 | Root runtime and declarations; core node-level shader tests |
+| Minimum optional entries | r183.0 | Root, `gpu-culling`, and `gpu-path` runtime and declarations; every node-level shader test |
+| Pinned current | Workspace manifest | Root and optional-entry runtime and declarations; every node-level shader test |
+
+The node-level shader tests are the `test/*.test.js` files that build shaders through `test/helpers/shaderBuilder.js`. Node-builder output changes between Three.js releases (r180, for example, still discards zero-alpha fragments in blended node materials without an alpha test), so each profile runs them against its own `three`: the gate copies `src/`, `test/`, and the demo and documentation modules those tests import below the profile's consumer, without the repository's `node_modules`. Tests of the optional entries, listed in `optionalEntryShaderTests` in `scripts/verify-compatibility.mjs`, skip the minimum core profile. `pnpm verify:compat --list` prints the files each profile runs.
 
 The minimum versions live in `package.json#meshlineCompatibility`; the pinned-current row comes from the exact root `three` and `@types/three` development dependencies. CI also runs `pnpm verify:compat:canary` against the moving Three.js `dev` branch with `continue-on-error`. That canary is deliberately excluded from `release:check`, so upstream development changes are visible without making the release gate non-reproducible.
 

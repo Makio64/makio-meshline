@@ -55,4 +55,4 @@ stalks.build()
 scene.add( stalks )
 ```
 
-The live demo repeats this pattern twice: one straight template for the stalks and one circular template for the node rings. Keep the template simple and push the variation into instance attributes.
+The live demo repeats this pattern four times: straight templates for the stalks, twigs and leaves, and one circular template for the node rings. Every layer adds the same TSL sway offset for its stalk and height, so the whole grove moves together in the wind. Keep the template simple and push the variation into instance attributes.

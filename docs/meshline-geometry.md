@@ -108,17 +108,18 @@ Leave `smoothSharpBends` off when you need a stable mapping from authored points
 buildLine(options?: MeshLineGeometryOptions): void
 ```
 
-Applies geometry options and rebuilds the managed attributes. Options omitted from a later call keep their previous values, and same-sized managed buffers are reused where possible. Custom vertex attributes are preserved while the line/point topology is unchanged. If topology changes, they are removed because their old vertex mapping is invalid; recreate and refill them after the rebuild. Instanced attributes are not removed by this topology guard.
+Applies geometry options and rebuilds the managed attributes. Options omitted from a later call keep their previous values, and same-sized managed buffers are reused where possible. Without `lines`, it rebuilds the current points, including in-place `setPositions()` and `setPositionRange()` edits. Custom vertex attributes are preserved while the line/point topology is unchanged. If topology changes, they are removed because their old vertex mapping is invalid; recreate and refill them after the rebuild. Instanced attributes are not removed by this topology guard.
 
 ### setLines()
 
 ```ts
 setLines(
-  lines: LinePoints | LinePoints[]
+  lines: LinePoints | LinePoints[],
+  closed?: boolean | boolean[]
 ): void
 ```
 
-Replace or initialize the geometry with one or multiple line segments. A single line can be passed directly; pass an array of line inputs for multiple disconnected lines.
+Replace or initialize the geometry with one or multiple line segments. A single line can be passed directly; pass an array of line inputs for multiple disconnected lines. Optionally pass `closed` (`boolean` or per-line `boolean[]`) to update loop closure at the same time.
 
 When a `THREE.BufferGeometry` is provided, the positions are extracted from its 'position' attribute. This allows direct conversion of existing Three.js geometries into MeshLine format.
 
@@ -130,6 +131,7 @@ When a `THREE.BufferGeometry` is provided, the positions are extracted from its 
   - Nested number array of `[x,y,z]` coordinates
   - `Vector2`, `Vector3`, or plain `{ x, y, z? }` point arrays
   - `THREE.BufferGeometry` with a 'position' attribute
+- `closed` (optional) – `boolean` or `boolean[]` per line to close or open loops during the rebuild.
 
 ### dispose()
 

@@ -39,24 +39,23 @@ Here's a minimal example of how to create a simple circular `MeshLine` and add i
 import * as THREE from 'three/webgpu'
 import { MeshLine, circlePositions } from 'makio-meshline'
 
-const scene    = new THREE.Scene()
-const camera   = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, .1, 1000)
+const scene = new THREE.Scene()
+const camera = new THREE.PerspectiveCamera( 55, innerWidth / innerHeight, 0.1, 1000 )
 camera.position.z = 20
 
-const renderer = new THREE.WebGPURenderer({ antialias: true })
-renderer.setSize(innerWidth, innerHeight)
-document.body.append(renderer.domElement)
+const renderer = new THREE.WebGPURenderer( { antialias: true } )
+renderer.setSize( innerWidth, innerHeight )
+document.body.append( renderer.domElement )
 await renderer.init()
 
-
 const line = new MeshLine()
-  .lines(circlePositions(64, 10))// 64-segment circle, radius 10
-  .closed(true) // we close the loop ( last 2 point are connected )
-  .lineWidth(1) // scene-space width with sizeAttenuation enabled
-  .color(0xff8800) // color 
-  .gradientColor(0xffffff) // with a gradient to white
+	.lines( circlePositions( 64, 10 ), true ) // 64-segment closed circle, radius 10
+	.lineWidth( 1 )                           // scene-space width with sizeAttenuation enabled
+	.color( 0xff8800 )                        // base color
+	.gradientColor( 0xffffff )                // gradient to white along arc length
+	.autoResize()                             // keep screen resolution synced on window resize
 
-scene.add(line)
+scene.add( line )
 
 renderer.setAnimationLoop( () => renderer.render( scene, camera ) )
 ```

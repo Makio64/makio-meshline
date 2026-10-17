@@ -3,7 +3,7 @@ import { MeshLine as MeshLineCore } from 'makio-meshline'
 import { BufferGeometry } from 'three/webgpu'
 import { inject, onMounted, onUnmounted, shallowRef, unref, watch } from 'vue'
 
-const DEFAULT_JOIN = Object.freeze( { type: 'miter', limit: 4, segments: 8 } )
+const DEFAULT_JOIN = Object.freeze( { type: 'miter', limit: 4, segments: 8, inner: 'exact', fold: 'geometry' } )
 const DEFAULT_CAP = Object.freeze( { type: 'butt', segments: 8 } )
 
 const props = defineProps( {
@@ -14,7 +14,8 @@ const props = defineProps( {
 	segments: { type: Number, default: undefined },
 	closed: { type: [Boolean, Array], default: false },
 	surface: { type: [Boolean, Object], default: false },
-	join: { type: Object, default: null },
+	join: { type: [String, Object], default: null },
+	miterLimit: { type: Number, default: undefined },
 	cap: { type: [String, Object], default: null },
 	smoothSharpBends: { type: Boolean, default: false },
 	smoothSharpBendsAlpha: { type: Number, default: undefined },
@@ -37,6 +38,7 @@ const props = defineProps( {
 	wireframe: { type: Boolean, default: false },
 	shadow: { type: Boolean, default: false },
 	sizeAttenuation: { type: Boolean, default: true },
+	antialias: { type: Boolean, default: false },
 
 	// Renderer and buffers
 	dpr: { type: Number, default: undefined },
@@ -129,6 +131,7 @@ function getBuildOptions() {
 		closed: props.closed,
 		surface: props.surface,
 		join: props.join ?? DEFAULT_JOIN,
+		miterLimit: props.miterLimit,
 		cap: props.cap ?? DEFAULT_CAP,
 		smoothSharpBends: props.smoothSharpBends,
 		smoothSharpBendsAlpha: props.smoothSharpBendsAlpha ?? 0.001,
@@ -138,13 +141,14 @@ function getBuildOptions() {
 		lineWidth: props.lineWidth,
 		widthCallback: props.widthCallback,
 		sizeAttenuation: props.sizeAttenuation,
+		antialias: props.antialias,
 		gradientColor: props.gradientColor,
 		map: props.map,
 		mapOffset: props.mapOffset,
 		alphaMap: props.alphaMap,
 		opacity: props.opacity,
 		alphaTest: props.alphaTest,
-		transparent: props.transparent || props.opacity < 1,
+		transparent: props.transparent || props.opacity < 1 || props.alphaMap != null,
 		wireframe: props.wireframe,
 		shadow: props.shadow,
 		dpr: props.dpr ?? defaultDpr(),
@@ -205,6 +209,7 @@ function applyLiveOptions() {
 	line.mapOffset( props.mapOffset ?? null )
 	line.alphaMap( props.alphaMap ?? null )
 	line.dash( props.dash )
+	if ( props.miterLimit !== undefined ) line.miterLimit( props.miterLimit )
 	line.setFrustumCulled( resolveFrustumCulled() )
 	line.verbose( props.verbose )
 	line.dpr( props.dpr ?? defaultDpr() )
@@ -300,6 +305,7 @@ watch( () => [
 	props.join,
 	props.cap,
 	props.sizeAttenuation,
+	props.antialias,
 	props.widthCallback,
 	props.vertexColors,
 	props.smoothSharpBends,
@@ -343,6 +349,7 @@ watch( () => [
 	props.shadow,
 	props.gradientColor,
 	props.dash,
+	props.miterLimit,
 	props.map,
 	props.mapOffset,
 	props.alphaMap,

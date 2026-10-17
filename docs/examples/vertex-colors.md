@@ -42,4 +42,6 @@ const line = new MeshLine()
   .build()
 ```
 
-The `vertexColors` method accepts a flat array of RGB values (0-1 range) with 3 values per vertex. Use `Float32Array` for best performance.
+The `vertexColors` method accepts a flat array of RGB values (0-1 range) with 3 values per point. Use `Float32Array` for best performance.
+
+For a multi-line batch like the Waves rows, concatenate every line's colors in line order, the same layout as their positions. An array shorter than the whole batch is a pattern every line reuses from its own first point. See [Appearance options](../meshline.md#appearance) for closed lines and dropped points.

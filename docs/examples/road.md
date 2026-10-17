@@ -1,16 +1,26 @@
 ---
-description: "Build a textured world-space road from a Float32Array path with stable surface frames, banking, distance UVs, and bounded joins."
+description: "Explore an adaptive 3D road planner with authored XYZ controls, elevation, per-point banking, local edits, strict tessellation budgets, level frames, and distance UVs."
 outline: false
 pageClass: example-page
 ---
 
 # Road Surface
 
-This example turns one centerline into a lit, textured road with real world-space width. Orbiting the camera does not change its frame or thickness.
+This example turns authored XYZ controls into one lit road with real world-space width. Orbiting the camera does not change its frame or thickness, while elevation and bank can carry the same route over terrain, bridges, and stacked crossings.
 
-In the live demo, drag the orange control points freely across the ground, double-click the ground to add one, and double-click or right-click a point to remove it. The road always drives through every authored point at a constant width. Corners are never cut: the planner lengthens the tangent at each knot so the route swings wide through the bend, the way a real road does, which keeps the centerline curvature above the half width where an extruded ribbon would otherwise fold its inner edge over itself. A cubic through three points can only swing so far, so a corner it cannot hold becomes an explicit fixed-radius turn: an arc that still passes exactly through the control point and is entered and left tangentially, sized so it does not eat the leg the approach needs (its handle turns blue). That is what a real switchback is, and it works at any angle — at a full reversal the arc is simply a half circle around the point. The construction view starts visible: click its badge or press **D** to compare the orange authored controls, the straight route between them, and the cyan planned centerline.
+In the live demo, drag an orange control to reshape the route while preserving its clearance above the ground. **Shift-drag** vertically to change that clearance and **Alt-drag** horizontally to bank the selected point. The Road panel exposes the same height and bank controls for touch and precise input. Double-click the ground to add a point; double-click or right-click a point to remove it. Use the **3D overpass** preset to start with a banked loop that crosses its own approach on a bridge; piers and a deck fascia are generated from the same built road every time it changes. The Saves panel autosaves the current route, stores named copies in the browser, and can export JSON or copy a share link that restores the same controls, width, elevation, and bank. The status row reports any extra terrain-fit lift and warns when an impossible edit leaves the last safe road visible.
 
-Every band of the road — the graded earth verge, the gravel shoulders, the worn wheel tracks, the solid edge lines and the dashed centre — is painted in one fragment node from the surface UVs. The whole road is a single ribbon, so there are no stacked overlay meshes to z-fight, no second geometry to rebuild on every drag, and nothing that can slip under the terrain or lag a frame behind the road it belongs to.
+The raw adaptive planner passes exactly through every authored XYZ point. Gentle knots use widened cubic tangents; a turn the cubic cannot hold becomes a circular arc in the plane of its incoming and outgoing 3D legs, still with the authored point as an exact middle sample. A full reversal uses the configured up direction to choose its otherwise ambiguous turn plane.
+
+Edits stay local. Each smooth knot takes its plan heading from the horizontal directions of its two legs alone, and its grade from a monotone blend of their slopes that is level at a crest, a dip, or a flat approach. Raising or lowering a control therefore reshapes only the spans beside it: the road next to it neither swings sideways nor dips or overshoots between its controls. The minimum radius limits the sideways turn a level road actually feels, so crests and dips do not widen the plan. Tangent widening and arc conversion are solved separately for each run of difficult knots, so a tight bend at one end of the route cannot reshape the other end.
+
+For the terrain demo, authored height is a minimum: the surface fitter may lift both controls around an affected span before running the planner again. Orange handles remain the authored targets, so the fitted cyan centreline can sit above one when a wide, banked deck needs more ground clearance.
+
+Tessellation is driven by strict geometric budgets, not by a fixed sample count. In this demo no accepted edge exceeds `0.45` world units, cubic chord deviation stays within `0.02`, tangent direction changes by at most `4°` per step, and interpolated bank changes by at most `4°` per step. Straight spans use the exact minimum row count, while steep slopes, tight turns, and fast roll changes receive the rows they need. Terrain fitting audits the complete banked, mitered surface — including its actual edge vertices — then raises the neighboring control span and re-plans. The final rendered centreline therefore keeps the same spacing and turn guarantees instead of acquiring sharp kinks from per-row clamping. Elevated spans remain elevated, and an impossible sub-width edit keeps the last safe road visible with a warning.
+
+The sampled XYZ path uses `fixed-up` frames, so every row starts level and then takes the bank interpolated by travelled distance from its two controls. A rotation-minimizing `transport` frame would carry the twist of every climbing turn down the rest of the route: raising or banking one control would roll every span after it, and the terrain fit would then lift those far controls to keep the tilted edges above ground. Because the planner has already rounded the centreline, the surface can use compact miter-and-butt topology instead of adding a variable-topology fan at every tiny turn. Click the construction badge or press **D** to overlay the authored controls, the straight control polygon, and the adaptive centreline.
+
+Every band of the road — the graded earth verge, the gravel shoulders, the worn wheel tracks, the solid edge lines and the dashed centre — is painted in one fragment node from the surface UVs. The whole road is a single ribbon, so there are no stacked overlay meshes to z-fight, no second geometry to rebuild on every drag, and nothing that can slip under the terrain or lag a frame behind the road it belongs to. The paint is pinned to the controls: each span is rescaled to a whole number of dash periods, so an edit re-spaces only the dashes on the spans it reshapes instead of sliding every dash and grain speck after it. Bridge piers restart their spacing at every control for the same reason.
 
 <iframe title="Makio MeshLine Road Surface demo" src="https://meshline-demo.makio.io/examples/surface-road?noUI" width="100%" height="600" style="border: 1px solid #ddd; border-radius: 8px;"></iframe>
 
@@ -23,6 +33,7 @@ import { MeshLine } from 'makio-meshline'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import {
 	CanvasTexture,
+	Color,
 	DirectionalLight,
 	HemisphereLight,
 	PerspectiveCamera,
@@ -76,14 +87,16 @@ document.body.appendChild( renderer.domElement )
 await renderer.init()
 
 const scene = new Scene()
+scene.background = new Color( 0x9cc2d6 )
 const camera = new PerspectiveCamera( 55, innerWidth / innerHeight, 0.1, 100 )
-camera.position.set( 13, 12, 18 )
+camera.position.set( 0, 17, 25 )
 
 const controls = new OrbitControls( camera, renderer.domElement )
 controls.target.set( 0, 0, 0 )
 controls.update()
 
 const roadTexture = createRoadTexture()
+roadTexture.anisotropy = renderer.getMaxAnisotropy()
 const road = new MeshLine()
 	.lines( createRoadPath() )
 	.lineWidth( 3.2 )
@@ -98,8 +111,8 @@ const road = new MeshLine()
 		roughness: 0.88,
 		metalness: 0,
 	} )
-	.join( { type: 'round', limit: 3, segments: 12, inner: 'clip' } )
-	.cap( { type: 'round', segments: 12 } )
+	.join( { type: 'miter', limit: 3, inner: 'clip' } )
+	.cap( { type: 'butt' } )
 	.build()
 
 scene.add( road )
@@ -118,8 +131,8 @@ addEventListener( 'resize', () => {
 } )
 ```
 
-`uvMode: 'distance'` makes the lane texture repeat by traveled distance, so adding more centerline samples does not stretch the markings. The small `bank` callback rotates the complete surface frame around the path tangent.
+`MeshLine` consumes the supplied `Float32Array` as an XYZ polyline; the surface builder does not fit a spline or subdivide long spans on its own. The compact standalone generator therefore supplies enough rows for its curve, while the live demo puts its adaptive planner in front of the same public `MeshLine` API.
 
-Ordinary miter/butt sections stay on the compact two-row topology. Select `join: { type: 'round', segments: 8 }` for true outer fans and `cap: { type: 'round', segments: 8 }` for round endpoints. The opt-in `inner: 'clip'` policy trims an infeasible inner join instead of rejecting the entire ribbon; the default remains exact.
+`uvMode: 'distance'` measures the full 3D polyline distance, including elevation, so adding or redistributing centerline samples does not change the physical texture scale. Maximum renderer anisotropy keeps the repeated road texture clearer at grazing camera angles. The small `bank` callback rotates the complete surface frame around the path tangent.
 
-The clip is exact right down to a radius equal to the half width, where the inner edge reaches the centre of the turn; below that the ribbon has to start giving up width. So the fix belongs to the centerline, not the ribbon: keep the curvature radius above the half width everywhere — by widening the curve where that is enough, and by inserting a fixed-radius turn where it is not. That is all the interactive demo's planner does, and it is why no width narrowing, corner cutting, or fallback geometry is needed. Authored controls are never rolled back or silently bypassed. See [World-Space Surfaces](../surface.md) for the low-level API.
+Miter/butt sections stay on the compact two-vertices-per-row topology. Use `join: { type: 'round', segments: 8 }` or a round cap when an intentionally sharp input polyline needs true fan topology. The opt-in `inner: 'clip'` policy is a final guard for continuously edited routes; the planner's curvature and sampling budgets normally keep the full-width offset valid before geometry construction. See [World-Space Surfaces](../surface.md) for the geometry contract.

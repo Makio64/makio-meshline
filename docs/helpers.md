@@ -194,3 +194,101 @@ const line2 = new MeshLine({
   lines: straightLineBetween([0, 0, 0], [5, 5, 5], 15) 
 });
 ```
+
+## storagePositions()
+
+```ts
+storagePositions(
+	buffer: StorageBufferAttribute,
+	options: {
+		pointsPerLine: number
+		head?: Node<'uint'> | null
+		toBuffer?: StorageBufferAttribute | null
+		morph?: Node<'float'> | number | null
+		closed?: Node<'float'> | boolean | null
+	}
+): TSL function
+```
+
+Builds a `gpuPositionNode` that reads line points directly from a WebGPU storage buffer, so a compute pass or state transition can move every point without per-frame CPU uploads. The buffer holds one run of `pointsPerLine` points per instance (`vec3` or `vec4` items; `w` is ignored).
+
+Pass a `uint` uniform as `head` to treat each run as a **ring buffer**. Progress `0` then samples the newest slot and progress `1` the oldest, so a trail simulation writes only its new samples each frame instead of shifting the whole trail down one slot.
+
+Pass `toBuffer` and `morph` to interpolate on the GPU between two `StorageBufferAttribute` snapshots (such as morphing contour or isobar states), and pass `closed: true` (or a per-instance `0` / `1` attribute node) to wrap the loop seam from `pointsPerLine - 1` back to `0`.
+
+#### Parameters
+
+- `buffer` (`StorageBufferAttribute`) — `vec3` or `vec4` point storage, `lineCount × pointsPerLine` items.
+- `options.pointsPerLine` (number) — points stored per instance; at least `2`.
+- `options.head` (uniform, optional) — newest slot for ring-buffer trails.
+- `options.toBuffer` (`StorageBufferAttribute`, optional) — target point storage for GPU morph transitions (`vec3` or `vec4`, matching `buffer.count`).
+- `options.morph` (float node or number, optional) — `0..1` blend factor between `buffer` and `toBuffer` when `toBuffer` is provided.
+- `options.closed` (boolean or float node, optional) — when `true` (or `> 0.5` per instance), wraps progress across `pointsPerLine` segments so `progress = 1` closes back to point `0`.
+
+#### Returns
+
+A TSL function for `.gpuPositionNode()`.
+
+#### Ring-Buffer Trail Example
+
+```javascript
+import { MeshLine, storagePositions } from 'makio-meshline'
+import { cos, Fn, instanceIndex, sin, storage, uniform, vec3 } from 'three/tsl'
+import { StorageBufferAttribute } from 'three/webgpu'
+
+const TRAILS = 64
+const LENGTH = 256
+const buffer = new StorageBufferAttribute( TRAILS * LENGTH, 3 )
+const head = uniform( 0, 'uint' )
+
+// One thread per trail appends its next sample after the current head.
+const points = storage( buffer, 'vec3', buffer.count )
+const advance = Fn( () => {
+	const base = instanceIndex.mul( LENGTH )
+	const previous = points.element( base.add( head ) ).toVar()
+	const flow = vec3( sin( previous.y ), cos( previous.x ), sin( previous.x.add( previous.z ) ) ).mul( 0.05 )
+	points.element( base.add( head.add( 1 ).mod( LENGTH ) ) ).assign( previous.add( flow ) )
+} )().compute( TRAILS )
+
+const trails = new MeshLine()
+	.instances( TRAILS )
+	.segments( LENGTH - 1 )
+	.gpuPositionNode( storagePositions( buffer, { pointsPerLine: LENGTH, head } ) )
+	.lineWidth( 0.4 )
+	.build()
+
+function animate() {
+	renderer.compute( advance )
+	head.value = ( head.value + 1 ) % LENGTH
+	renderer.render( scene, camera )
+}
+```
+
+#### Contour / Isobar Morphing Example
+
+```javascript
+import { MeshLine, storagePositions } from 'makio-meshline'
+import { uniform } from 'three/tsl'
+import { StorageBufferAttribute } from 'three/webgpu'
+
+const TRACKS = 48
+const POINTS = 96
+const fromBuffer = new StorageBufferAttribute( new Float32Array( TRACKS * POINTS * 3 ), 3 )
+const toBuffer = new StorageBufferAttribute( new Float32Array( TRACKS * POINTS * 3 ), 3 )
+const morph = uniform( 0 )
+
+const isobars = new MeshLine()
+	.instances( TRACKS )
+	.segments( POINTS )
+	.closed( true )
+	.gpuPositionNode( storagePositions( fromBuffer, {
+		pointsPerLine: POINTS,
+		toBuffer,
+		morph,
+		closed: true,
+	} ) )
+	.lineWidth( 0.045 )
+	.build()
+```
+
+Storage buffers require the native WebGPU backend. The [Lorenz Trails demo](https://meshline-demo.makio.io/examples/lorenz-trails) uses the ring-buffer pattern, and the [Isobar Transitions demo](https://meshline-demo.makio.io/examples/isobars) uses dual-buffer morphing with closed-loop wrapping.

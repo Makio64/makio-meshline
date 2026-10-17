@@ -34,7 +34,7 @@ const line = new MeshLine()
 See [Common Patterns](./common-patterns.md) for more examples.
 
 **Geometry Configuration:**
-- `lines(lines: LinePoints | LinePoints[], closed?: boolean | boolean[])` - Set one or more lines and optional close flag
+- `lines(lines: LinePoints | LinePoints[], closed?: boolean | boolean[])` (or alias `points(points, closed?)`) - Set one or more lines and optional close flag
 - `segments(segments: number)` - Set number of segments for auto-generated lines
 - `closed(closed: boolean | boolean[])` - Set whether to close the line loop
 - `surface(options?: MeshLineSurfaceOptions | boolean)` - Select the camera-independent surface profile for roads and ribbons; `true` uses defaults and `false` returns to the screen profile
@@ -45,7 +45,7 @@ See [Common Patterns](./common-patterns.md) for more examples.
 - `widthCallback(callback: (progress: number, pointIndex?: number, lineIndex?: number) => number)` - Set an arc-length-based variable width multiplier
 - `sizeAttenuation(enable: boolean)` - Enable scene-space projected width. Disable it for constant CSS-pixel width.
 - `gradientColor(color: number | THREE.Color)` - Set gradient end color
-- `vertexColors(colors: Float32Array | number[])` - Set one RGB color per logical path point; billboard geometry expands each value across its four physical rows
+- `vertexColors(colors: Float32Array | number[] | null)` - Set one RGB color per logical path point; billboard geometry expands each value across its four physical rows. A multi-line batch takes every line's colors concatenated in line order, or one line's worth shared by every line. On a built line a new array refreshes the colors in place; turning them on or off (`null`) rebuilds
 - `opacity(opacity: number)` - Set opacity level
 
 **Material Properties:**
@@ -59,14 +59,19 @@ See [Common Patterns](./common-patterns.md) for more examples.
 - `mapOffset(offset: THREE.Vector2 | null)` - Set or reset texture UV offset
 
 **Dashes:**
-- `dash({ count: number, ratio?: number, offset?: number })` - Configure dash pattern
+- `dash({ count: number, ratio?: number, offset?: number } | null | false)` - Configure dash pattern, or pass `null` / `false` to disable dashes
 
 **Shadow:**
 - `shadow(enabled: boolean)` - Enable shadow casting
 
 **Advanced:**
 
-- `join({ type?: 'miter' | 'simple' | 'bevel' | 'round', limit?: number, segments?: number })` - Configure joins. `'simple'` is retained as a compatibility alias for `'miter'`. The regular billboard profile keeps its bounded fixed-strip miter. World surfaces emit true bevel wedges and round fans; over-limit miters switch to bounded bevel topology.
+- `join('miter' | 'bevel' | 'round' | { type?: 'miter' | 'simple' | 'bevel' | 'round', limit?: number, segments?: number, inner?: 'exact' | 'clip', fold?: 'geometry' | 'exact' | false })` - Configure joins. `'simple'` is retained as a compatibility alias for `'miter'`. The regular billboard profile keeps crisp miters at corners the path really turns, up to `limit` (or bevel bridges with `'bevel'`). `fold` controls joins that only look sharp because a smooth curve's tangent points at the camera:
+  - `'geometry'` (default) splits them in the vertex stage with no fragment cost. Split rows overlap slightly, which shows on translucent or additive lines.
+  - `'exact'` clips them to the round tube silhouette in the fragment stage, and also melts over-limit corners into round.
+  - `false` keeps plain miters.
+ `type: 'round'` rounds every billboard join. World surfaces emit true bevel wedges and round fans; over-limit miters switch to bounded bevel topology. See [Projected folds](./common-patterns.md#12-projected-folds).
+- `miterLimit(limit: number)` - Update the miter limit uniform in-place while preserving the current join type and fold policy.
 - `cap('butt' | 'square' | 'round')` or `cap({ type, segments })` - Configure open-path endpoints. World surfaces and the optional native-WebGPU path emit true square/round cap topology; the regular billboard profile remains butt-capped.
 - `smoothSharpBends(enabled: boolean)` - Toggle CPU-side splitting of polyline corners that are too sharp for the screen-space miter to render cleanly. Defaults to `false` so authored logical points retain their stable four-physical-vertices-per-point mapping. Enable for static sharp polylines when cleaner corners matter more than exact input topology.
 - `smoothSharpBendsAlpha(alpha: number)` - Cutoff fraction used when `smoothSharpBends` is on: each sharp corner is replaced by two points sitting `alpha` of the way back along each adjacent segment. Smaller values preserve the pointy look; larger values flatten the tip more. Defaults to `0.001` (visually imperceptible but enough to stabilise the shader miter math).
@@ -156,6 +161,7 @@ type LinePoints = Float32Array | number[] | THREE.BufferGeometry | LinePoint[]
 interface MeshLineConfigureOptions {
   // ***Geometry***
   lines?: LinePoints | LinePoints[]          // One line or multiple lines
+  points?: LinePoints | LinePoints[]         // Alias for lines
   segments?: number                          // Template segments for GPU positions
   closed?: boolean | boolean[]               // Close the loop(s)
   surface?: boolean | MeshLineSurfaceOptions // `true` uses the default world-space surface profile
@@ -166,7 +172,7 @@ interface MeshLineConfigureOptions {
   widthCallback?: (progress: number, pointIndex?: number, lineIndex?: number) => number
   sizeAttenuation?: boolean
   gradientColor?: number | null              // End-gradient colour
-  vertexColors?: Float32Array | number[]     // Per-vertex RGB colors
+  vertexColors?: Float32Array | number[]     // Per-point RGB colors
 
   // ***Textures***
   map?: THREE.Texture | null
@@ -174,7 +180,7 @@ interface MeshLineConfigureOptions {
   mapOffset?: THREE.Vector2 | null
 
   // ***Dashes***
-  dash?: { count?: number, ratio?: number, offset?: number }
+  dash?: { count?: number | null, ratio?: number, offset?: number } | null | false
   /** @deprecated Prefer dash.count. */
   dashCount?: number | null
   /** @deprecated Prefer dash.ratio. */
@@ -183,11 +189,14 @@ interface MeshLineConfigureOptions {
   dashOffset?: number
 
   // ***Joins and corner smoothing***
-  join?: {
+  join?: 'miter' | 'simple' | 'bevel' | 'round' | {
     type?: 'miter' | 'simple' | 'bevel' | 'round'
     limit?: number
     segments?: number
+    inner?: 'exact' | 'clip'
+    fold?: 'geometry' | 'exact' | false
   }
+  miterLimit?: number                        // Convenience alias for join.limit
   cap?: 'butt' | 'square' | 'round' | {
     type?: 'butt' | 'square' | 'round'
     segments?: number
@@ -289,7 +298,11 @@ interface MeshLineSurfaceOptions {
 
 - **`gradientColor`** (`number | null`) — Optional gradient end color. When set, the line will smoothly transition from `color` to `gradientColor` along its length. Default: `null` (no gradient).
 
-- **`vertexColors`** (`Float32Array | number[]`) — Per-logical-point RGB colors. Supply a flat array in the 0–1 range with three values per authored point; the geometry duplicates each color across the point's physical billboard rows. Each point color is multiplied with the base `color`. Best used with `Float32Array` for performance. Default: `null` (no vertex colors).
+- **`vertexColors`** (`Float32Array | number[] | null`) — Per-logical-point RGB colors. Supply a flat array in the 0–1 range with three values per authored point; the geometry duplicates each color across the point's physical billboard rows. Each point color is multiplied with the base `color`. Best used with `Float32Array` for performance. Default: `null` (no vertex colors).
+  - **Multi-line batches:** concatenate every line's colors in line order, the same layout as their positions; each line reads from its own global point start. An array shorter than the whole batch is a shared pattern instead: every line reads it from its own first point, so one line's worth of colors paints every line alike.
+  - **Closed lines:** give one color per unique point. The closing seam reuses the line's first color and takes no slot.
+  - **Kept points only:** colors follow the points the geometry keeps. Dropped points (consecutive duplicates, non-finite values, a closed line's repeated closing point, lines with fewer than two distinct points) and corners added by `smoothSharpBends` shift the colors that follow them, so pass clean points when colors must line up.
+  - **After build:** `vertexColors(newColors)` rewrites the color buffer in place from the line's current points, without recompiling the material. Turning colors on, or off with `null`, rebuilds the line so the material gains or drops its vertex-color path. Surface lines have no vertex colors; they keep the array for when the line returns to the billboard profile.
 
 ### Textures
 

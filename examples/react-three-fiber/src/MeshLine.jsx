@@ -1,8 +1,8 @@
 import { useThree } from '@react-three/fiber'
-import { MeshLine as MeshLineCore } from 'makio-meshline'
+import { MeshLine as MeshLineCore, straightLine } from 'makio-meshline'
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
 
-const DEFAULT_JOIN = Object.freeze( { type: 'miter', limit: 4, segments: 8 } )
+const DEFAULT_JOIN = Object.freeze( { type: 'miter', limit: 4, segments: 8, inner: 'exact', fold: 'geometry' } )
 const DEFAULT_CAP = Object.freeze( { type: 'butt', segments: 8 } )
 
 function createMeshLine( options ) {
@@ -17,6 +17,7 @@ export const MeshLine = forwardRef( function MeshLine( {
 	closed = false,
 	surface = false,
 	join,
+	miterLimit,
 	cap,
 	smoothSharpBends = false,
 	smoothSharpBendsAlpha,
@@ -39,6 +40,7 @@ export const MeshLine = forwardRef( function MeshLine( {
 	wireframe = false,
 	shadow = false,
 	sizeAttenuation = true,
+	antialias = false,
 	dpr,
 	frustumCulled,
 	verbose = false,
@@ -82,8 +84,9 @@ export const MeshLine = forwardRef( function MeshLine( {
 	const notifiedLineRef = useRef( null )
 	const disposalGenerationRef = useRef( 0 )
 	const size = useThree( state => state.size )
-	const linePoints = points ?? lines
-	const hasLinePoints = linePoints != null
+	const resolvedSegments = segments ?? 1
+	const generatedPoints = useMemo( () => straightLine( 1, resolvedSegments ), [resolvedSegments] )
+	const linePoints = points ?? lines ?? generatedPoints
 	// A hidden canvas measures 0×0, and renderSize() rejects a zero size, so
 	// clamp to one pixel as resize() does.
 	const resolvedRenderWidth = Math.max( 1, renderWidth ?? size.width )
@@ -102,12 +105,13 @@ export const MeshLine = forwardRef( function MeshLine( {
 	// Structural options rebuild the existing facade. Keeping them separate from
 	// live uniforms makes object identity, refs, and scene attachments stable.
 	const structuralOptions = useMemo( () => ( {
-		segments: segments ?? 1,
+		segments: resolvedSegments,
 		closed,
 		surface,
 		vertexColors: vertexColors ?? null,
 		widthCallback: widthCallback ?? null,
 		sizeAttenuation,
+		antialias,
 		join: join ?? DEFAULT_JOIN,
 		cap: cap ?? DEFAULT_CAP,
 		smoothSharpBends,
@@ -140,12 +144,13 @@ export const MeshLine = forwardRef( function MeshLine( {
 		discardFn: discardFn ?? null,
 		frustumCulled: resolvedFrustumCulled,
 	} ), [
-		segments,
+		resolvedSegments,
 		closed,
 		surface,
 		vertexColors,
 		widthCallback,
 		sizeAttenuation,
+		antialias,
 		join,
 		cap,
 		smoothSharpBends,
@@ -184,6 +189,7 @@ export const MeshLine = forwardRef( function MeshLine( {
 		color,
 		gradientColor: gradientColor ?? null,
 		dash,
+		miterLimit,
 		map: map ?? null,
 		mapOffset: mapOffset ?? null,
 		alphaMap: alphaMap ?? null,
@@ -199,6 +205,7 @@ export const MeshLine = forwardRef( function MeshLine( {
 		color,
 		gradientColor,
 		dash,
+		miterLimit,
 		map,
 		mapOffset,
 		alphaMap,
@@ -244,9 +251,9 @@ export const MeshLine = forwardRef( function MeshLine( {
 	}, [line, onReady] )
 
 	useEffect( () => {
-		if ( !synchronizedLineRef.current || !hasLinePoints ) return
+		if ( !synchronizedLineRef.current ) return
 		line.setPositions( linePoints, updateBounding )
-	}, [line, linePoints, hasLinePoints, updateBounding] )
+	}, [line, linePoints, updateBounding] )
 
 	useEffect( () => {
 		if ( !synchronizedLineRef.current ) return
@@ -278,6 +285,7 @@ export const MeshLine = forwardRef( function MeshLine( {
 		line.alphaMap( liveOptions.alphaMap )
 		line.mapOffset( liveOptions.mapOffset )
 		line.dash( liveOptions.dash )
+		if ( liveOptions.miterLimit !== undefined ) line.miterLimit( liveOptions.miterLimit )
 		line.verbose( liveOptions.verbose )
 		if ( liveOptions.dpr !== undefined ) line.dpr( liveOptions.dpr )
 	}, [line, liveOptions] )

@@ -6,7 +6,7 @@ pageClass: example-page
 
 # Draw Lines
 
-This is the same idea as Follow, but instead of keeping a single live trail you keep the points that the user painted.
+This is the same idea as Follow, but instead of keeping a single live trail you keep the points that the user painted. The demo opens with a deterministic infinity-stroke replay, so the follower motion is visible before the first drag; every stroke you add gets its own replay followers.
 
 <iframe title="Makio MeshLine Draw Lines demo" src="https://meshline-demo.makio.io/examples/drawlines?noUI" width="100%" height="600" style="border: 1px solid #ddd; border-radius: 8px;"></iframe>
 
@@ -80,3 +80,7 @@ window.addEventListener( 'pointermove', ( event ) => {
 ```
 
 The live demo expands this into many follower lines that replay saved strokes, but the paintbrush effect starts with one dynamic line and one growing point array.
+
+## Keeping reserved capacity cheap
+
+The showcase reserves 1,000 fixed-topology lines up front, then tracks only the five pointer followers and ten replay followers for each saved stroke. Each active line patches its existing point span with `setPositionRange(positions, 0, { lineIndex })`; inactive lines are neither simulated nor uploaded. Widths use one cached typed-array view over the active prefix and one ranged `setVertexValues('width', activeWidths, 0)` call per frame. This keeps later strokes instant to activate without paying the CPU and transfer cost of the unused capacity.

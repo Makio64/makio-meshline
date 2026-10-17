@@ -27,6 +27,7 @@ Makio MeshLine is built for creative coding, interactive trails, data visualizat
 - **Optional GPU culling** — Native-WebGPU chunk compaction and one indirect draw for very large opaque paths
 - **Shadow support** — Cast shadows from lines
 - **GPU positions** — Procedural line generation entirely on the GPU
+- **Compute-driven trails** — `storagePositions()` draws lines straight from WebGPU storage buffers, with ring-buffer trails that append one sample per frame
 - **Tree-shakeable** — ESM-only, `sideEffects: false`, import only what you need
 - **TypeScript** — Full type definitions included
 - **Zero dependencies** — Only Three.js as peer dependency

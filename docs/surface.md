@@ -4,7 +4,7 @@ description: "Build camera-independent world-space ribbons, roads, and tracks wi
 
 # World-Space Surfaces
 
-Use the surface profile for roads, tracks, trails, and flat ribbons that must live in the scene as real geometry. It expands the path on the CPU, writes positions and normals, adds only the optional attributes used by the active material, and shades the result with a standard PBR material.
+Use the surface profile for roads, tracks, trails, and flat ribbons that must live in the scene as real geometry. It expands the supplied polyline on the CPU, writes positions and normals, adds only the optional attributes used by the active material, and shades the result with a standard PBR material. The surface builder consumes your point topology as given; curve fitting and longitudinal subdivision belong in the path generator.
 
 ```js
 import { MeshLine } from 'makio-meshline'
@@ -80,7 +80,7 @@ Surface construction also uses the facade's normal geometry controls:
 ### `frame`
 
 - **`'transport'`** (default) uses a rotation-minimizing frame. It is the stable general choice for arbitrary 3D paths and applies a distributed seam correction to closed loops.
-- **`'fixed-up'`** projects `up` against each path tangent. It is useful for mostly planar roads that should stay aligned to a known world-up direction. When the tangent and `up` become parallel, the geometry falls back to a deterministic valid frame.
+- **`'fixed-up'`** projects `up` against each path tangent. It is the right choice for terrain roads that should stay level across their width: each row depends only on its own tangent, so editing one part of the path never rolls the rest of it. When the tangent and `up` become parallel, the geometry falls back to a deterministic valid frame.
 
 ### `up`
 
@@ -96,14 +96,29 @@ Rotation around the path tangent, in radians. Use a single number, one value per
 } )
 ```
 
-Banking rotates both the surface normal and its side direction, so lighting and geometry stay aligned.
+Banking rotates both the surface normal and its side direction, so lighting and geometry stay aligned. Per-point arrays address the final supplied centerline points. If bank is authored on a smaller set of controls, interpolate it while sampling the path before passing the resulting points and bank values to `MeshLine`.
 
 ### `uvMode` and `uvScale`
 
-- **`uvMode: 'distance'`** (default) sets `u = distance / uvScale`. A texture repeats consistently even when points are unevenly spaced. `uvScale` must be greater than zero.
+- **`uvMode: 'distance'`** (default) sets `u = distance / uvScale`. Distance is the accumulated Euclidean length of the supplied XYZ segments, so climbs and descents contribute to U. A texture repeats consistently even when points are unevenly spaced. `uvScale` must be greater than zero.
 - **`uvMode: 'stretch'`** maps the complete path to `u = 0…1`. `uvScale` does not change stretched UVs.
 
 `v` always runs from the left edge to the right edge.
+
+## Point Density and Supplied Topology
+
+Surface geometry expands one cross-road row at every supplied centerline point. It does not infer a spline, insert rows along a long segment, or smooth a sparse corner. Bevel and round joins can add local fan vertices, but they do not increase the fidelity of the centreline between input points.
+
+Sample curved or rotating sources before calling `.lines()` or `.setPositions()`. A robust road planner should bound at least:
+
+- the maximum 3D edge length;
+- the curve-to-chord deviation;
+- the tangent direction change between rows; and
+- the bank change between rows.
+
+These are geometry-quality budgets, not texture-repeat budgets. Perspective-correct UV interpolation is exact on a straight triangle, while curves, elevation changes, and rotation need enough rows to approximate their shape and frame. Distance UVs then use the resulting full 3D polyline length, so adaptive or uneven point spacing does not stretch the texture.
+
+The [Road Surface example](./examples/road.md) demonstrates this workflow with exact raw-planner XYZ anchors, an iterative terrain-fit/re-plan pass, adaptive cubic and circular spans, per-point elevation and bank, level `fixed-up` frames, and compact miter topology.
 
 ### PBR options
 
@@ -134,7 +149,7 @@ Keep centerline coordinates near the object's local origin and place the `MeshLi
 
 ## Joins, Caps, and Reversals
 
-The surface builder has a compact fast path and a variable-topology path:
+The surface builder has a compact fast path and a variable-topology path. Both consume the supplied centreline; neither resamples it:
 
 - Ordinary `miter` + `butt` roads stay on the two-vertices-per-row strip whenever every miter fits inside `join.limit`.
 - `bevel` emits separate incoming/outgoing outer corners and a real fill wedge.
@@ -189,8 +204,8 @@ The tables list the surface-specific contract. Both classes retain their inherit
 | --- | --- | --- |
 | `new MeshLineSurfaceGeometry(options?)` | `MeshLineSurfaceGeometry` | Optionally builds one or more centerlines immediately. `isMeshLineSurfaceGeometry` is always `true`. |
 | `geometry.buildLine(options?)` | `void` | Merges configuration and rebuilds when `lines` are present. |
-| `geometry.setLines(points)` | `void` | Replaces centerlines and rebuilds all derived frames, joins, attributes, indices, and bounds. |
-| `geometry.setPositions(points)` | `void` | Surface alias for a complete `setLines()` rebuild; range updates are intentionally unavailable. |
+| `geometry.setLines(points, closed?)` | `void` | Replaces centerlines (and optional open/closed state) and rebuilds all derived frames, joins, attributes, indices, and bounds. |
+| `geometry.setPositions(points, updateBounding?, closed?)` | `void` | Surface alias for a complete `setLines()` rebuild; range updates are intentionally unavailable. |
 | `geometry.setUsage(usage, name?)` | `void` | Replaces all generated attributes, or one named attribute, with the requested usage. |
 | `geometry.dispose()` | `void` | Releases geometry buffers. |
 | `new MeshLineSurfaceNodeMaterial(options?)` | `MeshLineSurfaceNodeMaterial` | Optionally configures the PBR material immediately. `isMeshLineSurfaceNodeMaterial` is always `true`. |

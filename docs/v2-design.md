@@ -33,7 +33,7 @@ These guarantees are local. Some inputs do not have a unique perfect answer: an 
 
 ## Screen-stroke policy
 
-The regular screen profile computes directions after camera projection. It guards clip `w`, encodes CPU endpoints through coincident neighbour positions, retains explicit endpoint/closed metadata for procedural and position-hook paths, and transitions an over-limit miter to a bounded incoming cross-section. This keeps the zero-dispatch, six-vertices-per-segment compatibility path finite, but it does not add geometric fans.
+The regular screen profile computes directions after camera projection. It guards clip `w`, encodes CPU endpoints through coincident neighbour positions, retains explicit endpoint/closed metadata for procedural and position-hook paths, and classifies joins by the path's own 3D turn so authored corners keep crisp miters while smooth 3D curves folding toward the camera are resolved by `join.fold` (`'geometry'` splits the fold in the vertex stage with zero fragment cost, `'exact'` clips folds and `'round'` joins to the exact round silhouette in the fragment stage, and `false` keeps plain miters; `'bevel'` emits a 4-vertex-per-corner split strip).
 
 The optional native-WebGPU path owns the variable-topology experiment. It clips centerline intervals in homogeneous coordinates before division, keeps clip-created boundaries distinct from semantic endpoints, and emits packed two-word body/join/cap primitive records. Candidate slots that become geometrically empty after projection are suppressed in the vertex stage.
 

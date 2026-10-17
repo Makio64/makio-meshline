@@ -151,3 +151,34 @@ const exact = new MeshLine()
   .lines(myPoints)
   .join({ limit: 4 })
 ```
+
+## 12. Projected Folds
+
+A smooth 3D curve — a knot, a helix, a trail — can point its tangent straight at the camera. Its projection then folds into a sharp screen-space turn even though the curve itself bends gently, and a screen-space miter at that turn would spike far past the stroke. Billboard lines tell the two cases apart from the path's own 3D turn, which does not change while the camera orbits: corners that really turn keep their crisp miter, and folds are rounded.
+
+```js
+// Default: folds are split in the vertex stage. No discard and no extra
+// varyings, so fill cost is unchanged; a fold reads as a convex, slightly
+// faceted cap (at most ~0.4 of the half width off the round silhouette).
+const trail = new MeshLine().lines( curvePoints )
+
+// Thick tubes: clip folds to the exact round silhouette in the fragment stage.
+// This adds a discard, which costs tile-based GPUs their hidden-surface removal
+// on overdraw-heavy, thick lines.
+const tube = new MeshLine()
+  .lines( knotPoints, true )
+  .lineWidth( 0.6 )
+  .join( { fold: 'exact' } )
+
+// Round every join, including authored corners (implies exact folds).
+const rounded = new MeshLine().lines( squarePositions( 4 ), true ).join( { type: 'round' } )
+
+// Previous behaviour: plain miters everywhere.
+const legacy = new MeshLine().lines( points ).join( { fold: false } )
+```
+
+The two modes also differ at authored corners sharper than `limit`. In the default mode their rows split into butt ends that overlap past the corner. With `fold: 'exact'` the miter instead melts continuously into a round join, fully round by twice the limit.
+
+The default mode's split rows overlap near a fold. That is invisible on opaque lines, but a translucent or additive line draws the overlap twice and shows a slightly denser cap there. Use `fold: 'exact'` for such lines when the cap matters: its clip gives every pixel to exactly one row.
+
+Two-point GPU lines (for example instanced lasers built from `segments( 1 )`), `bevel` joins, wireframes, and materials with `previousFn`/`nextFn` hooks have no fold to resolve and keep the plain shader. Joints next to the camera's near plane also keep the plain path. Switching `join()` on a live line only recompiles the material; its uniforms and resolution are kept.

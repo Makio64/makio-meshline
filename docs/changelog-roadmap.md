@@ -55,12 +55,12 @@ Package and verification status:
 - [x] Set the final `2.0.0` version in the publishable package manifest.
 - [x] Target `^2.0.0` from standalone starters while forcing workspace builds to exercise the current source.
 - [x] Synchronize the packaged `src/README.md` with the public feature/status wording.
-- [ ] Run `pnpm lint`, `pnpm build`, `pnpm docs:build`, and the standalone vanilla, React Three Fiber, and Vue example builds from a clean checkout.
+- [x] Run `pnpm lint`, `pnpm build`, `pnpm docs:build`, and the standalone vanilla, React Three Fiber, and Vue example builds from a clean checkout.
 - [x] Install the packed artifact in isolated consumers and run runtime/declaration smoke tests at the r180 core minimum, r183 optional-entry minimum, and pinned current Three.js version.
-- [ ] Run browser render coverage on both `WebGPURenderer` backends used by the compatibility claim.
+- [x] Run browser render coverage on both `WebGPURenderer` backends used by the compatibility claim.
 - [x] Inspect the real npm tarball and smoke-test root, `gpu-culling`, and `gpu-path` package imports through the exports map.
 - [x] Keep a non-blocking compatibility canary against the moving Three.js `dev` branch.
-- [ ] Confirm optional-entry failures remain visible and fail open on unsupported WebGL2, camera, bounds, and feature profiles.
+- [x] Confirm optional-entry failures remain visible and fail open on unsupported WebGL2, camera, bounds, and feature profiles.
 - [ ] Publish with the intended npm tag, create the matching Git tag/GitHub release, then verify a clean registry install and documentation links.
 
 ## Release history
@@ -85,7 +85,7 @@ Full changelog: [CHANGELOG.md](https://github.com/Makio64/makio-meshline/blob/ma
 
 - **Mid-term**:
   - Add `receiveShadow` support.
-  - Extend `MeshLineCompute` with neighbour constraints, real texture/audio/depth force integrations, and compute-aware segment picking.
+  - Extend `MeshLineCompute` with real texture/audio/depth force integrations and compute-aware segment picking.
   - Promote the optional GPU path's variable topology after multi-line/closed, shadows, XR, and picking gates.
 - **Long-term**:
   - Explore optional compute pre-passes for dynamic polylines only where resampling, tangent generation, or arc-length work produces a measured end-to-end win.

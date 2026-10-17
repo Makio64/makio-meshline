@@ -12,23 +12,7 @@ const viewport = reactive( { width: 1, height: 1 } )
 const points = circlePositions( 64, 3 )
 for ( let offset = 1; offset < points.length; offset += 3 ) points[offset] += 2
 
-const roadPoints = new Float32Array( [
-	-4.5,
-	-2.2,
-	0,
-	-2.4,
-	-1.55,
-	0,
-	-0.5,
-	-2.35,
-	0,
-	1.8,
-	-1.45,
-	0,
-	4.5,
-	-2.05,
-	0,
-] )
+const roadPoints = new Float32Array( [-4.5, -2.2, 0, -2.4, -1.55, 0, -0.5, -2.35, 0, 1.8, -1.45, 0, 4.5, -2.05, 0] )
 const roadSurface = {
 	frame: 'fixed-up',
 	up: [0, 0, 1],
@@ -55,7 +39,7 @@ async function init() {
 	camera.position.z = 10
 
 	renderer = new THREE.WebGPURenderer( { canvas: canvasRef.value, antialias: true } )
-	renderer.setPixelRatio( window.devicePixelRatio )
+	renderer.setPixelRatio( Math.min( window.devicePixelRatio, 2 ) )
 	renderer.setSize( viewport.width, viewport.height )
 	await renderer.init()
 
@@ -90,6 +74,7 @@ function onWindowResize() {
 
 	camera.aspect = viewport.width / viewport.height
 	camera.updateProjectionMatrix()
+	renderer.setPixelRatio( Math.min( window.devicePixelRatio, 2 ) )
 	renderer.setSize( viewport.width, viewport.height )
 }
 

@@ -74,53 +74,40 @@ When writing CSS in Vue components, use Stylus with these conventions:
 
 When editing code, maintain these style conventions exactly as they appear in existing files.
 
-## Testing
+## Testing & Verification
 
-No test framework is currently configured. When adding tests, check the codebase first to determine the testing approach rather than assuming a specific framework.
+- `pnpm test` - Run Node test suite (`node --test test/*.test.js`)
+- `pnpm test:types` - Run TypeScript declaration verification (`tsc --project tsconfig.types.json`)
+- `pnpm lint` - Lint `src/`, `demo/src/`, `examples/`, and `scripts/`
+- `pnpm build` - Build demo application
+- `pnpm docs:build` - Build VitePress documentation
+- `pnpm release:check` - Full release gate (lint, tests, types, demo build, docs build, standalone example builds, package & compatibility checks)
 
-## Key Files & Patterns
+## Key Files & V2 Architecture
 
-### Position Helpers (`src/positions/`)
-- `circlePositions.js` - Generate circular line paths
-- `squarePositions.js` - Generate square line paths  
-- `sineWavePositions.js` - Generate sine wave paths
-- `straightLine.js` - Generate straight line segments
+### Package Entry Points (`src/`)
+- `src/index.js` (`makio-meshline`):
+  - `MeshLine.js` — Main fluent facade extending `THREE.Mesh`
+  - `MeshLineGeometry.js` / `MeshLineNodeMaterial.js` — Screen-space billboard line profile (arc-length progress, miter/bevel/round joins, 3D fold handling, analytic AA)
+  - `MeshLineSurfaceGeometry.js` / `MeshLineSurfaceNodeMaterial.js` — World-space lit ribbon/road surface profile (`transport` / `fixed-up` frames, banking, miter/bevel/round joins, butt/square/round caps)
+  - `MeshLineCompute.js` — WebGPU compute-driven curve simulation engine
+  - `MeshLinePicker.js` / `MeshLinePickerHelper.js` — GPU pixel-picker and visual debug helper
+  - `positions/` — `circlePositions`, `squarePositions`, `rectanglePositions`, `sineWavePositions`, `straightLine`, `straightLineBetween`, `storagePositions` (supports ring-buffer `head`, two-buffer GPU `toBuffer`/`morph`, and `closed` loop seam wrapping)
+- `src/gpu-culling/index.js` (`makio-meshline/gpu-culling`, Three.js r183+):
+  - `MeshLineCullingSystem` — Native-WebGPU chunk frustum culling + single indirect draw compaction
+- `src/gpu-path/index.js` (`makio-meshline/gpu-path`, Three.js r183+):
+  - `MeshLineGPUPath` — Point-centric GPU path with optional multi-stride simplification and automatic CPU fallback
 
-### Hook System (MeshLineNodeMaterial)
-The material supports extensive customization through function hooks:
-- Position processing: `positionFn`, `previousFn`, `nextFn`
-- Width/normal modification: `widthFn`, `normalFn` 
-- Color/shading: `colorFn`, `gradientFn`, `fragmentColorFn`
-- Opacity/alpha: `opacityFn`, `fragmentAlphaFn`
-- UV/dash effects: `uvFn`, `dashFn`
-- Vertex/discard: `vertexFn`, `discardFn`
-
-### Geometry Patterns
-- `setLines()` - Initialize/replace polylines (rebuilds buffers)
-- `setPositions()` - Fast in-place update when point counts stay constant
-- Multi-line support with individual loop settings
-- Efficient 16-bit/32-bit index selection based on vertex count
-
-### Instancing System (MeshLine)
-The MeshLine class supports efficient instanced rendering:
-- `instanceCount` option - Enable instancing with specified instance count
-- `addInstanceAttribute(name, components)` - Create instanced buffer attributes
-- `setInstanceValue(name, index, value)` - Set per-instance attribute data
-- Works seamlessly with hooks and GPU position nodes
-- Allows thousands of lines with minimal performance impact
+### Critical Rules When Writing `makio-meshline` Code
+1. **TSL `Fn()` Array Destructuring**: Always destructure the array parameter inside `Fn( ( [param1, param2] ) => ... )`.
+2. **In-Place Updates**:
+   - Fixed point count: `.dynamic( true )` + `line.setPositions( points )` or `line.setPositionRange( slice, startPoint, { lineIndex } )`.
+   - Variable point count / open-closed topology change: `line.lines( points, closed )` (or alias `line.points( points, closed )`).
+3. **Packed Attributes**: Use `line.addInstanceAttributes( { a: 3, b: 1 } )` or `line.addVertexAttributes( ... )` to stay within the portable 8-vertex-buffer WebGPU limit.
+4. **Random Helper in Demo**: Use `random( min, max )` from `@/makio/utils/random` inside `demo/src/`.
 
 ## Dependencies
 
-- **Three.js ^0.178.0** (peer dependency)
-- Demo uses Vue 3, Vite, and various Three.js ecosystem tools
-- Documentation uses VitePress
-
-## Performance Notes
-
-- Use `Float32Array` for positions to avoid conversion overhead
-- Geometry only uploads needed attributes to GPU
-- Material only creates required uniforms
-- Supports both CPU and GPU position calculation modes
-- Instancing allows rendering thousands of lines with single draw call
-- Hook functions run in GPU for maximum performance
-- use random(min, max) for random
+- **Three.js >=0.180.0** (peer dependency; optional `gpu-culling` and `gpu-path` entries require `>=0.183.0`)
+- Demo uses Vue 3, Vite, and Three.js `WebGPURenderer`
+- Documentation uses VitePress (see `AGENTS.md` and `docs/public/llms-full.txt` for full agent recipes)

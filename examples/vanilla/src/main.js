@@ -20,7 +20,7 @@ async function init() {
 	scene.add( line )
 
 	renderer = new THREE.WebGPURenderer( { antialias: true } )
-	renderer.setPixelRatio( window.devicePixelRatio )
+	renderer.setPixelRatio( Math.min( window.devicePixelRatio, 2 ) )
 	renderer.setSize( window.innerWidth, window.innerHeight )
 	await renderer.init()
 	document.body.appendChild( renderer.domElement )
@@ -35,6 +35,7 @@ async function init() {
 function onWindowResize() {
 	camera.aspect = window.innerWidth / window.innerHeight
 	camera.updateProjectionMatrix()
+	renderer.setPixelRatio( Math.min( window.devicePixelRatio, 2 ) )
 	renderer.setSize( window.innerWidth, window.innerHeight )
 	line.resize( window.innerWidth, window.innerHeight )
 }

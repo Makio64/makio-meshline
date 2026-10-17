@@ -89,7 +89,7 @@ line.setFrustumCulled( true )
 
 ### Join and cap policies depend on the profile
 
-The normal billboard profile remains a compact fixed strip with a bounded miter and butt endpoints. True bevel/round joins and square/round caps are geometry features of the world-space surface profile and the experimental native-WebGPU path; setting those values does not turn the regular cross-backend billboard into variable topology.
+The normal billboard profile supports `join: { type: 'miter' | 'bevel' | 'round', limit, fold: 'geometry' | 'exact' | false }`: `'geometry'` (default) splits projected 3D folds in the vertex stage with no fragment cost, `'exact'` clips folds and `'round'` joins to an exact round silhouette in the fragment stage, and `'bevel'` uses a 4-vertex-per-corner split strip. Geometric arc-fan topology and `cap: { type: 'square' | 'round' }` are features of the world-space surface profile and the experimental native-WebGPU path.
 
 ## Choose the rendering profile explicitly
 

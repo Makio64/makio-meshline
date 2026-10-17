@@ -119,6 +119,8 @@ The regular billboard geometry duplicates each center point for both strip sides
 
 The vertex shader decodes each body or topology triangle, fetches the four source points, and expands it for the active render camera. There is no generated index buffer, no duplicated current/previous/next position storage, no GPU-to-CPU visibility readback, and no `INDEX | STORAGE` warm-up draw.
 
+The GPU mesh's geometry `position` is therefore a single template point. As for lines placed by `positionFn` or `gpuPositionNode` (see [Position Accessors](./meshline-material.md#position-accessors)), builds that read a position accessor (clipping planes through hardware clip distances, a `scene.fogNode` such as `exponentialHeightFogFactor` that reads `positionWorld`, or motion vectors for TRAA and motion blur) get the centerline point each vertex is stroked from instead. Builds that read none compile unchanged.
+
 ## Variable joins, caps, and clipping
 
 Pass the normal `lineOptions.join` and `lineOptions.cap` policies to the constructor:

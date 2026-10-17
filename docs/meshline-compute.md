@@ -37,7 +37,7 @@ function animate( delta ) {
 
 - A compact storage-buffer point field stores every curve point.
 - A velocity buffer, base-position buffer, and seed buffer drive the simulation.
-- `step( renderer, delta )` dispatches a motion pass and an arc-length pass on the GPU.
+- `step( renderer, delta )` dispatches two passes on the GPU: a per-point motion pass, then a per-curve pass that walks each curve head to tail, restores its home spacing (follow-the-leader, with the correction folded back into velocity), and accumulates arc length.
 - Rendering uses an instanced MeshLine template. Its `gpuPositionNode` samples the storage-buffer point field by `instanceIndex` and `progress`.
 - The existing MeshLine material still handles thickness, miter joins, gradients, textures, opacity, shadows, and TSL hooks.
 - `arcLengthNode( progress )` samples cumulative distance along the current animated curve, which lets fragment hooks place dashes, bands, or pulses by real curve distance.
@@ -64,6 +64,7 @@ This first implementation intentionally avoids a custom material fork. The stora
 | `depthStrength` | `0` | Placeholder vertical bias; it does not sample scene depth yet |
 | `textureStrength` | `0` | Placeholder seeded force variation; it does not sample a texture yet |
 | `mode` | `'autonomous'` | `'autonomous'`, `'follow'`, `'field'`, or a numeric blend from `0` to `2` |
+| `stiffness` | `1` | Neighbour-spacing constraint: `1` keeps each curve an inextensible streamer led by its head, `0` lets points drift independently |
 
 ## Runtime API
 
@@ -104,7 +105,7 @@ curves
 ## Current Limits
 
 - It is experimental and WebGPU-only.
-- It uses an in-place motion pass plus a cumulative arc-length pass. Neighbour constraints, collision passes, and exact compute picking are planned follow-ups.
+- Curves keep their own spacing, but do not collide with each other or with scene geometry. Collision passes and exact compute picking are planned follow-ups.
 - It inherits `MeshLine.raycast()`, but the CPU geometry is only an instanced progress template and cannot represent the GPU-updated curve shape. Use `MeshLinePicker` for rendered ID picking.
 
 See the [Compute Curves example](./examples/compute-curves.md) for a full scene with mouse interaction, arc-length pulses, per-curve colors, and glow.

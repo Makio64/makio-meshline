@@ -1,0 +1,38 @@
+# Makio MeshLine (v2)
+
+> A modern, TSL-powered MeshLine library for Three.js `WebGPURenderer` (WebGPU & WebGL2 backends). Supports wide screen-space strokes, world-space road/ribbon surfaces, gradients, dashes, textures, shadows, instancing, GPU storage-buffer trails, contour morphing, GPU picking, and native-WebGPU chunk culling.
+
+## Essential Rules for AI Coding Agents
+
+1. **Always use `WebGPURenderer`** from `'three/webgpu'` and `await renderer.init()` before rendering.
+2. **TSL `Fn()` hooks require array destructuring**: Always write `Fn( ( [color, progress, side] ) => ... )`, never `Fn( ( color, progress, side ) => ... )`.
+3. **Auto-build**: `scene.add( line )` calls `line.build()` automatically. Only call `line.build()` explicitly if you need to call `addInstanceAttributes()` / `addVertexAttributes()` before adding to the scene.
+4. **Fast updates**:
+   - Same point count per frame: set `.dynamic( true )` once, then call `line.setPositions( float32Array )` or `line.setPositionRange( slice, startPoint, { lineIndex } )`.
+   - Changing point count or open/closed state: call `line.lines( newPoints, closed )` (or alias `line.points( newPoints, closed )`).
+   - Contour / isobar morphing between states: resample to a fixed `pointsPerLine` and use `storagePositions( fromBuffer, { pointsPerLine, toBuffer, morph, closed } )`.
+5. **WebGPU 8-vertex-buffer budget**: Pack multiple custom attributes into one interleaved buffer with `line.addInstanceAttributes( { offset: 3, scale: 1 } )`.
+6. **Resize & cleanup**: Call `line.autoResize()` (or `line.resize( width, height )` on resize) and `line.dispose()` on teardown.
+
+## Package Entry Points
+
+- `makio-meshline` (Three.js r180+): `MeshLine`, `MeshLineGeometry`, `MeshLineNodeMaterial`, `MeshLineSurfaceGeometry`, `MeshLineSurfaceNodeMaterial`, `MeshLineCompute`, `MeshLinePicker`, `MeshLinePickerHelper`, `lineCoord`, `circlePositions`, `squarePositions`, `rectanglePositions`, `sineWavePositions`, `straightLine`, `straightLineBetween`, `storagePositions`
+- `makio-meshline/gpu-culling` (Three.js r183+ WebGPU): `MeshLineCullingSystem`, `MeshLineCullingHandle`
+- `makio-meshline/gpu-path` (Three.js r183+ WebGPU): `MeshLineGPUPath`
+
+## Documentation Pages
+
+- [Full Agent & LLM Reference (Single File)](https://meshline.makio.io/llms-full.txt): Complete API signatures, TSL hook tables, and copy-paste recipes
+- [Getting Started](https://meshline.makio.io/guide.html): Installation, `WebGPURenderer` setup, and first line
+- [MeshLine API](https://meshline.makio.io/meshline.html): Complete `MeshLine` fluent builder methods and options
+- [MeshLineNodeMaterial](https://meshline.makio.io/meshline-material.html): TSL shader hooks and material uniforms
+- [MeshLineGeometry](https://meshline.makio.io/meshline-geometry.html): Buffer layout, `setPositions`, and `setPositionRange`
+- [World-Space Surfaces](https://meshline.makio.io/surface.html): Lit roads and ribbons with `transport`/`fixed-up` frames, banking, and bevel/round joins
+- [GPU Culling](https://meshline.makio.io/gpu-culling.html): Per-chunk frustum culling and single indirect draw compaction
+- [Experimental GPU Path](https://meshline.makio.io/gpu-path.html): Point-centric WebGPU rendering with multi-stride simplification
+- [Position Helpers & Storage Buffers](https://meshline.makio.io/helpers.html): Built-in path generators and `storagePositions` ring-buffer / morphing helpers
+- [GPU Picking](https://meshline.makio.io/picking.html): `MeshLinePicker` and `MeshLinePickerHelper`
+- [React Three Fiber](https://meshline.makio.io/react-three-fiber.html): Declarative `<MeshLine>` component for R3F
+- [Vue](https://meshline.makio.io/vue.html): Declarative `<MeshLine>` component for Vue 3
+- [Performance Guide](https://meshline.makio.io/performance.html): Memory layout, batching, instancing, and WebGPU vertex-buffer budgets
+- [V2 Migration Guide](https://meshline.makio.io/v2-migration.html): Upgrading from `makio-meshline` v1 to v2
