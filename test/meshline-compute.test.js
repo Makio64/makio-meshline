@@ -67,6 +67,7 @@ test( 'compute options normalize values while reserved topology options stay com
 		depthStrength: 0,
 		textureStrength: 0,
 		mode: 2,
+		stiffness: 1,
 	} )
 	assert.deepEqual( line._uMouse.value.toArray(), [1, 2, 0] )
 	assert.equal( line._options.segments, 1 )
@@ -180,4 +181,15 @@ test( 'step fails open without WebGPU compute and dispatches through a CPU stub'
 	assert.equal( line._uDelta.value, 1 / 15 )
 	assert.equal( line._time, 1 / 15 )
 	line.dispose()
+} )
+
+test( 'stiffness clamps to a unit blend and feeds the constraint uniform', () => {
+	const line = new MeshLineCompute( { stiffness: 0.4 } )
+	assert.equal( line._computeOptions.stiffness, 0.4 )
+	assert.equal( line._uStiffness.value, 0.4 )
+	assert.equal( line.stiffness( 3 ), line )
+	assert.equal( line._uStiffness.value, 1 )
+	assert.equal( line.stiffness( -1 )._uStiffness.value, 0 )
+	assert.equal( line.stiffness( Number.NaN )._uStiffness.value, 0 )
+	assert.equal( 'stiffness' in line._options, false, 'stiffness must stay a compute-managed option' )
 } )

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import { getCurrentStack, setCurrentStack, stack } from 'three/tsl'
-import { InstancedBufferAttribute, PerspectiveCamera, Scene } from 'three/webgpu'
+import { InstancedBufferAttribute, PerspectiveCamera, Scene, StreamDrawUsage } from 'three/webgpu'
 
 import MeshLine, {
 	MeshLineGeometry,
@@ -55,6 +55,109 @@ test( 'partial facade position updates become the source for later rebuilds', ()
 		5, 2, 0,
 		2, 0, 0,
 	] )
+	line.dispose()
+} )
+
+test( 'widthCallback() swaps on a built line keep moved points and facade state', () => {
+	const pointXs = geometry => {
+		const position = geometry.getAttribute( 'position' )
+		const values = []
+		for ( let i = 0; i < position.count; i += 4 ) values.push( position.getX( i ) )
+		return values
+	}
+
+	// The swap rebuilt from the geometry's build-time source, so points moved
+	// in place snapped back, and it dropped the usage dynamic() set after build.
+	const line = new MeshLine()
+		.lines( new Float32Array( [0, 0, 0, 1, 0, 0] ) )
+		.widthCallback( () => 1 )
+		.build()
+	line.setPositions( new Float32Array( [5, 0, 0, 6, 0, 0] ) )
+	line.dynamic( true )
+	line.widthCallback( () => 2 )
+	assert.deepEqual( pointXs( line.geometry ), [5, 6] )
+	assert.equal( line.geometry.getAttribute( 'width' ).getX( 0 ), 2 )
+	assert.equal( line.geometry.getAttribute( 'position' ).usage, StreamDrawUsage )
+	line.dispose()
+
+	const loop = new MeshLine()
+		.lines( new Float32Array( [0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0] ), true )
+		.widthCallback( () => 1 )
+		.build()
+	loop.setPositionRange( new Float32Array( [-1, -1, 0] ), 0 )
+	loop.widthCallback( () => 2 )
+	assert.deepEqual( pointXs( loop.geometry ), [-1, 1, 1, 0, -1] )
+	loop.dispose()
+
+	const surface = new MeshLine()
+		.surface()
+		.lines( new Float32Array( [0, 0, 0, 1, 0, 0, 2, 0, 0] ) )
+		.widthCallback( () => 1 )
+		.build()
+	surface.setPositions( new Float32Array( [5, 0, 0, 6, 0, 0, 7, 0, 0] ) )
+	surface.widthCallback( () => 2 )
+	assert.deepEqual( Array.from( surface.geometry._lines[0] ), [5, 0, 0, 6, 0, 0, 7, 0, 0] )
+	surface.dispose()
+} )
+
+test( 'closed( false ) after a range edit reopens a loop without its seam point', () => {
+	const line = new MeshLine()
+		.lines( new Float32Array( [0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0] ), true )
+		.build()
+	line.setPositionRange( new Float32Array( [-1, -1, 0] ), 0 )
+	line.closed( false )
+
+	// The facade used to copy the stored loop with its seam, so the reopened
+	// line kept a fifth point and still closed.
+	assert.deepEqual( Array.from( line.geometry._lines[0] ), [-1, -1, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0] )
+	assert.deepEqual( line.geometry._lineLoops, [false] )
+	line.dispose()
+} )
+
+test( 'range edits reuse the facade source instead of copying the batch', () => {
+	// Open Float32Array lines hold the edit themselves, so the batch stays.
+	const open = [
+		new Float32Array( [0, 0, 0, 1, 0, 0] ),
+		new Float32Array( [3, 0, 0, 4, 0, 0] ),
+	]
+	const line = new MeshLine().lines( open ).build()
+	for ( let i = 0; i < 3; i++ ) line.setPositionRange( new Float32Array( [4, i + 1, 0] ), 1, { lineIndex: 1 } )
+	assert.equal( line._options.lines, open )
+	line.dispose()
+
+	// Closed loops are stored as copies: the first edit copies the batch once,
+	// and later edits on any of its lines reuse that copy.
+	const loops = new MeshLine()
+		.lines( [
+			new Float32Array( [0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0] ),
+			new Float32Array( [3, 0, 0, 4, 0, 0, 4, 1, 0, 3, 1, 0] ),
+		], true )
+		.build()
+	loops.setPositionRange( new Float32Array( [0, -1, 0] ), 0, { lineIndex: 0 } )
+	const source = loops._options.lines
+	loops.setPositionRange( new Float32Array( [3, -1, 0] ), 0, { lineIndex: 1 } )
+	loops.setPositionRange( new Float32Array( [0, -2, 0] ), 0, { lineIndex: 0 } )
+	assert.equal( loops._options.lines, source )
+	loops.rebuild()
+	assert.deepEqual( loops.geometry._lineLoops, [true, true] )
+	assert.deepEqual( [loops.geometry._lines[0][1], loops.geometry._lines[1][1]], [-2, -1] )
+	loops.dispose()
+} )
+
+test( 'range edits keep per-line closed flags aligned when a batch dropped a line', () => {
+	// The single-point first line is dropped, so the loop is stored line 0. The
+	// facade used to copy only the stored lines, which moved the loop onto the
+	// first `closed` flag and opened it on the next rebuild.
+	const line = new MeshLine()
+		.lines( [
+			new Float32Array( [9, 9, 9] ),
+			new Float32Array( [0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0] ),
+		], [false, true] )
+		.build()
+	line.setPositionRange( new Float32Array( [-1, -1, 0] ), 0 )
+	line.rebuild()
+	assert.deepEqual( line.geometry._lineLoops, [true] )
+	assert.deepEqual( Array.from( line.geometry._lines[0] ), [-1, -1, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, -1, -1, 0] )
 	line.dispose()
 } )
 
@@ -216,3 +319,32 @@ test( 'picker still decodes instance IDs for explicitly instanced lines', async 
 	assert.equal( hit.instanceId, 1 )
 	line.dispose()
 } )
+
+test( 'points alias, join string shorthand, and dash disabling work across configure and fluent methods', () => {
+	const line = new MeshLine( {
+		points: threePointLine,
+		join: 'round',
+		dash: { count: 6, ratio: 0.4 },
+	} ).build()
+
+	assert.deepEqual( Array.from( line.geometry._lines[0] ), Array.from( threePointLine ) )
+	assert.equal( line._options.join.type, 'round' )
+	assert.equal( line.material._joinType, 'round' )
+	assert.equal( line.material.dashCount.value, 6 )
+
+	line.points( twoPointLine ).join( 'bevel' ).dash( false )
+	assert.deepEqual( Array.from( line.geometry._lines[0] ), Array.from( twoPointLine ) )
+	assert.equal( line._options.join.type, 'bevel' )
+	assert.equal( line.material.dashCount, null )
+
+	line.configure( { points: threePointLine, join: null, dash: { count: 4 }, miterLimit: 2.5 } )
+	assert.equal( line._options.join.type, 'miter' )
+	assert.equal( line._options.join.limit, 2.5 )
+	assert.equal( line.material.miterLimit, 2.5 )
+	assert.equal( line.material.dashCount.value, 4 )
+
+	line.configure( { dash: null } )
+	assert.equal( line.material.dashCount, null )
+	line.dispose()
+} )
+

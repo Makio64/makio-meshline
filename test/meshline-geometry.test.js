@@ -3,6 +3,7 @@ import test from 'node:test'
 
 import { DynamicDrawUsage, StaticDrawUsage, StreamDrawUsage } from 'three/webgpu'
 
+import MeshLine from '../src/MeshLine.js'
 import MeshLineGeometry from '../src/MeshLineGeometry.js'
 import MeshLineNodeMaterial from '../src/MeshLineNodeMaterial.js'
 
@@ -10,6 +11,20 @@ const pointValues = attribute => {
 	const values = []
 	for ( let i = 0; i < attribute.count; i += 4 ) values.push( attribute.getX( i ) )
 	return values
+}
+
+// One RGB triplet per stored point, checking that all four billboard rows agree.
+const pointColors = geometry => {
+	const color = geometry.getAttribute( 'vertexColor' )
+	const colors = []
+	for ( let i = 0; i < color.count; i += 4 ) {
+		const rgb = [color.getX( i ), color.getY( i ), color.getZ( i )]
+		for ( let row = 1; row < 4; row++ ) {
+			assert.deepEqual( [color.getX( i + row ), color.getY( i + row ), color.getZ( i + row )], rgb )
+		}
+		colors.push( rgb )
+	}
+	return colors
 }
 
 const assertFiniteAndIndexValid = geometry => {
@@ -209,6 +224,154 @@ test( 'CPU geometry defaults static and honors dynamic or explicit usage', () =>
 
 	const explicitGeometry = new MeshLineGeometry( { lines: points, usage: DynamicDrawUsage } )
 	assert.equal( explicitGeometry.getAttribute( 'position' ).usage, DynamicDrawUsage )
+} )
+
+test( 'multi-line vertex colors read a concatenated array from each line\'s global point start', () => {
+	const geometry = new MeshLineGeometry( {
+		lines: [
+			new Float32Array( [0, 0, 0, 1, 0, 0] ),
+			new Float32Array( [0, 1, 0, 1, 1, 0, 2, 1, 0] ),
+			new Float32Array( [0, 2, 0, 1, 2, 0] ),
+		],
+		needsVertexColor: true,
+		vertexColors: new Float32Array( [
+			1, 0, 0, 0.5, 0, 0,
+			0, 1, 0, 0, 0.5, 0, 0, 0.25, 0,
+			0, 0, 1, 0, 0, 0.5,
+		] ),
+	} )
+	const expected = [
+		[1, 0, 0], [0.5, 0, 0],
+		[0, 1, 0], [0, 0.5, 0], [0, 0.25, 0],
+		[0, 0, 1], [0, 0, 0.5],
+	]
+	assert.deepEqual( pointColors( geometry ), expected )
+
+	// Same topology: positions update in place and the colors stay put.
+	const vertexColor = geometry.getAttribute( 'vertexColor' )
+	geometry.setPositions( [
+		new Float32Array( [0, 0, 1, 1, 0, 1] ),
+		new Float32Array( [0, 1, 1, 1, 1, 1, 2, 1, 1] ),
+		new Float32Array( [0, 2, 1, 1, 2, 1] ),
+	] )
+	assert.equal( geometry.getAttribute( 'vertexColor' ), vertexColor )
+	assert.deepEqual( pointColors( geometry ), expected )
+
+	// A point-count change rebuilds, so every later line starts one slot earlier.
+	geometry.setPositions( [
+		new Float32Array( [0, 0, 0, 1, 0, 0] ),
+		new Float32Array( [0, 1, 0, 2, 1, 0] ),
+		new Float32Array( [0, 2, 0, 1, 2, 0] ),
+	] )
+	assert.deepEqual( pointColors( geometry ), [
+		[1, 0, 0], [0.5, 0, 0],
+		[0, 1, 0], [0, 0.5, 0],
+		[0, 0.25, 0], [0, 0, 1],
+	] )
+
+	assert.throws(
+		() => new MeshLineGeometry( {
+			lines: [new Float32Array( [0, 0, 0, 1, 0, 0] ), new Float32Array( [0, 1, 0, 1, 1, 0] )],
+			needsVertexColor: true,
+			vertexColors: [1, 0, 0, 1, 0, 0, 0, Number.NaN, 0, 0, 1, 0],
+		} ),
+		/non-finite value at point 2/
+	)
+} )
+
+test( 'a single-line vertex color array stays a shared pattern across a multi-line batch', () => {
+	const geometry = new MeshLineGeometry( {
+		lines: [
+			new Float32Array( [0, 0, 0, 1, 0, 0, 2, 0, 0] ),
+			new Float32Array( [0, 1, 0, 1, 1, 0, 2, 1, 0] ),
+			new Float32Array( [0, 2, 0, 1, 2, 0] ),
+		],
+		needsVertexColor: true,
+		vertexColors: [1, 0, 0, 0, 1, 0, 0, 0, 1],
+	} )
+	const expected = [
+		[1, 0, 0], [0, 1, 0], [0, 0, 1],
+		[1, 0, 0], [0, 1, 0], [0, 0, 1],
+		[1, 0, 0], [0, 1, 0],
+	]
+	assert.deepEqual( pointColors( geometry ), expected )
+
+	// Repeating the pattern for every point of the batch reads the same colors.
+	geometry.buildLine( {
+		vertexColors: new Float32Array( [
+			1, 0, 0, 0, 1, 0, 0, 0, 1,
+			1, 0, 0, 0, 1, 0, 0, 0, 1,
+			1, 0, 0, 0, 1, 0,
+		] ),
+	} )
+	assert.deepEqual( pointColors( geometry ), expected )
+} )
+
+test( 'closed loops reuse their first color at the seam without taking a color slot', () => {
+	const expected = [
+		[1, 0, 0], [0.5, 0, 0], [0.25, 0, 0], [0.125, 0, 0], [1, 0, 0],
+		[0, 1, 0], [0, 0.5, 0],
+	]
+	const line = new MeshLine()
+		.lines( [
+			new Float32Array( [0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0] ),
+			new Float32Array( [3, 0, 0, 4, 0, 0] ),
+		], [true, false] )
+		.vertexColors( new Float32Array( [
+			1, 0, 0, 0.5, 0, 0, 0.25, 0, 0, 0.125, 0, 0,
+			0, 1, 0, 0, 0.5, 0,
+		] ) )
+		.build()
+	assert.deepEqual( pointColors( line.geometry ), expected )
+
+	// A range update leaves the colors alone. The edited loop's source becomes
+	// its stored points without the seam, and a rebuild from that source must
+	// still address the same color slots.
+	line.setPositionRange( new Float32Array( [0.5, -0.5, 0] ), 0, { lineIndex: 0 } )
+	assert.deepEqual( pointColors( line.geometry ), expected )
+	line.rebuild()
+	assert.deepEqual( pointColors( line.geometry ), expected )
+} )
+
+test( 'vertexColors() takes effect on a built line', () => {
+	// A line built without colors gains the attribute and the shader path.
+	const line = new MeshLine().lines( new Float32Array( [0, 0, 0, 1, 0, 0] ) ).build()
+	assert.equal( line.geometry.getAttribute( 'vertexColor' ), undefined )
+	line.vertexColors( new Float32Array( [1, 0, 0, 1, 0, 0] ) )
+	assert.deepEqual( pointColors( line.geometry ), [[1, 0, 0], [1, 0, 0]] )
+	assert.equal( line.material.options.needsVertexColor, true )
+
+	// A new array rewrites the same buffer from the current points without
+	// recompiling the material.
+	const vertexColor = line.geometry.getAttribute( 'vertexColor' )
+	const materialVersion = line.material.version
+	line.setPositions( new Float32Array( [5, 0, 0, 6, 0, 0] ) )
+	line.vertexColors( new Float32Array( [0, 0, 1, 0, 0, 1] ) )
+	line.ensureBuilt()
+	assert.equal( line.geometry.getAttribute( 'vertexColor' ), vertexColor )
+	assert.deepEqual( pointColors( line.geometry ), [[0, 0, 1], [0, 0, 1]] )
+	assert.deepEqual( pointValues( line.geometry.getAttribute( 'position' ) ), [5, 6] )
+	assert.equal( line.material.version, materialVersion )
+
+	// null drops both again.
+	line.vertexColors( null )
+	assert.equal( line.geometry.getAttribute( 'vertexColor' ), undefined )
+	assert.equal( line.material.options.needsVertexColor, false )
+	assert.deepEqual( pointValues( line.geometry.getAttribute( 'position' ) ), [5, 6] )
+} )
+
+test( 'surface lines keep late vertexColors for a later billboard build', () => {
+	const line = new MeshLine()
+		.lines( new Float32Array( [0, 0, 0, 1, 0, 0] ) )
+		.surface( true )
+		.build()
+	line.vertexColors( new Float32Array( [1, 1, 0, 0, 1, 1] ) )
+	assert.equal( line.geometry.isMeshLineSurfaceGeometry, true )
+	assert.equal( line.geometry.getAttribute( 'vertexColor' ), undefined )
+
+	line.surface( false )
+	assert.deepEqual( pointColors( line.geometry ), [[1, 1, 0], [0, 1, 1]] )
+	assert.equal( line.material.options.needsVertexColor, true )
 } )
 
 test( 'miter limits are finite and never below one', () => {

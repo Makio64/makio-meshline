@@ -32,7 +32,7 @@ const assertParses = code => {
 }
 
 test( 'sandbox generates parseable JavaScript for every line shape', () => {
-	for ( const lineType of ['circle', 'sine', 'square', 'straight', 'strongAngle', 'zigzag', 'snake'] ) {
+	for ( const lineType of ['circle', 'sine', 'square', 'straight', 'strongAngle', 'zigzag', 'snake', 'helix'] ) {
 		const code = generateSandboxCode( { ...BASE_CONFIG, lineType } )
 		assertParses( code )
 	}
@@ -49,8 +49,7 @@ test( 'sandbox preserves dash, attenuation, and animation options', () => {
 
 	assertParses( code )
 	assert.match( code, /\.sizeAttenuation\( false \)/ )
-	assert.match( code, /line\.resize\( renderer\.domElement\.clientWidth, renderer\.domElement\.clientHeight \)/ )
-	assert.match( code, /window\.addEventListener\( 'resize', resizeLine \)/ )
+	assert.match( code, /\.autoResize\(\)/ )
 	assert.match( code, /\.dash\( \{ count: 8, ratio: 0\.5, offset: 0\.25 \} \)/ )
 	assert.match( code, /line\.dash\( \{ count: 8, ratio: 0\.5, offset: dashOffset \} \)/ )
 	assert.doesNotMatch( code, /line\.material/ )
@@ -71,6 +70,20 @@ test( 'sandbox preserves the V2 sharp-bend threshold when customized', () => {
 	} )
 
 	assert.match( code, /\.smoothSharpBendsThreshold\( -0\.8 \)/ )
+} )
+
+test( 'sandbox serializes round/bevel joins and 3D fold modes', () => {
+	const code = generateSandboxCode( {
+		...BASE_CONFIG,
+		lineType: 'helix',
+		joinType: 'round',
+		joinFold: 'exact',
+		miterLimit: 3,
+	} )
+
+	assertParses( code )
+	assert.match( code, /Math\.sin\( angle \) \* radius/ )
+	assert.match( code, /\.join\( \{ type: 'round', limit: 3, fold: 'exact' \} \)/ )
 } )
 
 test( 'sandbox closes a zero-offset dash object without redundant options', () => {

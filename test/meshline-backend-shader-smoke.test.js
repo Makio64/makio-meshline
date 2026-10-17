@@ -5,14 +5,13 @@ import {
 	Mesh,
 	MeshBasicNodeMaterial,
 	PerspectiveCamera,
-	Scene,
-	WebGPURenderer,
 } from 'three/webgpu'
 import { attribute, Fn, vec4 } from 'three/tsl'
 
 import { lineCoord } from '../src/MeshLineNodeMaterial.js'
 import MeshLine from '../src/MeshLine.js'
 import MeshLineGPUPath from '../src/MeshLineGPUPath.js'
+import { buildShaderGraph, createRenderer } from './helpers/shaderBuilder.js'
 
 const targets = [
 	{
@@ -29,15 +28,6 @@ const targets = [
 	},
 ]
 
-const buildShaderGraph = ( renderer, object, material = object.material ) => {
-	const builder = renderer.backend.createNodeBuilder( object, renderer )
-	builder.scene = new Scene()
-	builder.camera = new PerspectiveCamera()
-	builder.material = material
-	builder.context.material = material
-	return builder.build()
-}
-
 const createShadowPassMesh = line => {
 	const material = new MeshBasicNodeMaterial()
 	material.positionNode = line.material.castShadowPositionNode
@@ -51,10 +41,7 @@ const createShadowPassMesh = line => {
 test( 'MeshLine visible and dashed-shadow graphs build for both renderer backends', async t => {
 	for ( const target of targets ) {
 		await t.test( target.name, () => {
-			const renderer = new WebGPURenderer( {
-				canvas: { width: 1, height: 1 },
-				forceWebGL: target.forceWebGL,
-			} )
+			const renderer = createRenderer( target.forceWebGL )
 			for ( const scenario of [
 				{ needsSide: false, nonIndexed: false },
 				{ needsSide: false, nonIndexed: true },
@@ -107,10 +94,7 @@ test( 'MeshLine visible and dashed-shadow graphs build for both renderer backend
 
 test( 'legacy indexed geometry without joinRole keeps the vertex-index fallback', () => {
 	for ( const target of targets ) {
-		const renderer = new WebGPURenderer( {
-			canvas: { width: 1, height: 1 },
-			forceWebGL: target.forceWebGL,
-		} )
+		const renderer = createRenderer( target.forceWebGL )
 		const line = new MeshLine( {
 			lines: new Float32Array( [0, 0, 0, 1, 0, 0] ),
 			dash: { count: 4, ratio: 0.5 },
@@ -142,10 +126,7 @@ test( 'legacy indexed geometry without joinRole keeps the vertex-index fallback'
 
 test( 'packed custom attributes share one backend vertex buffer', () => {
 	for ( const target of targets ) {
-		const renderer = new WebGPURenderer( {
-			canvas: { width: 1, height: 1 },
-			forceWebGL: target.forceWebGL,
-		} )
+		const renderer = createRenderer( target.forceWebGL )
 		const line = new MeshLine( {
 			lines: new Float32Array( [0, 0, 0, 1, 0, 0] ),
 			instanceCount: 2,
@@ -190,7 +171,7 @@ test( 'fixed MeshLineGPUPath vertex graph builds for WebGPU', async () => {
 	assert.equal( await path.prepare( prepareRenderer, new PerspectiveCamera() ), true )
 	assert.equal( path.status.topology, 'fixed-strip' )
 
-	const renderer = new WebGPURenderer( { canvas: { width: 1, height: 1 } } )
+	const renderer = createRenderer()
 	const builder = buildShaderGraph( renderer, path.gpuMesh )
 	assert.match( builder.vertexShader, /\S/ )
 	assert.match( builder.fragmentShader, /\S/ )
@@ -201,10 +182,7 @@ test( 'fixed MeshLineGPUPath vertex graph builds for WebGPU', async () => {
 test( 'analytic antialiasing and lineCoord build on both renderer backends', async t => {
 	for ( const target of targets ) {
 		await t.test( target.name, () => {
-			const renderer = new WebGPURenderer( {
-				canvas: { width: 1, height: 1 },
-				forceWebGL: target.forceWebGL,
-			} )
+			const renderer = createRenderer( target.forceWebGL )
 			const line = new MeshLine( {
 				lines: new Float32Array( [0, 0, 0, 1, 0, 0, 1, 1, 0] ),
 				join: { type: 'bevel', limit: 4 },

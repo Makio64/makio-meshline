@@ -66,7 +66,10 @@ test( 'native culling warms INDEX|STORAGE, selects indirect only for the prepare
 	assert.equal( line.geometry.getIndirect(), null )
 	assert.equal( await system.update( camera ), true )
 	assert.equal( renderer.computeCalls.length, 1 )
-	assert.equal( renderer.computeCalls[0].length, 2 )
+	// Two-triangle chunks are too small to compact cooperatively, so the cull
+	// thread copies them itself: reset, then test + reserve + copy.
+	assert.equal( handle._resources.copyNode, null )
+	assert.deepEqual( renderer.computeCalls[0], [handle._resources.resetNode, handle._resources.cullNode] )
 	camera.far = Infinity
 	camera.updateProjectionMatrix()
 	assert.equal( await system.update( camera ), false )
@@ -462,3 +465,26 @@ test( 'remove preserves later callbacks and scene hook chains survive out-of-ord
 } )
 
 const originalIndexClone = index => index.clone()
+
+test( 'large chunks compact cooperatively in a per-chunk workgroup pass', async () => {
+	const renderer = createNativeRendererStub()
+	const scene = new Scene()
+	const camera = new PerspectiveCamera( 50, 1, 0.1, 100 )
+	camera.position.z = 8
+	const points = new Float32Array( 400 * 3 )
+	for ( let i = 0; i < 400; i++ ) points[i * 3] = i * 0.05 - 10
+	const line = new MeshLine().lines( points ).build()
+	const system = MeshLineCullingSystem.attach( renderer, scene, { autoUpdate: false, chunkSize: 128, mode: 'webgpu' } )
+	const handle = system.add( line )
+
+	line.onBeforeRender( renderer, scene, camera, line.geometry, line.material, null )
+	line.onAfterRender( renderer, scene, camera, line.geometry, line.material, null )
+	assert.equal( await system.update( camera ), true )
+	const { resetNode, cullNode, copyNode } = handle._resources
+	assert.ok( copyNode, '384-index chunks should use the cooperative copy pass' )
+	assert.deepEqual( renderer.computeCalls.at( -1 ), [resetNode, cullNode, copyNode] )
+	assert.equal( copyNode.count, handle.chunkCount * 64, 'one 64-lane workgroup per chunk' )
+	assert.deepEqual( copyNode.workgroupSize, [64, 1, 1] )
+	system.dispose()
+	line.dispose()
+} )

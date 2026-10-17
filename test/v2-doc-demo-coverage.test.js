@@ -79,3 +79,15 @@ test( 'framework starters exercise the V2 surface profile declaratively', async 
 	assert.match( react, /surface=\{roadSurface\}/ )
 	assert.match( vue, /:surface="roadSurface"/ )
 } )
+
+test( 'Surface Studio compares mapped frames with responsive motion', async () => {
+	const demo = await read( 'demo/src/demos/surface.js' )
+
+	assert.match( demo, /frame: 'fixed-up'/ )
+	assert.match( demo, /frame: 'transport'/ )
+	assert.match( demo, /uvMode: 'distance'/ )
+	assert.match( demo, /uvMode: 'stretch'/ )
+	assert.match( demo, /PORTRAIT_FIT_ASPECT \/ stage3d\.camera\.aspect/ )
+	assert.match( demo, /this\.control\._theta \+= Math\.min\( dt, 100 \) \* AUTO_ROTATE_SPEED/ )
+	assert.match( demo, /prefers-reduced-motion: reduce/ )
+} )

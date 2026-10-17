@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { readFile } from 'node:fs/promises'
+import { readdir, readFile } from 'node:fs/promises'
 import test from 'node:test'
 import { fileURLToPath } from 'node:url'
 
@@ -37,6 +37,21 @@ test( 'required compatibility matrix covers minimum core, minimum optional entri
 	assert.equal( matrix[1].types, manifest.meshlineCompatibility.optionalMinimum.types )
 	assert.equal( matrix[2].three, manifest.devDependencies.three )
 	assert.equal( matrix[2].types, manifest.devDependencies['@types/three'] )
+} )
+
+test( 'every profile runs the node-level shader tests against its own Three.js', async () => {
+	const helperTests = []
+	for ( const file of ( await readdir( new URL( './', import.meta.url ) ) ).sort() ) {
+		if ( !file.endsWith( '.test.js' ) ) continue
+		if ( /['"][^'"\n]*\/helpers\/shaderBuilder\.js['"]/.test( await readFile( new URL( file, import.meta.url ), 'utf8' ) ) ) helperTests.push( file )
+	}
+	const [core, ...optionalProfiles] = listMatrix( '--include-dev-canary' )
+	for ( const profile of optionalProfiles ) assert.deepEqual( profile.shaderTests, helperTests, profile.id )
+
+	// The minimum core release skips only the tests of r183+ optional entries.
+	const coreSkipped = helperTests.filter( file => !core.shaderTests.includes( file ) )
+	assert.ok( core.shaderTests.includes( 'meshline-fold-joins.test.js' ) )
+	assert.ok( coreSkipped.every( file => /gpu-path|culling/.test( file ) ), `core-minimum skips ${coreSkipped.join( ', ' )}` )
 } )
 
 test( 'Three.js dev canary is explicit and non-blocking', () => {

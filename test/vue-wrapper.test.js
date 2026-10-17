@@ -8,6 +8,7 @@ const require = createRequire( new URL( '../examples/vue/package.json', import.m
 const {
 	createRenderer,
 	h,
+	markRaw,
 	nextTick,
 	provide,
 	reactive,
@@ -16,7 +17,7 @@ const {
 	ssrContextKey,
 	unref,
 } = require( 'vue' )
-const { Group } = await import( require.resolve( 'three/webgpu' ) )
+const { Group, Texture } = await import( require.resolve( 'three/webgpu' ) )
 
 let MeshLine
 let vite
@@ -89,6 +90,7 @@ test( 'Vue wrapper keeps its exposed facade stable across live and structural up
 	const sceneRef = shallowRef( scene )
 	const wrapperRef = ref( null )
 	const ready = []
+	const alphaMap = markRaw( new Texture() )
 	const state = reactive( {
 		points: new Float32Array( [
 			-1, 0, 0,
@@ -97,6 +99,8 @@ test( 'Vue wrapper keeps its exposed facade stable across live and structural up
 		] ),
 		lineWidth: 0.25,
 		color: 0x3366ff,
+		alphaMap,
+		antialias: false,
 	} )
 	const Root = {
 		setup() {
@@ -124,6 +128,24 @@ test( 'Vue wrapper keeps its exposed facade stable across live and structural up
 	assert.equal( line?.geometry.isMeshLine, true )
 	assert.deepEqual( ready, [line] )
 	assert.equal( line.parent, scene )
+	assert.equal( line._options.alphaMap, alphaMap )
+	assert.equal( line._options.transparent, true )
+	assert.equal( line.material.transparent, true )
+
+	await update( { alphaMap: null } )
+	assert.equal( unref( wrapperRef.value?.line ), line )
+	assert.equal( line._options.transparent, false )
+	assert.equal( line.material.transparent, false )
+	await update( { antialias: true } )
+	assert.equal( unref( wrapperRef.value?.line ), line )
+	assert.equal( line._options.antialias, true )
+	assert.equal( line.material.antialias, true )
+	assert.equal( line.material.transparent, true )
+	await update( { antialias: false } )
+	assert.equal( unref( wrapperRef.value?.line ), line )
+	assert.equal( line._options.antialias, false )
+	assert.equal( line.material.antialias, false )
+	assert.equal( line.material.transparent, false )
 
 	const livePoints = new Float32Array( [
 		-2, 0, 0,
@@ -159,13 +181,27 @@ test( 'Vue wrapper keeps its exposed facade stable across live and structural up
 	const billboardGeometry = line.geometry
 	let billboardDisposeCount = 0
 	billboardGeometry.addEventListener( 'dispose', () => billboardDisposeCount++ )
-	await update( { surface: true } )
+	await update( {
+		surface: true,
+		join: { type: 'round', limit: 3, segments: 8, inner: 'clip' },
+	} )
 	assert.equal( unref( wrapperRef.value?.line ), line )
 	assert.equal( line.geometry.isMeshLineSurfaceGeometry, true )
+	assert.equal( line._options.join.inner, 'clip' )
 	assert.equal( billboardDisposeCount, 1 )
 	await update( { surface: false } )
 	assert.equal( unref( wrapperRef.value?.line ), line )
 	assert.equal( line.geometry.isMeshLine, true )
+
+	const firstColor = () => Array.from( line.geometry.getAttribute( 'vertexColor' ).array.subarray( 0, 3 ) )
+	await update( { vertexColors: new Float32Array( [1, 0, 0] ) } )
+	assert.equal( unref( wrapperRef.value?.line ), line )
+	assert.deepEqual( firstColor(), [1, 0, 0] )
+	await update( { vertexColors: new Float32Array( [0, 0, 1] ) } )
+	assert.deepEqual( firstColor(), [0, 0, 1] )
+	await update( { vertexColors: null } )
+	assert.equal( line.geometry.getAttribute( 'vertexColor' ), undefined )
+	assert.equal( line.material.options.needsVertexColor, false )
 
 	const hookA = position => position
 	const hookB = position => position

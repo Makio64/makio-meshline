@@ -241,3 +241,60 @@ test( 'same totals with different per-line point counts regenerate connectivity'
 		18, 19, 20, 20, 19, 21,
 	] )
 } )
+
+test( 'partial buildLine keeps points written by in-place updates', () => {
+	const geometry = new MeshLineGeometry( { lines: createStraightLine( 0, 3 ) } )
+	const moved = createStraightLine( 5, 3 )
+	geometry.setPositions( moved )
+	geometry.buildLine( { lineWidth: 2 } )
+	assert.equal( geometry.options.lines, moved )
+	assert.deepEqual( Array.from( geometry._lines[0] ), Array.from( moved ) )
+
+	// A closed loop stores a seam copy, so a range edit never reaches the
+	// caller's array: the source moves to the stored points, seam excluded.
+	const square = new Float32Array( [0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0] )
+	const loop = new MeshLineGeometry( { lines: square, closed: true } )
+	loop.setPositionRange( new Float32Array( [-1, -1, 0] ), 0 )
+	const source = loop.options.lines
+	loop.setPositionRange( new Float32Array( [2, 0, 0] ), 1 )
+	assert.equal( loop.options.lines, source, 'later edits reuse the moved source' )
+	assert.deepEqual( Array.from( square ), [0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0] )
+
+	loop.buildLine( { lineWidth: 2 } )
+	assert.deepEqual( Array.from( loop._lines[0] ), [-1, -1, 0, 2, 0, 0, 1, 1, 0, 0, 1, 0, -1, -1, 0] )
+	loop.buildLine( { closed: false } )
+	assert.deepEqual( Array.from( loop._lines[0] ), [-1, -1, 0, 2, 0, 0, 1, 1, 0, 0, 1, 0] )
+} )
+
+test( 'range edits keep each batch line at its caller index in the source', () => {
+	// Open Float32Array lines are stored as given, so the edit already reached
+	// the caller's array and the batch stays the source.
+	const open = [createStraightLine( 0, 2 ), createStraightLine( 10, 2 )]
+	const aliased = new MeshLineGeometry( { lines: open } )
+	aliased.setPositionRange( new Float32Array( [11, 1, 0] ), 1, { lineIndex: 1 } )
+	assert.equal( aliased.options.lines, open )
+	assert.deepEqual( Array.from( open[1] ), [10, 0, 0, 11, 1, 0] )
+
+	// A closed line is stored as a copy: the source becomes a new batch and the
+	// caller's batch and arrays keep their points.
+	const square = new Float32Array( [0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0] )
+	const mixed = [createStraightLine( 10, 2 ), square]
+	const looped = new MeshLineGeometry( { lines: mixed, closed: [false, true] } )
+	looped.setPositionRange( new Float32Array( [0, -1, 0] ), 0, { lineIndex: 1 } )
+	assert.notEqual( looped.options.lines, mixed )
+	assert.equal( mixed[1], square )
+	assert.equal( square[1], 0 )
+	looped.buildLine( { lineWidth: 2 } )
+	assert.deepEqual( looped._lineLoops, [false, true] )
+	assert.deepEqual( Array.from( looped._lines[1].subarray( 0, 3 ) ), [0, -1, 0] )
+
+	// A dropped single-point line stays in the copy, so the per-line flags
+	// still select the loop.
+	const sparse = [new Float32Array( [9, 9, 9] ), square.slice()]
+	const dropped = new MeshLineGeometry( { lines: sparse, closed: [false, true] } )
+	dropped.setPositionRange( new Float32Array( [0, -1, 0] ), 0 )
+	assert.equal( dropped.options.lines[0], sparse[0] )
+	dropped.buildLine( { lineWidth: 2 } )
+	assert.deepEqual( dropped._lineLoops, [true] )
+	assert.deepEqual( Array.from( dropped._lines[0].subarray( 0, 3 ) ), [0, -1, 0] )
+} )
