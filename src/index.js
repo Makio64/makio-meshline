@@ -10,6 +10,7 @@ import { circlePositions } from './positions/circlePositions.js'
 import { rectanglePositions } from './positions/rectanglePositions.js'
 import { sineWavePositions } from './positions/sineWavePositions.js'
 import { squarePositions } from './positions/squarePositions.js'
+import { storagePositions } from './positions/storagePositions.js'
 import { straightLine, straightLineBetween } from './positions/straightLine.js'
 
 export {
@@ -26,6 +27,7 @@ export {
 	squarePositions,
 	rectanglePositions,
 	sineWavePositions,
+	storagePositions,
 	straightLine,
 	straightLineBetween
 }

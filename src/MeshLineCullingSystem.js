@@ -29,6 +29,15 @@ const DEFAULT_MIN_CHUNKS = 128
 const DEFAULT_MIN_INDICES = 1_000_000
 const INDIRECT_WORDS = 5
 const UINT32_MAX = 0xffffffff
+// Large chunks are compacted by one workgroup each: adjacent lanes copy
+// adjacent indices, so reads and writes coalesce. Small chunks copy inside the
+// cull thread instead, because launching a workgroup for every mostly-culled
+// small chunk costs more than the short serial copy it replaces. On a
+// 400K-point path (Apple GPU), 384-index chunks compacted as fast or up to ~2x
+// faster cooperatively, while 96-index chunks ran 3-5x slower that way;
+// discrete GPUs penalise the uncoalesced serial copy more.
+const COPY_WORKGROUP_SIZE = 64
+const COOPERATIVE_COPY_MIN_INDICES = 256
 
 const systems = new WeakMap()
 const attachedLines = new WeakMap()
@@ -155,10 +164,15 @@ const getExplicitBoundsEntry = ( bounds, context, chunkCount ) => {
 }
 
 const createIndexCopy = index => {
-	if ( !index?.array || !Number.isSafeInteger( index.count ) || index.count <= 0 ) return null
-	const copy = new Uint32Array( index.count )
-	for ( let i = 0; i < index.count; i++ ) {
-		const value = Number( index.array[i] )
+	const array = index?.array
+	const count = index?.count
+	if ( !array || !Number.isSafeInteger( count ) || count <= 0 || array.length < count ) return null
+	if ( array instanceof Uint32Array || array instanceof Uint16Array || array instanceof Uint8Array ) {
+		return new Uint32Array( array.subarray( 0, count ) )
+	}
+	const copy = new Uint32Array( count )
+	for ( let i = 0; i < count; i++ ) {
+		const value = Number( array[i] )
 		if ( !Number.isInteger( value ) || value < 0 || value > UINT32_MAX ) return null
 		copy[i] = value
 	}
@@ -268,6 +282,10 @@ const getWorldPadding = ( object, hasExplicitBounds, explicitWorldPadding ) => {
 
 const writeChunkBounds = ( target, chunks, indexArray, position, object, boundsOption, localPadding, worldPadding ) => {
 	const chunkCount = chunks.length
+	const posCount = position.count
+	const directArray = !position.isInterleavedBufferAttribute && position.itemSize >= 3 && position.array ? position.array : null
+	const stride = position.itemSize
+
 	for ( let chunkIndex = 0; chunkIndex < chunkCount; chunkIndex++ ) {
 		const [indexStart, indexCount] = chunks[chunkIndex]
 		let minX = Infinity, minY = Infinity, minZ = Infinity
@@ -288,20 +306,41 @@ const writeChunkBounds = ( target, chunks, indexArray, position, object, boundsO
 			maxX = entry[3]
 			maxY = entry[4]
 			maxZ = entry[5]
-		} else {
-			for ( let i = indexStart; i < indexStart + indexCount; i++ ) {
+		} else if ( directArray ) {
+			let prevVertex = -1
+			const end = indexStart + indexCount
+			for ( let i = indexStart; i < end; i++ ) {
 				const vertex = indexArray[i]
-				if ( vertex >= position.count ) return false
+				if ( vertex === prevVertex ) continue
+				if ( vertex >= posCount ) return false
+				prevVertex = vertex
+				const vOffset = vertex * stride
+				const x = directArray[vOffset]
+				const y = directArray[vOffset + 1]
+				const z = directArray[vOffset + 2]
+				if ( !( x - x === 0 && y - y === 0 && z - z === 0 ) ) return false
+				if ( x < minX ) minX = x
+				if ( y < minY ) minY = y
+				if ( z < minZ ) minZ = z
+				if ( x > maxX ) maxX = x
+				if ( y > maxY ) maxY = y
+				if ( z > maxZ ) maxZ = z
+			}
+		} else {
+			const end = indexStart + indexCount
+			for ( let i = indexStart; i < end; i++ ) {
+				const vertex = indexArray[i]
+				if ( vertex >= posCount ) return false
 				const x = position.getX( vertex )
 				const y = position.getY( vertex )
 				const z = position.getZ( vertex )
 				if ( !Number.isFinite( x ) || !Number.isFinite( y ) || !Number.isFinite( z ) ) return false
-				minX = Math.min( minX, x )
-				minY = Math.min( minY, y )
-				minZ = Math.min( minZ, z )
-				maxX = Math.max( maxX, x )
-				maxY = Math.max( maxY, y )
-				maxZ = Math.max( maxZ, z )
+				if ( x < minX ) minX = x
+				if ( y < minY ) minY = y
+				if ( z < minZ ) minZ = z
+				if ( x > maxX ) maxX = x
+				if ( y > maxY ) maxY = y
+				if ( z > maxZ ) maxZ = z
 			}
 		}
 
@@ -480,6 +519,7 @@ class MeshLineCullingHandle {
 			const chunkAttribute = new StorageBufferAttribute( createChunkInfo( chunks ), 4, Uint32Array )
 			const boundsAttribute = new StorageBufferAttribute( bounds, 4 )
 			const visibilityAttribute = new StorageBufferAttribute( new Uint32Array( chunks.length ), 1, Uint32Array )
+			const offsetAttribute = new StorageBufferAttribute( new Uint32Array( chunks.length ), 1, Uint32Array )
 			const indirectArray = new Uint32Array( [index.count, instanceCount, 0, 0, 0] )
 			const indirectAttribute = new IndirectStorageBufferAttribute( indirectArray, 1 )
 			const planes = Array.from( { length: 6 }, () => new Vector4() )
@@ -501,6 +541,7 @@ class MeshLineCullingHandle {
 				chunks,
 				indirectAttribute,
 				localPadding,
+				offsetAttribute,
 				outputAttribute,
 				planes,
 				sourceAttribute,
@@ -525,6 +566,7 @@ class MeshLineCullingHandle {
 		const chunkBuffer = storage( resources.chunkAttribute, 'uvec4', this.chunkCount ).toReadOnly()
 		const boundsBuffer = storage( resources.boundsAttribute, 'vec4', this.chunkCount * 2 ).toReadOnly()
 		const visibilityBuffer = storage( resources.visibilityAttribute, 'uint', this.chunkCount )
+		const offsetBuffer = storage( resources.offsetAttribute, 'uint', this.chunkCount )
 		const indirectBuffer = storage( resources.indirectAttribute, 'uint', INDIRECT_WORDS ).toAtomic()
 		const planeBuffer = uniformArray( resources.planes, 'vec4' )
 		const instanceCount = this.instanceCount
@@ -539,6 +581,13 @@ class MeshLineCullingHandle {
 			} )
 		} )().compute( 1 )
 
+		const chunkIndexCount = chunk => min( chunk.y, uint( this.indexCount ).sub( chunk.x ) )
+		const largestChunk = resources.chunks.reduce( ( largest, chunk ) => Math.max( largest, chunk[1] ), 0 )
+		const cooperativeCopy = largestChunk >= COOPERATIVE_COPY_MIN_INDICES
+
+		// Pass 1, one thread per chunk: test the AABB and reserve the chunk's
+		// output range. For large chunks the copy is left to pass 2, where it
+		// coalesces instead of each thread walking its own far-off range.
 		resources.cullNode = Fn( () => {
 			If( instanceIndex.lessThan( uint( this.chunkCount ) ), () => {
 				const chunk = chunkBuffer.element( instanceIndex )
@@ -554,19 +603,50 @@ class MeshLineCullingHandle {
 				}
 
 				visibilityBuffer.element( instanceIndex ).assign( visible.select( uint( 1 ), uint( 0 ) ) )
+				if ( cooperativeCopy ) offsetBuffer.element( instanceIndex ).assign( uint( UINT32_MAX ) )
 
 				If( visible, () => {
-					const sourceStart = chunk.x
-					const sourceCount = chunk.y
-					const available = uint( this.indexCount ).sub( sourceStart )
-					const count = min( sourceCount, available )
+					const count = chunkIndexCount( chunk )
 					const outputStart = atomicAdd( indirectBuffer.element( uint( 0 ) ), count )
+					if ( cooperativeCopy ) {
+						offsetBuffer.element( instanceIndex ).assign( outputStart )
+						return
+					}
+					const sourceStart = chunk.x
 					Loop( { start: uint( 0 ), end: count, type: 'uint', condition: '<' }, ( { i } ) => {
 						outputBuffer.element( outputStart.add( i ) ).assign( sourceBuffer.element( sourceStart.add( i ) ) )
 					} )
 				} )
 			} )
 		} )().compute( this.chunkCount )
+
+		if ( !cooperativeCopy ) {
+			resources.copyNode = null
+			return
+		}
+
+		// Pass 2, one workgroup per chunk: lanes stride through the reserved range
+		// together, so every step reads and writes one contiguous block.
+		resources.copyNode = Fn( () => {
+			const chunkIndex = instanceIndex.div( uint( COPY_WORKGROUP_SIZE ) ).toVar()
+			If( chunkIndex.lessThan( uint( this.chunkCount ) ), () => {
+				const outputStart = offsetBuffer.element( chunkIndex ).toVar()
+				If( outputStart.notEqual( uint( UINT32_MAX ) ), () => {
+					const chunk = chunkBuffer.element( chunkIndex )
+					const sourceStart = chunk.x.toVar()
+					const lane = instanceIndex.mod( uint( COPY_WORKGROUP_SIZE ) )
+					Loop( {
+						start: lane,
+						end: chunkIndexCount( chunk ),
+						type: 'uint',
+						condition: '<',
+						update: COPY_WORKGROUP_SIZE,
+					}, ( { i } ) => {
+						outputBuffer.element( outputStart.add( i ) ).assign( sourceBuffer.element( sourceStart.add( i ) ) )
+					} )
+				} )
+			} )
+		} )().compute( this.chunkCount * COPY_WORKGROUP_SIZE, [COPY_WORKGROUP_SIZE] )
 	}
 
 	/**
@@ -892,6 +972,7 @@ class MeshLineCullingHandle {
 	_disposeComputeNodes() {
 		this._resources?.resetNode?.dispose?.()
 		this._resources?.cullNode?.dispose?.()
+		this._resources?.copyNode?.dispose?.()
 	}
 
 	remove() {
@@ -1119,6 +1200,7 @@ export class MeshLineCullingSystem {
 					continue
 				}
 				computeNodes.push( handle._resources.resetNode, handle._resources.cullNode )
+				if ( handle._resources.copyNode ) computeNodes.push( handle._resources.copyNode )
 				preparedHandles.push( handle )
 			}
 

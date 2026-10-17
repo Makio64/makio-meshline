@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { cp, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { dirname, resolve } from 'node:path'
+import { basename, dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const rootDirectory = resolve( dirname( fileURLToPath( import.meta.url ) ), '..' )
@@ -58,6 +58,27 @@ const devCanary = {
 	required: false,
 }
 
+// Node-level shader tests: every test file that builds shaders through
+// test/helpers/shaderBuilder.js. Node-builder output changes between Three.js
+// releases, so each profile runs them against its own install.
+const testDirectory = resolve( rootDirectory, 'test' )
+const shaderBuilderImport = /['"]\.\/helpers\/shaderBuilder\.js['"]/
+const optionalEntryShaderTests = new Set( ['meshline-gpu-path-position-accessors.test.js'] )
+const shaderTests = []
+for ( const file of ( await readdir( testDirectory ) ).filter( file => file.endsWith( '.test.js' ) ).sort() ) {
+	if ( shaderBuilderImport.test( await readFile( resolve( testDirectory, file ), 'utf8' ) ) ) shaderTests.push( file )
+}
+if ( shaderTests.length === 0 ) throw new Error( 'No test/*.test.js file imports ./helpers/shaderBuilder.js' )
+for ( const file of optionalEntryShaderTests ) {
+	if ( !shaderTests.includes( file ) ) throw new Error( `Optional-entry shader test ${file} is not a test/*.test.js file importing ./helpers/shaderBuilder.js` )
+}
+const shaderTestsFor = profile => shaderTests.filter( file => profile.optionalEntries || !optionalEntryShaderTests.has( file ) )
+
+// What the shader tests import. Each profile runs a copy below its consumer, so
+// the tests and the library resolve that profile's `three`; src/ links its own
+// node_modules/three (the pinned release), so node_modules folders stay behind.
+const shaderTestSources = ['src', 'test', 'demo/src/utils', 'docs/.vitepress/theme']
+
 const argumentsSet = new Set( process.argv.slice( 2 ) )
 const knownArguments = new Set( ['--include-dev-canary', '--dev-canary-only', '--list'] )
 const unknownArguments = [...argumentsSet].filter( argument => !knownArguments.has( argument ) )
@@ -76,6 +97,7 @@ const publicProfile = profile => ( {
 	types: profile.types,
 	coverage: profile.optionalEntries ? 'core+optional' : 'core',
 	required: profile.required,
+	shaderTests: shaderTestsFor( profile ),
 } )
 
 if ( argumentsSet.has( '--list' ) ) {
@@ -158,7 +180,7 @@ const createTypeSmoke = optionalEntries => {
 	return source.join( '\n' )
 }
 
-const verifyProfile = async ( profile, temporaryDirectory, tarballPath ) => {
+const verifyProfile = async ( profile, temporaryDirectory, tarballPath, shaderTestSnapshot ) => {
 	const consumerDirectory = resolve( temporaryDirectory, profile.id )
 	const npmEnvironment = {
 		...sanitizedEnvironment,
@@ -217,10 +239,24 @@ const verifyProfile = async ( profile, temporaryDirectory, tarballPath ) => {
 		typeSmokePath,
 	], { cwd: consumerDirectory } ), `${profile.label} declaration smoke` )
 
+	const shaderTestDirectory = resolve( consumerDirectory, 'shader-tests' )
+	await cp( shaderTestSnapshot, shaderTestDirectory, { recursive: true } )
+	const shaderTestRun = run(
+		process.execPath,
+		['--test', '--test-reporter=spec', ...shaderTestsFor( profile ).map( file => `test/${file}` )],
+		{ cwd: shaderTestDirectory }
+	)
+	if ( shaderTestRun.status !== 0 ) {
+		// Crash output comes first and failure details last; only passes are dropped.
+		const stdout = ( shaderTestRun.stdout ?? '' ).split( '\n' ).filter( line => !/^\s*✔ /u.test( line ) ).join( '\n' )
+		throw commandFailure( { ...shaderTestRun, stdout }, `${profile.label} shader tests` )
+	}
+
 	return {
 		...publicProfile( profile ),
 		installedThree: installedThreeManifest.version,
 		installedTypes: installedTypesManifest.version,
+		shaderTestCount: shaderTestRun.stdout.match( /ℹ tests (\d+)/u )?.[1],
 		status: 'passed',
 	}
 }
@@ -244,9 +280,19 @@ try {
 	const [report] = JSON.parse( pack.stdout )
 	const tarballPath = resolve( temporaryDirectory, report.filename )
 
+	// One snapshot for every profile, taken with the tarball.
+	const shaderTestSnapshot = resolve( temporaryDirectory, 'shader-tests' )
+	for ( const source of shaderTestSources ) {
+		await cp( resolve( rootDirectory, source ), resolve( shaderTestSnapshot, source ), {
+			recursive: true,
+			filter: path => basename( path ) !== 'node_modules',
+		} )
+	}
+	await writeFile( resolve( shaderTestSnapshot, 'package.json' ), JSON.stringify( { private: true, type: 'module' }, null, 2 ) )
+
 	for ( const profile of profiles ) {
 		try {
-			results.push( await verifyProfile( profile, temporaryDirectory, tarballPath ) )
+			results.push( await verifyProfile( profile, temporaryDirectory, tarballPath, shaderTestSnapshot ) )
 		} catch ( error ) {
 			results.push( {
 				...publicProfile( profile ),
@@ -264,7 +310,8 @@ console.log( `makio-meshline@${packageManifest.version} Three.js compatibility m
 for ( const result of results ) {
 	const marker = result.status === 'passed' ? 'PASS' : result.status === 'advisory-failed' ? 'WARN' : 'FAIL'
 	const installed = result.installedThree ? `three@${result.installedThree}, @types/three@${result.installedTypes}` : `three@${result.three}`
-	console.log( `[${marker}] ${result.id}: ${result.coverage} runtime + declarations (${installed})` )
+	const shaderTestCount = result.shaderTestCount ? `, ${result.shaderTestCount} shader tests` : ''
+	console.log( `[${marker}] ${result.id}: ${result.coverage} runtime + declarations + ${result.shaderTests.length} shader test files (${installed}${shaderTestCount})` )
 	if ( result.error ) console.log( result.error )
 }
 

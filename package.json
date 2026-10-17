@@ -10,6 +10,7 @@
     "bench:v2": "node benchmarks/v2-geometry.mjs",
     "bench:hotpaths": "node benchmarks/meshline-geometry-hotpaths.mjs",
     "bench:surface-topology": "node --expose-gc benchmarks/surface-variable-topology.mjs",
+    "bench:bounds": "node benchmarks/meshline-bounds-refresh.mjs",
     "preview": "pnpm --filter demo preview",
     "docs:dev": "pnpm --filter docs dev",
     "docs:build": "pnpm --filter docs build",

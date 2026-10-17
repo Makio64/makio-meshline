@@ -56,120 +56,185 @@ export type MeshLineResizeTarget = Pick<Window, 'addEventListener' | 'removeEven
 /**
  * Hook that receives a position (vec3) and progress (float) and returns a modified position (vec3).
  * Applied to current, previous, and next positions simultaneously.
+ * Note: When wrapped in Three's `Fn()`, destructure the parameter array: `Fn( ( [position, progress] ) => ... )`.
  */
-export type PositionHookFn = ( position: MeshLineNodeValue, progress: MeshLineNodeValue ) => MeshLineNodeValue
+export type PositionHookFn =
+	| ( ( position: MeshLineNodeValue, progress: MeshLineNodeValue ) => MeshLineNodeValue )
+	| ( ( params: [position: MeshLineNodeValue, progress: MeshLineNodeValue] ) => MeshLineNodeValue )
 
 /**
  * Hook that receives a neighbour position (vec3) and progress (float) and returns a modified position.
  * Used independently for `previous` or `next` point overrides.
+ * Note: When wrapped in Three's `Fn()`, destructure the parameter array: `Fn( ( [position, progress] ) => ... )`.
  */
-export type NeighbourHookFn = ( position: MeshLineNodeValue, progress: MeshLineNodeValue ) => MeshLineNodeValue
+export type NeighbourHookFn =
+	| ( ( position: MeshLineNodeValue, progress: MeshLineNodeValue ) => MeshLineNodeValue )
+	| ( ( params: [position: MeshLineNodeValue, progress: MeshLineNodeValue] ) => MeshLineNodeValue )
 
 /**
  * Hook that receives width (float), progress (float), and side (float, +1 or -1)
  * and returns a modified width.
+ * Note: When wrapped in Three's `Fn()`, destructure the parameter array: `Fn( ( [width, progress, side] ) => ... )`.
  */
-export type WidthHookFn = ( width: MeshLineNodeValue, progress: MeshLineNodeValue, side: MeshLineNodeValue ) => MeshLineNodeValue
+export type WidthHookFn =
+	| ( ( width: MeshLineNodeValue, progress: MeshLineNodeValue, side: MeshLineNodeValue ) => MeshLineNodeValue )
+	| ( ( params: [width: MeshLineNodeValue, progress: MeshLineNodeValue, side?: MeshLineNodeValue] ) => MeshLineNodeValue )
 
 /**
  * Hook that receives the normal (vec4), direction (vec2), dir1 (vec2), dir2 (vec2),
  * progress (float) and side (float) and returns a modified normal.
+ * Note: When wrapped in Three's `Fn()`, destructure the parameter array: `Fn( ( [normal, dir, dir1, dir2, progress, side] ) => ... )`.
  */
-export type NormalHookFn = (
-	normal: MeshLineNodeValue,
-	dir: MeshLineNodeValue,
-	dir1: MeshLineNodeValue,
-	dir2: MeshLineNodeValue,
-	progress: MeshLineNodeValue,
-	side: MeshLineNodeValue
-) => MeshLineNodeValue
+export type NormalHookFn =
+	| ( (
+		normal: MeshLineNodeValue,
+		dir: MeshLineNodeValue,
+		dir1: MeshLineNodeValue,
+		dir2: MeshLineNodeValue,
+		progress: MeshLineNodeValue,
+		side: MeshLineNodeValue
+	) => MeshLineNodeValue )
+	| ( ( params: [
+		normal: MeshLineNodeValue,
+		dir?: MeshLineNodeValue,
+		dir1?: MeshLineNodeValue,
+		dir2?: MeshLineNodeValue,
+		progress?: MeshLineNodeValue,
+		side?: MeshLineNodeValue
+	] ) => MeshLineNodeValue )
 
 /**
  * Hook that receives a color (vec4), progress (float), and side (float)
  * and returns a modified color.
+ * Note: When wrapped in Three's `Fn()`, destructure the parameter array: `Fn( ( [color, progress, side] ) => ... )`.
  */
-export type ColorHookFn = ( color: MeshLineNodeValue, progress: MeshLineNodeValue, side: MeshLineNodeValue ) => MeshLineNodeValue
+export type ColorHookFn =
+	| ( ( color: MeshLineNodeValue, progress: MeshLineNodeValue, side: MeshLineNodeValue ) => MeshLineNodeValue )
+	| ( ( params: [color: MeshLineNodeValue, progress?: MeshLineNodeValue, side?: MeshLineNodeValue] ) => MeshLineNodeValue )
 
 /**
  * Hook that receives the gradient factor (float) and side (float)
  * and returns a modified gradient factor.
+ * Note: When wrapped in Three's `Fn()`, destructure the parameter array: `Fn( ( [factor, side] ) => ... )`.
  */
-export type GradientHookFn = ( factor: MeshLineNodeValue, side: MeshLineNodeValue ) => MeshLineNodeValue
+export type GradientHookFn =
+	| ( ( factor: MeshLineNodeValue, side: MeshLineNodeValue ) => MeshLineNodeValue )
+	| ( ( params: [factor: MeshLineNodeValue, side?: MeshLineNodeValue] ) => MeshLineNodeValue )
 
 /**
  * Hook that receives alpha (float), progress (float), and side (float)
  * and returns a modified alpha value.
+ * Note: When wrapped in Three's `Fn()`, destructure the parameter array: `Fn( ( [alpha, progress, side] ) => ... )`.
  */
-export type OpacityHookFn = ( alpha: MeshLineNodeValue, progress: MeshLineNodeValue, side: MeshLineNodeValue ) => MeshLineNodeValue
+export type OpacityHookFn =
+	| ( ( alpha: MeshLineNodeValue, progress: MeshLineNodeValue, side: MeshLineNodeValue ) => MeshLineNodeValue )
+	| ( ( params: [alpha: MeshLineNodeValue, progress?: MeshLineNodeValue, side?: MeshLineNodeValue] ) => MeshLineNodeValue )
 
 /**
  * Hook that receives cycle position (float), progress (float), and side (float)
  * and returns a modified cycle position for dash control.
+ * Note: When wrapped in Three's `Fn()`, destructure the parameter array: `Fn( ( [cyclePosition, progress, side] ) => ... )`.
  */
-export type DashHookFn = ( cyclePosition: MeshLineNodeValue, progress: MeshLineNodeValue, side: MeshLineNodeValue ) => MeshLineNodeValue
+export type DashHookFn =
+	| ( ( cyclePosition: MeshLineNodeValue, progress: MeshLineNodeValue, side: MeshLineNodeValue ) => MeshLineNodeValue )
+	| ( ( params: [cyclePosition: MeshLineNodeValue, progress?: MeshLineNodeValue, side?: MeshLineNodeValue] ) => MeshLineNodeValue )
 
 /**
  * Hook that receives UV coordinates (vec2), progress (float), and side (float)
  * and returns modified UV coordinates.
+ * Note: When wrapped in Three's `Fn()`, destructure the parameter array: `Fn( ( [uv, progress, side] ) => ... )`.
  */
-export type UVHookFn = ( uv: MeshLineNodeValue, progress: MeshLineNodeValue, side: MeshLineNodeValue ) => MeshLineNodeValue
+export type UVHookFn =
+	| ( ( uv: MeshLineNodeValue, progress: MeshLineNodeValue, side: MeshLineNodeValue ) => MeshLineNodeValue )
+	| ( ( params: [uv: MeshLineNodeValue, progress?: MeshLineNodeValue, side?: MeshLineNodeValue] ) => MeshLineNodeValue )
 
 /**
  * Hook that receives the final clip-space position (vec4), normal (vec4),
  * progress (float), and side (float) and returns a modified position.
+ * Note: When wrapped in Three's `Fn()`, destructure the parameter array: `Fn( ( [position, normal, progress, side] ) => ... )`.
  */
-export type VertexHookFn = (
-	position: MeshLineNodeValue,
-	normal: MeshLineNodeValue,
-	progress: MeshLineNodeValue,
-	side: MeshLineNodeValue
-) => MeshLineNodeValue
+export type VertexHookFn =
+	| ( (
+		position: MeshLineNodeValue,
+		normal: MeshLineNodeValue,
+		progress: MeshLineNodeValue,
+		side: MeshLineNodeValue
+	) => MeshLineNodeValue )
+	| ( ( params: [
+		position: MeshLineNodeValue,
+		normal?: MeshLineNodeValue,
+		progress?: MeshLineNodeValue,
+		side?: MeshLineNodeValue
+	] ) => MeshLineNodeValue )
 
 /**
  * Hook that receives color (vec4), UV (vec2), progress (float), and side (float)
  * and returns a modified fragment color.
+ * Note: When wrapped in Three's `Fn()`, destructure the parameter array: `Fn( ( [color, uv, progress, side] ) => ... )`.
  */
-export type FragmentColorHookFn = (
-	color: MeshLineNodeValue,
-	uv: MeshLineNodeValue,
-	progress: MeshLineNodeValue,
-	side: MeshLineNodeValue
-) => MeshLineNodeValue
+export type FragmentColorHookFn =
+	| ( (
+		color: MeshLineNodeValue,
+		uv: MeshLineNodeValue,
+		progress: MeshLineNodeValue,
+		side: MeshLineNodeValue
+	) => MeshLineNodeValue )
+	| ( ( params: [
+		color: MeshLineNodeValue,
+		uv?: MeshLineNodeValue,
+		progress?: MeshLineNodeValue,
+		side?: MeshLineNodeValue
+	] ) => MeshLineNodeValue )
 
 /**
  * Hook that receives alpha (float), UV (vec2), progress (float), and side (float)
  * and returns a modified alpha value.
+ * Note: When wrapped in Three's `Fn()`, destructure the parameter array: `Fn( ( [alpha, uv, progress, side] ) => ... )`.
  */
-export type FragmentAlphaHookFn = (
-	alpha: MeshLineNodeValue,
-	uv: MeshLineNodeValue,
-	progress: MeshLineNodeValue,
-	side: MeshLineNodeValue
-) => MeshLineNodeValue
+export type FragmentAlphaHookFn =
+	| ( (
+		alpha: MeshLineNodeValue,
+		uv: MeshLineNodeValue,
+		progress: MeshLineNodeValue,
+		side: MeshLineNodeValue
+	) => MeshLineNodeValue )
+	| ( ( params: [
+		alpha: MeshLineNodeValue,
+		uv?: MeshLineNodeValue,
+		progress?: MeshLineNodeValue,
+		side?: MeshLineNodeValue
+	] ) => MeshLineNodeValue )
 
 /**
  * Hook that receives progress (float), side (float), and UV (vec2)
  * and returns a boolean node controlling fragment discard.
+ * Note: When wrapped in Three's `Fn()`, destructure the parameter array: `Fn( ( [progress, side, uv] ) => ... )`.
  */
-export type DiscardHookFn = ( progress: MeshLineNodeValue, side: MeshLineNodeValue, uv: MeshLineNodeValue ) => MeshLineNodeValue
+export type DiscardHookFn =
+	| ( ( progress: MeshLineNodeValue, side: MeshLineNodeValue, uv: MeshLineNodeValue ) => MeshLineNodeValue )
+	| ( ( params: [progress: MeshLineNodeValue, side?: MeshLineNodeValue, uv?: MeshLineNodeValue] ) => MeshLineNodeValue )
 
 /**
  * GPU position node function that receives progress (float) and an extra parameter (float)
  * and returns a vec3 position computed entirely on the GPU.
+ * Note: When wrapped in Three's `Fn()`, destructure the parameter array: `Fn( ( [progress, extra] ) => ... )`.
  */
-export type GPUPositionNodeFn = ( progress: MeshLineNodeValue, extra: MeshLineNodeValue ) => MeshLineNodeValue
+export type GPUPositionNodeFn =
+	| ( ( progress: MeshLineNodeValue, extra: MeshLineNodeValue ) => MeshLineNodeValue )
+	| ( ( params: [progress: MeshLineNodeValue, extra?: MeshLineNodeValue] ) => MeshLineNodeValue )
 
 // ---------------------------------------------------------------------------
 // Option interfaces
 // ---------------------------------------------------------------------------
 
+export type MeshLineJoinType = 'miter' | 'simple' | 'bevel' | 'round'
+
 export interface MeshLineJoinOptions {
 	/**
-	 * The regular billboard profile uses bounded miters (`'simple'` remains an
-	 * alias). Surface geometry and the optional GPU path emit true bevel and
-	 * round topology.
+	 * Corner join style across billboard, surface, and GPU-path profiles:
+	 * `'miter'` (`'simple'` alias), `'bevel'`, or `'round'`.
 	 */
-	type?: 'miter' | 'simple' | 'bevel' | 'round'
+	type?: MeshLineJoinType
 	/** Maximum miter expansion factor at sharp bends. Defaults to 4. */
 	limit?: number
 	/** Maximum round-join subdivisions per 180-degree turn. Defaults to 8. */
@@ -180,6 +245,19 @@ export interface MeshLineJoinOptions {
 	 * retaining the centerline and outer join. Defaults to `'exact'`.
 	 */
 	inner?: 'exact' | 'clip'
+	/**
+	 * Billboard lines only: how a smooth 3D curve is drawn where its tangent
+	 * points at the camera and its projection folds into a sharp screen turn.
+	 * `'geometry'` (default) splits those joins in the vertex stage, bounding the
+	 * deviation from a round tube to about 0.4 of the half width with no
+	 * fragment cost; the split rows overlap, which translucent or additive lines
+	 * show as a slightly denser cap. `'exact'` clips them to the exact round
+	 * silhouette in the fragment stage, and melts corners past `limit` into
+	 * round; it adds a discard (costly on tile-based GPUs for thick,
+	 * overdraw-heavy lines). `false` keeps plain miters. `type: 'round'` implies
+	 * `'exact'` and rounds every join.
+	 */
+	fold?: 'geometry' | 'exact' | false
 }
 
 export type MeshLineCapType = 'butt' | 'square' | 'round'
@@ -220,7 +298,7 @@ export interface MeshLineSurfaceOptions {
 }
 
 export interface MeshLineDashOptions {
-	count?: number
+	count?: number | null
 	ratio?: number
 	offset?: number
 }
@@ -228,6 +306,8 @@ export interface MeshLineDashOptions {
 export interface MeshLineConfigureOptions {
 	// geometry
 	lines?: MultiLinePoints
+	/** Alias for `lines`. */
+	points?: MultiLinePoints
 	segments?: number
 	closed?: boolean | boolean[]
 	/** Enable camera-independent world-space road/ribbon geometry. */
@@ -256,7 +336,17 @@ export interface MeshLineConfigureOptions {
 	 */
 	antialias?: boolean
 	gradientColor?: number | string | Color | null
-	vertexColors?: Float32Array | number[]
+	/**
+	 * One RGB triplet (0–1) per point, multiplied with `color`. For a multi-line
+	 * batch, concatenate every line's colors in line order, like their
+	 * positions; an array shorter than the whole batch is a shared pattern that
+	 * every line reads from its own first point. A closed line takes one color
+	 * per unique point and its seam reuses the first. Colors follow the points
+	 * the geometry keeps, so dropped duplicate or non-finite points and
+	 * `smoothSharpBends` insertions shift the colors that follow them. `null`
+	 * means no vertex colors. Surface lines ignore them.
+	 */
+	vertexColors?: Float32Array | number[] | null
 	map?: Texture | null
 	mapOffset?: Vector2 | null
 	alphaMap?: Texture | null
@@ -267,14 +357,16 @@ export interface MeshLineConfigureOptions {
 	shadow?: boolean
 
 	// advanced
-	dash?: MeshLineDashOptions
+	dash?: MeshLineDashOptions | null | false
 	/** @deprecated Prefer `dash: { count }` or `.dash({ count })`. */
 	dashCount?: number | null
 	/** @deprecated Prefer `dash: { ratio }` or `.dash({ ratio })`. */
 	dashRatio?: number | null
 	/** @deprecated Prefer `dash: { offset }` or `.dash({ offset })`. */
 	dashOffset?: number
-	join?: MeshLineJoinOptions
+	join?: MeshLineJoinType | MeshLineJoinOptions
+	/** Maximum miter expansion factor at sharp bends. Convenience alias for `join.limit`. */
+	miterLimit?: number
 	cap?: MeshLineCapType | MeshLineCapOptions
 	/**
 	 * CPU-subdivide polyline corners that are too sharp for the screen-space
@@ -396,7 +488,7 @@ export interface MeshLineVertexBufferUsage {
 
 export type MeshLineComputeMode = 'autonomous' | 'follow' | 'field' | number
 
-export interface MeshLineComputeOptions extends Omit<MeshLineConfigureOptions, 'lines' | 'segments' | 'closed' | 'surface' | 'gpuPositionNode' | 'instanceCount' | 'needsPrevious' | 'needsNext'> {
+export interface MeshLineComputeOptions extends Omit<MeshLineConfigureOptions, 'lines' | 'points' | 'segments' | 'closed' | 'surface' | 'gpuPositionNode' | 'instanceCount' | 'needsPrevious' | 'needsNext'> {
 	/** Number of autonomous curve instances. Defaults to 128. */
 	curveCount?: number
 	/** Number of simulated storage-buffer points per curve. Defaults to 32. */
@@ -425,6 +517,8 @@ export interface MeshLineComputeOptions extends Omit<MeshLineConfigureOptions, '
 	textureStrength?: number
 	/** Simulation blend mode. Defaults to `'autonomous'`. */
 	mode?: MeshLineComputeMode
+	/** Neighbour-spacing constraint blend in [0, 1]: 1 keeps curves inextensible, 0 lets points drift freely. Defaults to 1. */
+	stiffness?: number
 	/** Initial mouse/attractor target. */
 	mouse?: Vector3 | { x: number; y: number; z?: number } | number[]
 	/** Alias for `mouse`. */
@@ -441,6 +535,7 @@ export class MeshLine extends ThreeMesh {
 	configure( options?: MeshLineConfigureOptions ): this
 
 	lines( points: MultiLinePoints, closed?: boolean | boolean[] ): this
+	points( points: MultiLinePoints, closed?: boolean | boolean[] ): this
 	segments( segments: number ): this
 	closed( closed: boolean | boolean[] ): this
 	surface( options?: boolean | MeshLineSurfaceOptions ): this
@@ -457,7 +552,8 @@ export class MeshLine extends ThreeMesh {
 	transparent( enabled: boolean ): this
 	wireframe( enabled: boolean ): this
 
-	join( options?: MeshLineJoinOptions ): this
+	join( options?: MeshLineJoinType | MeshLineJoinOptions ): this
+	miterLimit( limit: number ): this
 	cap( options?: MeshLineCapType | MeshLineCapOptions ): this
 	smoothSharpBends( enabled: boolean ): this
 	smoothSharpBendsAlpha( alpha: number ): this
@@ -466,7 +562,7 @@ export class MeshLine extends ThreeMesh {
 	map( tex: Texture | null ): this
 	mapOffset( offset: Vector2 | null ): this
 	alphaMap( tex: Texture | null ): this
-	dash( options?: MeshLineDashOptions ): this
+	dash( options?: MeshLineDashOptions | null | false ): this
 	dpr( value: number ): this
 	dynamic( enable: boolean ): this
 	setFrustumCulled( enabled: boolean ): this
@@ -485,7 +581,14 @@ export class MeshLine extends ThreeMesh {
 	needsNext( enabled: boolean ): this
 	needsSide( enabled: boolean ): this
 	needsVertexColor( enabled: boolean ): this
-	vertexColors( colors: Float32Array | number[] ): this
+	/**
+	 * Set one RGB triplet per point. A multi-line batch reads a concatenated
+	 * array from each line's global point start; an array shorter than the
+	 * batch is a pattern shared by every line. See `MeshLineConfigureOptions.vertexColors`.
+	 * On a built line a new array refreshes the colors in place, while turning
+	 * colors on or off (`null`) rebuilds the line.
+	 */
+	vertexColors( colors: Float32Array | number[] | null ): this
 
 	// node hooks (TSL)
 	positionFn( fn: PositionHookFn | null ): this
@@ -557,6 +660,7 @@ export class MeshLineCompute extends MeshLine {
 	depthStrength( strength: number ): this
 	textureStrength( strength: number ): this
 	mode( mode: MeshLineComputeMode ): this
+	stiffness( stiffness: number ): this
 	mouse( target: Vector3 | { x: number; y: number; z?: number } | number[] ): this
 	clearMouse(): this
 	arcLengthNode( progress: MeshLineNodeValue ): MeshLineNodeValue
@@ -572,7 +676,7 @@ export class MeshLineGeometry extends BufferGeometry {
 	readonly isMeshLine: true
 	constructor( options?: MeshLineGeometryOptions )
 	buildLine( options?: MeshLineGeometryOptions ): void
-	setLines( points: MultiLinePoints ): void
+	setLines( points: MultiLinePoints, closed?: boolean | boolean[] ): void
 	setPositions( points: MultiLinePoints, updateBounding?: boolean ): void
 	setPositionRange( points: ArrayLike<number> | Array<LinePointTuple | LinePointObject>, startPoint: number, options?: MeshLinePositionRangeOptions ): this
 	setUsage( usage: MeshLineUsage, name?: string | null ): void
@@ -606,6 +710,16 @@ export class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 
 	constructor( options?: MeshLineMaterialOptions )
 	buildLine( options?: MeshLineMaterialOptions ): void
+	/**
+	 * Change the join policy in place. The limit is a uniform; a new `type` or
+	 * `fold` only recompiles the shader, keeping every other uniform and state.
+	 */
+	setJoin( join: MeshLineJoinOptions ): void
+	/**
+	 * For subclasses that replace `opacityNode`: apply the exact fold clip to
+	 * `alpha` inside a TSL `Fn`, so their joins stay clipped.
+	 */
+	clipFoldedJoins( alpha: MeshLineNodeValue ): MeshLineNodeValue
 	setShadow( enabled: boolean ): void
 	dispose(): void
 }
@@ -618,7 +732,7 @@ export class MeshLineSurfaceGeometry extends BufferGeometry {
 	readonly isMeshLineSurfaceGeometry: true
 	constructor( options?: MeshLineSurfaceGeometryOptions )
 	buildLine( options?: MeshLineSurfaceGeometryOptions ): void
-	setLines( points: MultiLinePoints ): void
+	setLines( points: MultiLinePoints, closed?: boolean | boolean[] ): void
 	setPositions( points: MultiLinePoints ): void
 	setUsage( usage: MeshLineUsage, name?: string | null ): void
 	dispose(): void
@@ -727,5 +841,30 @@ export function rectanglePositions( width?: number, height?: number, segments?: 
 export function sineWavePositions( wavelengths?: number, segments?: number, amplitude?: number, length?: number ): Float32Array
 export function straightLine( width?: number, segments?: number, isVertical?: boolean ): Float32Array
 export function straightLineBetween( start: { x?: number; y?: number; z?: number } | number[], end: { x?: number; y?: number; z?: number } | number[], segments?: number ): Float32Array
+
+export interface StoragePositionsOptions {
+	/** Points stored per instance run. At least 2. */
+	pointsPerLine: number
+	/** `uint` uniform holding the newest slot. Turns every run into a ring buffer: progress 0 samples the head, 1 the oldest point. */
+	head?: MeshLineNodeValue
+	/** Optional target `StorageBufferAttribute` (`vec3` or `vec4`) to morph toward on the GPU. */
+	toBuffer?: BufferAttribute | null
+	/** Blend factor (`0..1` number, `uniform()`, or TSL node) between `buffer` and `toBuffer`. */
+	morph?: MeshLineNodeValue
+	/**
+	 * When `true` (or a `0..1` TSL node/attribute for mixed open/closed instances),
+	 * wraps endpoint neighbor indices across a closed loop whose last sample
+	 * duplicates the first (`point[N-1] === point[0]`) for seamless closed joins.
+	 */
+	closed?: boolean | MeshLineNodeValue
+}
+
+/**
+ * Build a `gpuPositionNode` that samples line points from a `vec3`/`vec4`
+ * storage buffer holding one run of `pointsPerLine` points per instance,
+ * with optional ring-buffer head indexing, two-buffer GPU morphing, and
+ * closed-loop seam wrapping.
+ */
+export function storagePositions( buffer: BufferAttribute, options: StoragePositionsOptions ): ( progress: MeshLineNodeValue ) => MeshLineNodeValue
 
 export default MeshLine

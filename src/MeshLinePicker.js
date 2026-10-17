@@ -46,7 +46,8 @@ class MeshLinePickingMaterial extends MeshLineNodeMaterial {
 			return vec4( slotF, float( 0 ), float( 0 ), 1 )
 		} )()
 
-		this.opacityNode = float( 1 )
+		// Keep exact joins exact, so a hit never lands on a clipped fold.
+		this.opacityNode = this._foldCoverageNode ? Fn( () => this.clipFoldedJoins( float( 1 ) ) )() : float( 1 )
 	}
 
 }
@@ -279,6 +280,13 @@ export default class MeshLinePicker {
 		entry.material.lineWidth.value = src.lineWidth.value * this.hitRadius
 		entry.material.dpr.value = src.dpr.value
 		entry.material.resolution.value.copy( src.resolution.value )
+		if ( src.miterLimit !== undefined ) entry.material.miterLimit = src.miterLimit
+		// A join switched after registration changes the proxy's shader path too.
+		const join = src.options?.join
+		if ( join && entry.join !== join ) {
+			entry.join = join
+			entry.material.setJoin( join )
+		}
 	}
 
 	/**

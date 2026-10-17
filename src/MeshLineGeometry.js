@@ -117,7 +117,7 @@ export class MeshLineGeometry extends BufferGeometry {
 	 */
 	buildLine( options = {} ) {
 		const previousOptions = this.options ?? {}
-		const lines = options.lines !== undefined ? options.lines : previousOptions.lines
+		const lines = options.lines !== undefined ? options.lines : ( options.points !== undefined ? options.points : previousOptions.lines )
 
 		const nextOptions = {
 			needsPositions: true,
@@ -144,9 +144,12 @@ export class MeshLineGeometry extends BufferGeometry {
 		this._attrs ||= {}
 		this._lineCount = 0
 		this._lines = [] // Store individual line arrays for multi-line mode
+		this._rawLineBoundsValid = false
 		this._lineLoops = [] // Store loop flag for each line
+		this._lineSourceIndices = [] // Caller batch index of each stored line
 		this._lineProgress ||= []
-		this.boundingBoxes = [] // Bounding box for each line
+		this._lineArcCaches = null
+		this.boundingBoxes ||= [] // Bounding box for each line
 		if ( lines !== undefined ) this.setLines( lines )
 		else this.clearGeometry()
 	}
@@ -154,17 +157,47 @@ export class MeshLineGeometry extends BufferGeometry {
 	/**
 	 * Set one or more polylines and rebuild all geometry buffers.
 	 * @param {import('./index.d.ts').MultiLinePoints} lines
+	 * @param {boolean | boolean[]} [closed] - Optional per-line or global loop flag
 	 */
-	setLines( lines ) {
+	setLines( lines, closed = undefined ) {
 
 		if ( !lines ) throw new Error( '[MeshLine] Lines data required' )
 
 		this.options.lines = lines
-		const prepared = prepareLinesInput( lines, this.options, null, this.options.frustumCulled !== false )
+		if ( closed !== undefined ) this.options.closed = closed
+		const needsEndpointMetadata = !!(
+			this.options.needsEndpointMetadata ||
+			this.options.gpuPositionNode ||
+			this.options.positionFn ||
+			this.options.previousFn ||
+			this.options.nextFn
+		)
+		const needsArcProgress = !this.options.gpuPositionNode && !!(
+			this.options.needsProgress ||
+			this.options.needsUV ||
+			this.options.needsWidth ||
+			needsEndpointMetadata
+		)
+		this._lineProgress ||= []
+		const prepared = prepareLinesInput(
+			lines,
+			this.options,
+			null,
+			this.options.frustumCulled !== false,
+			needsArcProgress ? this._lineProgress : null
+		)
 
 		this._lines = prepared.lines
+		this._rawLineBoundsValid = false
+		if ( this._lineArcCaches ) {
+			for ( let i = 0; i < this._lineArcCaches.length; i++ ) {
+				if ( this._lineArcCaches[i] ) this._lineArcCaches[i].valid = false
+			}
+		}
 		this._lineLoops = prepared.loops
+		this._lineSourceIndices = prepared.sourceIndices
 		this._preparedBounds = prepared.bounds || null
+		this._preparedProgressReady = prepared.progressReady || null
 		this._isSingleLoopValue = false
 		this._lineCount = prepared.lines.length
 
@@ -173,8 +206,10 @@ export class MeshLineGeometry extends BufferGeometry {
 		} catch ( error ) {
 			this._lines = []
 			this._lineLoops = []
+			this._lineSourceIndices = []
 			this._lineCount = 0
 			this._preparedBounds = null
+			this._preparedProgressReady = null
 			this.clearGeometry()
 			throw error
 		}
@@ -246,10 +281,12 @@ export class MeshLineGeometry extends BufferGeometry {
 		// Bevel join fill reuses each point's already-emitted incoming/outgoing
 		// rows, so it adds indices but never vertices. It is opt-in because it
 		// changes `index.count`, which callers and `toNonIndexed()` can observe.
-		const bevelJoins = this.options.join?.type === 'bevel'
+		const joinType = typeof this.options.join === 'string' ? this.options.join : this.options.join?.type
+		const bevelJoins = joinType === 'bevel'
 		if ( this._bevelJoins !== bevelJoins ) topologyMatches = false
 		this._bevelJoins = bevelJoins
 		this._lineIndexCounts = this._lineIndexCounts || []
+		this._lineVertexOffsets = this._lineVertexOffsets || []
 
 		for ( let lineIndex = 0; lineIndex < lines.length; lineIndex++ ) {
 			const line = lines[lineIndex]
@@ -261,6 +298,7 @@ export class MeshLineGeometry extends BufferGeometry {
 			const topologyKey = lineLoops[lineIndex] ? -numPoints : numPoints
 			nextTopology[lineIndex] = topologyKey
 			if ( topologyMatches && previousTopology[lineIndex] !== topologyKey ) topologyMatches = false
+			this._lineVertexOffsets[lineIndex] = totalVertices
 			let lineIndices = 0
 			if ( numPoints >= 2 ) {
 				totalVertices += numPoints * 4
@@ -272,6 +310,7 @@ export class MeshLineGeometry extends BufferGeometry {
 		}
 		nextTopology.length = lines.length
 		this._lineIndexCounts.length = lines.length
+		this._lineVertexOffsets.length = lines.length
 		if ( previousTopology && !topologyMatches ) this._removeCustomVertexAttributes()
 
 		if ( totalVertices === 0 ) {
@@ -295,6 +334,7 @@ export class MeshLineGeometry extends BufferGeometry {
 			this.options.needsWidth ||
 			needsEndpointMetadata
 		)
+		const proceduralProgress = !!this.options.gpuPositionNode
 		if ( this.options.needsPositions ) {
 			positions = this.getReusableArray( 'position', Float32Array, totalVertices * 3, 3, usage )
 		}
@@ -311,13 +351,14 @@ export class MeshLineGeometry extends BufferGeometry {
 		// Pack incident-body ownership in the sign and side in the magnitude.
 		// Unlike vertexIndex-derived bits, this survives toNonIndexed().
 		joinRoles = this.getReusableArray( 'joinRole', Float32Array, totalVertices, 1, usage )
-		const reuseJoinRoles = topologyMatches && joinRoles === this._attrs.joinRole?.array
+		const reuseJoinRoles = !!( topologyMatches && joinRoles === this._attrs.joinRole?.array )
 		if ( this.options.needsWidth ) {
 			widths = this.getReusableArray( 'width', Float32Array, totalVertices, 1, usage )
 		}
 		if ( this.options.needsUV ) {
 			uvs = this.getReusableArray( 'uv', Float32Array, totalVertices * 2, 2, usage )
 		}
+		const reuseUVs = !!( topologyMatches && uvs && uvs === this._attrs.uv?.array )
 		if ( this.options.needsProgress ) {
 			progress = this.getReusableArray( 'progress', Float32Array, totalVertices, 1, usage )
 		}
@@ -326,7 +367,6 @@ export class MeshLineGeometry extends BufferGeometry {
 		}
 		if ( this.options.needsVertexColor && this.options.vertexColors ) {
 			colors = this.getReusableArray( 'vertexColor', Float32Array, totalVertices * 3, 3, usage )
-			colors.fill( 0 )
 		}
 
 		const managedAttributes = {
@@ -347,6 +387,13 @@ export class MeshLineGeometry extends BufferGeometry {
 			delete this._attrs[name]
 		}
 
+		if ( sides && !reuseSides ) {
+			fillPattern4( sides, 1, -1, 1, -1 )
+		}
+		if ( !reuseJoinRoles ) {
+			fillPattern4( joinRoles, -1, -2, 1, 2 )
+		}
+
 		// Use 32-bit indices if we exceed the 16-bit limit (65 535)
 		// This prevents index overflow that can lead to wrongly connected segments
 		// when drawing very large or detailed geometries.
@@ -361,195 +408,91 @@ export class MeshLineGeometry extends BufferGeometry {
 		const reuseConnectivity = reuseIndex && topologyMatches && oldIndex === this._meshLineIndex
 		const indices = reuseIndex ? oldIndex.array : new IndicesArray( totalIndices )
 
+		// Vertex colors hold one RGB triplet per source point, addressed like
+		// setPositionRange(): a closed CPU loop's appended seam point has no slot
+		// and reuses the line's first color. An array covering every point of a
+		// multi-line batch is read from each line's global point start; a shorter
+		// one stays a shared pattern that every line reads from its own start.
+		const vertexColors = this.options.vertexColors
+		const colorSource = colors && ( vertexColors instanceof Float32Array || ( Array.isArray( vertexColors ) && typeof vertexColors[0] === 'number' ) )
+			? vertexColors
+			: null
+		if ( colors && !colorSource ) colors.fill( 0 )
+		const syntheticSeams = !proceduralProgress
+		let concatenatedColors = false
+		if ( colorSource && lines.length > 1 ) {
+			let sourcePoints = 0
+			for ( let lineIndex = 0; lineIndex < lines.length; lineIndex++ ) {
+				sourcePoints += lines[lineIndex].length / 3 - ( syntheticSeams && lineLoops[lineIndex] ? 1 : 0 )
+			}
+			concatenatedColors = colorSource.length >= sourcePoints * 3
+		}
+		let colorPointStart = 0
+
 		let vertexOffset = 0
 		let indexOffset = 0
 		let vertexIndex = 0
+		const preparedProgressReady = this._preparedProgressReady
+		const widthCallback = this.widthCallback
+		const endpointTopologyReusable = !!( topologyMatches && endpoints && endpoints === this._attrs.endpoint?.array )
+		const endpointFreshZeroed = !!( endpoints && endpoints !== this._attrs.endpoint?.array )
 
 		// Process each line separately
 		for ( let lineIdx = 0; lineIdx < lines.length; lineIdx++ ) {
 			const line = lines[lineIdx]
 			const isLooped = lineLoops[lineIdx]
 			const numPoints = line.length / 3
+			const colorStart = concatenatedColors ? colorPointStart : 0
+			colorPointStart += numPoints - ( syntheticSeams && isLooped ? 1 : 0 )
 			if ( numPoints < 2 ) continue
 			const lineVertexOffset = vertexOffset
 
 			const lineProgress = needsLineProgress
-				? computeLineProgress( line, !!this.options.gpuPositionNode, this._lineProgress[lineIdx] )
+				? ( ( !proceduralProgress && preparedProgressReady?.[lineIdx] && this._lineProgress[lineIdx] )
+					? this._lineProgress[lineIdx]
+					: computeLineProgress( line, proceduralProgress, this._lineProgress[lineIdx] ) )
 				: null
 			this._lineProgress[lineIdx] = lineProgress
 			let lineMaxWidth = 1
 
-			// Build this line's vertices
-			for ( let i = 0; i < numPoints; i++ ) {
-				const o = i * 3
-				const x = line[o]
-				const y = line[o + 1]
-				const z = line[o + 2]
-				const t = lineProgress ? lineProgress[i] : 0
-				const sourceIndex = isLooped && i === numPoints - 1 ? 0 : i
-				const sourceProgress = sourceIndex === 0 ? 0 : t
-
-				// Four vertices per point: incoming +/-, then outgoing +/-.
-				if ( positions ) {
-					positions[vertexOffset * 3] = x
-					positions[vertexOffset * 3 + 1] = y
-					positions[vertexOffset * 3 + 2] = z
-					positions[vertexOffset * 3 + 3] = x
-					positions[vertexOffset * 3 + 4] = y
-					positions[vertexOffset * 3 + 5] = z
-					positions[vertexOffset * 3 + 6] = x
-					positions[vertexOffset * 3 + 7] = y
-					positions[vertexOffset * 3 + 8] = z
-					positions[vertexOffset * 3 + 9] = x
-					positions[vertexOffset * 3 + 10] = y
-					positions[vertexOffset * 3 + 11] = z
-				}
-
-				// sides - which side of the line is the vertex on
-				if ( sides && !reuseSides ) {
-					sides[vertexOffset] = 1
-					sides[vertexOffset + 1] = -1
-					sides[vertexOffset + 2] = 1
-					sides[vertexOffset + 3] = -1
-				}
-				if ( !reuseJoinRoles ) {
-					joinRoles[vertexOffset] = -1
-					joinRoles[vertexOffset + 1] = -2
-					joinRoles[vertexOffset + 2] = 1
-					joinRoles[vertexOffset + 3] = 2
-				}
-
-				// widths
-				if ( widths ) {
-					const rawWidth = this.widthCallback ? this.widthCallback( sourceProgress, sourceIndex, lineIdx ) : 1
-					if ( !Number.isFinite( rawWidth ) || !Number.isFinite( Math.fround( Math.abs( rawWidth ) ) ) ) {
-						throw new Error( `[MeshLine] widthCallback returned a non-finite value at point ${i} of line ${lineIdx}` )
-					}
-					const w = Math.abs( rawWidth )
-					this._maxWidthMultiplier = Math.max( this._maxWidthMultiplier, Math.abs( w ) )
-					lineMaxWidth = Math.max( lineMaxWidth, w )
-					widths[vertexOffset] = w
-					widths[vertexOffset + 1] = w
-					widths[vertexOffset + 2] = w
-					widths[vertexOffset + 3] = w
-				}
-
-				// uvs
-				if ( uvs ) {
-					uvs[vertexOffset * 2] = t
-					uvs[vertexOffset * 2 + 1] = 0
-					uvs[vertexOffset * 2 + 2] = t
-					uvs[vertexOffset * 2 + 3] = 1
-					uvs[vertexOffset * 2 + 4] = t
-					uvs[vertexOffset * 2 + 5] = 0
-					uvs[vertexOffset * 2 + 6] = t
-					uvs[vertexOffset * 2 + 7] = 1
-				}
-
-				// progress
-				if ( progress ) {
-					progress[vertexOffset] = t
-					progress[vertexOffset + 1] = t
-					progress[vertexOffset + 2] = t
-					progress[vertexOffset + 3] = t
-				}
-
-				// colors - expects Float32Array or flat array of RGB values
-				if ( colors && this.options.vertexColors ) {
-					const vc = this.options.vertexColors
-					if ( vc instanceof Float32Array || ( Array.isArray( vc ) && typeof vc[0] === 'number' ) ) {
-						if ( vc.length >= sourceIndex * 3 + 3 ) {
-							const o = sourceIndex * 3, vo = vertexOffset * 3
-							if ( !Number.isFinite( vc[o] ) || !Number.isFinite( vc[o + 1] ) || !Number.isFinite( vc[o + 2] ) ) {
-								throw new Error( `[MeshLine] vertexColors contains a non-finite value at point ${sourceIndex}` )
-							}
-							colors[vo] = colors[vo + 3] = colors[vo + 6] = colors[vo + 9] = vc[o]
-							colors[vo + 1] = colors[vo + 4] = colors[vo + 7] = colors[vo + 10] = vc[o + 1]
-							colors[vo + 2] = colors[vo + 5] = colors[vo + 8] = colors[vo + 11] = vc[o + 2]
-						}
-					}
-				}
-
-				// previous
-				let prevX, prevY, prevZ
-				if ( i === 0 ) {
-					// First point
-					if ( isLooped ) {
-						// Use second-to-last point (before the duplicate closing point)
-						const po = ( numPoints - 2 ) * 3
-						prevX = line[po]
-						prevY = line[po + 1]
-						prevZ = line[po + 2]
-					} else {
-						// Explicit endpoint metadata makes extrapolation unnecessary. Reuse
-						// the endpoint itself so extreme finite coordinates cannot overflow.
-						prevX = x
-						prevY = y
-						prevZ = z
-					}
+			if ( widths ) {
+				if ( widthCallback ) {
+					lineMaxWidth = writeBuildWidths( widths, lineProgress, widthCallback, numPoints, isLooped, lineIdx, lineVertexOffset )
+					if ( lineMaxWidth > this._maxWidthMultiplier ) this._maxWidthMultiplier = lineMaxWidth
 				} else {
-					const po = ( i - 1 ) * 3
-					prevX = line[po]
-					prevY = line[po + 1]
-					prevZ = line[po + 2]
+					widths.fill( 1, lineVertexOffset, lineVertexOffset + numPoints * 4 )
 				}
-
-				if ( previous ) {
-					previous[vertexOffset * 3] = prevX
-					previous[vertexOffset * 3 + 1] = prevY
-					previous[vertexOffset * 3 + 2] = prevZ
-					previous[vertexOffset * 3 + 3] = prevX
-					previous[vertexOffset * 3 + 4] = prevY
-					previous[vertexOffset * 3 + 5] = prevZ
-					previous[vertexOffset * 3 + 6] = prevX
-					previous[vertexOffset * 3 + 7] = prevY
-					previous[vertexOffset * 3 + 8] = prevZ
-					previous[vertexOffset * 3 + 9] = prevX
-					previous[vertexOffset * 3 + 10] = prevY
-					previous[vertexOffset * 3 + 11] = prevZ
-				}
-
-				// next
-				if ( next ) {
-					let nextX, nextY, nextZ
-					if ( i === numPoints - 1 ) {
-						// Last point
-						if ( isLooped ) {
-							// Use second point (the first real point after the closing duplicate)
-							nextX = line[3]
-							nextY = line[4]
-							nextZ = line[5]
-						} else {
-							// See the matching start-point policy above.
-							nextX = x
-							nextY = y
-							nextZ = z
-						}
-					} else {
-						const po = ( i + 1 ) * 3
-						nextX = line[po]
-						nextY = line[po + 1]
-						nextZ = line[po + 2]
-					}
-
-					next[vertexOffset * 3] = nextX
-					next[vertexOffset * 3 + 1] = nextY
-					next[vertexOffset * 3 + 2] = nextZ
-					next[vertexOffset * 3 + 3] = nextX
-					next[vertexOffset * 3 + 4] = nextY
-					next[vertexOffset * 3 + 5] = nextZ
-					next[vertexOffset * 3 + 6] = nextX
-					next[vertexOffset * 3 + 7] = nextY
-					next[vertexOffset * 3 + 8] = nextZ
-					next[vertexOffset * 3 + 9] = nextX
-					next[vertexOffset * 3 + 10] = nextY
-					next[vertexOffset * 3 + 11] = nextZ
-				}
-				vertexOffset += 4
 			}
 
+			if ( colorSource ) {
+				writeColorLine( colors, colorSource, colorStart, numPoints, isLooped, lineVertexOffset )
+			}
+
+			if ( positions && previous && next ) {
+				vertexOffset = writePositionAndNeighbors( line, isLooped, positions, previous, next, lineVertexOffset )
+			} else {
+				if ( positions ) writePositionRange( positions, line, lineVertexOffset, 0, numPoints )
+				if ( previous || next ) writeNeighborRange( line, isLooped, previous, next, lineVertexOffset, 0, numPoints )
+				vertexOffset = lineVertexOffset + numPoints * 4
+			}
+
+			if ( progress ) writeScalarLine( progress, lineProgress, lineVertexOffset )
+			if ( uvs ) {
+				if ( reuseUVs ) writeUVLineUpdate( uvs, lineProgress, lineVertexOffset )
+				else writeUVLine( uvs, lineProgress, lineVertexOffset )
+			}
 			if ( endpoints ) {
-				writeEndpointMetadata( endpoints, lineProgress, isLooped, lineVertexOffset )
+				if ( endpointTopologyReusable ) {
+					writeEndpointMetadataUpdate( endpoints, lineProgress, isLooped, lineVertexOffset )
+				} else {
+					writeEndpointMetadata(
+						endpoints,
+						lineProgress,
+						isLooped,
+						lineVertexOffset,
+						endpointFreshZeroed && !isLooped
+					)
+				}
 			}
 			this._lineMaxWidths[lineIdx] = lineMaxWidth
 
@@ -557,34 +500,7 @@ export class MeshLineGeometry extends BufferGeometry {
 			// and join type. Preserve the index buffer when that topology is
 			// unchanged, even if attributes or source positions are rebuilt.
 			if ( !reuseConnectivity ) {
-				for ( let i = 0; i < numPoints - 1; i++ ) {
-					const o = vertexIndex + i * 4
-					indices[indexOffset++] = o + 2
-					indices[indexOffset++] = o + 3
-					indices[indexOffset++] = o + 4
-					indices[indexOffset++] = o + 4
-					indices[indexOffset++] = o + 3
-					indices[indexOffset++] = o + 5
-				}
-				if ( bevelJoins ) {
-					// Bridge each point's incoming cross-section to its outgoing one.
-					// The two rows coincide while the miter holds, so both triangles
-					// are exactly zero-area then; past the miter limit they separate
-					// and this fills the notch. The four corners are two antipodal
-					// pairs about the join, making the pair a bowtie: the triangles
-					// always wind oppositely and FrontSide keeps exactly the one
-					// covering the outer notch, whichever way the corner turns.
-					const firstJoin = isLooped ? 0 : 1
-					for ( let i = firstJoin; i < numPoints - 1; i++ ) {
-						const o = vertexIndex + i * 4
-						indices[indexOffset++] = o
-						indices[indexOffset++] = o + 1
-						indices[indexOffset++] = o + 2
-						indices[indexOffset++] = o + 2
-						indices[indexOffset++] = o + 1
-						indices[indexOffset++] = o + 3
-					}
-				}
+				indexOffset = writeLineIndices( indices, indexOffset, vertexIndex, numPoints, bevelJoins, isLooped )
 			}
 
 			vertexIndex += numPoints * 4
@@ -643,6 +559,7 @@ export class MeshLineGeometry extends BufferGeometry {
 			this.boundingSphere = null
 		}
 		this._preparedBounds = null
+		this._preparedProgressReady = null
 
 		this.setDrawRange( 0, Infinity )
 
@@ -672,14 +589,18 @@ export class MeshLineGeometry extends BufferGeometry {
 		this.setIndex( null )
 		this._attrs = {}
 		this._lineProgress = []
+		this._lineArcCaches = null
 		this._lineWidthScratch = []
 		this._lineMaxWidths = []
 		this._linePointCounts = []
 		this._linePointCountsScratch = []
 		this._lineIndexCounts = []
+		this._lineVertexOffsets = []
 		this._meshLineIndex = null
 		this._updatePrepared = null
 		this._preparedBounds = null
+		this._preparedProgressReady = null
+		this._rawLineBoundsValid = false
 		this.boundingBoxes = []
 		if ( !this.boundingBox ) this.boundingBox = new Box3()
 		this.boundingBox.makeEmpty()
@@ -700,21 +621,38 @@ export class MeshLineGeometry extends BufferGeometry {
 		const boxes = this.boundingBoxes || []
 		if ( !this.boundingBox ) this.boundingBox = new Box3()
 		this.boundingBox.makeEmpty()
+		// Unpadded extents stay valid until `_lines` is replaced or mutated, so
+		// padding-only changes (lineWidth, miterLimit, sizeAttenuation) skip a
+		// full point rescan.
+		const rawBounds = this._rawLineBounds ||= []
+		const reuseRawBounds = !preparedBounds && this._rawLineBoundsValid && rawBounds.length === this._lines.length
 		for ( let idx = 0; idx < this._lines.length; idx++ ) {
 			const box = boxes[idx] || new Box3()
-			const bounds = preparedBounds?.[idx]
-			if ( bounds ) {
-				box.min.set( bounds[0], bounds[1], bounds[2] )
-				box.max.set( bounds[3], bounds[4], bounds[5] )
-			} else {
-				box.setFromArray( this._lines[idx] )
+			const raw = rawBounds[idx] ||= new Float64Array( 6 )
+			if ( !reuseRawBounds ) {
+				const bounds = preparedBounds?.[idx]
+				if ( bounds ) {
+					raw.set( bounds )
+				} else {
+					box.setFromArray( this._lines[idx] )
+					raw[0] = box.min.x
+					raw[1] = box.min.y
+					raw[2] = box.min.z
+					raw[3] = box.max.x
+					raw[4] = box.max.y
+					raw[5] = box.max.z
+				}
 			}
+			box.min.set( raw[0], raw[1], raw[2] )
+			box.max.set( raw[3], raw[4], raw[5] )
 			if ( padding > 0 ) box.expandByScalar( padding )
 			boxes[idx] = box
 			if ( idx === 0 ) this.boundingBox.copy( box )
 			else this.boundingBox.union( box )
 		}
 		boxes.length = this._lines.length
+		rawBounds.length = this._lines.length
+		this._rawLineBoundsValid = true
 		this.boundingBoxes = boxes
 	}
 
@@ -725,7 +663,12 @@ export class MeshLineGeometry extends BufferGeometry {
 		const requestedMiterLimit = Number( this.options?.miterLimit ?? 4 )
 		const miterLimit = Number.isFinite( requestedMiterLimit ) ? Math.max( 1, Math.min( requestedMiterLimit, 1e6 ) ) : 4
 		const maxWidth = Number( this._maxWidthMultiplier ?? 1 )
-		return lineWidth * Math.max( 1, miterLimit ) * 0.5 * Math.max( 1, maxWidth )
+		// A split fold overlaps past its joint by up to one half width, so its
+		// corners sit sqrt(2) half widths out even under a lower miter limit.
+		const join = this.options?.join
+		const folds = join?.fold !== false && join?.type !== 'bevel'
+		const reach = folds ? Math.max( Math.SQRT2, miterLimit ) : Math.max( 1, miterLimit )
+		return lineWidth * reach * 0.5 * Math.max( 1, maxWidth )
 	}
 
 	computeBoundingBox() {
@@ -755,16 +698,21 @@ export class MeshLineGeometry extends BufferGeometry {
 	dispose() {
 		this._attrs = {}
 		this._lines = []
+		this._rawLineBoundsValid = false
 		this._lineLoops = []
+		this._lineSourceIndices = []
 		this._lineProgress = []
+		this._lineArcCaches = null
 		this._lineWidthScratch = []
 		this._lineMaxWidths = []
 		this._linePointCounts = []
 		this._linePointCountsScratch = []
 		this._lineIndexCounts = []
+		this._lineVertexOffsets = []
 		this._meshLineIndex = null
 		this._updatePrepared = null
 		this._preparedBounds = null
+		this._preparedProgressReady = null
 		super.dispose()
 	}
 
@@ -800,7 +748,7 @@ export class MeshLineGeometry extends BufferGeometry {
 		const proceduralProgress = !!this.options.gpuPositionNode
 		const progressChanged = needsLineProgress && !proceduralProgress
 
-		this._updatePrepared ||= { lines: [], loops: [] }
+		this._updatePrepared ||= { lines: [], loops: [], sourceIndices: [] }
 		const prepared = prepareLinesInput(
 			pts,
 			this.options,
@@ -818,10 +766,10 @@ export class MeshLineGeometry extends BufferGeometry {
 			return
 		}
 
-		// Validate each line has the same number of points
+		// Validate each line has the same number of points and loop state
 		for ( let i = 0; i < newLines.length; i++ ) {
-			if ( newLines[i].length !== this._lines[i].length ) {
-				// Fallback to full rebuild if any line changes size
+			if ( newLines[i].length !== this._lines[i].length || newLoops[i] !== this._lineLoops[i] ) {
+				// Fallback to full rebuild if any line changes size or loop topology
 				this.setLines( pts )
 				return
 			}
@@ -834,7 +782,8 @@ export class MeshLineGeometry extends BufferGeometry {
 		const uvArray = uvAttr ? uvAttr.array : null
 		const widthArray = widthAttr ? widthAttr.array : null
 		const endpointArray = endpointAttr ? endpointAttr.array : null
-		const widthChanged = !!( widthArray && this.widthCallback )
+		const widthCallback = this.widthCallback
+		const widthChanged = !!( widthArray && widthCallback )
 		if ( widthArray ) {
 			this._maxWidthMultiplier = 1
 			this._lineWidthScratch ||= []
@@ -862,18 +811,8 @@ export class MeshLineGeometry extends BufferGeometry {
 				? this._lineWidthScratch[lineIdx]
 				: new Float32Array( numPoints )
 			this._lineWidthScratch[lineIdx] = widths
-			for ( let i = 0; i < numPoints; i++ ) {
-				const sourceIndex = isLooped && i === numPoints - 1 ? 0 : i
-				const progress = sourceIndex === 0 ? 0 : lineProgress[i]
-				const rawWidth = this.widthCallback ? this.widthCallback( progress, sourceIndex, lineIdx ) : 1
-				if ( !Number.isFinite( rawWidth ) || !Number.isFinite( Math.fround( Math.abs( rawWidth ) ) ) ) {
-					throw new Error( `[MeshLine] widthCallback returned a non-finite value at point ${i} of line ${lineIdx}` )
-				}
-				const width = Math.abs( rawWidth )
-				widths[i] = width
-				lineMaxWidth = Math.max( lineMaxWidth, width )
-				this._maxWidthMultiplier = Math.max( this._maxWidthMultiplier, width )
-			}
+			lineMaxWidth = evaluateLineWidths( widths, lineProgress, widthCallback, numPoints, isLooped, lineIdx )
+			if ( lineMaxWidth > this._maxWidthMultiplier ) this._maxWidthMultiplier = lineMaxWidth
 			this._lineMaxWidths[lineIdx] = lineMaxWidth
 		}
 		if ( widthArray ) this._lineWidthScratch.length = widthChanged ? newLines.length : 0
@@ -889,9 +828,8 @@ export class MeshLineGeometry extends BufferGeometry {
 			const lineProgress = this._lineProgress[lineIdx]
 			const lineWidths = widthChanged ? this._lineWidthScratch[lineIdx] : null
 			const lineVertexOffset = globalVertexIndex
-			const hasDerivedAttributes = ( progressChanged && ( progressArray || uvArray ) ) || widthChanged
 
-			if ( prevArray && nextArray && !hasDerivedAttributes ) {
+			if ( prevArray && nextArray ) {
 				globalVertexIndex = writePositionAndNeighbors(
 					line,
 					isLooped,
@@ -900,8 +838,15 @@ export class MeshLineGeometry extends BufferGeometry {
 					nextArray,
 					globalVertexIndex
 				)
+				// Derived attributes stream through their own buffers: one tight pass
+				// per array beats interleaving every output stream per point.
+				if ( progressChanged ) {
+					if ( progressArray ) writeScalarLine( progressArray, lineProgress, lineVertexOffset )
+					if ( uvArray ) writeUVLineUpdate( uvArray, lineProgress, lineVertexOffset )
+				}
+				if ( widthChanged ) writeScalarLine( widthArray, lineWidths, lineVertexOffset )
 				if ( endpointArray && endpointAttr.itemSize === 4 && progressChanged ) {
-					writeEndpointMetadata( endpointArray, lineProgress, isLooped, lineVertexOffset )
+					writeEndpointMetadataUpdate( endpointArray, lineProgress, isLooped, lineVertexOffset )
 				}
 				continue
 			}
@@ -1002,7 +947,7 @@ export class MeshLineGeometry extends BufferGeometry {
 			}
 
 			if ( endpointArray && endpointAttr.itemSize === 4 && progressChanged ) {
-				writeEndpointMetadata( endpointArray, lineProgress, isLooped, lineVertexOffset )
+				writeEndpointMetadataUpdate( endpointArray, lineProgress, isLooped, lineVertexOffset )
 			}
 		}
 
@@ -1018,10 +963,22 @@ export class MeshLineGeometry extends BufferGeometry {
 		// Update cached lines
 		const previousLines = this._lines
 		const previousLoops = this._lineLoops
+		const previousSourceIndices = this._lineSourceIndices
 		this._lines = newLines
+		this._rawLineBoundsValid = false
+		if ( this._lineArcCaches ) {
+			for ( let i = 0; i < this._lineArcCaches.length; i++ ) {
+				if ( this._lineArcCaches[i] ) this._lineArcCaches[i].valid = false
+			}
+		}
 		this._lineLoops = newLoops
+		this._lineSourceIndices = prepared.sourceIndices
 		this._updatePrepared.lines = previousLines
 		this._updatePrepared.loops = previousLoops
+		this._updatePrepared.sourceIndices = previousSourceIndices
+		// As in setLines(), the new points become the source that a partial
+		// buildLine() rebuilds from.
+		this.options.lines = pts
 
 		// Update bounding volumes if requested
 		if ( updateBounding ) {
@@ -1082,13 +1039,14 @@ export class MeshLineGeometry extends BufferGeometry {
 		const widthAttr = this.getAttribute( 'width' )
 		const endpointAttr = this.getAttribute( 'endpoint' )
 		const proceduralProgress = !!this.options.gpuPositionNode
+		const widthCallback = this.widthCallback
 		const needsArcProgress = !proceduralProgress && !!(
 			progressAttr ||
 			uvAttr ||
-			this.widthCallback ||
+			widthCallback ||
 			endpointAttr?.itemSize === 4
 		)
-		const callbackCanReject = !!( widthAttr && this.widthCallback )
+		const callbackCanReject = !!( widthAttr && widthCallback )
 		let restoreRange = null
 
 		if ( callbackCanReject ) {
@@ -1098,6 +1056,37 @@ export class MeshLineGeometry extends BufferGeometry {
 				: new Float32Array( range.length )
 			restoreRange = this._partialRestoreScratch.subarray( 0, range.length )
 			restoreRange.set( line.subarray( startPoint * 3, endPoint * 3 ) )
+		}
+
+		if ( this._rawLineBoundsValid && this._rawLineBounds?.[lineIndex] ) {
+			const raw = this._rawLineBounds[lineIndex]
+			let minX = raw[0], minY = raw[1], minZ = raw[2]
+			let maxX = raw[3], maxY = raw[4], maxZ = raw[5]
+			let canUpdateInPlace = true
+			for ( let i = startPoint * 3, end = endPoint * 3; i < end; i += 3 ) {
+				const ox = line[i], oy = line[i + 1], oz = line[i + 2]
+				if ( ox <= minX || ox >= maxX || oy <= minY || oy >= maxY || oz <= minZ || oz >= maxZ ) {
+					canUpdateInPlace = false
+					break
+				}
+			}
+			if ( canUpdateInPlace ) {
+				for ( let i = 0; i < range.length; i += 3 ) {
+					const nx = range[i], ny = range[i + 1], nz = range[i + 2]
+					if ( nx < minX ) minX = nx
+					else if ( nx > maxX ) maxX = nx
+					if ( ny < minY ) minY = ny
+					else if ( ny > maxY ) maxY = ny
+					if ( nz < minZ ) minZ = nz
+					else if ( nz > maxZ ) maxZ = nz
+				}
+				raw[0] = minX; raw[1] = minY; raw[2] = minZ
+				raw[3] = maxX; raw[4] = maxY; raw[5] = maxZ
+			} else {
+				this._rawLineBoundsValid = false
+			}
+		} else {
+			this._rawLineBoundsValid = false
 		}
 
 		line.set( range, startPoint * 3 )
@@ -1110,11 +1099,22 @@ export class MeshLineGeometry extends BufferGeometry {
 		let lineMaxWidth = this._lineMaxWidths[lineIndex] ?? 1
 		try {
 			if ( needsArcProgress ) {
-				lineProgress = computeLineProgress( line, false, lineProgress )
+				this._lineArcCaches ||= []
+				lineProgress = updateLineProgressRange(
+					line,
+					startPoint,
+					endPoint,
+					hasSyntheticSeam,
+					lineProgress,
+					this._lineArcCaches,
+					lineIndex
+				)
 				this._lineProgress[lineIndex] = lineProgress
 			} else if ( proceduralProgress && !lineProgress ) {
 				lineProgress = computeLineProgress( line, true, lineProgress )
 				this._lineProgress[lineIndex] = lineProgress
+			} else if ( this._lineArcCaches?.[lineIndex] ) {
+				this._lineArcCaches[lineIndex].valid = false
 			}
 
 			if ( callbackCanReject ) {
@@ -1122,20 +1122,11 @@ export class MeshLineGeometry extends BufferGeometry {
 					? this._lineWidthScratch[lineIndex]
 					: new Float32Array( storedPointCount )
 				this._lineWidthScratch[lineIndex] = preparedWidths
-				lineMaxWidth = 1
-				for ( let i = 0; i < storedPointCount; i++ ) {
-					const sourceIndex = isLooped && i === storedPointCount - 1 ? 0 : i
-					const progress = sourceIndex === 0 ? 0 : lineProgress[i]
-					const rawWidth = this.widthCallback( progress, sourceIndex, lineIndex )
-					if ( !Number.isFinite( rawWidth ) || !Number.isFinite( Math.fround( Math.abs( rawWidth ) ) ) ) {
-						throw new Error( `[MeshLine] widthCallback returned a non-finite value at point ${i} of line ${lineIndex}` )
-					}
-					const width = Math.abs( rawWidth )
-					preparedWidths[i] = width
-					lineMaxWidth = Math.max( lineMaxWidth, width )
-				}
+				lineMaxWidth = evaluateLineWidths( preparedWidths, lineProgress, widthCallback, storedPointCount, isLooped, lineIndex )
 			}
 		} catch ( error ) {
+			this._rawLineBoundsValid = false
+			if ( this._lineArcCaches?.[lineIndex] ) this._lineArcCaches[lineIndex].valid = false
 			if ( restoreRange ) {
 				line.set( restoreRange, startPoint * 3 )
 				if ( hasSyntheticSeam && startPoint === 0 ) line.set( line.subarray( 0, 3 ), sourcePointCount * 3 )
@@ -1144,8 +1135,11 @@ export class MeshLineGeometry extends BufferGeometry {
 			throw error
 		}
 
-		let lineVertexOffset = 0
-		for ( let i = 0; i < lineIndex; i++ ) lineVertexOffset += this._lines[i].length / 3 * 4
+		let lineVertexOffset = this._lineVertexOffsets?.[lineIndex]
+		if ( lineVertexOffset === undefined ) {
+			lineVertexOffset = 0
+			for ( let i = 0; i < lineIndex; i++ ) lineVertexOffset += this._lines[i].length / 3 * 4
+		}
 
 		writePositionRange( positionAttr.array, line, lineVertexOffset, startPoint, endPoint )
 		markAttributeUpdateRange( positionAttr, ( lineVertexOffset + startPoint * 4 ) * 3, rangePointCount * 12 )
@@ -1178,11 +1172,11 @@ export class MeshLineGeometry extends BufferGeometry {
 				markAttributeUpdateRange( progressAttr, lineVertexOffset, storedPointCount * 4 )
 			}
 			if ( uvAttr ) {
-				writeUVLine( uvAttr.array, lineProgress, lineVertexOffset )
+				writeUVLineUpdate( uvAttr.array, lineProgress, lineVertexOffset )
 				markAttributeUpdateRange( uvAttr, lineVertexOffset * 2, storedPointCount * 8 )
 			}
 			if ( endpointAttr?.itemSize === 4 ) {
-				writeEndpointMetadata( endpointAttr.array, lineProgress, isLooped, lineVertexOffset )
+				writeEndpointMetadataUpdate( endpointAttr.array, lineProgress, isLooped, lineVertexOffset )
 				markAttributeUpdateRange( endpointAttr, lineVertexOffset * 4, storedPointCount * 16 )
 			}
 		}
@@ -1193,9 +1187,19 @@ export class MeshLineGeometry extends BufferGeometry {
 			this._lineMaxWidths[lineIndex] = lineMaxWidth
 			this._maxWidthMultiplier = 1
 			for ( let i = 0; i < this._lineMaxWidths.length; i++ ) {
-				this._maxWidthMultiplier = Math.max( this._maxWidthMultiplier, this._lineMaxWidths[i] ?? 1 )
+				const maxW = this._lineMaxWidths[i] ?? 1
+				if ( maxW > this._maxWidthMultiplier ) this._maxWidthMultiplier = maxW
 			}
 		}
+
+		this.options.lines = rangeEditSource(
+			this.options.lines,
+			this._lines,
+			this._lineLoops,
+			this._lineSourceIndices,
+			lineIndex,
+			!this.options.gpuPositionNode
+		)
 
 		if ( updateBounding ) {
 			this.computeBoundingBoxes()
@@ -1287,6 +1291,8 @@ const isSingleLineArray = value => {
 	return typeof first === 'number' || isPointTuple( first ) || isPointObject( first )
 }
 
+const isSingleLineInput = input => input instanceof Float32Array || input instanceof BufferGeometry || isSingleLineArray( input )
+
 const validateGeometryOptions = options => {
 	if ( options.lineWidth !== undefined ) {
 		const lineWidth = Number( options.lineWidth )
@@ -1349,51 +1355,236 @@ const validatePositionRangeTopology = ( line, range, startPoint, sourcePointCoun
 	}
 }
 
+const writeBuildWidths = ( widths, lineProgress, widthCallback, numPoints, isLooped, lineIdx, lineVertexOffset ) => {
+	let lineMaxWidth = 1
+	const lastLoopedPoint = isLooped ? numPoints - 1 : -1
+	for ( let i = 0, vo = lineVertexOffset; i < numPoints; i++, vo += 4 ) {
+		const sourceIndex = i === lastLoopedPoint ? 0 : i
+		const sourceProgress = sourceIndex === 0 ? 0 : lineProgress[i]
+		const rawWidth = widthCallback( sourceProgress, sourceIndex, lineIdx )
+		const w = Math.abs( rawWidth )
+		if ( !( w <= 3.4028234663852886e+38 ) ) {
+			throw new Error( `[MeshLine] widthCallback returned a non-finite value at point ${i} of line ${lineIdx}` )
+		}
+		if ( w > lineMaxWidth ) lineMaxWidth = w
+		widths[vo] = widths[vo + 1] = widths[vo + 2] = widths[vo + 3] = w
+	}
+	return lineMaxWidth
+}
+
+const evaluateLineWidths = ( widths, lineProgress, widthCallback, numPoints, isLooped, lineIdx ) => {
+	let lineMaxWidth = 1
+	const lastLoopedPoint = isLooped ? numPoints - 1 : -1
+	for ( let i = 0; i < numPoints; i++ ) {
+		const sourceIndex = i === lastLoopedPoint ? 0 : i
+		const progress = sourceIndex === 0 ? 0 : lineProgress[i]
+		const rawWidth = widthCallback( progress, sourceIndex, lineIdx )
+		const width = Math.abs( rawWidth )
+		if ( !( width <= 3.4028234663852886e+38 ) ) {
+			throw new Error( `[MeshLine] widthCallback returned a non-finite value at point ${i} of line ${lineIdx}` )
+		}
+		widths[i] = width
+		if ( width > lineMaxWidth ) lineMaxWidth = width
+	}
+	return lineMaxWidth
+}
+
+const writeLineIndices16 = ( indices, indexOffset, vertexIndex, numPoints, bevelJoins, isLooped ) => {
+	for ( let i = 0, o = vertexIndex; i < numPoints - 1; i++, o += 4, indexOffset += 6 ) {
+		indices[indexOffset] = o + 2
+		indices[indexOffset + 1] = o + 3
+		indices[indexOffset + 2] = o + 4
+		indices[indexOffset + 3] = o + 4
+		indices[indexOffset + 4] = o + 3
+		indices[indexOffset + 5] = o + 5
+	}
+	if ( bevelJoins ) {
+		const firstJoin = isLooped ? 0 : 1
+		for ( let i = firstJoin, o = vertexIndex + firstJoin * 4; i < numPoints - 1; i++, o += 4, indexOffset += 6 ) {
+			indices[indexOffset] = o
+			indices[indexOffset + 1] = o + 1
+			indices[indexOffset + 2] = o + 2
+			indices[indexOffset + 3] = o + 2
+			indices[indexOffset + 4] = o + 1
+			indices[indexOffset + 5] = o + 3
+		}
+	}
+	return indexOffset
+}
+
+const writeLineIndices32 = ( indices, indexOffset, vertexIndex, numPoints, bevelJoins, isLooped ) => {
+	for ( let i = 0, o = vertexIndex; i < numPoints - 1; i++, o += 4, indexOffset += 6 ) {
+		indices[indexOffset] = o + 2
+		indices[indexOffset + 1] = o + 3
+		indices[indexOffset + 2] = o + 4
+		indices[indexOffset + 3] = o + 4
+		indices[indexOffset + 4] = o + 3
+		indices[indexOffset + 5] = o + 5
+	}
+	if ( bevelJoins ) {
+		const firstJoin = isLooped ? 0 : 1
+		for ( let i = firstJoin, o = vertexIndex + firstJoin * 4; i < numPoints - 1; i++, o += 4, indexOffset += 6 ) {
+			indices[indexOffset] = o
+			indices[indexOffset + 1] = o + 1
+			indices[indexOffset + 2] = o + 2
+			indices[indexOffset + 3] = o + 2
+			indices[indexOffset + 4] = o + 1
+			indices[indexOffset + 5] = o + 3
+		}
+	}
+	return indexOffset
+}
+
+const writeLineIndices = ( indices, indexOffset, vertexIndex, numPoints, bevelJoins, isLooped ) => {
+	return indices instanceof Uint32Array
+		? writeLineIndices32( indices, indexOffset, vertexIndex, numPoints, bevelJoins, isLooped )
+		: writeLineIndices16( indices, indexOffset, vertexIndex, numPoints, bevelJoins, isLooped )
+}
+
+const scanLineBoundsAndProgress = ( line, pointCount, bounds, progressTarget ) => {
+	let prevX = line[0], prevY = line[1], prevZ = line[2]
+	if ( !( prevX - prevX === 0 && prevY - prevY === 0 && prevZ - prevZ === 0 ) ) return -1
+	progressTarget[0] = 0
+	let minX = prevX, minY = prevY, minZ = prevZ
+	let maxX = prevX, maxY = prevY, maxZ = prevZ
+	let totalLength = 0
+	for ( let i = 1, sourceOffset = 3; i < pointCount; i++, sourceOffset += 3 ) {
+		const x = line[sourceOffset]
+		const y = line[sourceOffset + 1]
+		const z = line[sourceOffset + 2]
+		const dx = x - prevX
+		const dy = y - prevY
+		const dz = z - prevZ
+		const distSq = dx * dx + dy * dy + dz * dz
+		if ( !( distSq > 0 && distSq < Infinity ) ) return -1
+		if ( x < minX ) minX = x
+		if ( x > maxX ) maxX = x
+		if ( y < minY ) minY = y
+		if ( y > maxY ) maxY = y
+		if ( z < minZ ) minZ = z
+		if ( z > maxZ ) maxZ = z
+		totalLength += Math.sqrt( distSq )
+		progressTarget[i] = totalLength
+		prevX = x
+		prevY = y
+		prevZ = z
+	}
+	bounds[0] = minX
+	bounds[1] = minY
+	bounds[2] = minZ
+	bounds[3] = maxX
+	bounds[4] = maxY
+	bounds[5] = maxZ
+	return totalLength
+}
+
+const scanLineProgressOnly = ( line, pointCount, progressTarget ) => {
+	let prevX = line[0], prevY = line[1], prevZ = line[2]
+	if ( !( prevX - prevX === 0 && prevY - prevY === 0 && prevZ - prevZ === 0 ) ) return -1
+	progressTarget[0] = 0
+	let totalLength = 0
+	for ( let i = 1, sourceOffset = 3; i < pointCount; i++, sourceOffset += 3 ) {
+		const x = line[sourceOffset]
+		const y = line[sourceOffset + 1]
+		const z = line[sourceOffset + 2]
+		const dx = x - prevX
+		const dy = y - prevY
+		const dz = z - prevZ
+		const distSq = dx * dx + dy * dy + dz * dz
+		if ( !( distSq > 0 && distSq < Infinity ) ) return -1
+		totalLength += Math.sqrt( distSq )
+		progressTarget[i] = totalLength
+		prevX = x
+		prevY = y
+		prevZ = z
+	}
+	return totalLength
+}
+
+const scanLineBoundsOnly = ( line, pointCount, bounds ) => {
+	let prevX = line[0], prevY = line[1], prevZ = line[2]
+	if ( !( prevX - prevX === 0 && prevY - prevY === 0 && prevZ - prevZ === 0 ) ) return false
+	let minX = prevX, minY = prevY, minZ = prevZ
+	let maxX = prevX, maxY = prevY, maxZ = prevZ
+	for ( let i = 1, sourceOffset = 3; i < pointCount; i++, sourceOffset += 3 ) {
+		const x = line[sourceOffset]
+		const y = line[sourceOffset + 1]
+		const z = line[sourceOffset + 2]
+		const dx = x - prevX
+		const dy = y - prevY
+		const dz = z - prevZ
+		const distSq = dx * dx + dy * dy + dz * dz
+		if ( !( distSq > 0 && distSq < Infinity ) ) return false
+		if ( x < minX ) minX = x
+		if ( x > maxX ) maxX = x
+		if ( y < minY ) minY = y
+		if ( y > maxY ) maxY = y
+		if ( z < minZ ) minZ = z
+		if ( z > maxZ ) maxZ = z
+		prevX = x
+		prevY = y
+		prevZ = z
+	}
+	bounds[0] = minX
+	bounds[1] = minY
+	bounds[2] = minZ
+	bounds[3] = maxX
+	bounds[4] = maxY
+	bounds[5] = maxZ
+	return true
+}
+
+const scanLineValidOnly = ( line, pointCount ) => {
+	let prevX = line[0], prevY = line[1], prevZ = line[2]
+	if ( !( prevX - prevX === 0 && prevY - prevY === 0 && prevZ - prevZ === 0 ) ) return false
+	for ( let i = 1, sourceOffset = 3; i < pointCount; i++, sourceOffset += 3 ) {
+		const x = line[sourceOffset]
+		const y = line[sourceOffset + 1]
+		const z = line[sourceOffset + 2]
+		const dx = x - prevX
+		const dy = y - prevY
+		const dz = z - prevZ
+		const distSq = dx * dx + dy * dy + dz * dz
+		if ( !( distSq > 0 && distSq < Infinity ) ) return false
+		prevX = x
+		prevY = y
+		prevZ = z
+	}
+	return true
+}
+
 const sanitizeLinePoints = ( line, bounds = null, progressTarget = null ) => {
 	const pointCount = Math.floor( line.length / 3 )
-	let changed = line.length % 3 !== 0
 	const writeProgress = progressTarget?.length === pointCount
-	let totalLength = 0
-	if ( writeProgress ) progressTarget[0] = 0
-	if ( bounds ) {
-		bounds[0] = bounds[1] = bounds[2] = Infinity
-		bounds[3] = bounds[4] = bounds[5] = -Infinity
-	}
 
 	// The Float32Array path is the dynamic-update hot path. Validate first and
 	// return it directly when no compaction is necessary, avoiding a full-size
 	// temporary allocation on every frame.
-	for ( let i = 0; i < pointCount && !changed; i++ ) {
-		const sourceOffset = i * 3
-		const x = line[sourceOffset]
-		const y = line[sourceOffset + 1]
-		const z = line[sourceOffset + 2]
-		if ( !Number.isFinite( x ) || !Number.isFinite( y ) || !Number.isFinite( z ) ) {
-			changed = true
-		} else if ( i > 0 && pointsEqual( line, sourceOffset - 3, sourceOffset ) ) {
-			changed = true
-		} else {
+	if ( line.length % 3 === 0 ) {
+		if ( pointCount === 0 ) {
 			if ( bounds ) {
-				if ( x < bounds[0] ) bounds[0] = x
-				if ( y < bounds[1] ) bounds[1] = y
-				if ( z < bounds[2] ) bounds[2] = z
-				if ( x > bounds[3] ) bounds[3] = x
-				if ( y > bounds[4] ) bounds[4] = y
-				if ( z > bounds[5] ) bounds[5] = z
+				bounds[0] = bounds[1] = bounds[2] = Infinity
+				bounds[3] = bounds[4] = bounds[5] = -Infinity
 			}
-			if ( writeProgress && i > 0 ) {
-				const dx = x - line[sourceOffset - 3]
-				const dy = y - line[sourceOffset - 2]
-				const dz = z - line[sourceOffset - 1]
-				totalLength += Math.sqrt( dx * dx + dy * dy + dz * dz )
-				progressTarget[i] = totalLength
-			}
+			return line
 		}
-	}
-
-	if ( !changed ) {
-		if ( writeProgress ) normalizeLineProgress( progressTarget, pointCount, totalLength )
-		return line
+		if ( bounds && writeProgress ) {
+			const totalLength = scanLineBoundsAndProgress( line, pointCount, bounds, progressTarget )
+			if ( totalLength >= 0 ) {
+				normalizeLineProgress( progressTarget, pointCount, totalLength )
+				return line
+			}
+		} else if ( writeProgress ) {
+			const totalLength = scanLineProgressOnly( line, pointCount, progressTarget )
+			if ( totalLength >= 0 ) {
+				normalizeLineProgress( progressTarget, pointCount, totalLength )
+				return line
+			}
+		} else if ( bounds ) {
+			if ( scanLineBoundsOnly( line, pointCount, bounds ) ) return line
+		} else {
+			if ( scanLineValidOnly( line, pointCount ) ) return line
+		}
 	}
 
 	const result = new Float32Array( pointCount * 3 )
@@ -1409,12 +1600,10 @@ const sanitizeLinePoints = ( line, bounds = null, progressTarget = null ) => {
 		const y = line[sourceOffset + 1]
 		const z = line[sourceOffset + 2]
 		if ( !Number.isFinite( x ) || !Number.isFinite( y ) || !Number.isFinite( z ) ) {
-			changed = true
 			continue
 		}
 
 		if ( offset > 0 && result[offset - 3] === x && result[offset - 2] === y && result[offset - 1] === z ) {
-			changed = true
 			continue
 		}
 
@@ -1452,17 +1641,19 @@ const appendClosingPoint = line => {
 }
 
 const prepareLinesInput = ( input, options, target = null, collectBounds = false, progressTargets = null ) => {
-	const prepared = target || { lines: [], loops: [] }
+	const prepared = target || { lines: [], loops: [], sourceIndices: [] }
 	const lines = prepared.lines
 	const loops = prepared.loops
+	const sourceIndices = prepared.sourceIndices
 	lines.length = 0
 	loops.length = 0
+	sourceIndices.length = 0
 	const boundsList = collectBounds ? ( prepared.bounds ||= [] ) : null
 	const progressReady = progressTargets ? ( prepared.progressReady ||= [] ) : null
 	const smooth = options.smoothSharpBends === true && !options.gpuPositionNode
 	const dotThreshold = options.smoothSharpBendsThreshold ?? -0.5
 	const alpha = options.smoothSharpBendsAlpha ?? 0.001
-	const singleLine = input instanceof Float32Array || input instanceof BufferGeometry || isSingleLineArray( input )
+	const singleLine = isSingleLineInput( input )
 	const sourceCount = singleLine ? 1 : ( input?.length ?? 0 )
 
 	for ( let i = 0; i < sourceCount; i++ ) {
@@ -1472,8 +1663,14 @@ const prepareLinesInput = ( input, options, target = null, collectBounds = false
 		const requestedLoop = typeof options.closed === 'boolean' ? options.closed : ( options.closed?.[i] ?? false )
 		const outputIndex = lines.length
 		const lineBounds = boundsList ? ( boundsList[outputIndex] || new Float64Array( 6 ) ) : null
-		const progressTarget = progressTargets?.[outputIndex] || null
 		const converted = toFloat32( points )
+		const pointCount = Math.floor( converted.length / 3 )
+		let progressTarget = progressTargets?.[outputIndex] || null
+		if ( progressTargets && !requestedLoop && !smooth && pointCount >= 2 ) {
+			if ( !progressTarget || progressTarget.length !== pointCount ) {
+				progressTarget = new Float32Array( pointCount )
+			}
+		}
 		let line = sanitizeLinePoints(
 			converted,
 			lineBounds,
@@ -1501,13 +1698,32 @@ const prepareLinesInput = ( input, options, target = null, collectBounds = false
 
 		lines.push( line )
 		loops.push( isLooped )
-		if ( boundsList ) boundsList[lines.length - 1] = lineBounds
-		if ( progressReady ) progressReady[lines.length - 1] = hasPreparedProgress
+		sourceIndices.push( i )
+		if ( boundsList ) boundsList[outputIndex] = lineBounds
+		if ( hasPreparedProgress ) progressTargets[outputIndex] = progressTarget
+		if ( progressReady ) progressReady[outputIndex] = hasPreparedProgress
 	}
 	if ( boundsList ) boundsList.length = lines.length
 	if ( progressReady ) progressReady.length = lines.length
 
 	return prepared
+}
+
+// Rebuild source after a setPositionRange() edit. The edit lands in the stored
+// line, which copies the caller's array for converted input and closed loops.
+// Unless the source already shares the edited line's memory, it moves to the
+// stored points without their synthetic seams. A batch becomes a copy that
+// keeps each stored line at its caller index, dropped empty or degenerate
+// lines included, so per-line `closed` flags still match.
+const rangeEditSource = ( source, lines, loops, sourceIndices, lineIndex, syntheticSeams ) => {
+	const singleLine = isSingleLineInput( source )
+	const sourceLine = singleLine ? source : source[sourceIndices[lineIndex]]
+	if ( sourceLine?.buffer === lines[lineIndex].buffer ) return source
+	const sourcePoints = ( line, i ) => syntheticSeams && loops[i] ? line.subarray( 0, line.length - 3 ) : line
+	if ( singleLine ) return sourcePoints( lines[lineIndex], lineIndex )
+	const batch = Array.from( source )
+	for ( let i = 0; i < lines.length; i++ ) batch[sourceIndices[i]] = sourcePoints( lines[i], i )
+	return batch
 }
 
 const computeLineProgress = ( line, procedural, target = null ) => {
@@ -1518,35 +1734,181 @@ const computeLineProgress = ( line, procedural, target = null ) => {
 
 	if ( procedural ) {
 		const step = 1 / ( pointCount - 1 )
-		for ( let i = 1; i < pointCount; i++ ) result[i] = i * step
+		for ( let i = 1; i < pointCount - 1; i++ ) result[i] = i * step
 		result[pointCount - 1] = 1
 		return result
 	}
 
 	let totalLength = 0
-	for ( let i = 1; i < pointCount; i++ ) {
-		const previousOffset = ( i - 1 ) * 3
-		const offset = i * 3
-		const dx = line[offset] - line[previousOffset]
-		const dy = line[offset + 1] - line[previousOffset + 1]
-		const dz = line[offset + 2] - line[previousOffset + 2]
+	let prevX = line[0]
+	let prevY = line[1]
+	let prevZ = line[2]
+	for ( let i = 1, offset = 3; i < pointCount; i++, offset += 3 ) {
+		const x = line[offset]
+		const y = line[offset + 1]
+		const z = line[offset + 2]
+		const dx = x - prevX
+		const dy = y - prevY
+		const dz = z - prevZ
 		totalLength += Math.sqrt( dx * dx + dy * dy + dz * dz )
 		result[i] = totalLength
+		prevX = x
+		prevY = y
+		prevZ = z
 	}
 
 	normalizeLineProgress( result, pointCount, totalLength )
 	return result
 }
 
+const buildLineArcCache = ( line, pointCount, segLengths, result ) => {
+	let totalLength = 0
+	let prevX = line[0]
+	let prevY = line[1]
+	let prevZ = line[2]
+	for ( let i = 1, offset = 3; i < pointCount; i++, offset += 3 ) {
+		const x = line[offset]
+		const y = line[offset + 1]
+		const z = line[offset + 2]
+		const dx = x - prevX
+		const dy = y - prevY
+		const dz = z - prevZ
+		const segLen = Math.sqrt( dx * dx + dy * dy + dz * dz )
+		segLengths[i] = segLen
+		totalLength += segLen
+		result[i] = totalLength
+		prevX = x
+		prevY = y
+		prevZ = z
+	}
+	return totalLength
+}
+
+const normalizeCachedProgress = ( segLengths, result, last, invTotalLength ) => {
+	let acc = 0
+	for ( let i = 1; i < last; i++ ) {
+		acc += segLengths[i]
+		result[i] = acc * invTotalLength
+	}
+	return acc
+}
+
+const normalizeCachedProgressFallback = ( segLengths, result, last ) => {
+	const step = 1 / last
+	let acc = 0
+	for ( let i = 1; i < last; i++ ) {
+		acc += segLengths[i]
+		result[i] = i * step
+	}
+	return acc
+}
+
+const updateLineProgressRange = ( line, startPoint, endPoint, hasSyntheticSeam, target, caches, lineIndex ) => {
+	const pointCount = line.length / 3
+	const result = target?.length === pointCount ? target : new Float32Array( pointCount )
+	result[0] = 0
+	if ( pointCount < 2 ) return result
+
+	const cache = lineIndex < caches.length ? caches[lineIndex] : null
+	const last = pointCount - 1
+	if ( !cache || !cache.valid || cache.pointCount !== pointCount ) {
+		const segLengths = cache?.segLengths?.length >= pointCount ? cache.segLengths : new Float64Array( pointCount )
+		const totalLength = buildLineArcCache( line, pointCount, segLengths, result )
+		caches[lineIndex] = { pointCount, segLengths, totalLength, valid: true }
+		normalizeLineProgress( result, pointCount, totalLength )
+		return result
+	}
+
+	const segLengths = cache.segLengths
+	let totalLength = cache.totalLength
+	const firstSeg = Math.max( 1, startPoint )
+	const lastSeg = Math.min( last, endPoint )
+	let prevX = line[( firstSeg - 1 ) * 3]
+	let prevY = line[( firstSeg - 1 ) * 3 + 1]
+	let prevZ = line[( firstSeg - 1 ) * 3 + 2]
+	for ( let i = firstSeg, offset = firstSeg * 3; i <= lastSeg; i++, offset += 3 ) {
+		const x = line[offset]
+		const y = line[offset + 1]
+		const z = line[offset + 2]
+		const dx = x - prevX
+		const dy = y - prevY
+		const dz = z - prevZ
+		const segLen = Math.sqrt( dx * dx + dy * dy + dz * dz )
+		totalLength += segLen - segLengths[i]
+		segLengths[i] = segLen
+		prevX = x
+		prevY = y
+		prevZ = z
+	}
+	if ( hasSyntheticSeam && startPoint === 0 && lastSeg < last ) {
+		const offset = last * 3
+		const dx = line[offset] - line[offset - 3]
+		const dy = line[offset + 1] - line[offset - 2]
+		const dz = line[offset + 2] - line[offset - 1]
+		const segLen = Math.sqrt( dx * dx + dy * dy + dz * dz )
+		totalLength += segLen - segLengths[last]
+		segLengths[last] = segLen
+	}
+
+	result[last] = 1
+	const acc = ( totalLength <= 0 || !Number.isFinite( totalLength ) )
+		? normalizeCachedProgressFallback( segLengths, result, last )
+		: normalizeCachedProgress( segLengths, result, last, 1 / totalLength )
+	cache.totalLength = acc + segLengths[last]
+	return result
+}
+
 const normalizeLineProgress = ( result, pointCount, totalLength ) => {
 	if ( pointCount < 2 ) return
+	const last = pointCount - 1
+	result[last] = 1
 	if ( totalLength <= 0 || !Number.isFinite( totalLength ) ) {
-		const step = 1 / ( pointCount - 1 )
-		for ( let i = 1; i < pointCount; i++ ) result[i] = i * step
+		const step = 1 / last
+		for ( let i = 1; i < last; i++ ) result[i] = i * step
 	} else {
-		for ( let i = 1; i < pointCount; i++ ) result[i] /= totalLength
+		const invTotalLength = 1 / totalLength
+		for ( let i = 1; i < last; i++ ) result[i] *= invTotalLength
 	}
-	result[pointCount - 1] = 1
+}
+
+const fillPattern4 = ( array, a, b, c, d ) => {
+	const len = array.length
+	if ( len < 4 ) return
+	array[0] = a
+	array[1] = b
+	array[2] = c
+	array[3] = d
+	let filled = 4
+	while ( filled < len ) {
+		const next = filled << 1
+		array.copyWithin( filled, 0, next <= len ? filled : len - filled )
+		filled = next
+	}
+}
+
+const writeColorLine = ( colors, colorSource, colorStart, numPoints, isLooped, vertexOffset ) => {
+	const lastLoopedPoint = isLooped ? numPoints - 1 : -1
+	const sourceLen = colorSource.length
+	for ( let i = 0, vo = vertexOffset * 3; i < numPoints; i++, vo += 12 ) {
+		const sourceIndex = i === lastLoopedPoint ? 0 : i
+		const colorIndex = colorStart + sourceIndex
+		const o = colorIndex * 3
+		if ( sourceLen >= o + 3 ) {
+			const r = colorSource[o]
+			const g = colorSource[o + 1]
+			const b = colorSource[o + 2]
+			if ( !Number.isFinite( r ) || !Number.isFinite( g ) || !Number.isFinite( b ) ) {
+				throw new Error( `[MeshLine] vertexColors contains a non-finite value at point ${colorIndex}` )
+			}
+			colors[vo] = colors[vo + 3] = colors[vo + 6] = colors[vo + 9] = r
+			colors[vo + 1] = colors[vo + 4] = colors[vo + 7] = colors[vo + 10] = g
+			colors[vo + 2] = colors[vo + 5] = colors[vo + 8] = colors[vo + 11] = b
+		} else {
+			colors[vo] = colors[vo + 3] = colors[vo + 6] = colors[vo + 9] = 0
+			colors[vo + 1] = colors[vo + 4] = colors[vo + 7] = colors[vo + 10] = 0
+			colors[vo + 2] = colors[vo + 5] = colors[vo + 8] = colors[vo + 11] = 0
+		}
+	}
 }
 
 const markAttributeFullUpdate = attribute => {
@@ -1564,20 +1926,32 @@ const markAttributeUpdateRange = ( attribute, start, count ) => {
 	const ranges = attribute.updateRanges
 	let rangeStart = start
 	let rangeEnd = start + count
+	let mergedTarget = null
 	for ( let i = ranges.length - 1; i >= 0; i-- ) {
 		const current = ranges[i]
 		const currentEnd = current.start + current.count
 		if ( rangeEnd < current.start || rangeStart > currentEnd ) continue
 		rangeStart = Math.min( rangeStart, current.start )
 		rangeEnd = Math.max( rangeEnd, currentEnd )
-		ranges.splice( i, 1 )
+		if ( !mergedTarget && current !== attribute._meshLineFullUpdateRange ) {
+			mergedTarget = current
+		} else {
+			ranges.splice( i, 1 )
+		}
 	}
 	if ( rangeStart === 0 && rangeEnd === attribute.array.length ) {
+		if ( mergedTarget ) {
+			const idx = ranges.indexOf( mergedTarget )
+			if ( idx !== -1 ) ranges.splice( idx, 1 )
+		}
 		const fullRange = attribute._meshLineFullUpdateRange || { start: 0, count: attribute.array.length }
 		fullRange.start = 0
 		fullRange.count = attribute.array.length
 		attribute._meshLineFullUpdateRange = fullRange
 		ranges.push( fullRange )
+	} else if ( mergedTarget ) {
+		mergedTarget.start = rangeStart
+		mergedTarget.count = rangeEnd - rangeStart
 	} else {
 		attribute.addUpdateRange( rangeStart, rangeEnd - rangeStart )
 	}
@@ -1588,9 +1962,7 @@ const markAttributeUpdateRange = ( attribute, start, count ) => {
 }
 
 const writePositionRange = ( array, line, vertexOffset, startPoint, endPoint ) => {
-	for ( let i = startPoint; i < endPoint; i++ ) {
-		const sourceOffset = i * 3
-		const targetOffset = ( vertexOffset + i * 4 ) * 3
+	for ( let i = startPoint, sourceOffset = startPoint * 3, targetOffset = ( vertexOffset + startPoint * 4 ) * 3; i < endPoint; i++, sourceOffset += 3, targetOffset += 12 ) {
 		const x = line[sourceOffset]
 		const y = line[sourceOffset + 1]
 		const z = line[sourceOffset + 2]
@@ -1639,15 +2011,13 @@ const markNeighborUpdateRanges = ( previous, next, vertexOffset, startPoint, end
 }
 
 const writeScalarLine = ( array, values, vertexOffset ) => {
-	for ( let i = 0; i < values.length; i++ ) {
-		const targetOffset = vertexOffset + i * 4
+	for ( let i = 0, targetOffset = vertexOffset; i < values.length; i++, targetOffset += 4 ) {
 		array[targetOffset] = array[targetOffset + 1] = array[targetOffset + 2] = array[targetOffset + 3] = values[i]
 	}
 }
 
 const writeUVLine = ( array, progress, vertexOffset ) => {
-	for ( let i = 0; i < progress.length; i++ ) {
-		const targetOffset = ( vertexOffset + i * 4 ) * 2
+	for ( let i = 0, targetOffset = vertexOffset * 2; i < progress.length; i++, targetOffset += 8 ) {
 		const value = progress[i]
 		array[targetOffset] = value
 		array[targetOffset + 1] = 0
@@ -1660,54 +2030,130 @@ const writeUVLine = ( array, progress, vertexOffset ) => {
 	}
 }
 
-const writePositionAndNeighbors = ( line, isLooped, positions, previous, next, vertexOffset ) => {
-	const pointCount = line.length / 3
-	for ( let i = 0; i < pointCount; i++ ) {
-		const sourceOffset = i * 3
-		const targetOffset = ( vertexOffset + i * 4 ) * 3
-		const previousOffset = i > 0
-			? sourceOffset - 3
-			: ( isLooped ? ( pointCount - 2 ) * 3 : sourceOffset )
-		const nextOffset = i < pointCount - 1
-			? sourceOffset + 3
-			: ( isLooped ? 3 : sourceOffset )
+const writeUVLineUpdate = ( array, progress, vertexOffset ) => {
+	for ( let i = 0, targetOffset = vertexOffset * 2; i < progress.length; i++, targetOffset += 8 ) {
+		const value = progress[i]
+		array[targetOffset] = array[targetOffset + 2] = array[targetOffset + 4] = array[targetOffset + 6] = value
+	}
+}
+
+const writePositionsQuad = ( line, pointCount, positions, baseOffset ) => {
+	for ( let sourceOffset = 0, endOffset = pointCount * 3, targetOffset = baseOffset; sourceOffset < endOffset; sourceOffset += 3, targetOffset += 12 ) {
 		const x = line[sourceOffset]
 		const y = line[sourceOffset + 1]
 		const z = line[sourceOffset + 2]
-		const px = line[previousOffset]
-		const py = line[previousOffset + 1]
-		const pz = line[previousOffset + 2]
-		const nx = line[nextOffset]
-		const ny = line[nextOffset + 1]
-		const nz = line[nextOffset + 2]
-
 		positions[targetOffset] = positions[targetOffset + 3] = positions[targetOffset + 6] = positions[targetOffset + 9] = x
 		positions[targetOffset + 1] = positions[targetOffset + 4] = positions[targetOffset + 7] = positions[targetOffset + 10] = y
 		positions[targetOffset + 2] = positions[targetOffset + 5] = positions[targetOffset + 8] = positions[targetOffset + 11] = z
-		previous[targetOffset] = previous[targetOffset + 3] = previous[targetOffset + 6] = previous[targetOffset + 9] = px
-		previous[targetOffset + 1] = previous[targetOffset + 4] = previous[targetOffset + 7] = previous[targetOffset + 10] = py
-		previous[targetOffset + 2] = previous[targetOffset + 5] = previous[targetOffset + 8] = previous[targetOffset + 11] = pz
-		next[targetOffset] = next[targetOffset + 3] = next[targetOffset + 6] = next[targetOffset + 9] = nx
-		next[targetOffset + 1] = next[targetOffset + 4] = next[targetOffset + 7] = next[targetOffset + 10] = ny
-		next[targetOffset + 2] = next[targetOffset + 5] = next[targetOffset + 8] = next[targetOffset + 11] = nz
 	}
+}
+
+const writePositionAndNeighbors = ( line, isLooped, positions, previous, next, vertexOffset ) => {
+	const pointCount = line.length / 3
+	if ( pointCount < 2 ) return vertexOffset
+	const baseOffset = vertexOffset * 3
+	const lastOffset = baseOffset + ( pointCount - 1 ) * 12
+
+	writePositionsQuad( line, pointCount, positions, baseOffset )
+
+	previous.set( positions.subarray( baseOffset, lastOffset ), baseOffset + 12 )
+	const prevSourceOffset = isLooped ? lastOffset - 12 : baseOffset
+	previous[baseOffset] = previous[baseOffset + 3] = previous[baseOffset + 6] = previous[baseOffset + 9] = positions[prevSourceOffset]
+	previous[baseOffset + 1] = previous[baseOffset + 4] = previous[baseOffset + 7] = previous[baseOffset + 10] = positions[prevSourceOffset + 1]
+	previous[baseOffset + 2] = previous[baseOffset + 5] = previous[baseOffset + 8] = previous[baseOffset + 11] = positions[prevSourceOffset + 2]
+
+	next.set( positions.subarray( baseOffset + 12, lastOffset + 12 ), baseOffset )
+	const nextSourceOffset = isLooped ? baseOffset + 12 : lastOffset
+	next[lastOffset] = next[lastOffset + 3] = next[lastOffset + 6] = next[lastOffset + 9] = positions[nextSourceOffset]
+	next[lastOffset + 1] = next[lastOffset + 4] = next[lastOffset + 7] = next[lastOffset + 10] = positions[nextSourceOffset + 1]
+	next[lastOffset + 2] = next[lastOffset + 5] = next[lastOffset + 8] = next[lastOffset + 11] = positions[nextSourceOffset + 2]
+
 	return vertexOffset + pointCount * 4
 }
 
-const writeEndpointMetadata = ( array, progress, isLooped, vertexOffset ) => {
+const writeEndpointMetadata = ( array, progress, isLooped, vertexOffset, freshZeroedOpen = false ) => {
 	const pointCount = progress.length
+	if ( pointCount < 2 ) return
+	const last = pointCount - 1
 	const loopValue = isLooped ? 1 : 0
-	for ( let i = 0; i < pointCount; i++ ) {
-		const openEndpoint = !isLooped && i === 0 ? -1 : ( !isLooped && i === pointCount - 1 ? 1 : 0 )
-		const previousStep = i > 0
-			? Math.max( 0, progress[i] - progress[i - 1] )
-			: ( isLooped && pointCount > 2 ? Math.max( 0, 1 - progress[pointCount - 2] ) : 0 )
-		const nextStep = i < pointCount - 1
-			? Math.max( 0, progress[i + 1] - progress[i] )
-			: ( isLooped && pointCount > 2 ? Math.max( 0, progress[1] ) : 0 )
-		const offset = ( vertexOffset + i * 4 ) * 4
-		array[offset] = array[offset + 4] = array[offset + 8] = array[offset + 12] = openEndpoint
+	let offset = vertexOffset * 4
+	const lastOffset = offset + last * 16
+	let prevProg = progress[0]
+	let curProg = progress[1]
+	let previousStep = isLooped && pointCount > 2 ? Math.max( 0, 1 - progress[pointCount - 2] ) : 0
+	let nextStep = curProg > prevProg ? curProg - prevProg : 0
+
+	const openStart = isLooped ? 0 : -1
+	array[offset] = array[offset + 4] = array[offset + 8] = array[offset + 12] = openStart
+	if ( !freshZeroedOpen ) {
 		array[offset + 1] = array[offset + 5] = array[offset + 9] = array[offset + 13] = loopValue
+	}
+	array[offset + 2] = array[offset + 6] = array[offset + 10] = array[offset + 14] = previousStep
+	array[offset + 3] = array[offset + 7] = array[offset + 11] = array[offset + 15] = nextStep
+
+	const lastPrevProg = progress[last - 1]
+	const lastCurProg = progress[last]
+	const lastPrevStep = lastCurProg > lastPrevProg ? lastCurProg - lastPrevProg : 0
+	const lastNextStep = isLooped && pointCount > 2 ? Math.max( 0, progress[1] ) : 0
+	const openEnd = isLooped ? 0 : 1
+	array[lastOffset] = array[lastOffset + 4] = array[lastOffset + 8] = array[lastOffset + 12] = openEnd
+	if ( !freshZeroedOpen ) {
+		array[lastOffset + 1] = array[lastOffset + 5] = array[lastOffset + 9] = array[lastOffset + 13] = loopValue
+	}
+	array[lastOffset + 2] = array[lastOffset + 6] = array[lastOffset + 10] = array[lastOffset + 14] = lastPrevStep
+	array[lastOffset + 3] = array[lastOffset + 7] = array[lastOffset + 11] = array[lastOffset + 15] = lastNextStep
+
+	offset += 16
+	if ( freshZeroedOpen ) {
+		for ( let i = 1; i < last; i++, offset += 16 ) {
+			previousStep = nextStep
+			prevProg = curProg
+			curProg = progress[i + 1]
+			nextStep = curProg > prevProg ? curProg - prevProg : 0
+			array[offset + 2] = array[offset + 6] = array[offset + 10] = array[offset + 14] = previousStep
+			array[offset + 3] = array[offset + 7] = array[offset + 11] = array[offset + 15] = nextStep
+		}
+	} else {
+		for ( let i = 1; i < last; i++, offset += 16 ) {
+			previousStep = nextStep
+			prevProg = curProg
+			curProg = progress[i + 1]
+			nextStep = curProg > prevProg ? curProg - prevProg : 0
+			array[offset] = array[offset + 4] = array[offset + 8] = array[offset + 12] = 0
+			array[offset + 1] = array[offset + 5] = array[offset + 9] = array[offset + 13] = loopValue
+			array[offset + 2] = array[offset + 6] = array[offset + 10] = array[offset + 14] = previousStep
+			array[offset + 3] = array[offset + 7] = array[offset + 11] = array[offset + 15] = nextStep
+		}
+	}
+}
+
+const writeEndpointMetadataUpdate = ( array, progress, isLooped, vertexOffset ) => {
+	const pointCount = progress.length
+	if ( pointCount < 2 ) return
+	const last = pointCount - 1
+	let offset = vertexOffset * 4
+	const lastOffset = offset + last * 16
+	let prevProg = progress[0]
+	let curProg = progress[1]
+	let previousStep = isLooped && pointCount > 2 ? Math.max( 0, 1 - progress[pointCount - 2] ) : 0
+	let nextStep = curProg > prevProg ? curProg - prevProg : 0
+
+	array[offset + 2] = array[offset + 6] = array[offset + 10] = array[offset + 14] = previousStep
+	array[offset + 3] = array[offset + 7] = array[offset + 11] = array[offset + 15] = nextStep
+
+	const lastPrevProg = progress[last - 1]
+	const lastCurProg = progress[last]
+	const lastPrevStep = lastCurProg > lastPrevProg ? lastCurProg - lastPrevProg : 0
+	const lastNextStep = isLooped && pointCount > 2 ? Math.max( 0, progress[1] ) : 0
+	array[lastOffset + 2] = array[lastOffset + 6] = array[lastOffset + 10] = array[lastOffset + 14] = lastPrevStep
+	array[lastOffset + 3] = array[lastOffset + 7] = array[lastOffset + 11] = array[lastOffset + 15] = lastNextStep
+
+	offset += 16
+	for ( let i = 1; i < last; i++, offset += 16 ) {
+		previousStep = nextStep
+		prevProg = curProg
+		curProg = progress[i + 1]
+		nextStep = curProg > prevProg ? curProg - prevProg : 0
 		array[offset + 2] = array[offset + 6] = array[offset + 10] = array[offset + 14] = previousStep
 		array[offset + 3] = array[offset + 7] = array[offset + 11] = array[offset + 15] = nextStep
 	}

@@ -1,5 +1,5 @@
-import { attribute, cameraProjectionMatrix, cameraWorldMatrix, dFdx, dFdy, Discard, dot, float, Fn, max, min, mix, mod, modelViewMatrix, modelWorldMatrixInverse, positionGeometry, step, texture, uint, uniform, uv, varying, varyingProperty, vec2, vec3, vec4, vertexIndex } from 'three/tsl'
-import { Color, DoubleSide, MeshBasicNodeMaterial, Vector2 } from 'three/webgpu'
+import { assign, attribute, bool, cameraNear, cameraProjectionMatrix, cameraWorldMatrix, dFdx, dFdy, Discard, dot, float, Fn, If, inverseSqrt, max, min, mix, mod, modelViewMatrix, modelWorldMatrixInverse, nodeObject, positionGeometry, positionLocal, positionPrevious, smoothstep, step, texture, uint, uniform, uv, varying, varyingProperty, vec2, vec3, vec4, vertexIndex } from 'three/tsl'
+import { Color, DoubleSide, MeshBasicNodeMaterial, Node, NormalBlending, Vector2 } from 'three/webgpu'
 
 const DEFAULT_MITER_LIMIT = 4
 const MAX_MITER_LIMIT = 1e6
@@ -46,6 +46,8 @@ const aColor = attribute( 'vertexColor', 'vec3' )
 const aWidth = attribute( 'width', 'float' )
 const vProgress = varyingProperty( 'float', 'vProgress' )
 const vColor = varyingProperty( 'vec4', 'vColor' )
+// View-space depth of the emitted vertex, read by scene fog (see setupShaders).
+const vViewZ = varyingProperty( 'float', 'vViewZ' )
 const vertexSide = float( 1 ).sub( float( vertexIndex.bitAnd( uint( 1 ) ) ).mul( 2 ) )
 // Billboard geometry stores [incoming+, incoming-, outgoing+, outgoing-] for
 // every logical point. The sign owns the incident body and the magnitude owns
@@ -85,6 +87,97 @@ const AA_EDGE_PADDING_PX = 0.5
 const AA_MINIMUM_HALF_PX = 0.5
 const vAaCoord = varyingProperty( 'float', 'vAaCoord' )
 const vAaCoverage = varyingProperty( 'float', 'vAaCoverage' )
+
+// Folded joins. A smooth 3D curve seen along its tangent projects to a sharp
+// screen turn, where a miter would spike far past the stroke. Those joins are
+// clipped to the round silhouette a tube would have: past either end of a body
+// quad, the fragment keeps only a disc of `factor * radius` around that end.
+//
+// A body quad joins one point's outgoing row (end A) to the next point's
+// incoming row (end B); both rows see A and B, so they agree on the segment
+// frame. xy: this vertex's position in that frame (origin A, x along A->B,
+// y across, device pixels) times clip w; z: clip w; w: |AB| in pixels. All of
+// it is affine in clip coordinates, so xy / z in the fragment is the exact
+// screen-linear position whatever the viewport, scissor, pixel ratio, render
+// target or `vertexFn`.
+const vFoldFrame = varyingProperty( 'vec4', 'vFoldFrame' )
+// x: 1 on the outgoing row, 0 on the incoming row. y, z: the clip factor of
+// end A and end B premultiplied by x and 1 - x. A row only knows its own
+// joint, but both products interpolate with the same weights as x, so the
+// fragment recovers each row's own factor exactly by division. 0 means that end
+// is not clipped. w: this vertex's stroke radius in device pixels.
+const vFoldEnds = varyingProperty( 'vec4', 'vFoldEnds' )
+// Where both rows of a joint split apart, each keeps its side of the bisector
+// (normal in the segment frame; xy at A, zw at B, zero from the other row).
+const vFoldSplit = varyingProperty( 'vec4', 'vFoldSplit' )
+// A mitered tip that pokes out less than this is left alone.
+const FOLD_TOLERANCE_PX = 0.5
+// Screen folds are rounded where the curve itself turns gently in 3D (under
+// 15 degrees per point); corners that turn by 30 degrees or more are authored
+// and keep their miter. The weight depends only on the path, never on the
+// camera, so a corner does not pop while orbiting.
+const FOLD_COS_SMOOTH = Math.cos( Math.PI / 12 )
+const FOLD_COS_AUTHORED = Math.cos( Math.PI / 6 )
+// Split rows reach past the joint by this much more than the disc they cover.
+const FOLD_EXTENSION_PADDING_PX = 1
+
+// Smooth-curve miter limit in the default geometry mode: past it a projected
+// fold splits into butt ends plus an overlap instead of growing a spike.
+const FOLD_SMOOTH_LIMIT = 1.25
+
+// How projected folds are handled:
+// - 'geometry' (default): vertex placement only. No discard, no extra varyings,
+//   so the fragment stage and its early depth/hidden-surface removal are
+//   untouched. A fold deviates from the round silhouette by at most ~0.4 of the
+//   half width (square-ish overlap corners) instead of spiking up to the limit.
+// - 'exact': the fragment clips folds to the exact round silhouette. It needs a
+//   discard, which tile-based GPUs pay for across the whole draw.
+// - 'off': the plain miter/butt path.
+// Only lines with an interior joint can fold, so a one-segment GPU line such as
+// a laser always keeps the plain shader. Wireframe is checked when the shader is
+// built, since it can be toggled on a live material.
+const resolveFoldMode = options => {
+	const join = typeof options.join === 'string' ? { type: options.join } : ( options.join ?? {} )
+	if ( join.fold === false || join.type === 'bevel' ) return 'off'
+	if ( options.previousFn || options.nextFn ) return 'off'
+	const closed = Array.isArray( options.closed ) ? options.closed.some( Boolean ) : options.closed === true
+	if ( options.gpuPositionNode && !closed && ( options.segments ?? 1 ) <= 1 ) return 'off'
+	return join.fold === 'exact' || join.type === 'round' ? 'exact' : 'geometry'
+}
+
+// A line placed by `positionFn` or `gpuPositionNode`, or drawn from
+// MeshLineGPUPath's point buffer, has a centerline that its geometry's
+// `position` attribute is only a template for. Three derives
+// `positionLocal`, `positionWorld` and the vertex-stage `positionView` (hardware
+// clip distances; before r183 also the fragment one) from that attribute, at the
+// top of the vertex stage, and pairs `positionLocal` with `positionPrevious` in
+// motion vectors. This node runs there and points both at the placed centerline
+// instead, each only in builds that read it: setup and analyze have registered
+// every reader's varying by the time code is generated, so other builds emit
+// nothing.
+export class PlacedPositionNode extends Node {
+
+	static get type() {
+		return 'MeshLinePlacedPositionNode'
+	}
+
+	constructor( positionNode ) {
+		super( 'void' )
+		// Underscored, so setup and analyze skip them: building an assignment
+		// there would register the varying this node checks for.
+		this._assignments = [positionLocal, positionPrevious].map( accessor => ( {
+			name: accessor.name,
+			node: assign( accessor, positionNode ),
+		} ) )
+	}
+
+	generate( builder ) {
+		for ( const { name, node } of this._assignments ) {
+			if ( builder.varyings.some( varying => varying.name === name ) ) node.build( builder, 'void' )
+		}
+	}
+
+}
 
 /**
  * TSL-based NodeMaterial for GPU line rendering. Extends `MeshBasicNodeMaterial`
@@ -206,6 +299,12 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 		// the lower bound on |dir1+dir2| below which the offset magnitude plateaus.
 		this._miterLimit = sanitizeMiterLimit( options.miterLimit )
 		this._miterThreshold = uniform( 2 / this._miterLimit )
+		// `miter` keeps crisp corners where the path really turns but rounds joins
+		// that only look sharp because the tangent points at the camera; `round`
+		// rounds every join; `bevel` keeps its fill topology unclipped.
+		const joinType = typeof options.join === 'string' ? options.join : ( options.join?.type ?? 'miter' )
+		this._joinType = joinType === 'simple' ? 'miter' : joinType
+		this._foldModeRequested = resolveFoldMode( options )
 
 		// GPU position node (optional)
 		this.gpuPositionNode = options.gpuPositionNode ?? null
@@ -247,6 +346,48 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 		if ( this._miterThreshold ) {
 			this._miterThreshold.value = 2 / this._miterLimit
 		}
+	}
+
+	/**
+	 * Change the join policy of a built material in place. The limit is a
+	 * uniform; a new `type` or `fold` only recompiles the shader, so resolution,
+	 * uniforms and depth or shadow state set since the build are kept.
+	 * @param {import('./index.d.ts').MeshLineJoinType | import('./index.d.ts').MeshLineJoinOptions} join
+	 */
+	setJoin( join = {} ) {
+		if ( typeof join === 'string' ) join = { type: join }
+		this.options = { ...this.options, join: { ...( typeof this.options?.join === 'object' ? this.options.join : {} ), ...join } }
+		if ( join.limit !== undefined ) this.miterLimit = join.limit
+		const joinType = this.options.join.type ?? 'miter'
+		const foldMode = resolveFoldMode( this.options )
+		if ( joinType !== this._joinType || foldMode !== this._foldModeRequested ) {
+			this._joinType = joinType
+			this._foldModeRequested = foldMode
+			this.needsUpdate = true
+		}
+	}
+
+	/**
+	 * Clip folded joins inside a replacement `opacityNode` (call it from a TSL
+	 * `Fn`), so subclasses that swap the opacity keep the exact silhouette.
+	 * @param {Node} alpha
+	 * @returns {Node}
+	 */
+	clipFoldedJoins( alpha ) {
+		const coverage = this._foldCoverageNode
+		if ( !coverage ) return alpha
+		if ( this._isBlended() ) {
+			Discard( coverage.lessThanEqual( 0 ) )
+			return alpha.mul( coverage )
+		}
+		Discard( coverage.lessThan( 0.5 ) )
+		return alpha
+	}
+
+	// Mirrors NodeBuilder.isOpaque(): only a blended pipeline can show fractional
+	// coverage, an opaque one needs the clip decided per sample.
+	_isBlended() {
+		return this.transparent === true || this.blending !== NormalBlending || this.alphaToCoverage === true
 	}
 
 	/**
@@ -430,7 +571,26 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 		super.setup( builder )
 	}
 
-	setupShaders( { } ) {
+	setupPosition( builder ) {
+		const position = super.setupPosition( builder )
+		if ( this._placedPositionNode ) this._placedPositionNode.toStack()
+		return position
+	}
+
+	setupShaders( builder ) {
+
+		// Resolved per build: wireframe draws the raw triangles, which a fold
+		// clip would only cut holes into.
+		const foldMode = this.wireframe ? 'off' : ( this._foldModeRequested ?? 'off' )
+		this._foldMode = foldMode
+
+		// Scene fog reads `positionView`: r183+ rebuild it per fragment from the
+		// clip position with an inverse projection, r180-r182 interpolate a vec3
+		// derived from `positionLocal` (see PlacedPositionNode). The vertex stage
+		// already has the placed view depth, so fog reads it from one float
+		// varying instead, declared only when this build applies fog.
+		const fogDepth = this.fog === true && !!builder.fogNode
+		if ( fogDepth ) builder.context.getViewZ = () => vViewZ
 
 		// Cache frequently-used attributes to prevent duplicate GPU computation
 		const progress = ( this._needsProgress ? aProgress : float( 0 ) ).toVar( 'varProgress' )
@@ -444,6 +604,11 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 
 		// Get base positions first
 		const { pos, previous, next } = this.getLinePositions( progress, endpoint )
+		// A placed centerline is computed once into a variable that both the
+		// vertex stage below and, in builds that read it, `positionLocal` share.
+		const placed = !!( this.positionFn || this.gpuPositionNode )
+		const linePosition = placed ? pos.toVar( 'linePosition' ) : pos
+		this._placedPositionNode = placed ? nodeObject( new PlacedPositionNode( linePosition ) ) : null
 
 		this.vertexNode = Fn( () => {
 
@@ -467,10 +632,15 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 			}
 
 			const aspect = this.resolution.x.div( this.resolution.y ).toVar( 'aspect' )
-			const mvpMatrix = cameraProjectionMatrix.mul( modelViewMatrix ).toVar( 'mvpMatrix' )
-			const finalPosition = mvpMatrix.mul( vec4( pos, 1.0 ) ).toVar( 'finalPosition' )
-			const prevPos = mvpMatrix.mul( vec4( previous, 1.0 ) ).toVar( 'prevPos' )
-			const nextPos = mvpMatrix.mul( vec4( next, 1.0 ) ).toVar( 'nextPos' )
+			// View space first, then projection: three's own positionView -> clip
+			// order. A per-vertex P * MV matrix product costs more than the extra
+			// matrix-vector products it would save across three points.
+			const viewPosition = modelViewMatrix.mul( vec4( linePosition, 1.0 ) ).toVar( 'viewPosition' )
+			const viewPrevious = modelViewMatrix.mul( vec4( previous, 1.0 ) ).toVar( 'viewPrevious' )
+			const viewNext = modelViewMatrix.mul( vec4( next, 1.0 ) ).toVar( 'viewNext' )
+			const finalPosition = cameraProjectionMatrix.mul( viewPosition ).toVar( 'finalPosition' )
+			const prevPos = cameraProjectionMatrix.mul( viewPrevious ).toVar( 'prevPos' )
+			const nextPos = cameraProjectionMatrix.mul( viewNext ).toVar( 'nextPos' )
 
 			// Direction vectors in aspect-corrected NDC (post perspective divide).
 			// This is the space the miter math measures pixel-accurate offsets in.
@@ -493,12 +663,18 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 			const projectedReversal = delta1RawLen.greaterThanEqual( minDirectionLength )
 				.and( delta2RawLen.greaterThanEqual( minDirectionLength ) )
 				.and( dot( projectedDir1, projectedDir2 ).lessThanEqual( float( SCREEN_REVERSAL_DOT_THRESHOLD ) ) )
-			const reversalStart = outgoingVertex.and( projectedReversal ).select( float( 1 ), float( 0 ) )
-			const reversalEnd = outgoingVertex.not().and( projectedReversal ).select( float( 1 ), float( 0 ) )
-			const atStart = max( max( endpointMarker.negate(), float( 0 ) ), reversalStart ).toVar( 'atStart' )
-			const atEnd = max( max( endpointMarker, float( 0 ) ), reversalEnd ).toVar( 'atEnd' )
-			const delta1 = mix( delta1Raw, delta2Raw, atStart ).toVar( 'delta1' )
-			const delta2 = mix( delta2Raw, delta1Raw, atEnd ).toVar( 'delta2' )
+			const reversalStart = outgoingVertex.and( projectedReversal )
+			const reversalEnd = outgoingVertex.not().and( projectedReversal )
+			// Endpoint markers are exactly -1/0/1, so a row either keeps or swaps its
+			// raw projected deltas. Selecting (rather than mixing) lets it reuse the
+			// lengths and unit directions measured for the reversal test above,
+			// instead of paying for two more roots and divisions per vertex.
+			const atStart = ( this._needsEndpointMetadata
+				? endpointMarker.lessThan( float( -0.5 ) ).or( reversalStart )
+				: reversalStart ).toVar( 'atStart' )
+			const atEnd = ( this._needsEndpointMetadata
+				? endpointMarker.greaterThan( float( 0.5 ) ).or( reversalEnd )
+				: reversalEnd ).toVar( 'atEnd' )
 
 			const w = this.getLineWidth( this.lineWidth, progress, side ).toVar( 'w' )
 
@@ -506,11 +682,11 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 			// Once a miter would exceed the configured limit, the duplicated join rows
 			// separate toward their owning incident bodies. This leaves a bounded butt
 			// fallback instead of swapping strip sides or manufacturing a miter spike.
-			const delta1Len = delta1.length().toVar( 'delta1Len' )
-			const delta2Len = delta2.length().toVar( 'delta2Len' )
+			const delta1Len = atStart.select( delta2RawLen, delta1RawLen ).toVar( 'delta1Len' )
+			const delta2Len = atEnd.select( delta1RawLen, delta2RawLen ).toVar( 'delta2Len' )
 			const dirFallback = vec2( 1, 0 ).toVar( 'dirFallback' )
-			const dir1Raw = delta1.div( max( delta1Len, minDirectionLength ) ).toVar( 'dir1Raw' )
-			const dir2Raw = delta2.div( max( delta2Len, minDirectionLength ) ).toVar( 'dir2Raw' )
+			const dir1Raw = atStart.select( projectedDir2, projectedDir1 ).toVar( 'dir1Raw' )
+			const dir2Raw = atEnd.select( projectedDir1, projectedDir2 ).toVar( 'dir2Raw' )
 			const dir1 = mix(
 				mix( dirFallback, dir2Raw, step( minDirectionLength, delta2Len ) ),
 				dir1Raw,
@@ -523,10 +699,121 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 			const perpRaw = vec2( dirSum.y.negate(), dirSum.x ).toVar( 'perpRaw' )
 			const bodyDirection = outgoingVertex.select( dir2, dir1 ).toVar( 'bodyDirection' )
 			const perpFallback = vec2( bodyDirection.y.negate(), bodyDirection.x ).toVar( 'perpFallback' )
-			const miterBlend = dirSumLen.smoothstep(
+			const limitBlend = dirSumLen.smoothstep(
 				this._miterThreshold.mul( 0.75 ),
 				this._miterThreshold
-			).toVar( 'miterBlend' )
+			).toVar( 'limitBlend' )
+
+			let miterBlend = limitBlend
+			let foldState = null
+			let foldReach = null
+			if ( foldMode !== 'off' ) {
+				// Device pixels per unit of the aspect-corrected NDC the directions live
+				// in, from the line's own resolution like the antialias block.
+				const pixelsPerNdc = this.resolution.y.mul( this.dpr ).mul( 0.5 ).toVar( 'pixelsPerNdc' )
+				// Every copy of this point (both rows, both sides) must reach the same
+				// joint decision and clip to the same disc, so a `side`-dependent width
+				// hook contributes its wider side: two radii interpolated across the
+				// stroke would notch the arc where the rows meet.
+				const foldWidth = ( this.widthFn
+					? max( this.getLineWidth( this.lineWidth, progress, float( 1 ) ), this.getLineWidth( this.lineWidth, progress, float( -1 ) ) )
+					: w ).toVar( 'foldWidth' )
+				const baseHalfWidth = foldWidth.mul( 0.5 )
+				const baseRadiusPx = ( this.sizeAttenuation
+					? cameraProjectionMatrix.mul( vec4( 0, baseHalfWidth, 0, 0 ) ).y
+						.div( max( finalPosition.w.abs(), float( 1e-6 ) ) ).mul( pixelsPerNdc )
+					: baseHalfWidth.mul( this.dpr )
+				).toVar( 'baseRadiusPx' )
+
+				// Joints only: open ends stay butt, and a joint near the camera plane
+				// keeps the plain miter path rather than trusting its projection.
+				const openEnd = delta1RawLen.lessThan( minDirectionLength ).or( delta2RawLen.lessThan( minDirectionLength ) )
+				const markedEnd = this._needsEndpointMetadata ? endpointMarker.abs().greaterThan( float( 0.5 ) ) : bool( false )
+				const nearestW = min( finalPosition.w, min( prevPos.w, nextPos.w ) )
+				const inFront = cameraProjectionMatrix.element( 3 ).w.greaterThan( float( 0.5 ) )
+					.or( nearestW.greaterThan( cameraNear.mul( 0.5 ) ) )
+				const jointRow = openEnd.not().and( markedEnd.not() ).and( inFront ).toVar( 'foldJointRow' )
+
+				// A miter pulls the inner vertex back r·tan(θ/2) along both bodies. Once
+				// that passes the shorter adjacent projected segment — a foreshortened
+				// run near a fold — the strip would fold over itself, so split instead.
+				const cosHalfTurn = dirSumLen.mul( 0.5 ).clamp( float( 1e-4 ), float( 1 ) )
+				const tanHalfTurn = float( 1 ).sub( cosHalfTurn.mul( cosHalfTurn ) ).max( 0 ).sqrt().div( cosHalfTurn )
+				const innerRetreat = baseRadiusPx.div( pixelsPerNdc ).mul( tanHalfTurn ).toVar( 'innerRetreat' )
+				const foldBlend = innerRetreat.lessThan( float( 1e-9 ) ).select(
+					float( 1 ),
+					min( delta1Len, delta2Len ).div( innerRetreat ).smoothstep( 0.75, 1 )
+				)
+
+				// How the path turns in 3D, from view-space bodies: invariant under
+				// camera motion, so the authored/smooth weight never flickers.
+				const viewDelta1 = viewPosition.xyz.sub( viewPrevious.xyz )
+				const viewDelta2 = viewNext.xyz.sub( viewPosition.xyz )
+				const viewLength1 = dot( viewDelta1, viewDelta1 )
+				const viewLength2 = dot( viewDelta2, viewDelta2 )
+				const turnCos3 = viewLength1.greaterThan( float( 1e-30 ) ).and( viewLength2.greaterThan( float( 1e-30 ) ) ).select(
+					dot( viewDelta1, viewDelta2 ).mul( inverseSqrt( viewLength1 ) ).mul( inverseSqrt( viewLength2 ) ).clamp( -1, 1 ),
+					float( 1 )
+				)
+				// Each mode reads this weight once. A node first built inside a `select`
+				// branch stays private to it, so a second reader outside would emit the
+				// whole 3D turn again.
+				const authored = this._joinType === 'round'
+					? float( 0 )
+					: float( 1 ).sub( smoothstep( FOLD_COS_AUTHORED, FOLD_COS_SMOOTH, turnCos3 ) )
+
+				let foldMiterBlend
+				if ( foldMode === 'geometry' ) {
+					// Without a fragment clip, a smooth curve's miter may only grow to a
+					// small limit before its rows split; authored corners keep the user's.
+					const threshold = float( 2 ).div( mix( float( FOLD_SMOOTH_LIMIT ), float( 2 ).div( this._miterThreshold ), authored ) )
+					foldMiterBlend = dirSumLen.smoothstep( threshold.mul( 0.75 ), threshold ).mul( foldBlend )
+				} else {
+					foldMiterBlend = limitBlend.mul( foldBlend )
+				}
+				miterBlend = jointRow.select( foldMiterBlend, limitBlend ).toVar( 'miterBlend' )
+				// 0 keeps both rows on the shared miter; 1 leaves each row butt-ended on
+				// its own body, extended so the two pieces meet in the join. A
+				// projected reversal has no usable miter at all and always splits.
+				const splitWeight = max( float( 1 ).sub( miterBlend ), projectedReversal.select( float( 1 ), float( 0 ) ) ).toVar( 'splitWeight' )
+
+				// The raw projected bodies, not the endpoint-substituted dir1/dir2.
+				const sinHalfTurn = projectedDir2.sub( projectedDir1 ).length().mul( 0.5 ).toVar( 'sinHalfTurn' )
+				if ( foldMode === 'geometry' ) {
+					// Split rows overlap past the joint along their own bodies: zero while
+					// mitered, growing with the split to the depth of the round join,
+					// r·sin(θ/2). The two rectangles then always meet at the bisector, so
+					// a fold reads as a convex, slightly faceted cap (corners at most 0.41 r
+					// out) rather than a notched one.
+					foldReach = { pixelsPerNdc, extent: jointRow.select( splitWeight.sqrt().mul( sinHalfTurn ), float( 0 ) ) }
+				} else {
+					// The clip disc only feeds the fragment clip, and a `toVar()` is
+					// emitted whether or not anything reads it, so only this mode builds it.
+					const miterFactor = float( 2 ).div( max( projectedDir1.add( projectedDir2 ).length(), float( 2e-4 ) ) ).toVar( 'miterFactor' )
+					// Clip radius as a multiple of the stroke radius. Smooth folds get the
+					// round silhouette (plus the tolerance); authored corners keep their full
+					// miter up to the limit, then melt continuously to round by twice the
+					// limit instead of dropping to a notch.
+					const limit = float( 2 ).div( this._miterThreshold )
+					const melt = smoothstep( limit, limit.mul( 2 ), miterFactor )
+					const roundFactor = min( miterFactor, float( 1 ).add( float( FOLD_TOLERANCE_PX ).div( max( baseRadiusPx, float( FOLD_TOLERANCE_PX ) ) ) ) )
+					const authoredFactor = min( miterFactor, limit.sub( limit.sub( 1 ).mul( melt ) ) )
+					const clipFactor = mix( roundFactor, authoredFactor, authored ).toVar( 'clipFactor' )
+
+					const split = splitWeight.greaterThan( float( 0 ) )
+					const clipsTip = clipFactor.lessThan( miterFactor.mul( 1 - 1e-3 ) )
+					const foldJoint = jointRow.and( clipsTip.or( split ) ).toVar( 'foldJoint' )
+					foldState = {
+						pixelsPerNdc,
+						miterFactor,
+						sinHalfTurn,
+						foldWidth,
+						endFactor: foldJoint.select( max( clipFactor, float( 1 ) ), float( 0 ) ).toVar( 'foldEndFactor' ),
+						splitRow: foldJoint.and( split ).toVar( 'foldSplitRow' ),
+					}
+				}
+			}
+
 			const blendedPerp = mix(
 				perpFallback,
 				perpRaw.div( max( dirSumLen, float( 0.0001 ) ) ),
@@ -608,6 +895,62 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 			const bodyLength = outgoingVertex.select( delta2RawLen, delta1RawLen )
 			const bodyVisible = bodyLength.greaterThanEqual( minDirectionLength )
 			finalPosition.xy.addAssign( bodyVisible.select( normal.xy, vec2( 0 ) ).mul( side ) )
+			if ( foldReach ) {
+				// Geometry mode: split rows overlap past the joint along their own body.
+				const { pixelsPerNdc, extent } = foldReach
+				const radiusPx = ( this.sizeAttenuation
+					? cameraProjectionMatrix.mul( vec4( 0, w.mul( 0.5 ), 0, 0 ) ).y
+						.div( max( finalPosition.w.abs(), float( 1e-6 ) ) ).mul( pixelsPerNdc )
+					: w.mul( 0.5 ).mul( this.dpr )
+				)
+				const ownBodyDirection = outgoingVertex.select( projectedDir2.negate(), projectedDir1 )
+				const reach = ownBodyDirection.mul( extent.mul( radiusPx ).div( pixelsPerNdc ) )
+				finalPosition.xy.addAssign( bodyVisible.select( vec2( reach.x.div( aspect ), reach.y ).mul( finalPosition.w ), vec2( 0 ) ) )
+			}
+
+			if ( foldState ) {
+				const { pixelsPerNdc, miterFactor, sinHalfTurn, foldWidth, endFactor, splitRow } = foldState
+				// The clip disc's radius in device pixels, shared by the whole joint.
+				const radiusPx = ( this.sizeAttenuation
+					? cameraProjectionMatrix.mul( vec4( 0, foldWidth.mul( 0.5 ), 0, 0 ) ).y
+						.div( max( finalPosition.w.abs(), float( 1e-6 ) ) ).mul( pixelsPerNdc )
+					: foldWidth.mul( 0.5 ).mul( this.dpr )
+				).toVar( 'foldRadiusPx' )
+
+				// A split row reaches past the joint along its own body just far enough
+				// to cover its half of the clipped join: min(factor, miter) · r · sin(θ/2).
+				const ownBodyDirection = outgoingVertex.select( projectedDir2, projectedDir1 )
+				const reachPx = min( endFactor, miterFactor ).mul( radiusPx ).mul( sinHalfTurn ).add( FOLD_EXTENSION_PADDING_PX )
+				const reach = ownBodyDirection.mul( outgoingVertex.select( float( -1 ), float( 1 ) ) ).mul( reachPx.div( pixelsPerNdc ) )
+				const reachClip = vec2( reach.x.div( aspect ), reach.y ).mul( finalPosition.w )
+				finalPosition.xy.addAssign( bodyVisible.and( splitRow ).select( reachClip, vec2( 0 ) ) )
+
+				// Segment frame of this row's body, in device pixels (y up).
+				const segmentStart = outgoingVertex.select( currentP, prevP ).mul( pixelsPerNdc ).toVar( 'foldSegmentStart' )
+				const segmentVector = outgoingVertex.select( nextP, currentP ).mul( pixelsPerNdc ).sub( segmentStart )
+				const segmentLength = segmentVector.length().toVar( 'foldSegmentLength' )
+				const along = segmentLength.greaterThan( float( 1e-6 ) ).select( segmentVector.div( segmentLength ), vec2( 1, 0 ) ).toVar( 'foldAlong' )
+				const across = vec2( along.y.negate(), along.x )
+				const affine = vec2( finalPosition.x.mul( aspect ), finalPosition.y ).mul( pixelsPerNdc ).sub( segmentStart.mul( finalPosition.w ) )
+				vFoldFrame.assign( vec4( dot( affine, along ), dot( affine, across ), finalPosition.w, segmentLength ) )
+
+				const ownerWeight = outgoingVertex.select( float( 1 ), float( 0 ) )
+				vFoldEnds.assign( vec4(
+					ownerWeight,
+					ownerWeight.mul( endFactor ),
+					float( 1 ).sub( ownerWeight ).mul( endFactor ),
+					radiusPx
+				) )
+
+				// Split rows overlap; each keeps the side of the bisector its own body
+				// leaves from. Mitered rows already meet on it exactly, and testing it
+				// at the pixel centre there would drop multisamples the row's own
+				// triangle legitimately covers.
+				const bisector = projectedDir1.add( projectedDir2 )
+				const ownSide = outgoingVertex.select( bisector, bisector.negate() )
+				const ownNormal = splitRow.select( vec2( dot( ownSide, along ), dot( ownSide, across ) ), vec2( 0 ) )
+				vFoldSplit.assign( outgoingVertex.select( vec4( ownNormal, 0, 0 ), vec4( 0, 0, ownNormal ) ) )
+			}
 
 			// Apply vertex modifier if provided
 			if ( this.vertexFn ) {
@@ -621,6 +964,12 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 				.and( finalPosition.y.equal( finalPosition.y ) )
 				.and( finalPosition.z.equal( finalPosition.z ) )
 				.and( finalPosition.w.equal( finalPosition.w ) )
+			if ( fogDepth ) {
+				// The stroke offsets only move clip xy, so every emitted vertex keeps
+				// its centerline point's depth. A parked vertex still gets a finite
+				// one: the triangles it touches would otherwise interpolate NaN fog.
+				vViewZ.assign( positionFinite.select( viewPosition.z, float( 0 ) ) )
+			}
 			return positionFinite.select( finalPosition, vec4( 2, 2, 2, 1 ) )
 		} )()
 		let uvCoords
@@ -632,6 +981,38 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 				uvCoords = this.uvFn( uvCoords, vProgress, fragmentSide )
 			}
 		}
+		// Folded-join coverage: 1 away from any clipped end, the disc's box-filter
+		// coverage past one. The opacity node applies it last, after every
+		// derivative and texture sample, and never through `maskNode`: the shadow
+		// pass would inherit that without the varyings it reads.
+		const foldCoverage = foldMode === 'exact' ? Fn( () => {
+			const coverage = float( 1 ).toVar( 'foldCoverage' )
+			// Quads whose two ends are both unclipped skip the rest as a whole.
+			If( max( vFoldEnds.y, vFoldEnds.z ).greaterThan( 0 ), () => {
+				const inverseW = float( 1 ).div( vFoldFrame.z )
+				const along = vFoldFrame.x.mul( inverseW ).toVar( 'foldAlongPx' )
+				const across = vFoldFrame.y.mul( inverseW ).toVar( 'foldAcrossPx' )
+				const segmentLength = vFoldFrame.w
+				const startWeight = vFoldEnds.x
+				const endWeight = float( 1 ).sub( startWeight )
+				const startFactor = startWeight.greaterThan( 1e-6 ).select( vFoldEnds.y.div( startWeight ), float( 0 ) )
+				const endFactor = endWeight.greaterThan( 1e-6 ).select( vFoldEnds.z.div( endWeight ), float( 0 ) )
+				const beyondStart = along.lessThan( 0 ).and( startFactor.greaterThan( 0.5 ) ).toVar( 'foldBeyondStart' )
+				const beyondEnd = along.greaterThan( segmentLength ).and( endFactor.greaterThan( 0.5 ) )
+				If( beyondStart.or( beyondEnd ), () => {
+					const offset = vec2( beyondStart.select( along, along.sub( segmentLength ) ), across )
+					const radius = vFoldEnds.w.mul( beyondStart.select( startFactor, endFactor ) )
+					// The pixel centre sits half a pixel inside a pixel the edge touches.
+					const disc = radius.sub( offset.length() ).add( 0.5 ).clamp( 0, 1 )
+					const ownSide = dot( offset, beyondStart.select( vFoldSplit.xy, vFoldSplit.zw ) ).greaterThanEqual( 0 )
+					coverage.assign( ownSide.select( disc, float( 0 ) ) )
+				} )
+			} )
+			return coverage
+		} )().toVar( 'foldCoverageValue' ) : null
+		this._foldCoverageNode = foldCoverage
+		const foldBlended = this._isBlended()
+
 		// Color node
 		this.colorNode = Fn( () => {
 			let color = ( this._needsVaryingColor ? vColor : vec4( this.color, 1 ) ).toVar( 'color' )
@@ -684,6 +1065,10 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 				alpha.mulAssign( min( coverage, vAaCoverage ) )
 			}
 
+			if ( foldCoverage && foldBlended ) {
+				alpha.mulAssign( foldCoverage )
+			}
+
 			if ( this.alphaMap && this.alphaMap.value ) {
 				alpha.mulAssign( this.alphaMap.sample( uvCoords ).r )
 			}
@@ -717,6 +1102,12 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 			// Apply fragment alpha modifier if provided
 			if ( this.fragmentAlphaFn ) {
 				alpha.assign( this.fragmentAlphaFn( alpha, uvCoords, vProgress, fragmentSide ) )
+			}
+
+			// An opaque line keeps a pixel whose centre is inside the arc, so the
+			// clip lands on the silhouette rather than half a pixel outside it.
+			if ( foldCoverage ) {
+				Discard( foldBlended ? foldCoverage.lessThanEqual( 0 ) : foldCoverage.lessThan( 0.5 ) )
 			}
 
 			return alpha

@@ -3,7 +3,7 @@
 A modern MeshLine library for Three.js wide screen strokes and world-space road/ribbon surfaces, with gradients, dashes, textures, shadows, GPU positions, and instancing.
 
 - Supports: Three.js r180+, `WebGPURenderer` (WebGPU and WebGL2 backends)
-- Features: gradients, dashes, textures, vertex colors, shadows, GPU positions, instancing, TSL hooks, lit road/ribbon surfaces, optional native-WebGPU chunk culling, and an experimental point-centric GPU path
+- Features: gradients, dashes, textures, vertex colors, shadows, GPU positions, storage-buffer trails, instancing, TSL hooks, lit road/ribbon surfaces, optional native-WebGPU chunk culling, and an experimental point-centric GPU path
 
 Release compatibility is checked from the packed artifact at the core minimum (r180), optional-entry minimum (r183), and pinned workspace Three.js version. The moving Three.js `dev` branch runs as an advisory canary.
 

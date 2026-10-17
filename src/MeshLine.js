@@ -220,8 +220,8 @@ export default class MeshLine extends Mesh {
 		options = options ?? {}
 		if ( options.surface !== undefined ) this.surface( options.surface )
 		if ( options.segments !== undefined ) this.segments( options.segments )
-		if ( options.lines !== undefined || options.closed !== undefined ) {
-			const lines = options.lines ?? this._options.lines
+		if ( options.lines !== undefined || options.points !== undefined || options.closed !== undefined ) {
+			const lines = options.lines ?? options.points ?? this._options.lines
 			const closed = options.closed ?? this._options.closed
 			this.lines( lines, closed )
 		}
@@ -244,14 +244,19 @@ export default class MeshLine extends Mesh {
 		if ( options.frustumCulled !== undefined ) this.setFrustumCulled( options.frustumCulled )
 		if ( options.verbose !== undefined ) this.verbose( options.verbose )
 		if ( options.renderWidth !== undefined || options.renderHeight !== undefined ) this.renderSize( options.renderWidth, options.renderHeight )
-		if ( options.dash || options.dashCount !== undefined || options.dashRatio !== undefined || options.dashOffset !== undefined ) {
-			this.dash( options.dash ?? {
-				count: options.dashCount ?? this._options.dashCount,
-				ratio: options.dashRatio ?? this._options.dashRatio ?? 0.5,
-				offset: options.dashOffset ?? this._options.dashOffset,
-			} )
+		if ( options.dash !== undefined || options.dashCount !== undefined || options.dashRatio !== undefined || options.dashOffset !== undefined ) {
+			if ( options.dash === null || options.dash === false ) {
+				this.dash( null )
+			} else {
+				this.dash( options.dash ?? {
+					count: options.dashCount ?? this._options.dashCount,
+					ratio: options.dashRatio ?? this._options.dashRatio ?? 0.5,
+					offset: options.dashOffset ?? this._options.dashOffset,
+				} )
+			}
 		}
-		if ( options.join ) this.join( options.join )
+		if ( options.join !== undefined ) this.join( options.join )
+		if ( options.miterLimit !== undefined ) this.miterLimit( options.miterLimit )
 		if ( options.cap !== undefined ) this.cap( options.cap )
 		if ( options.smoothSharpBends !== undefined ) this.smoothSharpBends( options.smoothSharpBends )
 		if ( options.smoothSharpBendsAlpha !== undefined ) this.smoothSharpBendsAlpha( options.smoothSharpBendsAlpha )
@@ -292,18 +297,35 @@ export default class MeshLine extends Mesh {
 	 * @returns {this}
 	 */
 	lines( lines, closed = this._options.closed ) {
-		const closedChanged = closed !== this._options.closed
+		const prevClosed = this._options.closed
+		const closedChanged = Array.isArray( closed ) || Array.isArray( prevClosed )
+			? !Array.isArray( closed ) || !Array.isArray( prevClosed ) ||
+				closed.length !== prevClosed.length ||
+				closed.some( ( value, index ) => Boolean( value ) !== Boolean( prevClosed[index] ) )
+			: Boolean( closed ) !== Boolean( prevClosed )
+		const nextClosed = Array.isArray( closed ) ? closed.slice() : closed
 		this._options.lines = lines
-		this._options.closed = closed
+		this._options.closed = nextClosed
 		if ( this._built ) {
-			this.geometry.options.closed = closed
+			this.geometry.options.closed = nextClosed
 			if ( closedChanged ) {
-				this.geometry.setLines( lines )
+				this.geometry.setLines( lines, nextClosed )
 			} else {
 				this.geometry.setPositions( lines, false )
 			}
 		}
 		return this
+	}
+
+	/**
+	 * Alias for {@link MeshLine#lines}. Sets line point data (single polyline or
+	 * array of polylines) and optionally closes each loop.
+	 * @param {import('./index.d.ts').MultiLinePoints} points - Point data
+	 * @param {boolean | boolean[]} [closed] - Whether to close each polyline loop
+	 * @returns {this}
+	 */
+	points( points, closed = this._options.closed ) {
+		return this.lines( points, closed )
 	}
 
 	/**
@@ -396,12 +418,15 @@ export default class MeshLine extends Mesh {
 		}
 		const hadWidthCallback = !!this._options.widthCallback
 		this._options.widthCallback = widthCallback
-		if ( this._built && this.geometry.isMeshLineSurfaceGeometry ) {
-			this.geometry.buildLine( this._getBuildOptions() )
-		} else if ( this._built && hadWidthCallback !== !!widthCallback ) {
+		if ( this._built && hadWidthCallback !== !!widthCallback && !this.geometry.isMeshLineSurfaceGeometry ) {
+			// Toggling the callback adds or drops the billboard width attribute and
+			// the material's width path.
 			this.rebuild()
 		} else if ( this._built ) {
-			this.geometry.buildLine( { widthCallback } )
+			// Rebuild from the facade's options, like vertexColors() and join(): a
+			// partial update would miss facade state the geometry never saw, such
+			// as a usage set by dynamic() after build.
+			this.geometry.buildLine( this._getBuildOptions() )
 		}
 		return this
 	}
@@ -439,7 +464,10 @@ export default class MeshLine extends Mesh {
 	antialias( antialias = true ) {
 		this._options.antialias = !!antialias
 		if ( this._built && this.material.isMeshLineNodeMaterial ) {
-			this.material.buildLine( this._getBuildOptions() )
+			// Antialiasing changes transparency and varyings, so the material is
+			// rebuilt; carry the live resolution over instead of resetting it.
+			const resolution = this.material.resolution?.value.clone()
+			this.material.buildLine( { ...this._getBuildOptions(), ...( resolution ? { resolution } : {} ) } )
 		}
 		return this
 	}
@@ -543,12 +571,18 @@ export default class MeshLine extends Mesh {
 
 	/**
 	 * Configure the join policy at sharp corners. The regular billboard profile
-	 * keeps its bounded fixed-strip miter; world surfaces and the optional GPU
-	 * path emit true bevel/round topology. `simple` aliases `miter`.
-	 * @param {import('./index.d.ts').MeshLineJoinOptions} [options]
+	 * keeps a bounded miter at corners the path really turns and resolves
+	 * projected folds per `fold`; its `round` rounds every join with the exact
+	 * fragment clip. World surfaces and the optional GPU path emit true
+	 * bevel/round topology. `simple` aliases `miter`. On a built line this only
+	 * recompiles the material, keeping its uniforms and resolution.
+	 * @param {import('./index.d.ts').MeshLineJoinType | import('./index.d.ts').MeshLineJoinOptions} [options]
 	 * @returns {this}
 	 */
-	join( { type = 'miter', limit = 4, segments = 8, inner = 'exact' } = {} ) {
+	join( options = {} ) {
+		if ( options == null ) options = {}
+		if ( typeof options === 'string' ) options = { type: options }
+		const { type = 'miter', limit = 4, segments = 8, inner = 'exact', fold = 'geometry' } = options
 		const normalizedType = type === 'simple' ? 'miter' : type
 		if ( !['miter', 'bevel', 'round'].includes( normalizedType ) ) {
 			throw new Error( `MeshLine: unsupported join type: ${type}` )
@@ -562,16 +596,22 @@ export default class MeshLine extends Mesh {
 		if ( inner !== 'exact' && inner !== 'clip' ) {
 			throw new Error( `MeshLine: unsupported inner join policy: ${inner}` )
 		}
+		if ( fold !== 'geometry' && fold !== 'exact' && fold !== false ) {
+			throw new Error( `MeshLine: unsupported join.fold policy: ${fold}` )
+		}
 		const joinTypeChanged = this._options.join?.type !== normalizedType
-		this._options.join = { type: normalizedType, limit, segments, inner }
+		const foldChanged = ( this._options.join?.fold ?? 'geometry' ) !== fold
+		this._options.join = { type: normalizedType, limit, segments, inner, fold }
 		this._options.miterLimit = limit
 		if ( this._built && this.geometry.isMeshLineSurfaceGeometry ) {
 			this.geometry.buildLine( this._getBuildOptions() )
-		} else if ( this._built && joinTypeChanged && this.geometry.isMeshLine ) {
+		} else if ( this._built && ( joinTypeChanged || foldChanged ) && this.geometry.isMeshLine ) {
 			// Billboard bevel fill is index topology, so the type has to reach the
-			// geometry builder rather than only the material's miter limit.
+			// geometry builder. The material only switches its shader path: a full
+			// material rebuild would drop resolution, uniforms and depth state.
 			this.geometry.buildLine( this._getBuildOptions() )
-			if ( this.material ) this.material.miterLimit = limit
+			if ( this.material?.setJoin ) this.material.setJoin( this._options.join )
+			else if ( this.material ) this.material.miterLimit = limit
 		} else if ( this._built && this.material ) {
 			this.material.miterLimit = limit
 			this.geometry.options.miterLimit = this.material.miterLimit
@@ -587,9 +627,9 @@ export default class MeshLine extends Mesh {
 	 * @returns {this}
 	 */
 	miterLimit( limit ) {
-		// An unset join is the default miter; record it so join() sees no type
-		// change and keeps the existing topology.
-		this._options.join ??= { type: 'miter', limit: this._options.miterLimit ?? 4, segments: 8, inner: 'exact' }
+		// An unset join is the default miter; record it so join() sees no type or
+		// fold change and keeps the existing topology and shader.
+		this._options.join ??= { type: 'miter', limit: this._options.miterLimit ?? 4, segments: 8, inner: 'exact', fold: 'geometry' }
 		return this.join( { ...this._options.join, limit } )
 	}
 
@@ -769,12 +809,13 @@ export default class MeshLine extends Mesh {
 	}
 
 	/**
-	 * Configure dashed line rendering. Can be updated after build.
-	 * @param {import('./index.d.ts').MeshLineDashOptions} params
+	 * Configure dashed line rendering, or pass `null` / `false` to disable dashes.
+	 * Can be updated after build.
+	 * @param {import('./index.d.ts').MeshLineDashOptions | null | false} [params]
 	 * @returns {this}
 	 */
 	dash( params ) {
-		const { count, ratio = 0.5, offset = 0 } = params || {}
+		const { count = null, ratio = 0.5, offset = 0 } = ( params && typeof params === 'object' ) ? params : {}
 		if ( count != null && ( !Number.isFinite( count ) || !Number.isFinite( Math.fround( count ) ) || count < 0 ) ) {
 			throw new Error( 'MeshLine: dash.count must be a Float32-representable non-negative number or null' )
 		}
@@ -1098,12 +1139,26 @@ export default class MeshLine extends Mesh {
 	}
 
 	/**
-	 * Set per-vertex RGB colors as a flat array (r, g, b, r, g, b, ...).
-	 * @param {Float32Array | number[]} colors
+	 * Set per-point RGB colors as a flat array (r, g, b, r, g, b, ...). A
+	 * multi-line batch reads a concatenated array from each line's global point
+	 * start; an array shorter than the batch is a pattern shared by every line.
+	 * On a built line a new array refreshes the colors in place, while turning
+	 * colors on or off (`null`) rebuilds so the material gains or drops its
+	 * vertex-color path. Surface lines have no vertex colors; they keep the array
+	 * for a later billboard build.
+	 * @param {Float32Array | number[] | null} colors
 	 * @returns {this}
 	 */
 	vertexColors( colors ) {
 		this._options.vertexColors = colors
+		if ( !this._built || !this.geometry.isMeshLine ) return this
+		const buildOptions = this._getBuildOptions()
+		if ( !!this.material.options?.needsVertexColor !== buildOptions.needsVertexColor ) {
+			return this.rebuild()
+		}
+		// Rebuild from the facade's points: after an in-place setPositions() the
+		// geometry's own source is stale, so a partial buildLine() would revert it.
+		this.geometry.buildLine( buildOptions )
 		return this
 	}
 
@@ -1249,7 +1304,9 @@ export default class MeshLine extends Mesh {
 			throw new Error( 'MeshLine: setPositionRange() is only available for CPU billboard lines; use setPositions() for surfaces' )
 		}
 		this.geometry.setPositionRange( positions, startPoint, options )
-		this._syncLineOptionsFromGeometry()
+		// The geometry keeps its source current: the caller's arrays while they
+		// hold the edit, otherwise its own canonical points.
+		this._options.lines = this.geometry.options.lines
 		return this
 	}
 
@@ -1637,12 +1694,6 @@ export default class MeshLine extends Mesh {
 		const frustumCulled = this._options.sizeAttenuation !== false && !hasUnboundedVertexDeformation
 		this._options.frustumCulled = frustumCulled
 		this.frustumCulled = frustumCulled
-	}
-
-	_syncLineOptionsFromGeometry() {
-		const lines = this.geometry?._lines
-		if ( !Array.isArray( lines ) || lines.length === 0 ) return
-		this._options.lines = lines.length === 1 ? lines[0] : lines.slice()
 	}
 
 	/**

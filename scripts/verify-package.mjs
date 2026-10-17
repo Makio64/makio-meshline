@@ -103,18 +103,35 @@ try {
 
 			const smokePath = resolve( consumerDirectory, 'smoke.mjs' )
 			await writeFile( smokePath, [
-				"export { default, MeshLine, MeshLinePicker, MeshLineSurfaceGeometry } from 'makio-meshline'",
+				"export { default, MeshLine, MeshLineGeometry, MeshLineNodeMaterial, MeshLineSurfaceGeometry, MeshLineSurfaceNodeMaterial, MeshLineCompute, MeshLinePicker, MeshLinePickerHelper, lineCoord, circlePositions, squarePositions, rectanglePositions, sineWavePositions, straightLine, straightLineBetween, storagePositions } from 'makio-meshline'",
 				"export { default as MeshLineCullingSystem } from 'makio-meshline/gpu-culling'",
 				"export { default as MeshLineGPUPath } from 'makio-meshline/gpu-path'",
 			].join( '\n' ) )
 
 			const packageEntry = await import( `${pathToFileURL( smokePath ).href}?verify=${Date.now()}` )
 			check( packageEntry.default === packageEntry.MeshLine, 'Default export must remain the MeshLine facade' )
-			check( typeof packageEntry.MeshLine === 'function', 'MeshLine named export is missing' )
-			check( typeof packageEntry.MeshLineSurfaceGeometry === 'function', 'Surface geometry export is missing' )
-			check( typeof packageEntry.MeshLinePicker === 'function', 'Picker export is missing' )
-			check( typeof packageEntry.MeshLineCullingSystem === 'function', 'GPU culling default export is missing' )
-			check( typeof packageEntry.MeshLineGPUPath === 'function', 'GPU path default export is missing' )
+			for ( const exportName of [
+				'MeshLine',
+				'MeshLineGeometry',
+				'MeshLineNodeMaterial',
+				'MeshLineSurfaceGeometry',
+				'MeshLineSurfaceNodeMaterial',
+				'MeshLineCompute',
+				'MeshLinePicker',
+				'MeshLinePickerHelper',
+				'circlePositions',
+				'squarePositions',
+				'rectanglePositions',
+				'sineWavePositions',
+				'straightLine',
+				'straightLineBetween',
+				'storagePositions',
+				'MeshLineCullingSystem',
+				'MeshLineGPUPath',
+			] ) {
+				check( typeof packageEntry[exportName] === 'function', `${exportName} export is missing` )
+			}
+			check( packageEntry.lineCoord != null, 'lineCoord TSL node export is missing' )
 
 			console.log( `npm package: ${report.entryCount} files, ${( report.unpackedSize / 1024 ).toFixed( 1 )} KiB unpacked` )
 		} catch ( error ) {

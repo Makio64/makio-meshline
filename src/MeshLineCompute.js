@@ -1,10 +1,15 @@
-import { clamp, float, floor, Fn, instanceIndex, length, Loop, max, mix, normalize, sin, smoothstep, storage, uniform, vec3 } from 'three/tsl'
+import { clamp, float, floor, Fn, instanceIndex, length, Loop, max, min, mix, normalize, sin, smoothstep, storage, uniform, vec3 } from 'three/tsl'
 import { StorageBufferAttribute, Vector3 } from 'three/webgpu'
 
 import MeshLine from './MeshLine.js'
+import { storagePositions } from './positions/storagePositions.js'
 import { straightLine } from './positions/straightLine.js'
 
 const TAU = Math.PI * 2
+// Share of each constrained point pulled toward its neighbours' midpoint before
+// its spacing is restored. Neighbouring points sample slightly different flow,
+// and without this an inextensible curve folds that difference into zigzags.
+const BEND_SMOOTHING = 0.06
 const FAR_MOUSE = new Vector3( 100000, 100000, 100000 )
 const _mouseTarget = new Vector3()
 
@@ -23,6 +28,7 @@ const COMPUTE_MANAGED_KEYS = new Set( [
 	'depthStrength',
 	'textureStrength',
 	'mode',
+	'stiffness',
 	'mouse',
 	'mouseTarget',
 	'lines',
@@ -91,6 +97,7 @@ export default class MeshLineCompute extends MeshLine {
 			depthStrength: 0,
 			textureStrength: 0,
 			mode: 0,
+			stiffness: 1,
 		}
 
 		this._time = 0
@@ -122,6 +129,7 @@ export default class MeshLineCompute extends MeshLine {
 		this._uDepthStrength = uniform( this._computeOptions.depthStrength )
 		this._uTextureStrength = uniform( this._computeOptions.textureStrength )
 		this._uMode = uniform( this._computeOptions.mode )
+		this._uStiffness = uniform( this._computeOptions.stiffness )
 
 		this._options.frustumCulled = false
 		this.configure( options )
@@ -150,6 +158,7 @@ export default class MeshLineCompute extends MeshLine {
 		if ( options.depthStrength !== undefined ) this.depthStrength( options.depthStrength )
 		if ( options.textureStrength !== undefined ) this.textureStrength( options.textureStrength )
 		if ( options.mode !== undefined ) this.mode( options.mode )
+		if ( options.stiffness !== undefined ) this.stiffness( options.stiffness )
 		if ( options.mouse !== undefined || options.mouseTarget !== undefined ) this.mouse( options.mouse ?? options.mouseTarget )
 
 		super.configure( meshOptions )
@@ -249,6 +258,19 @@ export default class MeshLineCompute extends MeshLine {
 		const next = typeof value === 'string' ? MODE_VALUES[value] ?? 0 : value
 		this._computeOptions.mode = Number.isFinite( next ) ? next : 0
 		this._uMode.value = this._computeOptions.mode
+		return this
+	}
+
+	/**
+	 * How strictly each point keeps its home-curve spacing from the point ahead
+	 * of it: 1 makes every curve an inextensible streamer dragged by its head,
+	 * 0 lets points drift independently.
+	 * @param {number} value - Blend in [0, 1]
+	 * @returns {this}
+	 */
+	stiffness( value ) {
+		this._computeOptions.stiffness = Number.isFinite( value ) ? Math.max( 0, Math.min( value, 1 ) ) : this._computeOptions.stiffness
+		this._uStiffness.value = this._computeOptions.stiffness
 		return this
 	}
 
@@ -429,23 +451,7 @@ export default class MeshLineCompute extends MeshLine {
 	}
 
 	_createPositionNode() {
-		const pointsPerCurve = this._computeOptions.pointsPerCurve
-		const storageCount = this._storageCount
-		const positions = storage( this._positionBuffer, 'vec3', storageCount )
-		const lastPoint = float( pointsPerCurve - 1 )
-
-		return Fn( ( [progress] ) => {
-			// Allow out-of-range progress so the material's previous/next sampling at
-			// progress ± 1/segments linearly extrapolates instead of collapsing to pos at the endpoints.
-			const p = progress.mul( lastPoint ).toVar()
-			const pivot = clamp( floor( p ), 0, lastPoint.sub( 1 ) ).toVar()
-			const t = p.sub( pivot ).toVar()
-			const curveOffset = float( instanceIndex ).mul( pointsPerCurve ).toVar()
-			const index0 = curveOffset.add( pivot ).toUint().toVar()
-			const index1 = curveOffset.add( pivot.add( 1 ) ).toUint().toVar()
-
-			return mix( positions.element( index0 ), positions.element( index1 ), t )
-		} )
+		return storagePositions( this._positionBuffer, { pointsPerLine: this._computeOptions.pointsPerCurve } )
 	}
 
 	_createDistanceSampleNode() {
@@ -467,25 +473,51 @@ export default class MeshLineCompute extends MeshLine {
 		} )
 	}
 
+	/**
+	 * Neighbour constraint and arc length in one pass. One thread walks each curve
+	 * head to tail: every point is pulled back to its home-curve spacing from the
+	 * already-corrected point ahead of it (follow-the-leader, Gauss-Seidel order),
+	 * the correction is folded into its velocity as in position-based dynamics,
+	 * and the corrected segment length is accumulated for `arcLengthNode()`.
+	 */
 	_createDistanceComputeNode() {
 		const count = this._storageCount
 		const curveCount = this._computeOptions.curveCount
 		const pointsPerCurve = this._computeOptions.pointsPerCurve
 		const positions = storage( this._positionBuffer, 'vec3', count )
+		const velocities = storage( this._velocityBuffer, 'vec3', count )
+		const bases = storage( this._baseBuffer, 'vec4', count )
 		const distances = storage( this._distanceBuffer, 'float', count )
 
 		return Fn( () => {
 			const curveOffset = float( instanceIndex ).mul( pointsPerCurve ).toVar( 'distanceCurveOffset' )
 			const accumulatedDistance = float( 0 ).toVar( 'accumulatedDistance' )
 			const firstIndex = curveOffset.toUint().toVar( 'firstDistanceIndex' )
+			const maxSpeed = max( 0.2, this._uBounds.mul( 0.5 ) ).toVar( 'constraintMaxSpeed' )
+			const inverseDelta = float( 1 ).div( this._uDelta ).toVar( 'constraintInverseDelta' )
 			distances.element( firstIndex ).assign( accumulatedDistance )
 
 			Loop( pointsPerCurve - 1, ( { i } ) => {
 				const index0 = curveOffset.add( i ).toUint().toVar( 'distanceIndex0' )
 				const index1 = curveOffset.add( i ).add( 1 ).toUint().toVar( 'distanceIndex1' )
+				const index2 = curveOffset.add( min( i.add( 2 ), pointsPerCurve - 1 ) ).toUint()
 				const point0 = positions.element( index0 ).toVar( 'distancePoint0' )
 				const point1 = positions.element( index1 ).toVar( 'distancePoint1' )
-				accumulatedDistance.addAssign( length( point1.sub( point0 ) ) )
+				const restLength = length( bases.element( index1 ).xyz.sub( bases.element( index0 ).xyz ) )
+				const midpoint = point0.add( positions.element( index2 ) ).mul( 0.5 )
+				const smoothed = mix( point1, midpoint, this._uStiffness.mul( BEND_SMOOTHING ) )
+				const offset = smoothed.sub( point0 ).toVar( 'constraintOffset' )
+				const offsetLength = max( length( offset ), 0.000001 )
+				const target = point0.add( offset.mul( restLength.div( offsetLength ) ) )
+				const corrected = mix( smoothed, target, this._uStiffness ).toVar( 'constraintPoint' )
+				const velocity = velocities.element( index1 )
+				velocity.assign( clamp(
+					velocity.add( corrected.sub( point1 ).mul( inverseDelta ) ),
+					vec3( maxSpeed.negate() ),
+					vec3( maxSpeed )
+				) )
+				positions.element( index1 ).assign( corrected )
+				accumulatedDistance.addAssign( length( corrected.sub( point0 ) ) )
 				distances.element( index1 ).assign( accumulatedDistance )
 			} )
 		} )().compute( curveCount )

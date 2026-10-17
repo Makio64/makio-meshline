@@ -16,6 +16,7 @@ import {
 	min,
 	mix,
 	modelViewMatrix,
+	nodeObject,
 	sin,
 	step,
 	storage,
@@ -31,12 +32,12 @@ import {
 } from 'three/tsl'
 import {
 	Box3,
-	BufferAttribute,
 	BufferGeometry,
 	Color,
 	DoubleSide,
 	Group,
 	IndirectStorageBufferAttribute,
+	InstancedBufferAttribute,
 	Mesh,
 	MeshBasicNodeMaterial,
 	Sphere,
@@ -46,6 +47,7 @@ import {
 } from 'three/webgpu'
 
 import MeshLine from './MeshLine.js'
+import { PlacedPositionNode } from './MeshLineNodeMaterial.js'
 
 const DEFAULT_CHUNK_SEGMENTS = 128
 const MAX_CHUNK_SEGMENTS = 4096
@@ -319,15 +321,18 @@ const createChunkPlan = ( pointCount, chunkSegments = DEFAULT_CHUNK_SEGMENTS ) =
 }
 
 const pointSegmentDistance = ( points, point, start, end ) => {
-	const px = points[point * 3], py = points[point * 3 + 1], pz = points[point * 3 + 2]
-	const ax = points[start * 3], ay = points[start * 3 + 1], az = points[start * 3 + 2]
-	const bx = points[end * 3], by = points[end * 3 + 1], bz = points[end * 3 + 2]
-	const dx = bx - ax, dy = by - ay, dz = bz - az
+	const p3 = point * 3, s3 = start * 3, e3 = end * 3
+	const px = points[p3], py = points[p3 + 1], pz = points[p3 + 2]
+	const ax = points[s3], ay = points[s3 + 1], az = points[s3 + 2]
+	const dx = points[e3] - ax, dy = points[e3 + 1] - ay, dz = points[e3 + 2] - az
 	const denominator = dx * dx + dy * dy + dz * dz
 	const t = denominator > 0
 		? Math.max( 0, Math.min( 1, ( ( px - ax ) * dx + ( py - ay ) * dy + ( pz - az ) * dz ) / denominator ) )
 		: 0
-	return Math.hypot( px - ( ax + dx * t ), py - ( ay + dy * t ), pz - ( az + dz * t ) )
+	const rx = px - ( ax + dx * t )
+	const ry = py - ( ay + dy * t )
+	const rz = pz - ( az + dz * t )
+	return Math.sqrt( rx * rx + ry * ry + rz * rz )
 }
 
 /**
@@ -342,22 +347,39 @@ const findReversalBreaks = ( points, threshold = REVERSAL_DOT_THRESHOLD ) => {
 	}
 	const pointCount = normalized.length / 3
 	const breaks = new Uint8Array( pointCount )
+	if ( pointCount < 3 ) return breaks
+	let curX = normalized[3]
+	let curY = normalized[4]
+	let curZ = normalized[5]
+	let incomingX = curX - normalized[0]
+	let incomingY = curY - normalized[1]
+	let incomingZ = curZ - normalized[2]
+	let incomingLenSq = incomingX * incomingX + incomingY * incomingY + incomingZ * incomingZ
 	for ( let point = 1; point < pointCount - 1; point++ ) {
-		const incomingX = normalized[point * 3] - normalized[( point - 1 ) * 3]
-		const incomingY = normalized[point * 3 + 1] - normalized[( point - 1 ) * 3 + 1]
-		const incomingZ = normalized[point * 3 + 2] - normalized[( point - 1 ) * 3 + 2]
-		const outgoingX = normalized[( point + 1 ) * 3] - normalized[point * 3]
-		const outgoingY = normalized[( point + 1 ) * 3 + 1] - normalized[point * 3 + 1]
-		const outgoingZ = normalized[( point + 1 ) * 3 + 2] - normalized[point * 3 + 2]
-		const incomingLength = Math.hypot( incomingX, incomingY, incomingZ )
-		const outgoingLength = Math.hypot( outgoingX, outgoingY, outgoingZ )
-		if ( incomingLength <= 0 || outgoingLength <= 0 ) continue
-		const directionDot = (
-			incomingX * outgoingX +
-			incomingY * outgoingY +
-			incomingZ * outgoingZ
-		) / ( incomingLength * outgoingLength )
-		if ( directionDot <= threshold ) breaks[point] = 1
+		const nextOffset = ( point + 1 ) * 3
+		const nextX = normalized[nextOffset]
+		const nextY = normalized[nextOffset + 1]
+		const nextZ = normalized[nextOffset + 2]
+		const outgoingX = nextX - curX
+		const outgoingY = nextY - curY
+		const outgoingZ = nextZ - curZ
+		const outgoingLenSq = outgoingX * outgoingX + outgoingY * outgoingY + outgoingZ * outgoingZ
+		const prodLenSq = incomingLenSq * outgoingLenSq
+		if ( prodLenSq > 0 ) {
+			const directionDot = (
+				incomingX * outgoingX +
+				incomingY * outgoingY +
+				incomingZ * outgoingZ
+			) / Math.sqrt( prodLenSq )
+			if ( directionDot <= threshold ) breaks[point] = 1
+		}
+		curX = nextX
+		curY = nextY
+		curZ = nextZ
+		incomingX = outgoingX
+		incomingY = outgoingY
+		incomingZ = outgoingZ
+		incomingLenSq = outgoingLenSq
 	}
 	return breaks
 }
@@ -921,6 +943,24 @@ const makeStatus = () => ( {
 	lastError: null,
 } )
 
+// The GPU mesh's `vertexNode` strokes points from storage, so its geometry
+// `position` is a template, as it is for placed billboard lines. Builds that
+// read a position accessor get the stroked centerline through the same node.
+class MeshLineGPUPathMaterial extends MeshBasicNodeMaterial {
+
+	setupPosition( builder ) {
+		const position = super.setupPosition( builder )
+		if ( this._placedPositionNode ) this._placedPositionNode.toStack()
+		return position
+	}
+
+	copy( source ) {
+		this._placedPositionNode = source._placedPositionNode ?? null
+		return super.copy( source )
+	}
+
+}
+
 /**
  * Experimental point-centric native-WebGPU renderer for one open screen line.
  *
@@ -1405,7 +1445,11 @@ export class MeshLineGPUPath extends Group {
 		}
 
 		const geometry = new BufferGeometry()
-		geometry.setAttribute( 'position', new BufferAttribute( new Float32Array( [0, 0, 0] ), 3 ) )
+		// A single template point gives three a finite draw count. It is fetched
+		// only by builds that read a position accessor, which then overwrite it
+		// with the stroked centerline; one instance-rate element keeps that fetch
+		// in bounds for every vertex of the indirect draw.
+		geometry.setAttribute( 'position', new InstancedBufferAttribute( new Float32Array( [0, 0, 0] ), 3 ) )
 		geometry.setIndirect( indirectAttribute )
 		const fallbackBox = this.fallback.geometry?.boundingBox
 		const fallbackSphere = this.fallback.geometry?.boundingSphere
@@ -1575,50 +1619,77 @@ export class MeshLineGPUPath extends Group {
 			],
 		} )
 
-		const material = new MeshBasicNodeMaterial( { side: DoubleSide } )
+		const material = new MeshLineGPUPathMaterial( { side: DoubleSide } )
+		// Each branch fetches and clips its segment outside the vertex Fn, so the
+		// stroke and, in builds that read one, the position accessors share it:
+		// `centerline` is the local point a vertex is stroked from.
+		//
+		// three emits a value that several nodes read where it generates the
+		// first of them. If that read sits inside a select() or If() branch, some
+		// versions leave the value unset on every other path. So the fetched
+		// values are vars that each vertex Fn stacks first, and in the Fn, every
+		// value that a branch and anything outside it both read is a `toVar()`
+		// defined ahead of the branch.
+		let centerline
 		if ( !topologyLayout.advanced ) {
+			const triangleVertex = vertexIndex.toUint().mod( uint( 6 ) )
+			const segmentIndex = vertexIndex.toUint().div( uint( 6 ) ).toVar()
+			const rawPrevious = segmentIndex.greaterThan( uint( 0 ) ).select( segmentIndex.sub( uint( 1 ) ), uint( 0 ) )
+			const rawNext = min( segmentIndex.add( uint( 2 ) ), uint( pointCount - 1 ) )
+			const record = ( simplify
+				? segments.element( segmentIndex )
+				: uvec4(
+					points.element( segmentIndex ).w.greaterThan( float( 0.5 ) ).select( segmentIndex, rawPrevious ),
+					segmentIndex,
+					segmentIndex.add( uint( 1 ) ),
+					points.element( segmentIndex.add( uint( 1 ) ) ).w.greaterThan( float( 0.5 ) ).select( segmentIndex.add( uint( 1 ) ), rawNext )
+				) ).toVar()
+			const usesB = triangleVertex.equal( uint( 2 ) )
+				.or( triangleVertex.equal( uint( 3 ) ) )
+				.or( triangleVertex.equal( uint( 5 ) ) )
+				.toVar()
+			const positiveSide = triangleVertex.equal( uint( 1 ) )
+				.or( triangleVertex.equal( uint( 4 ) )
+					.or( triangleVertex.equal( uint( 5 ) ) ) )
+				.toVar()
+			const mvp = cameraProjectionMatrix.mul( modelViewMatrix )
+			const previousRaw = mvp.mul( vec4( points.element( record.x ).xyz, 1 ) ).toVar()
+			const aRaw = mvp.mul( vec4( points.element( record.y ).xyz, 1 ) ).toVar()
+			const bRaw = mvp.mul( vec4( points.element( record.z ).xyz, 1 ) ).toVar()
+			const nextRaw = mvp.mul( vec4( points.element( record.w ).xyz, 1 ) ).toVar()
+			const bodyRange = clipRange( aRaw, bRaw, clipPadding ).toVar()
+			const previousRange = clipRange( previousRaw, aRaw, clipPadding ).toVar()
+			const nextRange = clipRange( bRaw, nextRaw, clipPadding ).toVar()
+			const fetched = [segmentIndex, record, usesB, positiveSide, previousRaw, aRaw, bRaw, nextRaw, bodyRange, previousRange, nextRange]
+			// A vertex is stroked from its body's clipped A or B end. Those are
+			// mixes of homogeneous clip positions, so the same mixes of the local
+			// points are exactly where they come from. The end is picked without
+			// a conditional: one would first emit the shared clip range inside a
+			// branch, leaving it unset for the other branch and for the stroke.
+			centerline = mix(
+				points.element( record.y ).xyz,
+				points.element( record.z ).xyz,
+				mix( bodyRange.x, bodyRange.y, float( usesB ) )
+			)
 			material.vertexNode = Fn( () => {
-				const triangleVertex = vertexIndex.toUint().mod( uint( 6 ) )
-				const segmentIndex = vertexIndex.toUint().div( uint( 6 ) )
-				const rawPrevious = segmentIndex.greaterThan( uint( 0 ) ).select( segmentIndex.sub( uint( 1 ) ), uint( 0 ) )
-				const rawNext = min( segmentIndex.add( uint( 2 ) ), uint( pointCount - 1 ) )
-				const record = simplify
-					? segments.element( segmentIndex )
-					: uvec4(
-						points.element( segmentIndex ).w.greaterThan( float( 0.5 ) ).select( segmentIndex, rawPrevious ),
-						segmentIndex,
-						segmentIndex.add( uint( 1 ) ),
-						points.element( segmentIndex.add( uint( 1 ) ) ).w.greaterThan( float( 0.5 ) ).select( segmentIndex.add( uint( 1 ) ), rawNext )
-					)
-				const usesB = triangleVertex.equal( uint( 2 ) )
-					.or( triangleVertex.equal( uint( 3 ) ) )
-					.or( triangleVertex.equal( uint( 5 ) ) )
-				const positiveSide = triangleVertex.equal( uint( 1 ) )
-					.or( triangleVertex.equal( uint( 4 ) )
-						.or( triangleVertex.equal( uint( 5 ) ) ) )
-				const mvp = cameraProjectionMatrix.mul( modelViewMatrix )
-				const previousRaw = mvp.mul( vec4( points.element( record.x ).xyz, 1 ) )
-				const aRaw = mvp.mul( vec4( points.element( record.y ).xyz, 1 ) )
-				const bRaw = mvp.mul( vec4( points.element( record.z ).xyz, 1 ) )
-				const nextRaw = mvp.mul( vec4( points.element( record.w ).xyz, 1 ) )
-				const bodyRange = clipRange( aRaw, bRaw, clipPadding )
-				const previousRange = clipRange( previousRaw, aRaw, clipPadding )
-				const nextRange = clipRange( bRaw, nextRaw, clipPadding )
+				for ( const value of fetched ) value.toStack()
 				const bodyVisible = bodyRange.x.lessThan( bodyRange.y )
 				const previousVisible = previousRange.x.lessThan( previousRange.y )
 				const nextVisible = nextRange.x.lessThan( nextRange.y )
-				const aPosition = mix( aRaw, bRaw, bodyRange.x )
-				const bPosition = mix( aRaw, bRaw, bodyRange.y )
-				const clippedPrevious = mix( previousRaw, aRaw, previousRange.x )
-				const clippedNext = mix( bRaw, nextRaw, nextRange.y )
-				const clippedStart = bodyRange.x.greaterThan( float( CLIP_RANGE_EPSILON ) )
-				const clippedEnd = bodyRange.y.lessThan( float( 1 - CLIP_RANGE_EPSILON ) )
+				const aPosition = mix( aRaw, bRaw, bodyRange.x ).toVar()
+				const bPosition = mix( aRaw, bRaw, bodyRange.y ).toVar()
+				const clippedPrevious = mix( previousRaw, aRaw, previousRange.x ).toVar()
+				const clippedNext = mix( bRaw, nextRaw, nextRange.y ).toVar()
+				const clippedStart = bodyRange.x.greaterThan( float( CLIP_RANGE_EPSILON ) ).toVar()
+				const clippedEnd = bodyRange.y.lessThan( float( 1 - CLIP_RANGE_EPSILON ) ).toVar()
 				const previousReachesA = previousVisible
 					.and( previousRange.y.greaterThanEqual( float( 1 - CLIP_RANGE_EPSILON ) ) )
 					.and( record.x.notEqual( record.y ) )
+					.toVar()
 				const nextStartsB = nextVisible
 					.and( nextRange.x.lessThanEqual( float( CLIP_RANGE_EPSILON ) )
 						.and( record.w.notEqual( record.z ) ) )
+					.toVar()
 				const currentPosition = usesB.select( bPosition, aPosition )
 				const previousPosition = usesB.select(
 					aPosition,
@@ -1634,8 +1705,8 @@ export class MeshLineGPUPath extends Group {
 				const nextP = fixClip( nextPosition, aspect )
 				const delta1Raw = currentP.sub( previousP )
 				const delta2Raw = nextP.sub( currentP )
-				const delta1RawLength = length( delta1Raw )
-				const delta2RawLength = length( delta2Raw )
+				const delta1RawLength = length( delta1Raw ).toVar()
+				const delta2RawLength = length( delta2Raw ).toVar()
 				const projectedReversal = delta1RawLength.greaterThanEqual( float( MIN_DIRECTION_LENGTH ) )
 					.and( delta2RawLength.greaterThanEqual( float( MIN_DIRECTION_LENGTH ) ) )
 					.and( dot(
@@ -1659,8 +1730,8 @@ export class MeshLineGPUPath extends Group {
 					mix( fallbackDirection, direction2Raw, step( MIN_DIRECTION_LENGTH, delta2Length ) ),
 					direction1Raw,
 					step( MIN_DIRECTION_LENGTH, delta1Length )
-				)
-				const direction2 = mix( direction1, direction2Raw, step( MIN_DIRECTION_LENGTH, delta2Length ) )
+				).toVar()
+				const direction2 = mix( direction1, direction2Raw, step( MIN_DIRECTION_LENGTH, delta2Length ) ).toVar()
 				const directionSum = direction1.add( direction2 )
 				const directionSumLength = length( directionSum )
 				const perpendicularRaw = vec2( directionSum.y.negate(), directionSum.x )
@@ -1700,29 +1771,47 @@ export class MeshLineGPUPath extends Group {
 				return bodyVisible.and( projectedBodyVisible ).select( finalPosition, vec4( 2, 2, 2, 1 ) )
 			} )()
 		} else {
+			const primitive = primitives.element( vertexIndex.toUint().div( uint( 3 ) ) )
+			const primitiveType = primitive.x.mod( uint( 1 << PRIMITIVE_TYPE_BITS ) ).toVar()
+			const primitiveSlot = primitive.x.div( uint( 1 << PRIMITIVE_TYPE_BITS ) ).toVar()
+			const triangleVertex = vertexIndex.toUint().mod( uint( 3 ) ).toVar()
+			const record = segments.element( primitive.y ).toVar()
+			const mvp = cameraProjectionMatrix.mul( modelViewMatrix )
+			const previousRaw = mvp.mul( vec4( points.element( record.x ).xyz, 1 ) ).toVar()
+			const aRaw = mvp.mul( vec4( points.element( record.y ).xyz, 1 ) ).toVar()
+			const bRaw = mvp.mul( vec4( points.element( record.z ).xyz, 1 ) ).toVar()
+			const nextRaw = mvp.mul( vec4( points.element( record.w ).xyz, 1 ) ).toVar()
+			const bodyRange = clipRange( aRaw, bRaw, clipPadding ).toVar()
+			const previousRange = clipRange( previousRaw, aRaw, clipPadding ).toVar()
+			const nextRange = clipRange( bRaw, nextRaw, clipPadding ).toVar()
+			const bodyA = primitiveType.equal( uint( PRIMITIVE_BODY_A ) ).toVar()
+			const usesB = bodyA.select(
+				triangleVertex.equal( uint( 2 ) ),
+				triangleVertex.notEqual( uint( 1 ) )
+			).toVar()
+			const fetched = [primitiveType, primitiveSlot, triangleVertex, record, previousRaw, aRaw, bRaw, nextRaw, bodyRange, previousRange, nextRange, bodyA, usesB]
+			// Bodies are stroked from their clipped A or B end, as in the fixed
+			// strip. Joins and end caps are stroked from B and start caps from A,
+			// and only while that end is unclipped. Picked without conditionals
+			// around the shared clip range, for the same reason.
+			const bodyEnd = mix( bodyRange.x, bodyRange.y, float( usesB ) )
+			const capEnd = float( primitiveType.notEqual( uint( PRIMITIVE_START_CAP ) ) )
+			centerline = mix(
+				points.element( record.y ).xyz,
+				points.element( record.z ).xyz,
+				mix( capEnd, bodyEnd, float( primitiveType.lessThan( uint( PRIMITIVE_JOIN ) ) ) )
+			)
 			material.vertexNode = Fn( () => {
-				const primitive = primitives.element( vertexIndex.toUint().div( uint( 3 ) ) )
-				const primitiveType = primitive.x.mod( uint( 1 << PRIMITIVE_TYPE_BITS ) )
-				const primitiveSlot = primitive.x.div( uint( 1 << PRIMITIVE_TYPE_BITS ) )
-				const triangleVertex = vertexIndex.toUint().mod( uint( 3 ) )
-				const record = segments.element( primitive.y )
-				const mvp = cameraProjectionMatrix.mul( modelViewMatrix )
-				const previousRaw = mvp.mul( vec4( points.element( record.x ).xyz, 1 ) )
-				const aRaw = mvp.mul( vec4( points.element( record.y ).xyz, 1 ) )
-				const bRaw = mvp.mul( vec4( points.element( record.z ).xyz, 1 ) )
-				const nextRaw = mvp.mul( vec4( points.element( record.w ).xyz, 1 ) )
-				const bodyRange = clipRange( aRaw, bRaw, clipPadding )
-				const previousRange = clipRange( previousRaw, aRaw, clipPadding )
-				const nextRange = clipRange( bRaw, nextRaw, clipPadding )
-				const bodyVisible = bodyRange.x.lessThan( bodyRange.y )
+				for ( const value of fetched ) value.toStack()
+				const bodyVisible = bodyRange.x.lessThan( bodyRange.y ).toVar()
 				const previousVisible = previousRange.x.lessThan( previousRange.y )
 				const nextVisible = nextRange.x.lessThan( nextRange.y )
-				const aPosition = mix( aRaw, bRaw, bodyRange.x )
-				const bPosition = mix( aRaw, bRaw, bodyRange.y )
+				const aPosition = mix( aRaw, bRaw, bodyRange.x ).toVar()
+				const bPosition = mix( aRaw, bRaw, bodyRange.y ).toVar()
 				const previousPosition = mix( previousRaw, aRaw, previousRange.x )
 				const nextPosition = mix( bRaw, nextRaw, nextRange.y )
-				const reachesA = bodyRange.x.lessThanEqual( float( CLIP_RANGE_EPSILON ) )
-				const reachesB = bodyRange.y.greaterThanEqual( float( 1 - CLIP_RANGE_EPSILON ) )
+				const reachesA = bodyRange.x.lessThanEqual( float( CLIP_RANGE_EPSILON ) ).toVar()
+				const reachesB = bodyRange.y.greaterThanEqual( float( 1 - CLIP_RANGE_EPSILON ) ).toVar()
 				const aInsideClip = aRaw.w.greaterThan( float( 0 ) )
 					.and( aRaw.z.greaterThanEqual( float( 0 ) ) )
 					.and( aRaw.z.lessThanEqual( aRaw.w ) )
@@ -1730,6 +1819,7 @@ export class MeshLineGPUPath extends Group {
 					.and( aRaw.w.mul( clipPadding.x.add( 1 ) ).sub( aRaw.x ).add( clipPadding.z ).greaterThanEqual( float( 0 ) ) )
 					.and( aRaw.y.add( aRaw.w.mul( clipPadding.y.add( 1 ) ) ).add( clipPadding.w ).greaterThanEqual( float( 0 ) ) )
 					.and( aRaw.w.mul( clipPadding.y.add( 1 ) ).sub( aRaw.y ).add( clipPadding.w ).greaterThanEqual( float( 0 ) ) )
+					.toVar()
 				const bInsideClip = bRaw.w.greaterThan( float( 0 ) )
 					.and( bRaw.z.greaterThanEqual( float( 0 ) ) )
 					.and( bRaw.z.lessThanEqual( bRaw.w ) )
@@ -1737,19 +1827,21 @@ export class MeshLineGPUPath extends Group {
 					.and( bRaw.w.mul( clipPadding.x.add( 1 ) ).sub( bRaw.x ).add( clipPadding.z ).greaterThanEqual( float( 0 ) ) )
 					.and( bRaw.y.add( bRaw.w.mul( clipPadding.y.add( 1 ) ) ).add( clipPadding.w ).greaterThanEqual( float( 0 ) ) )
 					.and( bRaw.w.mul( clipPadding.y.add( 1 ) ).sub( bRaw.y ).add( clipPadding.w ).greaterThanEqual( float( 0 ) ) )
+					.toVar()
 				const previousReachesA = previousVisible
 					.and( previousRange.y.greaterThanEqual( float( 1 - CLIP_RANGE_EPSILON ) ) )
 					.and( record.x.notEqual( record.y ) )
 				const nextStartsB = nextVisible
 					.and( nextRange.x.lessThanEqual( float( CLIP_RANGE_EPSILON ) ) )
 					.and( record.w.notEqual( record.z ) )
+					.toVar()
 				const aspect = resolutionNode.x.div( resolutionNode.y )
 				const aP = fixClip( aPosition, aspect )
 				const bP = fixClip( bPosition, aspect )
 				const bodyDelta = bP.sub( aP )
-				const bodyLength = length( bodyDelta )
-				const bodyDirection = bodyDelta.div( max( bodyLength, MIN_DIRECTION_LENGTH ) )
-				const bodyNormal = vec2( bodyDirection.y.negate(), bodyDirection.x )
+				const bodyLength = length( bodyDelta ).toVar()
+				const bodyDirection = bodyDelta.div( max( bodyLength, MIN_DIRECTION_LENGTH ) ).toVar()
+				const bodyNormal = vec2( bodyDirection.y.negate(), bodyDirection.x ).toVar()
 				const previousP = fixClip( previousPosition, aspect )
 				const nextP = fixClip( nextPosition, aspect )
 				const incomingDelta = aP.sub( previousP )
@@ -1757,20 +1849,21 @@ export class MeshLineGPUPath extends Group {
 				const incomingLength = length( incomingDelta )
 				const outgoingLength = length( outgoingDelta )
 				const incomingDirection = incomingDelta.div( max( incomingLength, MIN_DIRECTION_LENGTH ) )
-				const outgoingDirection = outgoingDelta.div( max( outgoingLength, MIN_DIRECTION_LENGTH ) )
+				const outgoingDirection = outgoingDelta.div( max( outgoingLength, MIN_DIRECTION_LENGTH ) ).toVar()
 				const incomingNormal = vec2( incomingDirection.y.negate(), incomingDirection.x )
-				const outgoingNormal = vec2( outgoingDirection.y.negate(), outgoingDirection.x )
+				const outgoingNormal = vec2( outgoingDirection.y.negate(), outgoingDirection.x ).toVar()
 				const startReversal = previousReachesA
 					.and( incomingLength.greaterThanEqual( float( MIN_DIRECTION_LENGTH ) ) )
 					.and( dot( incomingDirection, bodyDirection ).lessThanEqual( float( REVERSAL_DOT_THRESHOLD ) ) )
 				const endReversal = nextStartsB
 					.and( outgoingLength.greaterThanEqual( float( MIN_DIRECTION_LENGTH ) ) )
 					.and( dot( bodyDirection, outgoingDirection ).lessThanEqual( float( REVERSAL_DOT_THRESHOLD ) ) )
+					.toVar()
 				const startBoundary = record.x.equal( record.y ).or( startReversal )
 				const endBoundary = record.w.equal( record.z ).or( endReversal )
-				const halfWidth = widthNode.mul( 0.5 )
-				const startTurnCross = incomingDirection.x.mul( bodyDirection.y ).sub( incomingDirection.y.mul( bodyDirection.x ) )
-				const endTurnCross = bodyDirection.x.mul( outgoingDirection.y ).sub( bodyDirection.y.mul( outgoingDirection.x ) )
+				const halfWidth = widthNode.mul( 0.5 ).toVar()
+				const startTurnCross = incomingDirection.x.mul( bodyDirection.y ).sub( incomingDirection.y.mul( bodyDirection.x ) ).toVar()
+				const endTurnCross = bodyDirection.x.mul( outgoingDirection.y ).sub( bodyDirection.y.mul( outgoingDirection.x ) ).toVar()
 				const startTurnDot = dot( incomingDirection, bodyDirection ).clamp( -1, 1 )
 				const endTurnDot = dot( bodyDirection, outgoingDirection ).clamp( -1, 1 )
 				let startScreenHalfWidth
@@ -1813,8 +1906,8 @@ export class MeshLineGPUPath extends Group {
 				const endNormalSum = bodyNormal.add( outgoingNormal )
 				const startNormalSumLength = length( startNormalSum )
 				const endNormalSumLength = length( endNormalSum )
-				const startBisector = startNormalSum.div( max( startNormalSumLength, MIN_DIRECTION_LENGTH ) )
-				const endBisector = endNormalSum.div( max( endNormalSumLength, MIN_DIRECTION_LENGTH ) )
+				const startBisector = startNormalSum.div( max( startNormalSumLength, MIN_DIRECTION_LENGTH ) ).toVar()
+				const endBisector = endNormalSum.div( max( endNormalSumLength, MIN_DIRECTION_LENGTH ) ).toVar()
 				const startInnerDefined = startNormalSumLength.greaterThan( float( MIN_DIRECTION_LENGTH ) )
 				const endInnerDefined = endNormalSumLength.greaterThan( float( MIN_DIRECTION_LENGTH ) )
 				const startInnerDenominator = startInnerDefined.and( startInnerSupported ).select(
@@ -1825,30 +1918,37 @@ export class MeshLineGPUPath extends Group {
 					abs( dot( endBisector, outgoingNormal ) ),
 					float( 1 )
 				)
-				const startInnerScale = halfWidth.div( max( startInnerDenominator, MIN_DIRECTION_LENGTH ) )
-				const endInnerScale = halfWidth.div( max( endInnerDenominator, MIN_DIRECTION_LENGTH ) )
+				const startInnerScale = halfWidth.div( max( startInnerDenominator, MIN_DIRECTION_LENGTH ) ).toVar()
+				const endInnerScale = halfWidth.div( max( endInnerDenominator, MIN_DIRECTION_LENGTH ) ).toVar()
 				const startOuterMiterValid = startInnerDefined.and( startInnerSupported )
 					.and( startInnerScale.lessThanEqual( halfWidth.mul( float( miterLimit ) ) ) )
-				const endOuterMiterValid = endInnerDefined.and( endInnerSupported )
-					.and( endInnerScale.lessThanEqual( halfWidth.mul( float( miterLimit ) ) ) )
-				const startInnerSide = startTurnCross.greaterThan( float( 0 ) ).select( float( 1 ), float( -1 ) )
-				const endInnerSide = endTurnCross.greaterThan( float( 0 ) ).select( float( 1 ), float( -1 ) )
+				// Miter bodies and joins both read this one. Built for miter joins
+				// only: three r183 still emits a var that nothing reads.
+				const endOuterMiterValid = topology.join.type === 'miter'
+					? endInnerDefined.and( endInnerSupported )
+						.and( endInnerScale.lessThanEqual( halfWidth.mul( float( miterLimit ) ) ) )
+						.toVar()
+					: null
+				const startInnerSide = startTurnCross.greaterThan( float( 0 ) ).select( float( 1 ), float( -1 ) ).toVar()
+				const endInnerSide = endTurnCross.greaterThan( float( 0 ) ).select( float( 1 ), float( -1 ) ).toVar()
 				const startInnerOffset = startInnerDefined.select(
 					startBisector.mul( startInnerSide ).mul( startInnerScale ),
 					vec2( 0 )
-				)
+				).toVar()
 				const endInnerOffset = endInnerDefined.select(
 					endBisector.mul( endInnerSide ).mul( endInnerScale ),
 					vec2( 0 )
-				)
+				).toVar()
 				const startOuterMiter = startBisector.mul( startInnerSide.negate() ).mul( startInnerScale )
 				const endOuterMiter = endBisector.mul( endInnerSide.negate() ).mul( endInnerScale )
 				const startJoinActive = previousReachesA.and( reachesA ).and( aInsideClip )
 					.and( startReversal.not() )
 					.and( abs( startTurnCross ).greaterThan( float( MIN_DIRECTION_LENGTH ) ) )
+					.toVar()
 				const endJoinActive = nextStartsB.and( reachesB ).and( bInsideClip )
 					.and( endReversal.not() )
 					.and( abs( endTurnCross ).greaterThan( float( MIN_DIRECTION_LENGTH ) ) )
+					.toVar()
 				const startInnerExact = startInnerDefined.and( startInnerSupported )
 				const endInnerExact = endInnerDefined.and( endInnerSupported )
 				// The finite-support guard applies only to the shared join pivot. When
@@ -1857,22 +1957,17 @@ export class MeshLineGPUPath extends Group {
 				const startBodyInnerOffset = startInnerExact.select(
 					startInnerOffset,
 					bodyNormal.mul( startInnerSide ).mul( halfWidth )
-				)
+				).toVar()
 				const endBodyInnerOffset = endInnerExact.select(
 					endInnerOffset,
 					bodyNormal.mul( endInnerSide ).mul( halfWidth )
-				)
-				const endJoinPivotOffset = endInnerExact.select( endInnerOffset, vec2( 0 ) )
+				).toVar()
+				const endJoinPivotOffset = endInnerExact.select( endInnerOffset, vec2( 0 ) ).toVar()
 				const emitted = bool( false ).toVar()
 				const finalPosition = aPosition.toVar()
 				const strokeOffset = vec2( 0 ).toVar()
 
 				If( primitiveType.equal( uint( PRIMITIVE_BODY_A ) ).or( primitiveType.equal( uint( PRIMITIVE_BODY_B ) ) ), () => {
-					const bodyA = primitiveType.equal( uint( PRIMITIVE_BODY_A ) )
-					const usesB = bodyA.select(
-						triangleVertex.equal( uint( 2 ) ),
-						triangleVertex.notEqual( uint( 1 ) )
-					)
 					const positiveSide = bodyA.select(
 						triangleVertex.equal( uint( 1 ) ),
 						triangleVertex.notEqual( uint( 0 ) )
@@ -1914,7 +2009,7 @@ export class MeshLineGPUPath extends Group {
 				} )
 
 				If( primitiveType.equal( uint( PRIMITIVE_JOIN ) ), () => {
-					const joinVisible = bodyVisible.and( reachesB ).and( nextStartsB ).and( bInsideClip )
+					const joinVisible = bodyVisible.and( reachesB ).and( nextStartsB ).and( bInsideClip ).toVar()
 					const turnCross = bodyDirection.x.mul( outgoingDirection.y ).sub( bodyDirection.y.mul( outgoingDirection.x ) )
 					const turnSign = turnCross.greaterThanEqual( float( 0 ) ).select( float( 1 ), float( -1 ) )
 					const outerSide = turnSign.negate()
@@ -2010,6 +2105,7 @@ export class MeshLineGPUPath extends Group {
 				return emitted.select( finalPosition, vec4( 2, 2, 2, 1 ) )
 			} )()
 		}
+		material._placedPositionNode = nodeObject( new PlacedPositionNode( centerline.toVar( 'linePosition' ) ) )
 		material.colorNode = vec4( colorNode, 1 )
 		material.opacityNode = opacityNode
 		material.transparent = this.fallback.material.transparent === true || opacity < 1

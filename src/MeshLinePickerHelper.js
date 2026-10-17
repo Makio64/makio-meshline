@@ -41,7 +41,7 @@ class MeshLineHelperMaterial extends MeshLineNodeMaterial {
 			)
 		} )()
 
-		this.opacityNode = this._helperOpacity
+		this.opacityNode = this._foldCoverageNode ? Fn( () => this.clipFoldedJoins( this._helperOpacity ) )() : this._helperOpacity
 	}
 
 }
@@ -125,6 +125,12 @@ export default class MeshLinePickerHelper extends Group {
 			proxy.material.lineWidth.value = src.lineWidth.value * hitRadius
 			proxy.material.dpr.value = src.dpr.value
 			proxy.material.resolution.value.copy( src.resolution.value )
+			if ( src.miterLimit !== undefined ) proxy.material.miterLimit = src.miterLimit
+			const join = src.options?.join
+			if ( join && proxy._sourceJoin !== join ) {
+				proxy._sourceJoin = join
+				proxy.material.setJoin( join )
+			}
 			if ( line.count > 0 ) proxy.count = line.count
 			proxy.matrixWorld.copy( line.matrixWorld )
 			proxy.visible = line.visible
