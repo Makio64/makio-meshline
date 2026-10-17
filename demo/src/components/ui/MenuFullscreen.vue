@@ -302,6 +302,7 @@ export default {
 	max-width 100vw
 	height 100dvh
 	display grid
+	grid-template-columns minmax(0, 1fr)
 	grid-template-rows auto minmax(0, 1fr) auto
 	padding calc(12px + var(--sait, 0px)) calc(14px + var(--sair, 0px)) calc(10px + var(--saib, 0px)) 14px
 	background rgba(7, 8, 12, .88)
@@ -313,6 +314,7 @@ export default {
 
 .header
 	box-sizing border-box
+	min-width 0
 	height 44px
 	display flex
 	align-items center
@@ -332,7 +334,7 @@ export default {
 .search
 	appearance none
 	box-sizing border-box
-	flex 0 1 148px
+	flex 0 1 152px
 	min-width 0
 	height 30px
 	padding 0 11px
@@ -341,20 +343,21 @@ export default {
 	background rgba(255, 255, 255, .04)
 	color var(--ink)
 	font 400 12px 'Inter', sans-serif
-	transition border-color .18s ease, flex-basis .18s ease, background .18s ease
+	transition border-color .18s ease, background .18s ease
 
 	&::placeholder
 		color var(--ink-3)
 
 	&:focus
-		flex-basis 172px
 		border-color rgba(255, 255, 255, .45)
 		background rgba(255, 255, 255, .07)
 		outline none
 
 .content
+	min-width 0
 	min-height 0
 	overflow-y auto
+	overflow-x hidden
 	overscroll-behavior contain
 	touch-action pan-y
 	scrollbar-width thin
@@ -365,6 +368,7 @@ export default {
 	padding 10px 2px 14px
 
 .section
+	min-width 0
 	display flex
 	flex-direction column
 	gap 8px
@@ -476,6 +480,7 @@ export default {
 	color var(--ink-2)
 
 .footer
+	min-width 0
 	display flex
 	align-items center
 	justify-content space-between
@@ -484,6 +489,7 @@ export default {
 	border-top 1px solid var(--hair)
 
 .detail
+	flex 1 1 0
 	min-width 0
 	margin 0
 	overflow hidden
