@@ -298,7 +298,8 @@ export default {
 
 .panel
 	box-sizing border-box
-	width min(100vw, 364px)
+	width 368px
+	max-width 100vw
 	height 100dvh
 	display grid
 	grid-template-rows auto minmax(0, 1fr) auto
