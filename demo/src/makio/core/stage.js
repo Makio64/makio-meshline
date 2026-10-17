@@ -4,13 +4,19 @@ const TIME_STEP = 8
 const MAX_DT = 100
 const MAX_STEPS = 10
 
+const getDevicePixelRatio = () => {
+	const ratio = Math.max( 1, Number( window.devicePixelRatio ) || 1 )
+	const compact = Math.min( window.innerWidth, window.innerHeight ) < 720 || window.matchMedia( '(pointer: coarse)' ).matches
+	return Math.min( ratio, compact ? 1.5 : 2 )
+}
+
 class Stage {
 	pause = false
 	lastTime = performance.now()
 	dtOffset = 0
 	width = window.innerWidth
 	height = window.innerHeight
-	devicePixelRatio = window.devicePixelRatio//Math.min( 1.5, window.devicePixelRatio )
+	devicePixelRatio = getDevicePixelRatio()
 	onResize = new Signal()
 	onUpdate = new Signal()
 	onRender = new Signal()
@@ -25,6 +31,7 @@ class Stage {
 	resize = () => {
 		this.width = window.innerWidth
 		this.height = window.innerHeight
+		this.devicePixelRatio = getDevicePixelRatio()
 		this.documentHeight = document.documentElement.clientHeight
 		this.onResize.dispatch()
 	}

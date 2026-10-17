@@ -8,20 +8,43 @@
 
 <script>
 import { engine } from 'animejs'
+import { defineAsyncComponent, markRaw } from 'vue'
 import { TinyRouter } from 'vue-tiny-router'
 import { loadTranslations } from 'vue-tiny-translation'
 
-import { contentLoaded } from '@/store'
+import { contentLoaded, menuOpen } from '@/store'
 
 import { detectLang } from './makio/utils/detect'
 engine.timeUnit = 's'
+
+const ExampleView = markRaw( defineAsyncComponent( () => import( '@/ExampleView' ) ) )
+
+const VISITED_KEY = 'meshline-demo-visited'
+
+// True only the first time this browser opens the demo site.
+const isFirstVisit = () => {
+	try {
+		if ( localStorage.getItem( VISITED_KEY ) ) return false
+		localStorage.setItem( VISITED_KEY, '1' )
+		return true
+	} catch {
+		return false
+	}
+}
 
 export default {
 	name: 'App',
 	data() {
 		return {
 			basicLoaded: false,
+			// `/` redirects to the first demo; deep links skip the welcome gallery.
+			landedOnRoot: window.location.pathname === '/',
 		}
+	},
+	watch: {
+		contentLoaded( loaded ) {
+			if ( loaded && this.landedOnRoot && !this.hideMenu && isFirstVisit() ) menuOpen.value = true
+		},
 	},
 	computed: {
 		hideMenu() {
@@ -31,7 +54,7 @@ export default {
 			return [
 				{
 					path: '/examples/:id',
-					component: defineAsyncComponent( () => import( '@/ExampleView' ) ),
+					component: ExampleView,
 				},
 			]
 		},

@@ -149,9 +149,9 @@ export default {
 		display none
 		top auto
 		right calc(8px + var(--sair, 0px))
-		bottom calc(68px + var(--saib, 0px))
+		bottom calc(114px + var(--saib, 0px))
 		left calc(8px + var(--sail, 0px))
-		height min(56vh, 460px)
+		height min(52vh, 440px)
 		max-width none
 		max-height none
 		border-radius 13px
@@ -173,8 +173,8 @@ export default {
 		grid-template-columns repeat(3, minmax(0, 1fr))
 		gap 4px
 		left calc(8px + var(--sail, 0px))
-		right calc(68px + var(--sair, 0px))
-		bottom calc(10px + var(--saib, 0px))
+		right calc(8px + var(--sair, 0px))
+		bottom calc(58px + var(--saib, 0px))
 		z-index 1200
 		box-sizing border-box
 		height 48px
@@ -209,10 +209,10 @@ export default {
 		--width calc(100vw - 16px - var(--sail, 0px) - var(--sair, 0px))
 		top auto !important
 		right calc(8px + var(--sair, 0px)) !important
-		bottom calc(68px + var(--saib, 0px))
+		bottom calc(114px + var(--saib, 0px))
 		left calc(8px + var(--sail, 0px))
 		z-index 1100 !important
-		max-height min(56vh, 460px)
+		max-height min(52vh, 440px)
 		overflow-y auto
 		border-radius 13px
 		box-shadow 0 20px 50px rgba(0, 0, 0, 0.55)

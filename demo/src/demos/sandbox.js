@@ -79,6 +79,20 @@ const snakePositions = ( segments = 240, width = 22 ) => {
 	return positions
 }
 
+// 3D cylindrical helix spanning X with depth in Z — ideal for testing
+// sizeAttenuation and 3D projected corner folding while orbiting.
+const helixPositions = ( segments = 96, width = 18, radius = 5.5, turns = 3.5 ) => {
+	const positions = new Float32Array( ( segments + 1 ) * 3 )
+	for ( let i = 0; i <= segments; i++ ) {
+		const t = i / segments
+		const angle = t * Math.PI * 2 * turns
+		positions[i * 3] = -width / 2 + width * t
+		positions[i * 3 + 1] = Math.cos( angle ) * radius
+		positions[i * 3 + 2] = Math.sin( angle ) * radius
+	}
+	return positions
+}
+
 class SandboxExample {
 	constructor() {
 		this.uiComponent = markRaw( SandboxView )
@@ -124,6 +138,8 @@ class SandboxExample {
 			
 			// Advanced
 			wireframe: false,
+			joinType: 'miter',
+			joinFold: 'geometry',
 			bevelJoins: false,
 			antialias: false,
 			miterLimit: 4,
@@ -172,13 +188,14 @@ class SandboxExample {
 		// Line Shape folder
 		const geometryFolder = this.gui.addFolder( 'Line Shape' )
 		geometryFolder.add( this.config, 'lineType', {
+			Snake: 'snake',
+			'Helix (3D)': 'helix',
 			Circle: 'circle',
 			Sine: 'sine',
 			Square: 'square',
 			Straight: 'straight',
 			'Strong Angle': 'strongAngle',
 			Zigzag: 'zigzag',
-			Snake: 'snake'
 		} ).onChange( ( value ) => this.configureLineType( value ) )
 		geometryFolder.add( this.config, 'segments', 8, 256, 1 )
 		geometryFolder.add( this.config, 'closed' )
@@ -205,8 +222,17 @@ class SandboxExample {
 		
 		// Advanced folder
 		const advancedFolder = this.gui.addFolder( 'Advanced' )
+		advancedFolder.add( this.config, 'joinType', {
+			Miter: 'miter',
+			Bevel: 'bevel',
+			Round: 'round',
+		} ).name( 'Join Type' )
+		advancedFolder.add( this.config, 'joinFold', {
+			'Geometry (Fast)': 'geometry',
+			'Exact (2-Pass)': 'exact',
+			Off: 'false',
+		} ).name( '3D Fold' )
 		advancedFolder.add( this.config, 'miterLimit', 1, 10, 0.1 ).name( 'Miter Limit' )
-		advancedFolder.add( this.config, 'bevelJoins' ).name( 'Bevel Joins' )
 		advancedFolder.add( this.config, 'antialias' ).name( 'Analytic AA' )
 		advancedFolder.add( this.config, 'smoothSharpBends' ).name( 'Smooth Sharp Bends' )
 		advancedFolder.add( this.config, 'smoothSharpBendsAlpha', 0.001, 0.5, 0.001 ).name( 'Smooth Cutoff' )
@@ -251,7 +277,7 @@ class SandboxExample {
 			return
 		}
 
-		if ( preset === 'zigzag' || preset === 'snake' ) {
+		if ( preset === 'zigzag' || preset === 'snake' || preset === 'helix' ) {
 			Object.assign( this.config, {
 				lineType: preset,
 				closed: false,
@@ -270,7 +296,7 @@ class SandboxExample {
 			this.config.closed = false
 		}
 
-		if ( value === 'strongAngle' ) {
+		if ( value === 'strongAngle' || value === 'helix' ) {
 			this.config.useGradient = true
 		}
 
@@ -289,6 +315,8 @@ class SandboxExample {
 				useGradient: this.config.useGradient,
 				useDashes: this.config.useDashes,
 				sizeAttenuation: this.config.sizeAttenuation,
+				joinType: this.config.joinType,
+				joinFold: this.config.joinFold,
 				bevelJoins: this.config.bevelJoins,
 				antialias: this.config.antialias,
 				smoothSharpBends: this.config.smoothSharpBends,
@@ -329,6 +357,8 @@ class SandboxExample {
 				return zigzagPositions( 14, 20, 5 )
 			case 'snake':
 				return snakePositions( 240, 22 )
+			case 'helix':
+				return helixPositions( this.config.segments, 18, 5.5, 3.5 )
 			case 'straight':
 			default:
 				return straightLine( 20, this.config.segments )
@@ -365,9 +395,16 @@ class SandboxExample {
 			this.line.dash( { count: this.config.dashCount, ratio: this.config.dashRatio, offset: this.config.dashOffset } )
 		}
 		
+		const joinType = this.config.joinType && this.config.joinType !== 'miter'
+			? this.config.joinType
+			: ( this.config.bevelJoins ? 'bevel' : 'miter' )
+		const joinFold = this.config.joinFold === 'false' || this.config.joinFold === false
+			? false
+			: ( this.config.joinFold || 'geometry' )
 		this.line.join( {
-			type: this.config.bevelJoins ? 'bevel' : 'miter',
+			type: joinType,
 			limit: this.config.miterLimit,
+			fold: joinFold,
 		} )
 		this.line.smoothSharpBends( this.config.smoothSharpBends )
 		this.line.smoothSharpBendsAlpha( this.config.smoothSharpBendsAlpha )
@@ -391,6 +428,7 @@ class SandboxExample {
 			.opacity( this.config.opacity )
 			.transparent( this.config.opacity < 1 )
 			.wireframe( this.config.wireframe )
+			.miterLimit( this.config.miterLimit )
 			.smoothSharpBendsAlpha( this.config.smoothSharpBendsAlpha )
 			.smoothSharpBendsThreshold( this.config.smoothSharpBendsThreshold )
 

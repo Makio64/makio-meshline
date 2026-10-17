@@ -1,14 +1,12 @@
-import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
-import mkcert from 'vite-plugin-mkcert'
-import { qrcode } from 'vite-plugin-qrcode'
-import { visualizer } from "rollup-plugin-visualizer"
-import { brotliSizePlugin } from 'vite-plugin-brotli-size'
-
+import path from 'path'
+import AutoImport from 'unplugin-auto-import/vite'
 // Allow to auto import the components, making the code much more clean and light
 import Components from 'unplugin-vue-components/vite'
-import AutoImport from 'unplugin-auto-import/vite'
-import path from 'path'
+import { defineConfig } from 'vite'
+import { brotliSizePlugin } from 'vite-plugin-brotli-size'
+import mkcert from 'vite-plugin-mkcert'
+import { qrcode } from 'vite-plugin-qrcode'
 
 // https://vitejs.dev/config/
 export default defineConfig( {
@@ -30,8 +28,6 @@ export default defineConfig( {
 		} ),
 		vue(),
 		qrcode(),
-		// network, sunburst, treemap, icicle
-		// visualizer( { open: true, brotliSize: true, template: 'sunburst', emitFile: false, sourcemap: true } ),
 		brotliSizePlugin(),
 	],
 	build: {
@@ -65,7 +61,7 @@ export default defineConfig( {
 	resolve: {
 		dedupe: ['three'],
 		alias: {
-			'@': path.resolve( __dirname, './src' ),
+			'@': path.resolve( import.meta.dirname, './src' ),
 		},
 		extensions: ['.mjs', '.js', '.ts', '.jsx', '.tsx', '.json', '.vue', '.styl'],
 	},

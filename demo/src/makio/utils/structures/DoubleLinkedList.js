@@ -11,7 +11,9 @@ export default class DoubleLinkedList {
 	}
 
 	add( node ) {
+		node.next = null
 		if ( !this.root ) {
+			node.prev = null
 			this.root = this.last = node
 		} else {
 			this.last.next = node

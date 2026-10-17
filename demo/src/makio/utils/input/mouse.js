@@ -29,15 +29,17 @@ const prevMouse = { x: mouse.x, y: mouse.y }
 const [onDown, onUp, onMove, onClick, onEnter, onLeave] = Array( 6 ).fill().map( () => new Signal() )
 
 function refreshMouseState( e ) {
+	const width = stage.width || 1
+	const height = stage.height || 1
 	Object.assign( mouse, {
 		x: e.x,
 		y: e.y,
 		moveX: e.x - mouse.x,
 		moveY: e.y - mouse.y,
-		percentX: e.x / stage.width,
-		percentY: e.y / stage.height,
-		normalizedX: ( e.x / stage.width - 0.5 ) * 2,
-		normalizedY: ( e.y / stage.height - 0.5 ) * 2,
+		percentX: e.x / width,
+		percentY: e.y / height,
+		normalizedX: ( e.x / width - 0.5 ) * 2,
+		normalizedY: ( e.y / height - 0.5 ) * 2,
 		e,
 	} )
 	if ( !mouse.isMoveX && !mouse.isMoveY ) {
@@ -77,7 +79,7 @@ if ( typeof window !== 'undefined' ) {
 
 	const leaveOrBlur = () => {
 		clearMouseState()
-		onLeave.dispatch()
+		onLeave.dispatch( mouse )
 	}
 	window.addEventListener( 'blur', leaveOrBlur )
 	window.addEventListener( 'pointerleave', leaveOrBlur )
@@ -134,7 +136,7 @@ if ( typeof window !== 'undefined' ) {
 if ( typeof document !== 'undefined' ) {
 	document.body.addEventListener( 'pointerenter', () => {
 		clearMouseState()
-		onEnter.dispatch()
+		onEnter.dispatch( mouse )
 	} )
 }
 

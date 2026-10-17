@@ -8,6 +8,7 @@ import OrbitControl from '@/makio/three/controls/OrbitControl'
 import stage3d from '@/makio/three/stage3d'
 import { onMove } from '@/makio/utils/input/mouse'
 import { createBloomPipeline } from '@/utils/bloomPipeline'
+import { WebGPURequiredError } from '@/utils/demoFailure'
 import { createDemoHint } from '@/utils/demoHint'
 
 const pointerNDC = new Vector2()
@@ -35,6 +36,7 @@ class MeshLineComputeExample {
 			curveCount: 140,
 			curlStrength: 0.7,
 			mouseStrength: 12,
+			stiffness: 1,
 			dashSpacing: 2.2,
 		}
 		this.dashSpacingUniform = uniform( this.params.dashSpacing )
@@ -42,6 +44,9 @@ class MeshLineComputeExample {
 
 	async init() {
 		await stage3d.initRender( { background: 0x010208 } )
+		if ( !stage3d.isWebGPU ) {
+			throw new WebGPURequiredError( 'MeshLineCompute simulates its curves in WebGPU compute shaders, and this browser is running the WebGL2 fallback.' )
+		}
 		stage3d.control = new OrbitControl( stage3d.camera, 21 )
 		stage3d.control.maxRadius = 42
 		stage3d.control.minRadius = 11
@@ -84,6 +89,7 @@ class MeshLineComputeExample {
 			mouseStrength: this.params.mouseStrength,
 			mouseRadius: 6,
 			mode: this.params.mode,
+			stiffness: this.params.stiffness,
 			lineWidth: 3,
 			sizeAttenuation: false,
 		} )
@@ -131,6 +137,7 @@ class MeshLineComputeExample {
 		this.gui.add( this.params, 'curveCount', 16, 320, 1 ).onFinishChange( () => this.createLine() )
 		this.gui.add( this.params, 'mouseStrength', 0, 24, 0.1 ).onChange( value => this.line?.mouseStrength( value ) )
 		this.gui.add( this.params, 'curlStrength', 0, 5, 0.05 ).onChange( value => this.line?.curlStrength( value ) )
+		this.gui.add( this.params, 'stiffness', 0, 1, 0.01 ).onChange( value => this.line?.stiffness( value ) )
 		this.gui.add( this.params, 'dashSpacing', 0.5, 4, 0.01 ).onChange( value => {
 			this.dashSpacingUniform.value = value
 		} )

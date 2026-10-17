@@ -1,5 +1,5 @@
 import { MeshLine } from 'makio-meshline'
-import { abs, clamp, cos, float, floor, Fn, instanceIndex, length, Loop, max, min, mix, sin, smoothstep, storage, uniform, uv, vec2, vec3, vec4 } from 'three/tsl'
+import { abs, clamp, cos, float, floor, Fn, If, instanceIndex, length, Loop, max, min, mix, sin, smoothstep, storage, uniform, uv, vec2, vec3, vec4 } from 'three/tsl'
 import { AdditiveBlending, Plane, Raycaster, StorageBufferAttribute, Vector2, Vector3 } from 'three/webgpu'
 
 import { stage } from '@/makio/core/stage'
@@ -20,28 +20,43 @@ const SHORTEST_ROPE = 4.6
 const LONGEST_ROPE = 8.4
 const FLOOR_Y = -5.15
 
-const FIXED_DT = 1 / 120
-const MAX_SIMULATION_STEPS = 6
-const VELOCITY_DAMPING = 0.994
-const GRAVITY = -18
-const CONSTRAINT_STIFFNESS = 0.94
+// Each frame is split into equal substeps no longer than MAX_STEP_DT. 1/220 s
+// sits just above the 240 Hz and 288 Hz splits of 60, 120 and 144 Hz screens,
+// so the substep count stays put instead of flickering between frames.
+const MAX_STEP_DT = 1 / 220
+const MAX_SUBSTEPS = 8
+const MAX_FRAME_DT = 0.05
+// Low-pass on the frame time: rAF jitter would otherwise show as uneven motion.
+const FRAME_DT_SMOOTHING = 0.15
+// Per second, and frame-rate independent. Low enough that a brushed rope keeps
+// swinging for a few periods instead of dying in one.
+const AIR_DRAG = 0.4
+const GRAVITY = -36
 const MIN_BEND_RATIO = 1.25
 const BEND_STIFFNESS = 0.35
 const CONSTRAINT_ITERATIONS = 8
-const WIND_ACCELERATION = 1.2
+const WIND_ACCELERATION = 2.4
 
 const POINTER_FORCE_RADIUS = 2.4
 const POINTER_COLLIDER_RADIUS = 0.8
-const GRAB_RADIUS = 1.8
-const HOVER_ACCELERATION = 110
-const GRAB_ACCELERATION = 240
-const SWISH_ACCELERATION = 6
-const GRAB_PROJECTION = 0.02
+const HOVER_ACCELERATION = 200
+const SWISH_ACCELERATION = 8
 const PLUCK_RADIUS = 2.2
-const PLUCK_ACCELERATION = 180
+const PLUCK_ACCELERATION = 260
 const PLUCK_DECAY = 16
 const POINTER_VELOCITY_DECAY = 7
 const MAX_POINTER_SPEED = 24
+
+// A press pins each nearby rope's closest point under the pointer. Hovering
+// pushes ropes about 1.2 away first, so the radius reaches past that.
+const GRAB_RADIUS = 1.6
+// Held strands slowly bunch toward the pointer, down to this share of their
+// starting offset.
+const GRAB_GATHER = 0.45
+const GRAB_GATHER_RATE = 4
+// A held point stays within its rope's reach, so the rope goes taut instead of
+// stretching after the pointer.
+const GRAB_REACH = 1.01
 
 const FLOOR_FRICTION = 0.03
 // Thin glowing fibers that swell into a bead at the very tip.
@@ -51,6 +66,7 @@ const BEAD_SWELL = 1.9
 const _pointerNDC = new Vector2()
 const _pointerWorld = new Vector3()
 const _pointerVelocityTarget = new Vector3()
+const _pinTarget = new Vector3()
 const _interactionPlane = new Plane( new Vector3( 0, 0, 1 ), 0 )
 
 // Lengths follow a soft swag across the curtain with a small ripple, so the
@@ -73,6 +89,32 @@ function smoothstepValue( edge0, edge1, value ) {
 	return t * t * ( 3 - 2 * t )
 }
 
+// CPU twin of the GPU link and bend passes: projects the distance between
+// points aPoint and aPoint + span of one rope. compressOnly only pushes apart
+// (the bend constraint). The anchor and the held point never move.
+function projectCpuLink( positions, basePoint, aPoint, span, targetLength, stiffness, pinnedPoint, compressOnly = false ) {
+	const bPoint = aPoint + span
+	const aPinned = aPoint === 0 || aPoint === pinnedPoint
+	const bPinned = bPoint === pinnedPoint
+	const aWeight = aPinned ? 0 : bPinned ? 1 : 0.5
+	const bWeight = bPinned ? 0 : aPinned ? 1 : 0.5
+	const aOffset = ( basePoint + aPoint ) * 3
+	const bOffset = ( basePoint + bPoint ) * 3
+	const deltaX = positions[bOffset] - positions[aOffset]
+	const deltaY = positions[bOffset + 1] - positions[aOffset + 1]
+	const deltaZ = positions[bOffset + 2] - positions[aOffset + 2]
+	const distance = Math.max( Math.hypot( deltaX, deltaY, deltaZ ), 0.0001 )
+	const error = compressOnly ? Math.min( distance - targetLength, 0 ) : distance - targetLength
+	const correction = error / distance * stiffness
+
+	positions[aOffset] += deltaX * correction * aWeight
+	positions[aOffset + 1] += deltaY * correction * aWeight
+	positions[aOffset + 2] += deltaZ * correction * aWeight
+	positions[bOffset] -= deltaX * correction * bWeight
+	positions[bOffset + 1] -= deltaY * correction * bWeight
+	positions[bOffset + 2] -= deltaZ * correction * bWeight
+}
+
 class VerletRopesExample {
 	constructor() {
 		this.line = null
@@ -82,24 +124,36 @@ class VerletRopesExample {
 		this.positionBuffer = null
 		this.prevBuffer = null
 		this.ropeDataBuffer = null
+		this.grabBuffer = null
 		this.computeNode = null
 		this.cpuPositions = null
 		this.cpuPrevious = null
 		this.cpuLines = null
 		this.cpuColors = null
+		this.cpuGrab = null
 		this.ropeData = null
 		this.isGpuSimulation = false
 		this.uTime = uniform( 0 )
+		this.uVelocityScale = uniform( 1 )
+		this.uAccelerationScale = uniform( 0 )
 		this.uPointer = uniform( new Vector3() )
 		this.uPointerVelocity = uniform( new Vector3() )
 		this.uPointerActive = uniform( 0 )
 		this.uGrab = uniform( 0 )
+		this.uGrabStart = uniform( 0 )
+		this.uGrabSpread = uniform( 1 )
 		this.uPluck = uniform( 0 )
 		this.raycaster = new Raycaster()
+		// The pointer moves once per frame; substeps sweep it from pointerFrom to
+		// pointerTarget so a fast flick pushes and drags ropes continuously.
+		this.pointerFrom = new Vector3()
+		this.pointerTarget = new Vector3()
 		this.lastPointerWorld = new Vector3()
 		this.lastPointerTime = 0
 		this.hasPointerPosition = false
-		this.accumulator = 0
+		this.grabTime = 0
+		this.smoothFrameDt = 1 / 60
+		this.lastStepDt = 1 / 240
 		this.instructionStyle = null
 		this.instructionElement = null
 		this.instructionTimer = null
@@ -166,10 +220,13 @@ class VerletRopesExample {
 		this.positionBuffer = new StorageBufferAttribute( positionRecords, 4 )
 		this.prevBuffer = new StorageBufferAttribute( previousRecords, 4 )
 		this.ropeDataBuffer = new StorageBufferAttribute( this.ropeData, 4 )
+		// Per rope: held point index (-1 when none) and its offset from the pointer.
+		this.grabBuffer = new StorageBufferAttribute( this.cpuGrab.slice(), 4 )
 
 		const positions = storage( this.positionBuffer, 'vec4', TOTAL_POINTS )
 		const prevPositions = storage( this.prevBuffer, 'vec4', TOTAL_POINTS )
 		const ropeData = storage( this.ropeDataBuffer, 'vec4', ROPE_COUNT )
+		const grabData = storage( this.grabBuffer, 'vec4', ROPE_COUNT )
 
 		// Each invocation owns one complete, disjoint rope. This serial-per-rope
 		// solver is native-WebGPU only; WebGL2 uses the CPU fallback below because
@@ -180,18 +237,50 @@ class VerletRopesExample {
 			const anchor = data.xyz.toVar()
 			const restLength = data.w.toVar()
 			const anchorIndex = baseOffset.toUint().toVar()
-			const dtSq = float( FIXED_DT * FIXED_DT )
 
 			positions.element( anchorIndex ).assign( vec4( anchor, 1 ) )
 			prevPositions.element( anchorIndex ).assign( vec4( anchor, 1 ) )
 
-			Loop( { start: 0, end: POINTS_PER_ROPE - 1, name: 'point' }, ( { point } ) => {
-				const pointNumber = float( point ).add( 1 ).toVar()
+			// On the first step of a press, each rope records its point nearest the
+			// pointer and that point's offset, so the grab starts without a jump.
+			If( this.uGrabStart.greaterThan( 0.5 ), () => {
+				const nearestPoint = float( -1 ).toVar()
+				const nearestDistance = float( GRAB_RADIUS ).toVar()
+				Loop( { start: 1, end: POINTS_PER_ROPE, name: 'grabPoint' }, ( { grabPoint } ) => {
+					const idx = baseOffset.add( float( grabPoint ) ).toUint().toVar()
+					const distance = length( positions.element( idx ).xyz.sub( this.uPointer ) ).toVar()
+					If( distance.lessThan( nearestDistance ), () => {
+						nearestDistance.assign( distance )
+						nearestPoint.assign( float( grabPoint ) )
+					} )
+				} )
+				const nearestIndex = baseOffset.add( max( nearestPoint, float( 0 ) ) ).toUint().toVar()
+				grabData.element( instanceIndex ).assign(
+					vec4( nearestPoint, positions.element( nearestIndex ).xyz.sub( this.uPointer ) )
+				)
+			} )
+
+			const grab = grabData.element( instanceIndex ).toVar()
+			const isHeld = this.uGrab.mul( this.uPointerActive ).greaterThan( 0.5 ).and( grab.x.greaterThan( 0.5 ) )
+			const held = isHeld.select( float( 1 ), float( 0 ) ).toVar()
+			const pinnedPoint = isHeld.select( grab.x, float( -1 ) ).toVar()
+			const pinGoal = this.uPointer.add( grab.yzw.mul( this.uGrabSpread ) ).toVar()
+			const pinFromAnchor = pinGoal.sub( anchor ).toVar()
+			const pinReach = restLength.mul( max( grab.x, float( 1 ) ) ).mul( GRAB_REACH )
+			const pinScale = min( pinReach.div( max( length( pinFromAnchor ), float( 0.0001 ) ) ), float( 1 ) )
+			const pinned = anchor.add( pinFromAnchor.mul( pinScale ) ).toVar()
+			const pinTarget = vec3( pinned.x, max( pinned.y, float( FLOOR_Y ) ), pinned.z ).toVar()
+
+			// Time-corrected Verlet: velocity and acceleration scales come from the
+			// current and previous substep lengths, so a changing frame rate keeps
+			// the same motion.
+			Loop( { start: 1, end: POINTS_PER_ROPE, name: 'point' }, ( { point } ) => {
+				const pointNumber = float( point ).toVar()
 				const idx = baseOffset.add( pointNumber ).toUint().toVar()
 				const progress = pointNumber.div( POINTS_PER_ROPE - 1 ).toVar()
 				const cur = positions.element( idx ).xyz.toVar()
 				const prev = prevPositions.element( idx ).xyz.toVar()
-				const velocity = cur.sub( prev ).mul( VELOCITY_DAMPING ).toVar()
+				const velocity = cur.sub( prev ).mul( this.uVelocityScale ).toVar()
 
 				// Nearby ropes share nearly the same phase, producing broad waves across
 				// the curtain instead of independent, low-mass-looking flutter.
@@ -206,114 +295,96 @@ class VerletRopesExample {
 					cos( phase.mul( 0.81 ) ).mul( 0.38 ),
 				).mul( progress.mul( gust ).mul( WIND_ACCELERATION ) )
 
+				// A held rope follows its pinned point; brushing only acts on free ones.
 				const fromPointer = cur.sub( this.uPointer ).toVar()
 				const pointerDistance = max( length( fromPointer ), float( 0.0001 ) ).toVar()
 				const pointerDirection = fromPointer.div( pointerDistance ).toVar()
 				const pointerFalloff = float( 1 )
 					.sub( smoothstep( 0, POINTER_FORCE_RADIUS, pointerDistance ) )
-					.mul( this.uPointerActive )
-				const hoverForce = pointerDirection.mul(
-					pointerFalloff.mul( this.uGrab.oneMinus() ).mul( HOVER_ACCELERATION )
-				)
-				const grabForce = pointerDirection.mul(
-					pointerFalloff.mul( this.uGrab ).mul( -GRAB_ACCELERATION )
-				)
-				const swishForce = this.uPointerVelocity.mul(
-					pointerFalloff.mul( SWISH_ACCELERATION )
-				)
+					.mul( this.uPointerActive ).mul( held.oneMinus() )
+				const hoverForce = pointerDirection.mul( pointerFalloff.mul( HOVER_ACCELERATION ) )
+				const swishForce = this.uPointerVelocity.mul( pointerFalloff.mul( SWISH_ACCELERATION ) )
 				const pluckFalloff = float( 1 )
 					.sub( smoothstep( 0, PLUCK_RADIUS, pointerDistance ) )
 				const pluckForce = pointerDirection.mul(
 					pluckFalloff.mul( this.uPluck ).mul( PLUCK_ACCELERATION )
 				)
 				const acceleration = vec3( 0, GRAVITY, 0 )
-					.add( wind ).add( hoverForce ).add( grabForce ).add( swishForce ).add( pluckForce )
-				const next = cur.add( velocity ).add( acceleration.mul( dtSq ) ).toVar()
+					.add( wind ).add( hoverForce ).add( swishForce ).add( pluckForce )
+				const next = cur.add( velocity ).add( acceleration.mul( this.uAccelerationScale ) ).toVar()
 
 				prevPositions.element( idx ).assign( vec4( cur, 1 ) )
 				positions.element( idx ).assign( vec4( next, 1 ) )
 			} )
 
-			// Apply direct manipulation before the constraint solve. The link passes
-			// can then redistribute a hard grab without briefly stretching the rope.
-			Loop( { start: 0, end: POINTS_PER_ROPE - 1, name: 'interactionPoint' }, ( { interactionPoint } ) => {
-				const idx = baseOffset.add( float( interactionPoint ).add( 1 ) ).toUint().toVar()
+			// Apply direct manipulation before the constraint solve: the pointer
+			// pushes free ropes aside and moves the held point onto its pin.
+			Loop( { start: 1, end: POINTS_PER_ROPE, name: 'interactionPoint' }, ( { interactionPoint } ) => {
+				const pointNumber = float( interactionPoint ).toVar()
+				const idx = baseOffset.add( pointNumber ).toUint().toVar()
 				const cur = positions.element( idx ).xyz.toVar()
 				const fromPointer = cur.sub( this.uPointer ).toVar()
 				const pointerDistance = max( length( fromPointer ), float( 0.0001 ) ).toVar()
-				const pointerDirection = fromPointer.div( pointerDistance ).toVar()
-				const hoverCorrection = pointerDirection.mul(
+				const hoverCorrection = fromPointer.div( pointerDistance ).mul(
 					max( float( POINTER_COLLIDER_RADIUS ).sub( pointerDistance ), float( 0 ) )
-						.mul( this.uPointerActive ).mul( this.uGrab.oneMinus() )
+						.mul( this.uPointerActive ).mul( held.oneMinus() )
 				)
 				const pushed = cur.add( hoverCorrection ).toVar()
-				const grabFalloff = float( 1 ).sub( smoothstep( 0, GRAB_RADIUS, pointerDistance ) )
-				const grabAmount = grabFalloff.mul( this.uPointerActive ).mul( this.uGrab ).mul( GRAB_PROJECTION )
-				const grabTarget = this.uPointer.add( this.uPointerVelocity.mul( FIXED_DT * 0.35 ) )
-				const interacted = mix( pushed, grabTarget, grabAmount ).toVar()
-
-				const clamped = vec3( interacted.x, max( interacted.y, float( FLOOR_Y ) ), interacted.z ).toVar()
-				positions.element( idx ).assign( vec4( clamped, 1 ) )
+				const clamped = vec3( pushed.x, max( pushed.y, float( FLOOR_Y ) ), pushed.z )
+				const interacted = pointNumber.equal( pinnedPoint ).select( pinTarget, clamped )
+				positions.element( idx ).assign( vec4( interacted, 1 ) )
 			} )
 
+			// The anchor and the held point are pinned: links touching one move only
+			// their free end, so a grab drags the rope without being pulled back.
+			const linkWeights = ( aPoint, bPoint ) => {
+				const aPinned = aPoint.equal( 0 ).or( aPoint.equal( pinnedPoint ) )
+				const bPinned = bPoint.equal( pinnedPoint )
+				return [
+					aPinned.select( float( 0 ), bPinned.select( float( 1 ), float( 0.5 ) ) ),
+					bPinned.select( float( 0 ), aPinned.select( float( 1 ), float( 0.5 ) ) ),
+				]
+			}
+
 			Loop( { start: 0, end: CONSTRAINT_ITERATIONS, name: 'iteration' }, () => {
-				positions.element( anchorIndex ).assign( vec4( anchor, 1 ) )
-
-				const firstIndex = baseOffset.add( 1 ).toUint().toVar()
-				const first = positions.element( firstIndex ).xyz.toVar()
-				const firstDelta = first.sub( anchor ).toVar()
-				const firstDistance = max( length( firstDelta ), float( 0.0001 ) ).toVar()
-				const firstCorrection = firstDelta.mul(
-					firstDistance.sub( restLength ).div( firstDistance ).mul( CONSTRAINT_STIFFNESS )
-				)
-				positions.element( firstIndex ).assign( vec4( first.sub( firstCorrection ), 1 ) )
-
-				Loop( { start: 0, end: POINTS_PER_ROPE - 2, name: 'link' }, ( { link } ) => {
-					const aIndex = baseOffset.add( float( link ).add( 1 ) ).toUint().toVar()
+				Loop( { start: 0, end: POINTS_PER_ROPE - 1, name: 'link' }, ( { link } ) => {
+					const aPoint = float( link ).toVar()
+					const aIndex = baseOffset.add( aPoint ).toUint().toVar()
 					const bIndex = aIndex.add( 1 ).toUint().toVar()
+					const [aWeight, bWeight] = linkWeights( aPoint, aPoint.add( 1 ) )
 					const a = positions.element( aIndex ).xyz.toVar()
 					const b = positions.element( bIndex ).xyz.toVar()
 					const delta = b.sub( a ).toVar()
 					const distance = max( length( delta ), float( 0.0001 ) ).toVar()
-					const correction = delta.mul(
-						distance.sub( restLength ).div( distance ).mul( CONSTRAINT_STIFFNESS * 0.5 )
-					)
+					const correction = delta.mul( distance.sub( restLength ).div( distance ) ).toVar()
 
-					positions.element( aIndex ).assign( vec4( a.add( correction ), 1 ) )
-					positions.element( bIndex ).assign( vec4( b.sub( correction ), 1 ) )
+					positions.element( aIndex ).assign( vec4( a.add( correction.mul( aWeight ) ), 1 ) )
+					positions.element( bIndex ).assign( vec4( b.sub( correction.mul( bWeight ) ), 1 ) )
 				} )
 
 				// A soft two-link distance constraint adds just enough bend resistance to
 				// stop compressed rope from folding into single-segment spikes.
-				const secondIndex = baseOffset.add( 2 ).toUint().toVar()
-				const second = positions.element( secondIndex ).xyz.toVar()
-				const firstBendDelta = second.sub( anchor ).toVar()
-				const firstBendDistance = max( length( firstBendDelta ), float( 0.0001 ) ).toVar()
-				const firstBendCorrection = firstBendDelta.mul(
-					min( firstBendDistance.sub( restLength.mul( MIN_BEND_RATIO ) ), float( 0 ) )
-						.div( firstBendDistance ).mul( BEND_STIFFNESS )
-				)
-				positions.element( secondIndex ).assign( vec4( second.sub( firstBendCorrection ), 1 ) )
-
-				Loop( { start: 1, end: POINTS_PER_ROPE - 2, name: 'bend' }, ( { bend } ) => {
-					const aIndex = baseOffset.add( bend ).toUint().toVar()
+				Loop( { start: 0, end: POINTS_PER_ROPE - 2, name: 'bend' }, ( { bend } ) => {
+					const aPoint = float( bend ).toVar()
+					const aIndex = baseOffset.add( aPoint ).toUint().toVar()
 					const cIndex = aIndex.add( 2 ).toUint().toVar()
+					const [aWeight, cWeight] = linkWeights( aPoint, aPoint.add( 2 ) )
 					const a = positions.element( aIndex ).xyz.toVar()
 					const c = positions.element( cIndex ).xyz.toVar()
 					const delta = c.sub( a ).toVar()
 					const distance = max( length( delta ), float( 0.0001 ) ).toVar()
 					const correction = delta.mul(
 						min( distance.sub( restLength.mul( MIN_BEND_RATIO ) ), float( 0 ) )
-							.div( distance ).mul( BEND_STIFFNESS * 0.5 )
-					)
-					positions.element( aIndex ).assign( vec4( a.add( correction ), 1 ) )
-					positions.element( cIndex ).assign( vec4( c.sub( correction ), 1 ) )
+							.div( distance ).mul( BEND_STIFFNESS )
+					).toVar()
+					positions.element( aIndex ).assign( vec4( a.add( correction.mul( aWeight ) ), 1 ) )
+					positions.element( cIndex ).assign( vec4( c.sub( correction.mul( cWeight ) ), 1 ) )
 				} )
 
 				// Alternate contact projection with link projection so long ropes settle
 				// onto the floor without accumulating length error.
-				Loop( { start: 0, end: POINTS_PER_ROPE - 1, name: 'solverPoint' }, ( { solverPoint } ) => {
-					const idx = baseOffset.add( float( solverPoint ).add( 1 ) ).toUint().toVar()
+				Loop( { start: 1, end: POINTS_PER_ROPE, name: 'solverPoint' }, ( { solverPoint } ) => {
+					const idx = baseOffset.add( float( solverPoint ) ).toUint().toVar()
 					const cur = positions.element( idx ).xyz.toVar()
 					positions.element( idx ).assign( vec4( cur.x, max( cur.y, float( FLOOR_Y ) ), cur.z, 1 ) )
 				} )
@@ -321,8 +392,8 @@ class VerletRopesExample {
 
 			// Use a deliberately inelastic floor: constraints can create new resting
 			// contacts, and this single pass removes downward velocity and adds friction.
-			Loop( { start: 0, end: POINTS_PER_ROPE - 1, name: 'contactPoint' }, ( { contactPoint } ) => {
-				const idx = baseOffset.add( float( contactPoint ).add( 1 ) ).toUint().toVar()
+			Loop( { start: 1, end: POINTS_PER_ROPE, name: 'contactPoint' }, ( { contactPoint } ) => {
+				const idx = baseOffset.add( float( contactPoint ) ).toUint().toVar()
 				const cur = positions.element( idx ).xyz.toVar()
 				const previous = prevPositions.element( idx ).xyz.toVar()
 				const floorContact = cur.y.lessThan( float( FLOOR_Y + 0.0001 ) )
@@ -452,6 +523,8 @@ class VerletRopesExample {
 		this.cpuPrevious = new Float32Array( TOTAL_POINTS * 3 )
 		this.cpuColors = new Float32Array( TOTAL_POINTS * 3 )
 		this.ropeData = new Float32Array( ROPE_COUNT * 4 )
+		this.cpuGrab = new Float32Array( ROPE_COUNT * 4 )
+		for ( let ropeIndex = 0; ropeIndex < ROPE_COUNT; ropeIndex++ ) this.cpuGrab[ropeIndex * 4] = -1
 
 		for ( let ropeIndex = 0; ropeIndex < ROPE_COUNT; ropeIndex++ ) {
 			const ratio = ropeIndex / ( ROPE_COUNT - 1 )
@@ -498,12 +571,15 @@ class VerletRopesExample {
 	simulateCpu() {
 		const positions = this.cpuPositions
 		const previous = this.cpuPrevious
+		const grabData = this.cpuGrab
 		const pointer = this.uPointer.value
 		const pointerVelocity = this.uPointerVelocity.value
 		const pointerActive = this.uPointerActive.value
-		const grab = this.uGrab.value
+		const isGrabbing = this.uGrab.value * pointerActive > 0.5
+		const grabSpread = this.uGrabSpread.value
 		const pluck = this.uPluck.value
-		const dtSq = FIXED_DT * FIXED_DT
+		const velocityScale = this.uVelocityScale.value
+		const accelerationScale = this.uAccelerationScale.value
 		const time = this.uTime.value
 
 		for ( let ropeIndex = 0; ropeIndex < ROPE_COUNT; ropeIndex++ ) {
@@ -519,14 +595,54 @@ class VerletRopesExample {
 			positions[anchorOffset + 1] = previous[anchorOffset + 1] = anchorY
 			positions[anchorOffset + 2] = previous[anchorOffset + 2] = anchorZ
 
+			// On the first step of a press, record the point nearest the pointer and
+			// its offset, so the grab starts without a jump.
+			if ( this.uGrabStart.value > 0.5 ) {
+				let nearestPoint = -1
+				let nearestDistance = GRAB_RADIUS
+				for ( let pointIndex = 1; pointIndex < POINTS_PER_ROPE; pointIndex++ ) {
+					const offset = ( basePoint + pointIndex ) * 3
+					const distance = Math.hypot(
+						positions[offset] - pointer.x,
+						positions[offset + 1] - pointer.y,
+						positions[offset + 2] - pointer.z,
+					)
+					if ( distance < nearestDistance ) {
+						nearestDistance = distance
+						nearestPoint = pointIndex
+					}
+				}
+				const nearestOffset = ( basePoint + Math.max( nearestPoint, 0 ) ) * 3
+				grabData[dataOffset] = nearestPoint
+				grabData[dataOffset + 1] = positions[nearestOffset] - pointer.x
+				grabData[dataOffset + 2] = positions[nearestOffset + 1] - pointer.y
+				grabData[dataOffset + 3] = positions[nearestOffset + 2] - pointer.z
+			}
+
+			const held = isGrabbing && grabData[dataOffset] > 0.5 ? 1 : 0
+			const pinnedPoint = held ? grabData[dataOffset] : -1
+			if ( held ) {
+				_pinTarget.set(
+					pointer.x + grabData[dataOffset + 1] * grabSpread - anchorX,
+					pointer.y + grabData[dataOffset + 2] * grabSpread - anchorY,
+					pointer.z + grabData[dataOffset + 3] * grabSpread - anchorZ,
+				)
+				_pinTarget.clampLength( 0, restLength * pinnedPoint * GRAB_REACH )
+				_pinTarget.x += anchorX
+				_pinTarget.y = Math.max( _pinTarget.y + anchorY, FLOOR_Y )
+				_pinTarget.z += anchorZ
+			}
+
+			// Time-corrected Verlet: velocity and acceleration scales come from the
+			// current and previous substep lengths.
 			for ( let pointIndex = 1; pointIndex < POINTS_PER_ROPE; pointIndex++ ) {
 				const offset = ( basePoint + pointIndex ) * 3
 				const x = positions[offset]
 				const y = positions[offset + 1]
 				const z = positions[offset + 2]
-				const velocityX = ( x - previous[offset] ) * VELOCITY_DAMPING
-				const velocityY = ( y - previous[offset + 1] ) * VELOCITY_DAMPING
-				const velocityZ = ( z - previous[offset + 2] ) * VELOCITY_DAMPING
+				const velocityX = ( x - previous[offset] ) * velocityScale
+				const velocityY = ( y - previous[offset + 1] ) * velocityScale
+				const velocityZ = ( z - previous[offset + 2] ) * velocityScale
 				const progress = pointIndex / ( POINTS_PER_ROPE - 1 )
 				const phase = time * 0.78 + anchorX * 0.23 + progress * 2.6
 				const gust = Math.sin( time * 0.28 + anchorX * 0.12 ) * 0.175 + 0.825
@@ -536,131 +652,64 @@ class VerletRopesExample {
 				const pointerY = y - pointer.y
 				const pointerZ = z - pointer.z
 				const pointerDistance = Math.max( Math.hypot( pointerX, pointerY, pointerZ ), 0.0001 )
-				const pointerFalloff = ( 1 - smoothstepValue( 0, POINTER_FORCE_RADIUS, pointerDistance ) ) * pointerActive
+				const pointerFalloff = ( 1 - smoothstepValue( 0, POINTER_FORCE_RADIUS, pointerDistance ) )
+					* pointerActive * ( 1 - held )
 				const directionX = pointerX / pointerDistance
 				const directionY = pointerY / pointerDistance
 				const directionZ = pointerZ / pointerDistance
-				const radialForce = pointerFalloff * (
-					( 1 - grab ) * HOVER_ACCELERATION - grab * GRAB_ACCELERATION
-				)
-				const pluckForce = ( 1 - smoothstepValue( 0, PLUCK_RADIUS, pointerDistance ) )
-					* pluck * PLUCK_ACCELERATION
+				const radialForce = pointerFalloff * HOVER_ACCELERATION
+					+ ( 1 - smoothstepValue( 0, PLUCK_RADIUS, pointerDistance ) ) * pluck * PLUCK_ACCELERATION
 
 				const accelerationX = Math.sin( phase ) * windScale
-					+ directionX * ( radialForce + pluckForce )
+					+ directionX * radialForce
 					+ pointerVelocity.x * pointerFalloff * SWISH_ACCELERATION
 				const accelerationY = GRAVITY + Math.sin( phase * 0.73 ) * 0.08 * windScale
-					+ directionY * ( radialForce + pluckForce )
+					+ directionY * radialForce
 					+ pointerVelocity.y * pointerFalloff * SWISH_ACCELERATION
 				const accelerationZ = Math.cos( phase * 0.81 ) * 0.38 * windScale
-					+ directionZ * ( radialForce + pluckForce )
+					+ directionZ * radialForce
 					+ pointerVelocity.z * pointerFalloff * SWISH_ACCELERATION
 
 				previous[offset] = x
 				previous[offset + 1] = y
 				previous[offset + 2] = z
-				positions[offset] = x + velocityX + accelerationX * dtSq
-				positions[offset + 1] = y + velocityY + accelerationY * dtSq
-				positions[offset + 2] = z + velocityZ + accelerationZ * dtSq
+				positions[offset] = x + velocityX + accelerationX * accelerationScale
+				positions[offset + 1] = y + velocityY + accelerationY * accelerationScale
+				positions[offset + 2] = z + velocityZ + accelerationZ * accelerationScale
 			}
 
-			// Resolve pointer interaction before the distance constraints so a fast
-			// grab moves the whole rope instead of stretching a handful of links.
+			// Apply direct manipulation before the constraint solve: the pointer
+			// pushes free ropes aside and moves the held point onto its pin.
 			for ( let pointIndex = 1; pointIndex < POINTS_PER_ROPE; pointIndex++ ) {
 				const offset = ( basePoint + pointIndex ) * 3
-				const x = positions[offset]
-				const y = positions[offset + 1]
-				const z = positions[offset + 2]
-				const pointerX = x - pointer.x
-				const pointerY = y - pointer.y
-				const pointerZ = z - pointer.z
+				if ( pointIndex === pinnedPoint ) {
+					positions[offset] = _pinTarget.x
+					positions[offset + 1] = _pinTarget.y
+					positions[offset + 2] = _pinTarget.z
+					continue
+				}
+
+				const pointerX = positions[offset] - pointer.x
+				const pointerY = positions[offset + 1] - pointer.y
+				const pointerZ = positions[offset + 2] - pointer.z
 				const pointerDistance = Math.max( Math.hypot( pointerX, pointerY, pointerZ ), 0.0001 )
 				const hoverCorrection = Math.max( POINTER_COLLIDER_RADIUS - pointerDistance, 0 )
-					* pointerActive * ( 1 - grab )
-				const pushedX = x + pointerX / pointerDistance * hoverCorrection
-				const pushedY = y + pointerY / pointerDistance * hoverCorrection
-				const pushedZ = z + pointerZ / pointerDistance * hoverCorrection
-				const grabFalloff = 1 - smoothstepValue( 0, GRAB_RADIUS, pointerDistance )
-				const grabAmount = grabFalloff * pointerActive * grab * GRAB_PROJECTION
-				const grabTargetX = pointer.x + pointerVelocity.x * FIXED_DT * 0.35
-				const grabTargetY = pointer.y + pointerVelocity.y * FIXED_DT * 0.35
-				const grabTargetZ = pointer.z + pointerVelocity.z * FIXED_DT * 0.35
-				const interactedX = pushedX + ( grabTargetX - pushedX ) * grabAmount
-				const interactedY = pushedY + ( grabTargetY - pushedY ) * grabAmount
-				const interactedZ = pushedZ + ( grabTargetZ - pushedZ ) * grabAmount
+					* pointerActive * ( 1 - held ) / pointerDistance
 
-				positions[offset] = interactedX
-				positions[offset + 1] = Math.max( interactedY, FLOOR_Y )
-				positions[offset + 2] = interactedZ
+				positions[offset] += pointerX * hoverCorrection
+				positions[offset + 1] = Math.max( positions[offset + 1] + pointerY * hoverCorrection, FLOOR_Y )
+				positions[offset + 2] += pointerZ * hoverCorrection
 			}
 
 			for ( let iteration = 0; iteration < CONSTRAINT_ITERATIONS; iteration++ ) {
-				positions[anchorOffset] = anchorX
-				positions[anchorOffset + 1] = anchorY
-				positions[anchorOffset + 2] = anchorZ
-
-				const firstOffset = ( basePoint + 1 ) * 3
-				let deltaX = positions[firstOffset] - anchorX
-				let deltaY = positions[firstOffset + 1] - anchorY
-				let deltaZ = positions[firstOffset + 2] - anchorZ
-				let distance = Math.max( Math.hypot( deltaX, deltaY, deltaZ ), 0.0001 )
-				let correction = ( distance - restLength ) / distance * CONSTRAINT_STIFFNESS
-				positions[firstOffset] -= deltaX * correction
-				positions[firstOffset + 1] -= deltaY * correction
-				positions[firstOffset + 2] -= deltaZ * correction
-
-				for ( let linkIndex = 1; linkIndex < POINTS_PER_ROPE - 1; linkIndex++ ) {
-					const aOffset = ( basePoint + linkIndex ) * 3
-					const bOffset = aOffset + 3
-					deltaX = positions[bOffset] - positions[aOffset]
-					deltaY = positions[bOffset + 1] - positions[aOffset + 1]
-					deltaZ = positions[bOffset + 2] - positions[aOffset + 2]
-					distance = Math.max( Math.hypot( deltaX, deltaY, deltaZ ), 0.0001 )
-					correction = ( distance - restLength ) / distance * CONSTRAINT_STIFFNESS * 0.5
-					const correctionX = deltaX * correction
-					const correctionY = deltaY * correction
-					const correctionZ = deltaZ * correction
-
-					positions[aOffset] += correctionX
-					positions[aOffset + 1] += correctionY
-					positions[aOffset + 2] += correctionZ
-					positions[bOffset] -= correctionX
-					positions[bOffset + 1] -= correctionY
-					positions[bOffset + 2] -= correctionZ
+				// The anchor and the held point are pinned: links touching one move
+				// only their free end.
+				for ( let linkIndex = 0; linkIndex < POINTS_PER_ROPE - 1; linkIndex++ ) {
+					projectCpuLink( positions, basePoint, linkIndex, 1, restLength, 1, pinnedPoint )
 				}
-
-				const secondOffset = anchorOffset + 6
-				deltaX = positions[secondOffset] - anchorX
-				deltaY = positions[secondOffset + 1] - anchorY
-				deltaZ = positions[secondOffset + 2] - anchorZ
-				distance = Math.max( Math.hypot( deltaX, deltaY, deltaZ ), 0.0001 )
-				correction = Math.min( distance - restLength * MIN_BEND_RATIO, 0 )
-					/ distance * BEND_STIFFNESS
-				positions[secondOffset] -= deltaX * correction
-				positions[secondOffset + 1] -= deltaY * correction
-				positions[secondOffset + 2] -= deltaZ * correction
-
-				for ( let bendIndex = 1; bendIndex < POINTS_PER_ROPE - 2; bendIndex++ ) {
-					const aOffset = ( basePoint + bendIndex ) * 3
-					const cOffset = aOffset + 6
-					deltaX = positions[cOffset] - positions[aOffset]
-					deltaY = positions[cOffset + 1] - positions[aOffset + 1]
-					deltaZ = positions[cOffset + 2] - positions[aOffset + 2]
-					distance = Math.max( Math.hypot( deltaX, deltaY, deltaZ ), 0.0001 )
-					correction = Math.min( distance - restLength * MIN_BEND_RATIO, 0 )
-						/ distance * BEND_STIFFNESS * 0.5
-					const correctionX = deltaX * correction
-					const correctionY = deltaY * correction
-					const correctionZ = deltaZ * correction
-
-					positions[aOffset] += correctionX
-					positions[aOffset + 1] += correctionY
-					positions[aOffset + 2] += correctionZ
-					positions[cOffset] -= correctionX
-					positions[cOffset + 1] -= correctionY
-					positions[cOffset + 2] -= correctionZ
+				for ( let bendIndex = 0; bendIndex < POINTS_PER_ROPE - 2; bendIndex++ ) {
+					projectCpuLink( positions, basePoint, bendIndex, 2, restLength * MIN_BEND_RATIO, BEND_STIFFNESS, pinnedPoint, true )
 				}
-
 				for ( let pointIndex = 1; pointIndex < POINTS_PER_ROPE; pointIndex++ ) {
 					const offset = ( basePoint + pointIndex ) * 3
 					positions[offset + 1] = Math.max( positions[offset + 1], FLOOR_Y )
@@ -808,7 +857,9 @@ class VerletRopesExample {
 		this.lastPointerWorld.copy( _pointerWorld )
 		this.lastPointerTime = now
 		this.hasPointerPosition = true
-		this.uPointer.value.copy( _pointerWorld )
+		// A pointer that comes back starts its sweep where it is, not where it left.
+		if ( !this.uPointerActive.value ) this.pointerFrom.copy( _pointerWorld )
+		this.pointerTarget.copy( _pointerWorld )
 		this.uPointerActive.value = 1
 		return true
 	}
@@ -820,7 +871,12 @@ class VerletRopesExample {
 
 	onPointerDown = ( mouseData ) => {
 		if ( mouseData?.e?.target?.closest?.( 'button, a, input, select, .lil-gui' ) ) return
-		if ( this.onPointerMove( mouseData ) ) this.uGrab.value = 1
+		if ( this.onPointerMove( mouseData ) ) {
+			this.uGrab.value = 1
+			this.uGrabStart.value = 1
+			this.uGrabSpread.value = 1
+			this.grabTime = 0
+		}
 		this.dismissInstruction()
 	}
 
@@ -856,26 +912,34 @@ class VerletRopesExample {
 	update = ( dt ) => {
 		if ( !this.line || !stage3d.renderer ) return
 
-		const frameDt = Math.min( Math.max( dt, 0 ) * 0.001, 0.05 )
+		const frameDt = Math.min( Math.max( dt, 0 ) * 0.001, MAX_FRAME_DT )
+		this.smoothFrameDt += ( frameDt - this.smoothFrameDt ) * FRAME_DT_SMOOTHING
 		if ( this.hasPointerPosition ) this.refreshPointerWorld( false )
 		this.uPointerVelocity.value.multiplyScalar( Math.exp( -POINTER_VELOCITY_DECAY * frameDt ) )
-		this.accumulator = Math.min(
-			this.accumulator + frameDt,
-			FIXED_DT * MAX_SIMULATION_STEPS,
-		)
-
-		let steps = 0
-		while ( this.accumulator >= FIXED_DT && steps < MAX_SIMULATION_STEPS ) {
-			this.uTime.value += FIXED_DT
-			if ( this.isGpuSimulation ) stage3d.renderer.compute( this.computeNode )
-			else this.simulateCpu()
-			this.uPluck.value *= Math.exp( -PLUCK_DECAY * FIXED_DT )
-			if ( this.uPluck.value < 0.0001 ) this.uPluck.value = 0
-			this.accumulator -= FIXED_DT
-			steps++
+		if ( this.uGrab.value ) {
+			this.grabTime += frameDt
+			this.uGrabSpread.value = GRAB_GATHER + ( 1 - GRAB_GATHER ) * Math.exp( -GRAB_GATHER_RATE * this.grabTime )
 		}
 
-		if ( !this.isGpuSimulation && steps > 0 ) this.line.setPositions( this.cpuLines )
+		// Advance by the smoothed frame time in equal substeps, so every frame moves
+		// the ropes by the same amount whatever the refresh rate.
+		const steps = Math.min( Math.max( Math.ceil( this.smoothFrameDt / MAX_STEP_DT ), 1 ), MAX_SUBSTEPS )
+		const stepDt = this.smoothFrameDt / steps
+		for ( let substep = 0; substep < steps; substep++ ) {
+			this.uVelocityScale.value = stepDt / this.lastStepDt * Math.exp( -AIR_DRAG * stepDt )
+			this.uAccelerationScale.value = stepDt * ( stepDt + this.lastStepDt ) * 0.5
+			this.lastStepDt = stepDt
+			this.uPointer.value.lerpVectors( this.pointerFrom, this.pointerTarget, ( substep + 1 ) / steps )
+			this.uTime.value += stepDt
+			if ( this.isGpuSimulation ) stage3d.renderer.compute( this.computeNode )
+			else this.simulateCpu()
+			this.uGrabStart.value = 0
+			this.uPluck.value *= Math.exp( -PLUCK_DECAY * stepDt )
+			if ( this.uPluck.value < 0.0001 ) this.uPluck.value = 0
+		}
+		this.pointerFrom.copy( this.pointerTarget )
+
+		if ( !this.isGpuSimulation ) this.line.setPositions( this.cpuLines )
 	}
 
 	onResize = () => {
@@ -885,7 +949,7 @@ class VerletRopesExample {
 	}
 
 	show() {
-		this.accumulator = 0
+		this.pointerFrom.copy( this.pointerTarget )
 		stage.onUpdate.add( this.update )
 	}
 
@@ -924,11 +988,13 @@ class VerletRopesExample {
 		this.positionBuffer = null
 		this.prevBuffer = null
 		this.ropeDataBuffer = null
+		this.grabBuffer = null
 		this.computeNode = null
 		this.cpuPositions = null
 		this.cpuPrevious = null
 		this.cpuLines = null
 		this.cpuColors = null
+		this.cpuGrab = null
 		this.ropeData = null
 		this.instructionElement = null
 		this.instructionStyle = null

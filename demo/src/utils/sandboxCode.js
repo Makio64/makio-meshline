@@ -1,4 +1,4 @@
-const INLINE_TYPES = ['strongAngle', 'zigzag', 'snake']
+const INLINE_TYPES = ['strongAngle', 'zigzag', 'snake', 'helix']
 const POSITION_HELPERS = {
 	circle: 'circlePositions',
 	sine: 'sineWavePositions',
@@ -33,6 +33,17 @@ export const generateSandboxCode = config => {
 		code += `\tconst envelope = 0.3 + 0.7 * Math.sin( t * Math.PI )\n`
 		code += `\tpositions[i * 3] = -width / 2 + width * t\n`
 		code += `\tpositions[i * 3 + 1] = 5 * envelope * Math.sin( t * Math.PI * 5 )\n`
+		code += `}\n\n`
+	} else if ( config.lineType === 'helix' ) {
+		code += `// 3D cylindrical helix spanning X with depth in Z\n`
+		code += `const segments = ${config.segments}, width = 18, radius = 5.5, turns = 3.5\n`
+		code += `const positions = new Float32Array( ( segments + 1 ) * 3 )\n`
+		code += `for ( let i = 0; i <= segments; i++ ) {\n`
+		code += `\tconst t = i / segments\n`
+		code += `\tconst angle = t * Math.PI * 2 * turns\n`
+		code += `\tpositions[i * 3] = -width / 2 + width * t\n`
+		code += `\tpositions[i * 3 + 1] = Math.cos( angle ) * radius\n`
+		code += `\tpositions[i * 3 + 2] = Math.sin( angle ) * radius\n`
 		code += `}\n\n`
 	} else if ( config.lineType === 'strongAngle' ) {
 		code += `const controlPoints = [\n`
@@ -97,6 +108,7 @@ export const generateSandboxCode = config => {
 
 	if ( !config.sizeAttenuation ) {
 		code += `\t.sizeAttenuation( false )\n`
+		code += `\t.autoResize()\n`
 	}
 
 	if ( config.antialias ) {
@@ -119,10 +131,18 @@ export const generateSandboxCode = config => {
 		code += `\t.wireframe( true )\n`
 	}
 
-	if ( config.bevelJoins || config.miterLimit !== 4 ) {
+	const joinType = config.joinType && config.joinType !== 'miter'
+		? config.joinType
+		: ( config.bevelJoins ? 'bevel' : 'miter' )
+	const joinFold = config.joinFold === 'false' || config.joinFold === false
+		? false
+		: ( config.joinFold || 'geometry' )
+
+	if ( joinType !== 'miter' || config.miterLimit !== 4 || joinFold !== 'geometry' ) {
 		const joinFields = []
-		if ( config.bevelJoins ) joinFields.push( `type: 'bevel'` )
+		if ( joinType !== 'miter' ) joinFields.push( `type: '${joinType}'` )
 		if ( config.miterLimit !== 4 ) joinFields.push( `limit: ${config.miterLimit}` )
+		if ( joinFold !== 'geometry' ) joinFields.push( `fold: ${joinFold === false ? 'false' : `'${joinFold}'`}` )
 		code += `\t.join( { ${joinFields.join( ', ' )} } )\n`
 	}
 
@@ -140,15 +160,6 @@ export const generateSandboxCode = config => {
 
 	code += `\t.build()\n\n`
 	code += `scene.add( line )`
-
-	if ( !config.sizeAttenuation ) {
-		code += `\n\n// CSS-pixel widths need the canvas CSS size after every resize\n`
-		code += `function resizeLine() {\n`
-		code += `\tline.resize( renderer.domElement.clientWidth, renderer.domElement.clientHeight )\n`
-		code += `}\n\n`
-		code += `window.addEventListener( 'resize', resizeLine )\n`
-		code += `resizeLine()`
-	}
 
 	if ( config.animateDashes && config.useDashes ) {
 		code += `\n\n// Animate the dash offset through the public API\n`

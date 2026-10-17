@@ -16,6 +16,23 @@ const PHASE_COPY = {
 	},
 }
 
+const WEBGPU_REQUIRED = {
+	eyebrow: 'WebGPU required',
+	title: 'This example needs native WebGPU',
+	summary: 'It runs its simulation in compute shaders, which the WebGL2 fallback cannot execute.',
+}
+
+/**
+ * Throw this from a demo's `init()` when it has no WebGL2 path, so the gallery
+ * explains the missing capability instead of reporting a generic failure.
+ */
+export class WebGPURequiredError extends Error {
+	constructor( message ) {
+		super( message )
+		this.name = 'WebGPURequiredError'
+	}
+}
+
 const messageFrom = error => {
 	if ( error instanceof Error ) return error.message
 	if ( typeof error === 'string' ) return error
@@ -29,8 +46,18 @@ const shorten = message => {
 }
 
 export const describeDemoFailure = ( phase, error, backend = 'uninitialized' ) => {
-	const copy = PHASE_COPY[phase] || PHASE_COPY.render
 	const detail = shorten( messageFrom( error ) )
+	if ( error?.name === 'WebGPURequiredError' ) {
+		return {
+			...WEBGPU_REQUIRED,
+			detail,
+			guidance: [
+				'Open it in a current Chrome, Edge, or Safari with WebGPU enabled on supported hardware.',
+				'Most other gallery examples still run on WebGL2.',
+			],
+		}
+	}
+	const copy = PHASE_COPY[phase] || PHASE_COPY.render
 	const renderer = backend === 'webgpu' ? 'WebGPU' : backend === 'webgl2' ? 'WebGL2' : null
 	const deviceLimit = /device limit|max(?:imum)?[\s_-]*(?:vertex|storage|buffer|binding)|maxVertexBuffers|too many (?:vertex )?buffers|validation error/i.test( detail )
 	const contextLost = /context lost|device lost|gpu process|out of memory/i.test( detail )

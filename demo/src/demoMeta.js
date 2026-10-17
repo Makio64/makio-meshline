@@ -1,4 +1,4 @@
-import { demoCatalog } from './demoCatalog.js'
+import { demoCatalog, demoSections } from './demoCatalog.js'
 
 const demoModules = import.meta.glob( './demos/*.js' )
 
@@ -7,8 +7,13 @@ export const demoMeta = demoCatalog.map( demo => ( {
 	load: demoModules[`./demos/${demo.sourceFile}`],
 } ) )
 
-export const basicDemoMeta = demoMeta.filter( demo => demo.group === 'basic' )
-export const advancedDemoMeta = demoMeta.filter( demo => demo.group === 'advanced' )
+// Menu order, which is also the previous / next order inside a demo.
+export const menuDemoMeta = demoSections.flatMap( section => demoMeta.filter( demo => demo.section === section.id && !demo.hidden ) )
+
+export const menuSections = demoSections.map( section => ( {
+	...section,
+	demos: menuDemoMeta.filter( demo => demo.section === section.id ),
+} ) )
 
 export const resolveDemoMeta = ( id ) => {
 	return demoMeta.find( demo => demo.id === id || demo.aliases?.includes( id ) )

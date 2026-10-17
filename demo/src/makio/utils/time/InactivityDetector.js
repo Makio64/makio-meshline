@@ -15,11 +15,12 @@ export default class InactivityDetector {
 		this.lastAction = ''
 		this.onInactive = new Signal()
 
-		onMove.add( () => {
+		this.onMove = () => {
 			if ( mouse.isDown ) {
 				this.reset()
 			}
-		} )
+		}
+		onMove.add( this.onMove )
 		onClick.add( this.reset )
 		if ( wheel ) {
 			this.wheel = wheel
@@ -57,7 +58,7 @@ export default class InactivityDetector {
 		if ( this.wheel ) {
 			this.wheel.remove( this.onWheel )
 		}
-		onMove.remove( this.reset )
+		onMove.remove( this.onMove )
 		onClick.remove( this.reset )
 		stage.onUpdate.remove( this.update )
 	}

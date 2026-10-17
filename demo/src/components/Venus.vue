@@ -50,7 +50,7 @@ export default {
 <style lang="stylus" scoped>
 .morph-ui
 	position fixed
-	bottom 10px
+	bottom calc( 68px + var( --saib, 0px ) )
 	left auto 
 	right auto
 	max-width: 260px;

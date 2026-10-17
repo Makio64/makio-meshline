@@ -83,7 +83,9 @@ const DRAW_COMMAND_BYTES = DRAW_COMMAND_UINTS * Uint32Array.BYTES_PER_ELEMENT
 const RIBBON_DRAW_OFFSET = 0
 const LINE_DRAW_OFFSET = DRAW_COMMAND_BYTES
 const WIREFRAME_DRAW_OFFSET = DRAW_COMMAND_BYTES * 2
-const HALF_WIDTH = 0.22
+const DEFAULT_LINE_WIDTH = 0.44
+const MIN_LINE_WIDTH = 0.05
+const MAX_LINE_WIDTH = 2
 // The reference MeshLine overlay keeps the library (and SVG) default so the
 // comparison baseline does not move. The procedural ribbon is tighter: at 4 a
 // hairpin grew a miter tip 1.7x the full stroke width past the corner, and the
@@ -110,7 +112,7 @@ const finiteQueryNumber = ( query, key, fallback, minimum, maximum ) => {
 
 const declaredGpuBytes = () => (
 	POINT_CAPACITY * 4 * Float32Array.BYTES_PER_ELEMENT +
-	POINT_CAPACITY * 4 * Uint32Array.BYTES_PER_ELEMENT +
+	POINT_CAPACITY * 3 * Uint32Array.BYTES_PER_ELEMENT +
 	OUTPUT_CAPACITY * 4 * Float32Array.BYTES_PER_ELEMENT +
 	OUTPUT_CAPACITY * Uint32Array.BYTES_PER_ELEMENT +
 	BLOCK_COUNT * 2 * Uint32Array.BYTES_PER_ELEMENT +
@@ -137,6 +139,7 @@ class GpuSimplificationPrototypeExample {
 			gpuComputeMs: null,
 			level: DEFAULT_LEVEL,
 			lineCount: 0,
+			lineWidth: DEFAULT_LINE_WIDTH,
 			pixelTolerance: 0,
 			relax: 0,
 			renderMode: 'ribbons',
@@ -164,15 +167,19 @@ class GpuSimplificationPrototypeExample {
 		this.metrics = null
 		this.view = { detail: 'after', renderMode: 'ribbons' }
 		this.settings = resolveSimplificationSettings( DEFAULT_LEVEL, WORLD_SIZE )
+		this.lineWidth = DEFAULT_LINE_WIDTH
+		this.halfWidthNode = null
 		this.relaxIterations = DEFAULT_RELAX
 		this.cameraLod = false
 		this._pipelineStages = null
-		this.validateAgainstCpu = true
+		this.validateAgainstCpu = false
 		this._disposed = false
 		this._measurementGeneration = 0
 		this._measurementChain = Promise.resolve()
 		this._measurementActive = false
 		this._gpuTimingSupported = false
+		this._needsWarmup = true
+		this._cameraLodDirty = false
 		this._pendingRebuildTimer = null
 		this._settledMeasurementTimer = null
 		this._cpuReferenceTimer = null
@@ -190,11 +197,14 @@ class GpuSimplificationPrototypeExample {
 			? query.get( 'dataset' )
 			: DEFAULT_DATASET
 		const level = Math.round( finiteQueryNumber( query, 'level', DEFAULT_LEVEL, 0, SIMPLIFICATION_LEVEL_MAX ) )
+		this.lineWidth = Math.round(
+			finiteQueryNumber( query, 'lineWidth', DEFAULT_LINE_WIDTH, MIN_LINE_WIDTH, MAX_LINE_WIDTH ) * 100,
+		) / 100
 		this.relaxIterations = resolveRelaxIterations(
 			finiteQueryNumber( query, 'relax', DEFAULT_RELAX, 0, RELAX_MAX_ITERATIONS ),
 		)
 		this.cameraLod = query.get( 'cameraLod' ) === '1'
-		this.validateAgainstCpu = query.get( 'validate' ) !== '0'
+		this.validateAgainstCpu = query.get( 'validate' ) === '1'
 		this.view.detail = query.get( 'view' ) === 'original' ? 'before' : 'after'
 		this.view.renderMode = ['line', 'lines'].includes( query.get( 'render' ) )
 			? 'lines'
@@ -206,6 +216,7 @@ class GpuSimplificationPrototypeExample {
 			datasetId,
 			detail: this.view.detail,
 			level: this.settings.level,
+			lineWidth: this.lineWidth,
 			pixelTolerance: this.settings.pixelTolerance,
 			relax: this.relaxIterations,
 			renderMode: this.view.renderMode,
@@ -235,6 +246,7 @@ class GpuSimplificationPrototypeExample {
 			gpuComputeMs: null,
 			gpuTimingSource: null,
 			lineCount: 0,
+			lineWidth: this.lineWidth,
 			pixelTolerance: this.settings.pixelTolerance,
 			ready: false,
 			readbackError: null,
@@ -370,7 +382,13 @@ class GpuSimplificationPrototypeExample {
 	 */
 	_resolveChunkPlan() {
 		if ( !this.dataset ) return false
-		const segments = resolveChunkSegments( this.settings.relativeTolerance, this.dataset.pointCount )
+		const zoomScale = this.cameraLod && this.control
+			? Math.min( 1, Math.max( 0.1, this.control._radius / 120 ) )
+			: 1
+		const segments = resolveChunkSegments(
+			this.settings.relativeTolerance * zoomScale,
+			this.dataset.pointCount,
+		)
 		if ( segments === this.chunkSegments ) return false
 		this.chunkSegments = segments
 		this.chunkPlan = buildChunkPlan( this.dataset.ranges, segments, CHUNK_CAPACITY )
@@ -383,19 +401,6 @@ class GpuSimplificationPrototypeExample {
 
 	/** Uploads the buffers that depend on the chunk lattice. */
 	_uploadChunkPlan() {
-		const { ranges } = this.dataset
-		// Pinned points bound every forward scan: the next chunk edge after each
-		// point, or the point itself when it closes a polyline.
-		for ( const range of ranges ) {
-			for ( let index = range.start; index <= range.end; index++ ) {
-				const local = index - range.start
-				const nextEdge = range.start + ( Math.floor( local / this.chunkSegments ) + 1 ) * this.chunkSegments
-				this.boundArray[index] = Math.min( range.end, nextEdge )
-			}
-			this.boundArray[range.end] = range.end
-		}
-		this.boundAttribute.needsUpdate = true
-
 		for ( let index = 0; index < this.chunkPlan.length; index++ ) {
 			this.chunkArray[index * 2] = this.chunkPlan[index][0]
 			this.chunkArray[index * 2 + 1] = this.chunkPlan[index][1]
@@ -410,6 +415,7 @@ class GpuSimplificationPrototypeExample {
 	 */
 	_uploadDataset() {
 		const { pointCount, positions, ranges } = this.dataset
+		this._needsWarmup = true
 		this.sourceArray.set( positions.subarray( 0, pointCount * 4 ) )
 		this.sourceAttribute.needsUpdate = true
 
@@ -455,7 +461,6 @@ class GpuSimplificationPrototypeExample {
 
 	_createGpuPipeline() {
 		this.sourceArray = new Float32Array( POINT_CAPACITY * 4 )
-		this.boundArray = new Uint32Array( POINT_CAPACITY )
 		this.neighbourArray = new Uint32Array( POINT_CAPACITY * 2 )
 		this.chunkArray = new Uint32Array( CHUNK_CAPACITY * 2 )
 		this.lineClosedArray = new Uint32Array( LINE_CAPACITY )
@@ -463,7 +468,6 @@ class GpuSimplificationPrototypeExample {
 		this.sourceDrawArray = new Uint32Array( 12 )
 
 		this.sourceAttribute = new StorageBufferAttribute( this.sourceArray, 4 )
-		this.boundAttribute = new StorageBufferAttribute( this.boundArray, 1 )
 		this.neighbourAttribute = new StorageBufferAttribute( this.neighbourArray, 2 )
 		this.chunkAttribute = new StorageBufferAttribute( this.chunkArray, 2 )
 		this.lineClosedAttribute = new StorageBufferAttribute( this.lineClosedArray, 1 )
@@ -491,7 +495,6 @@ class GpuSimplificationPrototypeExample {
 		this.compactedAttribute = compactedAttribute
 		this.storageAttributes = [
 			this.sourceAttribute,
-			this.boundAttribute,
 			this.neighbourAttribute,
 			this.chunkAttribute,
 			this.lineClosedAttribute,
@@ -514,7 +517,6 @@ class GpuSimplificationPrototypeExample {
 		this.metrics.bufferBytes = declaredGpuBytes()
 
 		const source = storage( this.sourceAttribute, 'vec4', POINT_CAPACITY ).toReadOnly()
-		const bounds = storage( this.boundAttribute, 'uint', POINT_CAPACITY ).toReadOnly()
 		const neighbours = storage( this.neighbourAttribute, 'uvec2', POINT_CAPACITY ).toReadOnly()
 		const chunks = storage( this.chunkAttribute, 'uvec2', CHUNK_CAPACITY ).toReadOnly()
 		const outputRuns = storage( outputRunAttribute, 'uint', LINE_CAPACITY * 2 )
@@ -541,6 +543,7 @@ class GpuSimplificationPrototypeExample {
 
 		this.pointCountNode = uniform( 0, 'uint' )
 		this.chunkCountNode = uniform( 0, 'uint' )
+		this.halfWidthNode = uniform( this.lineWidth * 0.5 )
 		this.inverseWorldToleranceNode = uniform( HUGE_TOLERANCE_SCALE )
 		this.inversePixelToleranceNode = uniform( 0 )
 		this.screenEnabledNode = uniform( 0 )
@@ -551,68 +554,6 @@ class GpuSimplificationPrototypeExample {
 			const clip = this.projectionViewNode.mul( vec4( point, 1 ) ).toVar()
 			const safeW = max( abs( clip.w ), EPSILON )
 			return vec3( clip.xy.div( safeW ).mul( this.viewportNode.mul( 0.5 ) ), clip.w )
-		} )
-
-		// The Douglas-Peucker decision, expressed as "how many tolerances away is
-		// this point from the chord". Anything above 1 has to split. World and
-		// screen budgets are combined by taking the worse of the two so camera LOD
-		// is one extra term rather than a second algorithm.
-		const chordError = Fn( ( [pointIndex, startIndex, endIndex] ) => {
-			const point = geometry.element( pointIndex ).xyz
-			const start = geometry.element( startIndex ).xyz
-			const end = geometry.element( endIndex ).xyz
-			const chord = end.sub( start )
-			const t = clamp(
-				dot( point.sub( start ), chord ).div( max( dot( chord, chord ), EPSILON ) ),
-				0,
-				1,
-			)
-			const metric = length( point.sub( start.add( chord.mul( t ) ) ) )
-				.mul( this.inverseWorldToleranceNode )
-				.toVar()
-
-			If( this.screenEnabledNode.greaterThan( 0 ), () => {
-				const projectedPoint = projectToPixel( point ).toVar()
-				const projectedStart = projectToPixel( start ).toVar()
-				const projectedEnd = projectToPixel( end ).toVar()
-				const crossesCamera = projectedPoint.z.lessThanEqual( EPSILON )
-					.or( projectedStart.z.lessThanEqual( EPSILON ) )
-					.or( projectedEnd.z.lessThanEqual( EPSILON ) )
-				If( crossesCamera, () => {
-					// A chord with one end behind the camera has no meaningful screen
-					// error; force the split instead of accepting a wild projection.
-					metric.assign( float( HUGE_TOLERANCE_SCALE ) )
-				} ).Else( () => {
-					const screenChord = projectedEnd.xy.sub( projectedStart.xy )
-					const screenT = clamp(
-						dot( projectedPoint.xy.sub( projectedStart.xy ), screenChord )
-							.div( max( dot( screenChord, screenChord ), EPSILON ) ),
-						0,
-						1,
-					)
-					const screenError = length(
-						projectedPoint.xy.sub( projectedStart.xy.add( screenChord.mul( screenT ) ) ),
-					)
-					metric.assign( max( metric, screenError.mul( this.inversePixelToleranceNode ) ) )
-				} )
-			} )
-
-			return metric
-		} )
-
-		// Walks forward from a retained point to the next retained point. `bounds`
-		// guarantees a pinned point terminates the scan, so it is O(chunk) worst
-		// case and O(1) once the hierarchy has settled.
-		const nextRetained = Fn( ( [pointIndex] ) => {
-			const limit = bounds.element( pointIndex ).toVar()
-			const found = limit.toVar()
-			Loop( { condition: '<', end: limit, start: pointIndex.add( uint( 1 ) ), type: 'uint' }, ( { i } ) => {
-				If( keep.element( i ).greaterThan( uint( 0 ) ), () => {
-					found.assign( i )
-					Break()
-				} )
-			} )
-			return found
 		} )
 
 		const clearNode = Fn( () => {
@@ -644,12 +585,22 @@ class GpuSimplificationPrototypeExample {
 		const relaxShrinkNode = relaxStep( geometry, relaxScratch, float( RELAX_LAMBDA ) )
 		const relaxUnshrinkNode = relaxStep( relaxScratch, geometry, float( RELAX_MU ) )
 
+		// A retained point stores `end + 1` in `keep[pointIndex]`, where `end` is
+		// the right endpoint of the interval it owns (or `pointIndex` itself at the
+		// end of a polyline). `0` means not retained. Encoding both the flag and the
+		// right endpoint into a single 32-bit word makes interval lookup O(1) instead
+		// of an O(chunk) forward scan on every pass.
 		const seedNode = Fn( () => {
 			const chunkIndex = instanceIndex.toUint()
 			If( chunkIndex.lessThan( this.chunkCountNode ), () => {
 				const chunk = chunks.element( chunkIndex )
-				keep.element( chunk.x ).assign( uint( 1 ) )
-				keep.element( chunk.y ).assign( uint( 1 ) )
+				keep.element( chunk.x ).assign( chunk.y.add( uint( 1 ) ) )
+				const nextIndex = chunkIndex.add( uint( 1 ) )
+				const closesRun = nextIndex.greaterThanEqual( this.chunkCountNode )
+					.or( chunks.element( nextIndex ).x.equal( chunk.y ).not() )
+				If( closesRun, () => {
+					keep.element( chunk.y ).assign( chunk.y.add( uint( 1 ) ) )
+				} )
 			} )
 		} )().compute( CHUNK_CAPACITY, [WORKGROUP_SIZE] )
 
@@ -660,46 +611,94 @@ class GpuSimplificationPrototypeExample {
 		//
 		// A split hands the right half to the newly retained point and keeps the
 		// left half, so the owner can descend its own left spine several levels in
-		// one dispatch instead of costing one dispatch per level.
-		//
-		// Once an interval passes the tolerance test nothing can ever change it
-		// again — only its owner could insert a point, and its owner just declined.
-		// Marking it settled is what makes the later passes nearly free, and
-		// `settled` is read and written by that one invocation alone.
+		// one dispatch instead of costing one dispatch per level. Wide chunks split
+		// once per pass so both halves run in parallel on the next dispatch rather
+		// than stalling one invocation across thousands of points.
 		const refineNode = Fn( () => {
 			const pointIndex = instanceIndex.toUint()
 			If( pointIndex.lessThan( this.pointCountNode ), () => {
-				const active = keep.element( pointIndex ).greaterThan( uint( 0 ) )
+				const keepValue = keep.element( pointIndex ).toVar()
+				const active = keepValue.greaterThan( uint( 0 ) )
 					.and( settled.element( pointIndex ).equal( uint( 0 ) ) )
 				If( active, () => {
-					const end = nextRetained( pointIndex ).toVar()
-					const running = uint( 1 ).toVar()
-					Loop( { condition: '<', end: uint( REFINE_DESCENT ), start: uint( 0 ), type: 'uint' }, () => {
-						If( running.equal( uint( 1 ) ), () => {
-							If( end.sub( pointIndex ).lessThan( uint( 2 ) ), () => {
-								settled.element( pointIndex ).assign( uint( 1 ) )
-								running.assign( uint( 0 ) )
+					const end = keepValue.sub( uint( 1 ) ).toVar()
+					const invWorldTolSq = min(
+						this.inverseWorldToleranceNode.mul( this.inverseWorldToleranceNode ),
+						float( 1e30 ),
+					).toVar()
+					const invPixelTolSq = min(
+						this.inversePixelToleranceNode.mul( this.inversePixelToleranceNode ),
+						float( 1e30 ),
+					).toVar()
+					const screenActive = this.screenEnabledNode.greaterThan( 0 ).toVar()
+
+					Loop( { condition: '<', end: uint( REFINE_DESCENT ), start: uint( 0 ), type: 'uint' }, ( { i: step } ) => {
+						const span = end.sub( pointIndex )
+						If( span.lessThan( uint( 2 ) ), () => {
+							settled.element( pointIndex ).assign( uint( 1 ) )
+							Break()
+						} )
+						If( step.greaterThan( uint( 0 ) ).and( span.greaterThan( uint( 256 ) ) ), () => {
+							Break()
+						} )
+
+						const startPos = geometry.element( pointIndex ).xyz.toVar()
+						const endPos = geometry.element( end ).xyz.toVar()
+						const chord = endPos.sub( startPos ).toVar()
+						const invChordLenSq = float( 1 ).div( max( dot( chord, chord ), EPSILON ) ).toVar()
+
+						const projectedStart = vec3( 0, 0, 0 ).toVar()
+						const projectedEnd = vec3( 0, 0, 0 ).toVar()
+						const screenChord = vec3( 0, 0, 0 ).xy.toVar()
+						const invScreenChordLenSq = float( 0 ).toVar()
+						const checkScreen = screenActive.toVar()
+
+						If( checkScreen, () => {
+							projectedStart.assign( projectToPixel( startPos ) )
+							projectedEnd.assign( projectToPixel( endPos ) )
+							If( projectedStart.z.lessThanEqual( EPSILON ).or( projectedEnd.z.lessThanEqual( EPSILON ) ), () => {
+								checkScreen.assign( false )
 							} ).Else( () => {
-								const worst = float( -1 ).toVar()
-								const split = uint( 0 ).toVar()
-								Loop(
-									{ condition: '<', end, start: pointIndex.add( uint( 1 ) ), type: 'uint' },
-									( { i } ) => {
-										const error = chordError( i, pointIndex, end ).toVar()
-										If( error.greaterThan( worst ), () => {
-											worst.assign( error )
-											split.assign( i )
-										} )
-									},
-								)
-								If( worst.greaterThan( float( 1 ) ), () => {
-									keep.element( split ).assign( uint( 1 ) )
-									end.assign( split )
-								} ).Else( () => {
-									settled.element( pointIndex ).assign( uint( 1 ) )
-									running.assign( uint( 0 ) )
-								} )
+								screenChord.assign( projectedEnd.xy.sub( projectedStart.xy ) )
+								invScreenChordLenSq.assign( float( 1 ).div( max( dot( screenChord, screenChord ), EPSILON ) ) )
 							} )
+						} )
+
+						const worstSq = float( -1 ).toVar()
+						const split = uint( 0 ).toVar()
+						Loop(
+							{ condition: '<', end, start: pointIndex.add( uint( 1 ) ), type: 'uint' },
+							( { i } ) => {
+								const point = geometry.element( i ).xyz
+								const rel = point.sub( startPos )
+								const t = clamp( dot( rel, chord ).mul( invChordLenSq ), 0, 1 )
+								const diff = rel.sub( chord.mul( t ) )
+								const errorSq = dot( diff, diff ).mul( invWorldTolSq ).toVar()
+
+								If( checkScreen, () => {
+									const projectedPoint = projectToPixel( point )
+									If( projectedPoint.z.greaterThan( EPSILON ), () => {
+										const screenRel = projectedPoint.xy.sub( projectedStart.xy )
+										const screenT = clamp( dot( screenRel, screenChord ).mul( invScreenChordLenSq ), 0, 1 )
+										const screenDiff = screenRel.sub( screenChord.mul( screenT ) )
+										errorSq.assign( max( errorSq, dot( screenDiff, screenDiff ).mul( invPixelTolSq ) ) )
+									} )
+								} )
+
+								If( errorSq.greaterThan( worstSq ), () => {
+									worstSq.assign( errorSq )
+									split.assign( i )
+								} )
+							},
+						)
+
+						If( worstSq.greaterThan( float( 1 ) ), () => {
+							keep.element( split ).assign( end.add( uint( 1 ) ) )
+							end.assign( split )
+							keep.element( pointIndex ).assign( split.add( uint( 1 ) ) )
+						} ).Else( () => {
+							settled.element( pointIndex ).assign( uint( 1 ) )
+							Break()
 						} )
 					} )
 				} )
@@ -711,19 +710,69 @@ class GpuSimplificationPrototypeExample {
 		const flushNode = Fn( () => {
 			const pointIndex = instanceIndex.toUint()
 			If( pointIndex.lessThan( this.pointCountNode ), () => {
-				const active = keep.element( pointIndex ).greaterThan( uint( 0 ) )
+				const keepValue = keep.element( pointIndex ).toVar()
+				const active = keepValue.greaterThan( uint( 0 ) )
 					.and( settled.element( pointIndex ).equal( uint( 0 ) ) )
 				If( active, () => {
-					const end = nextRetained( pointIndex ).toVar()
+					const end = keepValue.sub( uint( 1 ) ).toVar()
 					If( end.sub( pointIndex ).greaterThan( uint( 1 ) ), () => {
-						const worst = float( 0 ).toVar()
+						const invWorldTolSq = min(
+							this.inverseWorldToleranceNode.mul( this.inverseWorldToleranceNode ),
+							float( 1e30 ),
+						).toVar()
+						const invPixelTolSq = min(
+							this.inversePixelToleranceNode.mul( this.inversePixelToleranceNode ),
+							float( 1e30 ),
+						).toVar()
+						const startPos = geometry.element( pointIndex ).xyz.toVar()
+						const endPos = geometry.element( end ).xyz.toVar()
+						const chord = endPos.sub( startPos ).toVar()
+						const invChordLenSq = float( 1 ).div( max( dot( chord, chord ), EPSILON ) ).toVar()
+
+						const projectedStart = vec3( 0, 0, 0 ).toVar()
+						const projectedEnd = vec3( 0, 0, 0 ).toVar()
+						const screenChord = vec3( 0, 0, 0 ).xy.toVar()
+						const invScreenChordLenSq = float( 0 ).toVar()
+						const checkScreen = this.screenEnabledNode.greaterThan( 0 ).toVar()
+
+						If( checkScreen, () => {
+							projectedStart.assign( projectToPixel( startPos ) )
+							projectedEnd.assign( projectToPixel( endPos ) )
+							If( projectedStart.z.lessThanEqual( EPSILON ).or( projectedEnd.z.lessThanEqual( EPSILON ) ), () => {
+								checkScreen.assign( false )
+							} ).Else( () => {
+								screenChord.assign( projectedEnd.xy.sub( projectedStart.xy ) )
+								invScreenChordLenSq.assign( float( 1 ).div( max( dot( screenChord, screenChord ), EPSILON ) ) )
+							} )
+						} )
+
+						const exceeded = uint( 0 ).toVar()
 						Loop(
 							{ condition: '<', end, start: pointIndex.add( uint( 1 ) ), type: 'uint' },
 							( { i } ) => {
-								worst.assign( max( worst, chordError( i, pointIndex, end ) ) )
+								const point = geometry.element( i ).xyz
+								const rel = point.sub( startPos )
+								const t = clamp( dot( rel, chord ).mul( invChordLenSq ), 0, 1 )
+								const diff = rel.sub( chord.mul( t ) )
+								const errorSq = dot( diff, diff ).mul( invWorldTolSq ).toVar()
+
+								If( checkScreen, () => {
+									const projectedPoint = projectToPixel( point )
+									If( projectedPoint.z.greaterThan( EPSILON ), () => {
+										const screenRel = projectedPoint.xy.sub( projectedStart.xy )
+										const screenT = clamp( dot( screenRel, screenChord ).mul( invScreenChordLenSq ), 0, 1 )
+										const screenDiff = screenRel.sub( screenChord.mul( screenT ) )
+										errorSq.assign( max( errorSq, dot( screenDiff, screenDiff ).mul( invPixelTolSq ) ) )
+									} )
+								} )
+
+								If( errorSq.greaterThan( float( 1 ) ), () => {
+									exceeded.assign( uint( 1 ) )
+									Break()
+								} )
 							},
 						)
-						If( worst.greaterThan( float( 1 ) ), () => {
+						If( exceeded.greaterThan( uint( 0 ) ), () => {
 							Loop(
 								{ condition: '<', end, start: pointIndex.add( uint( 1 ) ), type: 'uint' },
 								( { i } ) => {
@@ -741,7 +790,7 @@ class GpuSimplificationPrototypeExample {
 			const localIndex = invocationLocalIndex.toUint()
 			const flag = uint( 0 ).toVar()
 			If( pointIndex.lessThan( this.pointCountNode ), () => {
-				flag.assign( keep.element( pointIndex ) )
+				flag.assign( keep.element( pointIndex ).greaterThan( uint( 0 ) ).select( uint( 1 ), uint( 0 ) ) )
 			} )
 
 			scanShared.element( localIndex ).assign( flag )
@@ -982,7 +1031,7 @@ class GpuSimplificationPrototypeExample {
 				outgoingSide,
 			)
 			const denominator = max( abs( dot( miter, outgoingSide ) ), EPSILON )
-			const miterScale = float( HALF_WIDTH ).div( denominator )
+			const miterScale = this.halfWidthNode.div( denominator )
 			const miterOffset = miter.mul( miterScale )
 			// A valid miter can still be unsupported by very short legs. Bound its
 			// longitudinal setback on both; unsupported joins keep the owning
@@ -996,10 +1045,10 @@ class GpuSimplificationPrototypeExample {
 				max( outgoingLength, EPSILON ),
 			).mul( float( RIBBON_JOIN_SUPPORT_FRACTION ) )
 			const miterSupported = miterLength.greaterThan( EPSILON )
-				.and( miterScale.lessThanEqual( float( HALF_WIDTH * RIBBON_MITER_LIMIT ) ) )
+				.and( miterScale.lessThanEqual( this.halfWidthNode.mul( float( RIBBON_MITER_LIMIT ) ) ) )
 				.and( support.lessThanEqual( available ) )
 			const bodySide = segmentEnd.select( incomingSide, outgoingSide )
-			const offset = miterSupported.select( miterOffset, bodySide.mul( float( HALF_WIDTH ) ) )
+			const offset = miterSupported.select( miterOffset, bodySide.mul( this.halfWidthNode ) )
 			// Keep the ribbon on the camera's side of the centerline so a hidden
 			// interval cannot leak a rail through the projection singularity.
 			const clipW = abs( this.projectionViewNode.mul( vec4( point, 1 ) ).w )
@@ -1019,6 +1068,7 @@ class GpuSimplificationPrototypeExample {
 
 		const triangleVertex = vertexIndex.toUint().mod( uint( RIBBON_VERTICES_PER_SEGMENT ) )
 		const triangleSegment = vertexIndex.toUint().div( uint( RIBBON_VERTICES_PER_SEGMENT ) )
+		const ribbonBodyVertex = triangleVertex.lessThan( uint( 6 ) )
 		const bodyVertex = triangleVertex.mod( uint( 6 ) )
 		const bodyUsesNext = bodyVertex.equal( uint( 2 ) )
 			.or( bodyVertex.equal( uint( 3 ) ) )
@@ -1026,11 +1076,6 @@ class GpuSimplificationPrototypeExample {
 		const bodyPositiveSide = bodyVertex.equal( uint( 1 ) )
 			.or( bodyVertex.equal( uint( 4 ) ) )
 			.or( bodyVertex.equal( uint( 5 ) ) )
-		const bodyPosition = ribbonPoint(
-			triangleSegment.add( bodyUsesNext.select( uint( 1 ), uint( 0 ) ) ),
-			bodyPositiveSide,
-			bodyUsesNext,
-		)
 
 		// Each segment reserves two triangles at its far end. They collapse for a
 		// supported shared miter; otherwise one outer half-wedge bridges the
@@ -1043,19 +1088,23 @@ class GpuSimplificationPrototypeExample {
 		const joinCenterVertex = joinVertex.equal( uint( 0 ) ).or( joinVertex.equal( uint( 3 ) ) )
 		const joinPositiveSide = joinVertex.lessThan( uint( 3 ) )
 		const joinUsesIncoming = joinVertex.equal( uint( 1 ) ).or( joinVertex.equal( uint( 5 ) ) )
-		const joinBoundary = ribbonPoint( joinPointIndex, joinPositiveSide, joinUsesIncoming )
 		const joinTurn = dot(
 			cross( joinCenter.sub( joinPrevious ), joinNext.sub( joinCenter ) ),
 			vec3( 0, 0, 1 ),
 		)
 		const joinIsOuter = joinTurn.lessThan( float( 0 ) )
 			.select( joinPositiveSide, joinPositiveSide.not() )
-		const joinPosition = joinCenterVertex.or( joinIsOuter.not() ).select( joinCenter, joinBoundary )
-		const ribbonBodyVertex = triangleVertex.lessThan( uint( 6 ) )
 		const ribbonPositiveSide = ribbonBodyVertex.select( bodyPositiveSide, joinPositiveSide )
+		const ribbonPointIndex = ribbonBodyVertex.select(
+			triangleSegment.add( bodyUsesNext.select( uint( 1 ), uint( 0 ) ) ),
+			joinPointIndex,
+		)
+		const ribbonSegmentEnd = ribbonBodyVertex.select( bodyUsesNext, joinUsesIncoming )
+		const evaluatedRibbonPoint = ribbonPoint( ribbonPointIndex, ribbonPositiveSide, ribbonSegmentEnd )
+		const joinPosition = joinCenterVertex.or( joinIsOuter.not() ).select( joinCenter, evaluatedRibbonPoint )
 		const ribbonPosition = breaksAt( triangleSegment ).select(
 			positionAt( triangleSegment ),
-			ribbonBodyVertex.select( bodyPosition, joinPosition ),
+			ribbonBodyVertex.select( evaluatedRibbonPoint, joinPosition ),
 		)
 
 		const lineVertex = vertexIndex.toUint().mod( uint( LINE_VERTICES_PER_SEGMENT ) )
@@ -1073,23 +1122,19 @@ class GpuSimplificationPrototypeExample {
 		const wireEndPoint = min( wireSegment.add( uint( 1 ) ), lastIndex )
 		const wireEndCenter = positionAt( wireEndPoint )
 		const wireChordVisible = length( wireEndCenter.sub( positionAt( wireSegment ) ) )
-			.greaterThanEqual( float( HALF_WIDTH * 2 ) )
-		const wireframePosition = wireVertex.equal( uint( 0 ) ).select(
-			ribbonPoint( wireSegment, false, false ),
-			wireVertex.equal( uint( 1 ) ).select(
-				ribbonPoint( wireEndPoint, false, true ),
-				wireVertex.equal( uint( 2 ) ).select(
-					ribbonPoint( wireSegment, true, false ),
-					wireVertex.equal( uint( 3 ) ).select(
-						ribbonPoint( wireEndPoint, true, true ),
-						wireVertex.equal( uint( 4 ) ).select(
-							wireChordVisible.select( ribbonPoint( wireEndPoint, false, true ), wireEndCenter ),
-							wireChordVisible.select( ribbonPoint( wireEndPoint, true, true ), wireEndCenter ),
-						),
-					),
-				),
-			),
+			.greaterThanEqual( this.halfWidthNode.mul( 2 ) )
+		const wireUsesEnd = wireVertex.equal( uint( 0 ) ).or( wireVertex.equal( uint( 2 ) ) ).not()
+		const wirePositiveSide = wireVertex.equal( uint( 2 ) )
+			.or( wireVertex.equal( uint( 3 ) ) )
+			.or( wireVertex.equal( uint( 5 ) ) )
+		const wireRibbonPoint = ribbonPoint(
+			wireUsesEnd.select( wireEndPoint, wireSegment ),
+			wirePositiveSide,
+			wireUsesEnd,
 		)
+		const wireframePosition = wireVertex.greaterThanEqual( uint( 4 ) )
+			.and( wireChordVisible.not() )
+			.select( wireEndCenter, wireRibbonPoint )
 		const wireframeFinal = breaksAt( wireSegment ).select( positionAt( wireSegment ), wireframePosition )
 
 		const segmentHeat = segmentIndex => gapStorage === null
@@ -1233,11 +1278,13 @@ class GpuSimplificationPrototypeExample {
 
 		const generation = ++this._measurementGeneration
 		this.ui.busy = true
+		if ( this.metrics ) this.metrics.busy = true
 		this._measurementChain = this._measurementChain
 			.catch( () => {} )
 			.then( async() => {
 				if ( generation !== this._measurementGeneration || this._disposed ) return
 				this._updateCameraUniforms( true )
+				if ( this._resolveChunkPlan() && this.sourceAttribute ) this._uploadChunkPlan()
 				await this._performMeasuredRebuild( generation, settledStatus )
 			} )
 			.catch( error => {
@@ -1270,9 +1317,12 @@ class GpuSimplificationPrototypeExample {
 					// The first dispatch after a pipeline or dataset change carries
 					// one-off driver work. Run it, throw the reading away, and report
 					// the steady-state pass instead of a cold-start outlier.
-					this._dispatch()
-					await renderer.resolveTimestampsAsync( 'compute' )
-					if ( generation !== this._measurementGeneration || this._disposed ) return
+					if ( this._needsWarmup ) {
+						this._needsWarmup = false
+						this._dispatch()
+						await renderer.resolveTimestampsAsync( 'compute' )
+						if ( generation !== this._measurementGeneration || this._disposed ) return
+					}
 					cpuSubmitMs = this._dispatch()
 					gpuComputeMs = await renderer.resolveTimestampsAsync( 'compute' )
 					timingSource = 'timestamp-query'
@@ -1459,6 +1509,16 @@ class GpuSimplificationPrototypeExample {
 		this._syncView()
 	}
 
+	setLineWidth = width => {
+		if ( this._disposed ) return
+		const clamped = Math.min( MAX_LINE_WIDTH, Math.max( MIN_LINE_WIDTH, Number( width ) || DEFAULT_LINE_WIDTH ) )
+		this.lineWidth = Math.round( clamped * 100 ) / 100
+		this.ui.lineWidth = this.lineWidth
+		if ( this.metrics ) this.metrics.lineWidth = this.lineWidth
+		if ( this.halfWidthNode ) this.halfWidthNode.value = this.lineWidth * 0.5
+		for ( const line of this.fallbackLines ) line.lineWidth( this.lineWidth )
+	}
+
 	_scheduleInteractiveDispatch() {
 		if ( this._pendingRebuildTimer !== null ) return
 		this._pendingRebuildTimer = window.setTimeout( () => {
@@ -1492,6 +1552,10 @@ class GpuSimplificationPrototypeExample {
 	}
 
 	update = () => {
+		if ( !this.metrics?.ready ) return
+		if ( this._updateCameraUniforms() ) {
+			this._cameraLodDirty = true
+		}
 		// World-space simplification is camera independent, so the default path
 		// dispatches exactly once and then never touches the GPU again. Only the
 		// opt-in screen-space LOD re-runs, and then at a capped rate.
@@ -1499,15 +1563,16 @@ class GpuSimplificationPrototypeExample {
 			!this.cameraLod ||
 			this._updating ||
 			this._measurementActive ||
-			!this.metrics?.ready ||
+			!this._cameraLodDirty ||
 			this.view.detail !== 'after'
 		) return
 		const now = performance.now()
 		if ( now - this._lastCameraLodTime < CAMERA_LOD_INTERVAL_MS ) return
-		if ( !this._updateCameraUniforms() ) return
+		this._cameraLodDirty = false
 		this._lastCameraLodTime = now
 		this._updating = true
 		try {
+			if ( this._resolveChunkPlan() && this.sourceAttribute ) this._uploadChunkPlan()
 			this._dispatch()
 			this._scheduleSettledMeasurement()
 		} catch ( error ) {
@@ -1581,7 +1646,7 @@ class GpuSimplificationPrototypeExample {
 			}
 			const line = new MeshLine()
 				.lines( points )
-				.lineWidth( HALF_WIDTH * 2 )
+				.lineWidth( this.lineWidth )
 				.color( 0x67e8f9 )
 				.join( { limit: MITER_LIMIT, type: 'miter' } )
 				.build()

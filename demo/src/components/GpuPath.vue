@@ -117,7 +117,8 @@ export default {
 	},
 	data() {
 		return {
-			expanded: true,
+			// On narrower screens the explainer would cover the curve it explains.
+			expanded: window.innerWidth >= 1100,
 		}
 	},
 	computed: {

@@ -22,7 +22,7 @@
 			<div v-if="text" class="instruction" v-html="text" />
 			<component :is="example && example.uiComponent" v-if="example && example.uiComponent" :api="example" class="bottom" />
 		</template>
-		<CodeButton v-if="codeUrl" :href="codeUrl" />
+		<CodeButton v-if="codeUrl && !hideChrome" :href="codeUrl" />
 	</div></template>
 
 <script>
@@ -49,6 +49,11 @@ export default {
 			deviceWatchToken: null,
 		}
 	},
+	computed: {
+		hideChrome() {
+			return new URL( window.location.href ).searchParams.has( 'noUI' )
+		},
+	},
 	async mounted() {
 		this.installGlobalFailureSignals()
 		const id = this.$router.params.id
@@ -60,6 +65,7 @@ export default {
 
 		const sourcePath = demo.sourcePath || `demo/src/demos/${demo.sourceFile}`
 		this.codeUrl = `https://github.com/Makio64/makio-meshline/blob/main/${sourcePath}`
+		this.updateDocumentMeta( demo )
 
 		let module
 		try {
@@ -99,6 +105,24 @@ export default {
 		this.disposeExample()
 	},
 	methods: {
+		updateDocumentMeta( demo ) {
+			if ( typeof document === 'undefined' || !demo ) return
+			const pageTitle = `${demo.title} — Makio MeshLine (${demo.subtitle})`
+			const description = `${demo.title} (${demo.subtitle}): interactive Three.js WebGPU & TSL example built with Makio MeshLine.`
+			const canonicalUrl = `https://meshline-demo.makio.io/examples/${demo.id}`
+			document.title = pageTitle
+			const setMeta = ( selector, attr, value ) => {
+				const el = document.querySelector( selector )
+				if ( el ) el.setAttribute( attr, value )
+			}
+			setMeta( 'meta[name="description"]', 'content', description )
+			setMeta( 'meta[property="og:title"]', 'content', pageTitle )
+			setMeta( 'meta[property="og:description"]', 'content', description )
+			setMeta( 'meta[property="og:url"]', 'content', canonicalUrl )
+			setMeta( 'meta[name="twitter:title"]', 'content', pageTitle )
+			setMeta( 'meta[name="twitter:description"]', 'content', description )
+			setMeta( 'link[rel="canonical"]', 'href', canonicalUrl )
+		},
 		installGlobalFailureSignals() {
 			window.addEventListener( 'error', this.onWindowError )
 			window.addEventListener( 'unhandledrejection', this.onUnhandledRejection )
@@ -173,7 +197,7 @@ export default {
 			window.location.reload()
 		},
 		openExamples() {
-			if ( new URL( window.location.href ).searchParams.has( 'noUI' ) ) {
+			if ( this.hideChrome ) {
 				window.location.assign( '/examples/basic' )
 				return
 			}

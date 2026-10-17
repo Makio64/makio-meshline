@@ -1,4 +1,3 @@
-import { Inspector } from 'three/addons/inspector/Inspector.js'
 import { NoToneMapping, PerspectiveCamera, Scene, WebGPURenderer } from 'three/webgpu'
 
 import stage from '../core/stage'
@@ -15,18 +14,24 @@ class Stage3D {
 	}
 
 	async initRender( options = {} ) {
+		this.maxPixelRatio = options.maxPixelRatio ?? Infinity
 		if ( !this.renderer ) {
 			this.renderer = new WebGPURenderer( {
 				antialias: true,
 				reverseDepth: true,
 				alpha: false,
+				// `?webgl` exercises every demo's WebGL2 fallback on a WebGPU browser.
+				forceWebGL: new URLSearchParams( window.location.search ).has( 'webgl' ),
+				// `?timing` records GPU pass durations into `renderer.info.*.timestamp`.
+				trackTimestamp: new URLSearchParams( window.location.search ).has( 'timing' ),
 			} )
 
-			this.renderer.setPixelRatio( stage.devicePixelRatio )
+			this.renderer.setPixelRatio( Math.min( stage.devicePixelRatio, this.maxPixelRatio ) )
 			this.renderer.setSize( stage.width, stage.height )
 			this.renderer.domElement.classList.add( 'three' )
 
-			if ( import.meta.env.DEV ) {
+			if ( import.meta.env.DEV && new URLSearchParams( window.location.search ).has( 'inspector' ) ) {
+				const { Inspector } = await import( 'three/addons/inspector/Inspector.js' )
 				this.renderer.inspector = new Inspector()
 				const style = document.createElement( 'style' )
 				style.textContent = `#profiler-toggle:not(.position-right.panel-open) { right: 56px; }`
@@ -48,8 +53,6 @@ class Stage3D {
 		}
 
 		this.resetForDemo( options )
-		this.forceRatio = options.forceRatio ?? 1
-
 		if ( !this.isResizeSubscribed ) {
 			stage.onResize.add( this.resize )
 			this.isResizeSubscribed = true
@@ -89,7 +92,9 @@ class Stage3D {
 
 	//---------------------------------------------------------- RENDER
 	update = ( dt ) => {
-		if ( !this.renderer ) {
+		// A collapsed or hidden host (a 0×0 iframe, a closed panel) has no
+		// swapchain to draw into; rendering would only raise validation errors.
+		if ( !this.renderer || stage.width === 0 || stage.height === 0 ) {
 			return
 		}
 		if ( this.control && this.control.enabled ) {
@@ -104,11 +109,17 @@ class Stage3D {
 		} else {
 			this.renderer.render( this.scene, this.camera )
 		}
+		// Timestamp pools only hold a couple of thousand queries, so drain them
+		// every frame; each resolve reports the latest frame's GPU time.
+		if ( this.renderer.backend?.trackTimestamp ) {
+			this.renderer.resolveTimestampsAsync( 'render' )
+			this.renderer.resolveTimestampsAsync( 'compute' )
+		}
 	}
 
 	//---------------------------------------------------------- ADD / REMOVE OBJECT3D
-	add = ( obj ) => { this.scene.add( obj ) }
-	remove = ( obj ) => { this.scene.remove( obj ) }
+	add = ( ...objects ) => { this.scene.add( ...objects ) }
+	remove = ( ...objects ) => { this.scene.remove( ...objects ) }
 
 	removeAll = () => {
 		while ( this.scene.children.length > 0 ) {
@@ -131,6 +142,7 @@ class Stage3D {
 	resize = () => {
 		let w = stage.width
 		let h = stage.height
+		if ( w === 0 || h === 0 ) return
 		let aspect = w / h
 
 		if ( this.camera.isOrthographicCamera ) {
@@ -144,6 +156,7 @@ class Stage3D {
 
 		this.camera.updateProjectionMatrix()
 
+		this.renderer?.setPixelRatio( Math.min( stage.devicePixelRatio, this.maxPixelRatio ?? Infinity ) )
 		this.renderer?.setSize( w, h )
 		this.postFX?.resize( w, h )
 

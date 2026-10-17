@@ -84,6 +84,8 @@ class DrawLinesExample {
 				positionRangeOptions: { lineIndex: i },
 				offset,
 				speed: 0,
+				endFade: 1,
+				finishing: false,
 				target: new Vector3(),
 				velocity: new Vector3(),
 				spring: 0.06 + random( -0.02, 0.02 ),
@@ -223,22 +225,27 @@ class DrawLinesExample {
 
 		for ( let i = 0; i < this.activeLineCount; i++ ) {
 			const line = this.lines[i]
-			this.updateWidthArray( i, line )
 
 			if ( line.justTeleported ) {
 				line.justTeleported = false
 			} else {
 				for ( let k = NUM_POINTS - 1; k >= 0; k-- ) {
 					if ( k === 0 ) {
-						const force = force3.copy( line.target ).sub( line.points[k] ).multiplyScalar( line.spring )
-						line.velocity.add( force ).multiplyScalar( line.friction )
-						line.points[k].add( line.velocity )
+						if ( line.finishing ) {
+							line.velocity.set( 0, 0, 0 )
+							line.points[k].lerp( line.target, TRAIL_FOLLOW )
+						} else {
+							const force = force3.copy( line.target ).sub( line.points[k] ).multiplyScalar( line.spring )
+							line.velocity.add( force ).multiplyScalar( line.friction )
+							line.points[k].add( line.velocity )
+						}
 					} else {
 						line.points[k].lerp( line.points[k - 1], TRAIL_FOLLOW )
 					}
 				}
 			}
 
+			this.updateWidthArray( i, line )
 			writePointsToArray( line.points, line.positions )
 			this.meshline.setPositionRange( line.positions, 0, line.positionRangeOptions )
 		}
@@ -247,13 +254,19 @@ class DrawLinesExample {
 	}
 
 	updateWidthArray( lineIndex, line ) {
+		const isMouseFollower = lineIndex < LINES_FOLLOWING_MOUSE
+		const strokeEnvelope = isMouseFollower
+			? 1
+			: smoothstep( 0, 260, line.pathTime ) * line.endFade
+
 		for ( let pointIndex = 0; pointIndex < NUM_POINTS; pointIndex++ ) {
+			const prevPoint = line.points[Math.max( 0, pointIndex - 1 )]
+			const nextPoint = line.points[Math.min( NUM_POINTS - 1, pointIndex + 1 )]
+			const spacingFade = smoothstep( 0.0008, 0.015, prevPoint.distanceTo( nextPoint ) )
 			let width = lineIndex < LINES_FOLLOWING_MOUSE && !this.hasInteracted
 				? 0
-				: getWidthFactor( pointIndex / ( NUM_POINTS - 1 ) ) * Math.min( lineIndex < LINES_FOLLOWING_MOUSE ? line.speed * 1.6 : BRUSH_BASE + line.speed * BRUSH_SPEED, BRUSH_MAX )
-			if ( line.pathTime > 0 ) {
-				width *= smoothstep( 0, 260, line.pathTime )
-			}
+				: getWidthFactor( pointIndex / ( NUM_POINTS - 1 ) ) * Math.min( isMouseFollower ? line.speed * 1.6 : BRUSH_BASE + line.speed * BRUSH_SPEED, BRUSH_MAX )
+			width *= strokeEnvelope * spacingFade
 
 			const attributeIndex = ( lineIndex * NUM_POINTS + pointIndex ) * BILLBOARD_VERTICES_PER_POINT
 			for ( let copyIndex = 0; copyIndex < BILLBOARD_VERTICES_PER_POINT; copyIndex++ ) {
@@ -264,40 +277,57 @@ class DrawLinesExample {
 
 	updateFollowingLine( line ) {
 		line.speed = MathUtils.lerp( line.speed, this.mouseSpeed, 0.15 )
+		if ( this.mouseSpeed < 0.005 ) {
+			line.velocity.multiplyScalar( 0.7 )
+		}
 		line.target.set( this.target.x, this.target.y, 0 ).add( line.offset )
 	}
 
 	updateLineOnPath( line, path, dt ) {
-		const range = path.endTime - path.startTime
-		line.pathTime += dt * this.timeScale
-		let percent = ( line.pathTime / range ) % 1
+		const range = Math.max( 1, path.endTime - path.startTime )
+		const stepDt = Number.isFinite( dt ) && dt > 0 ? dt : 16
+		line.pathTime += stepDt * this.timeScale
+		let percent = line.pathTime / range
 
 		if ( line.pathTime >= range ) {
+			line.finishing = true
 			const endPoint = path.points[path.points.length - 1]
 			// Each bristle rests at the end plus its own offset; measuring from the bare
 			// end point left wide bristles waiting there forever.
 			pathPoint3.set( endPoint.x, endPoint.y, 0 ).add( line.offset )
 			const tailDistance = pathPoint3.distanceTo( line.points[line.points.length - 1] )
-			if ( tailDistance < 0.3 ) {
+			const timeFade = 1 - smoothstep( range, range + 340, line.pathTime )
+			const tailFade = smoothstep( 0.04, 0.45, tailDistance )
+			line.endFade = Math.min( timeFade, tailFade )
+
+			if ( tailDistance < 0.04 || line.endFade <= 0.001 ) {
 				line.pathTime = 0
+				line.speed = 0
+				line.endFade = 0
+				line.finishing = false
 				line.justTeleported = true
 				line.velocity.set( 0, 0, 0 )
 				samplePathPoint( path, 0, pathPoint3 )
+				line.target.set( pathPoint3.x, pathPoint3.y, 0 ).add( line.offset )
 
 				for ( let i = 0; i < NUM_POINTS; i++ ) {
-					line.points[i].set( pathPoint3.x + line.offset.x, pathPoint3.y + line.offset.y, 0 )
+					line.points[i].copy( line.target )
 				}
-			} else {
-				percent = 1
+				return
 			}
+			percent = 1
+		} else {
+			line.finishing = false
+			line.endFade = 1
 		}
 
 		samplePathPoint( path, percent, pathPoint3 )
+		pathPoint3.add( line.offset )
 		const moveX = line.target.x - pathPoint3.x
 		const moveY = line.target.y - pathPoint3.y
 		const speed = Math.sqrt( moveX ** 2 + moveY ** 2 ) * 0.5
 		line.speed = MathUtils.lerp( line.speed, speed, 0.15 )
-		line.target.set( pathPoint3.x, pathPoint3.y, 0 ).add( line.offset )
+		line.target.copy( pathPoint3 )
 	}
 
 	addPath( path ) {
@@ -327,6 +357,8 @@ class DrawLinesExample {
 			const line = this.lines[lineIndex]
 			line.pathTime = 0
 			line.speed = 0
+			line.endFade = 0
+			line.finishing = false
 			line.velocity.set( 0, 0, 0 )
 			line.justTeleported = true
 			line.target.set( start.x, start.y, 0 ).add( line.offset )
@@ -436,8 +468,11 @@ class DrawLinesExample {
 		this.activeStroke = null
 	}
 
-	updateTarget( mouseData ) {
-		pointerNDC.set( mouseData.normalizedX, -mouseData.normalizedY )
+	updateTarget( mouseData = mouse ) {
+		if ( !mouseData ) return
+		const nx = Number.isFinite( mouseData.normalizedX ) ? mouseData.normalizedX : 0
+		const ny = Number.isFinite( mouseData.normalizedY ) ? mouseData.normalizedY : 0
+		pointerNDC.set( nx, -ny )
 		this.raycaster.setFromCamera( pointerNDC, stage3d.camera )
 
 		if ( this.raycaster.ray.intersectPlane( interactionPlane, this.target ) === null ) {
@@ -485,7 +520,7 @@ class DrawLinesExample {
 		this.bloom = null
 
 		stage3d.remove( this.meshline )
-		stage3d.control.dispose()
+		stage3d.control?.dispose()
 		this.meshline?.dispose()
 		this.meshline = null
 	}
@@ -517,6 +552,16 @@ function writePointsToArray( points, positions ) {
 		positions[offset] = point.x - i * TOPOLOGY_EPSILON
 		positions[offset + 1] = point.y
 		positions[offset + 2] = point.z
+		// A trail drifting left closes its x gap through exactly the epsilon, and
+		// Float32 rounding can then fold this point onto the previous one.
+		if (
+			i > 0 &&
+			positions[offset] === positions[offset - 3] &&
+			positions[offset + 1] === positions[offset - 2] &&
+			positions[offset + 2] === positions[offset - 1]
+		) {
+			positions[offset] -= TOPOLOGY_EPSILON
+		}
 	}
 }
 

@@ -1,11 +1,11 @@
-import { animate } from 'animejs'
+import { animate, utils } from 'animejs'
 import { MeshLine } from 'makio-meshline'
 import { ACESFilmicToneMapping, NoToneMapping } from 'three'
 import { bloom } from 'three/addons/tsl/display/BloomNode.js'
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
-import { float, Fn, fract, instanceIndex, mix, pass, texture, uniform, vec2, vec3 } from 'three/tsl'
+import { attribute, float, Fn, fract, instanceIndex, mix, pass, texture, uniform, vec2, vec3 } from 'three/tsl'
 import { DataTexture, FloatType, FrontSide, Matrix4, MeshBasicNodeMaterial, Ray, RenderPipeline, RepeatWrapping, RGBAFormat, Vector3 } from 'three/webgpu'
 import { MeshBVH, SAH } from 'three-mesh-bvh'
 import { markRaw } from 'vue'
@@ -132,8 +132,8 @@ class VenusExample {
 		
 		// Replace individual meshes with merged geometry for David
 		if ( davidGeometries.length > 1 ) {
-			console.log( `Merging ${davidGeometries.length} geometries for David after scaling` )
 			const mergedGeometry = mergeGeometries( davidGeometries, false )
+			for ( const geom of davidGeometries ) geom.dispose()
 			
 			// Create BVH for merged geometry
 			mergedGeometry.boundsTree = new MeshBVH( mergedGeometry, {
@@ -146,11 +146,13 @@ class VenusExample {
 			// Replace meshesA with a single dummy mesh containing merged geometry
 			const mergedMesh = {
 				isMesh: true,
+				isMergedDummy: true,
 				geometry: mergedGeometry,
 				matrixWorld: new Matrix4() // Identity matrix since geometry is pre-transformed
 			}
 			this.meshesA = [mergedMesh]
 		} else if ( this.meshesA.length === 1 ) {
+			for ( const geom of davidGeometries ) geom.dispose()
 			// Single mesh, just create BVH
 			const obj = this.meshesA[0]
 			obj.geometry.boundsTree = new MeshBVH( obj.geometry, {
@@ -173,6 +175,7 @@ class VenusExample {
 			obj.updateMatrixWorld( true )
 		}
 
+		draco.dispose()
 		stage3d.add( this.modelA )
 		stage3d.add( this.modelB )
 	}
@@ -190,10 +193,8 @@ class VenusExample {
 		const minY = Math.min( this.boundsA.min.y, this.boundsB.min.y )
 		const maxY = Math.max( this.boundsA.max.y, this.boundsB.max.y )
 
-		console.time( 'Generate rings (A & B)' )
 		this.linesA = this.generateRingsForModel( this.modelA, minY, maxY )
 		this.linesB = this.generateRingsForModel( this.modelB, minY, maxY )
-		console.timeEnd( 'Generate rings (A & B)' )
 
 		// Build position textures (RGB=xyz)
 		this.buildPositionTextures()
@@ -201,11 +202,12 @@ class VenusExample {
 		// GPU position node: sample A and B rows by instance, blend by morph
 		const numRings = this.numRings
 		const texA = texture( this.texA )
-		const texB = texture( this.texB )		
+		const texB = texture( this.texB )
+		const ringAlphaAttr = attribute( 'ringAlpha', 'vec2' )
 
 		// return the percent with a delay depending of y
 		const percent = Fn( () => {
-			const p =  this.morph // 0 -> 1
+			const p = this.morph // 0 -> 1
 			const y = float( instanceIndex ).div( float( numRings ) ) // 0 -> 1
 			return backInOut( p.mul( 2 ).sub( y ).clamp() ).toVar()
 		} )()
@@ -214,11 +216,9 @@ class VenusExample {
 			.instances( this.numRings )
 			.segments( this.samplesPerRing )
 			.closed( true )
-			.needsUV( true )
 			.color( 0xffffff )
 			.transparent( true )
 			.lineWidth( 0.02 )
-			.verbose( true )
 			.gpuPositionNode( Fn( ( [progress] ) => {
 				const y = float( instanceIndex ).div( float( numRings ) ).toVar()
 				const v = y.add( float( 0.5 ).div( float( numRings ) ) )
@@ -232,25 +232,27 @@ class VenusExample {
 			} ) )
 			.colorFn( Fn( () => {
 				const y = float( instanceIndex ).div( float( numRings ) ).toVar()
-				const v = y.add( float( 0.5 ).div( float( numRings ) ) )
-				const alphaA = texA.sample( vec2( 0, v ) ).w
-				const alphaB = texB.sample( vec2( 0, v ) ).w
-				const alpha = mix( alphaA, alphaB, percent )
+				const alpha = mix( ringAlphaAttr.x, ringAlphaAttr.y, percent )
 				return vec3( 1, y.smoothstep( 0, 1 ), percent.smoothstep( 0, .5 ) ).mul( alpha )
 			} ) )
-			.opacityFn( Fn( ( [opacity] ) => {
+			.opacityFn( Fn( () => {
 				const y = float( instanceIndex ).div( float( numRings ) ).toVar()
 				const v = y.add( float( 0.5 ).div( float( numRings ) ) ).oneMinus()
 				return v.smoothstep( this.opacity.oneMinus().sub( 0.1 ), this.opacity.oneMinus() )
 			} ) )
 			.widthFn( Fn( ( [width] ) => {
-				const y = float( instanceIndex ).div( float( numRings ) ).toVar()
-				const v = y.add( float( 0.5 ).div( float( numRings ) ) )
-				const alphaA = texA.sample( vec2( 0, v ) ).w
-				const alphaB = texB.sample( vec2( 0, v ) ).w
-				const alpha = mix( alphaA, alphaB, percent )
+				const alpha = mix( ringAlphaAttr.x, ringAlphaAttr.y, percent )
 				return width.add( percent.sub( .5 ).abs().mul( 2 ).oneMinus().abs().mul( 0.1 ) ).mul( alpha )
 			} ) )
+
+		this.line.build()
+		this.line.addInstanceAttribute( 'ringAlpha', 2 )
+		const ringAlphas = new Float32Array( this.numRings * 2 )
+		for ( let r = 0; r < this.numRings; r++ ) {
+			ringAlphas[r * 2] = this.activeA ? ( this.activeA[r] ? 1 : 0 ) : 1
+			ringAlphas[r * 2 + 1] = this.activeB ? ( this.activeB[r] ? 1 : 0 ) : 1
+		}
+		this.line.setInstanceValues( 'ringAlpha', ringAlphas )
 
 		stage3d.add( this.line )
 
@@ -309,10 +311,6 @@ class VenusExample {
 	}
 
 	generateRingsForModel( model, minY, maxY ) {
-		const modelName = model === this.modelA ? 'David' : 'Venus'
-		console.log( `\n===== Raycasting Performance for ${modelName} =====` )
-		const totalStartTime = performance.now()
-		
 		const lines = []
 		const actives = []
 		const height = Math.max( 0.0001, maxY - minY )
@@ -324,8 +322,7 @@ class VenusExample {
 		// Get all meshes for complete raycasting
 		const meshes = model === this.modelA ? this.meshesA : this.meshesB
 		
-		// Pre-compute inverse matrices for all meshes (batch optimization)
-		const matrixStartTime = performance.now()
+		// Pre-compute inverse matrices for all meshes
 		const meshData = []
 		for ( const mesh of meshes ) {
 			if ( mesh.geometry.boundsTree ) {
@@ -334,107 +331,74 @@ class VenusExample {
 			}
 		}
 		
-		// Pre-allocate reusable vectors and ray to reduce GC pressure
-		const dir = new Vector3()
-		const origin = new Vector3()
-		const target = new Vector3()
+		const sampleCount = this.samplesPerRing
+		const cosTable = new Float32Array( sampleCount )
+		const sinTable = new Float32Array( sampleCount )
+		for ( let i = 0; i < sampleCount; i++ ) {
+			const angle = ( i / sampleCount ) * Math.PI * 2
+			cosTable[i] = Math.cos( angle )
+			sinTable[i] = Math.sin( angle )
+		}
+		const fallbackDirX = -cosTable[sampleCount - 1]
+		const fallbackDirZ = -sinTable[sampleCount - 1]
+
+		const hitDistances = new Float32Array( sampleCount )
+		const hitPoints = new Float32Array( sampleCount * 3 )
 		const localRay = new Ray()
-		
-		let totalRaycastTime = 0
-		let totalRayCount = 0
-		let totalHitCount = 0
-		let earlyExitCount = 0
 		
 		for ( let r = 0; r < this.numRings; r++ ) {
 			const t = r / ( this.numRings - 1 )
 			const y = minY + t * height
-			const ring = new Float32Array( this.samplesPerRing * 3 )
-			// Use pre-calculated center for all rings (much faster)
-			const cx = boundsCenterX, cz = boundsCenterZ
-			target.set( cx, y, cz )
+			const ring = new Float32Array( sampleCount * 3 )
+			const cx = boundsCenterX
+			const cz = boundsCenterZ
 			let prevX = 0, prevY = y, prevZ = 0
 			let hasHit = false
 			let firstHitIndex = -1
 			let lastHitX = 0, lastHitY = y, lastHitZ = 0
-			// Pre-compute all rays for this ring
-			const rays = []
-			for ( let i = 0; i < this.samplesPerRing; i++ ) {
-				const a = ( i / this.samplesPerRing ) * Math.PI * 2
-				dir.set( Math.cos( a ), 0, Math.sin( a ) )
-				origin.set( 
-					target.x + dir.x * this.outerRadius,
-					target.y,
-					target.z + dir.z * this.outerRadius
-				)
-				dir.negate()
-				rays.push( { 
-					origin: origin.clone(), 
-					dir: dir.clone(),
-					hit: null,
-					distance: Infinity
-				} )
-			}
-			
-			// Process all rays against each mesh (more cache-friendly)
-			const raycastStartTime = performance.now()
-			let ringHitCount = 0
+
+			hitDistances.fill( Infinity )
+
 			for ( const { mesh, invMat } of meshData ) {
-				for ( const rayData of rays ) {
-					// Early exit: Skip if we already found a very close hit
-					// This prevents unnecessary ray tests when we've already hit a surface
-					if ( rayData.distance < 0.1 ) {
-						earlyExitCount++
-						continue
-					}
-					
-					// Setup and transform ray to mesh's local space
-					this.ray.set( rayData.origin, rayData.dir )
-					localRay.copy( this.ray )
-					localRay.applyMatrix4( invMat )
-					
-					// Raycast using BVH with firstHitOnly
+				for ( let i = 0; i < sampleCount; i++ ) {
+					if ( hitDistances[i] < 0.1 ) continue
+
+					const dx = cosTable[i]
+					const dz = sinTable[i]
+					this.ray.origin.set( cx + dx * this.outerRadius, y, cz + dz * this.outerRadius )
+					this.ray.direction.set( -dx, 0, -dz )
+					localRay.copy( this.ray ).applyMatrix4( invMat )
+
 					const hit = mesh.geometry.boundsTree.raycastFirst( localRay, FrontSide )
-					totalRayCount++
-					
-					if ( hit && hit.distance < rayData.distance ) {
-						// Transform hit point back to world space
+					if ( hit && hit.distance < hitDistances[i] ) {
 						hit.point.applyMatrix4( mesh.matrixWorld )
-						rayData.hit = hit
-						rayData.distance = hit.distance
-						if ( !rayData.hadHit ) {
-							ringHitCount++
-							rayData.hadHit = true
-						}
+						hitDistances[i] = hit.distance
+						const o = i * 3
+						hitPoints[o] = hit.point.x
+						hitPoints[o + 1] = hit.point.y
+						hitPoints[o + 2] = hit.point.z
 					}
 				}
 			}
-			const raycastTime = performance.now() - raycastStartTime
-			totalRaycastTime += raycastTime
-			totalHitCount += ringHitCount
-			
-			// Process ray results
-			for ( let i = 0; i < this.samplesPerRing; i++ ) {
-				const rayData = rays[i]
-				const closestHit = rayData.hit
-				
+
+			for ( let i = 0; i < sampleCount; i++ ) {
+				const o = i * 3
 				let px, py, pz
-				if ( closestHit ) {
-					// Use the closest hit point
-					px = closestHit.point.x
-					py = closestHit.point.y
-					pz = closestHit.point.z
+				if ( hitDistances[i] < Infinity ) {
+					px = hitPoints[o]
+					py = hitPoints[o + 1]
+					pz = hitPoints[o + 2]
 					hasHit = true
 					if ( firstHitIndex < 0 ) firstHitIndex = i
 					lastHitX = px; lastHitY = py; lastHitZ = pz
 				} else if ( hasHit ) {
 					px = prevX; py = prevY; pz = prevZ
 				} else {
-					px = target.x + dir.x * 0.1
-					py = target.y
-					pz = target.z + dir.z * 0.1
+					px = cx + fallbackDirX * 0.1
+					py = y
+					pz = cz + fallbackDirZ * 0.1
 				}
 				prevX = px; prevY = py; prevZ = pz
-				const o = i * 3
 				ring[o] = px
 				ring[o + 1] = py
 				ring[o + 2] = pz
@@ -454,21 +418,6 @@ class VenusExample {
 		if ( model === this.modelA ) this.activeA = actives
 		else if ( model === this.modelB ) this.activeB = actives
 		
-		// Performance summary
-		const totalTime = performance.now() - totalStartTime
-		console.log( `\n----- Performance Summary for ${modelName} -----` )
-		console.log( `Total rings: ${this.numRings}` )
-		console.log( `Total rays cast: ${totalRayCount}` )
-		console.log( `Early exits (skipped): ${earlyExitCount}` )
-		console.log( `Total hits: ${totalHitCount}` )
-		console.log( `Hit rate: ${( totalHitCount / ( this.numRings * this.samplesPerRing ) * 100 ).toFixed( 1 )}%` )
-		console.log( `Average rays per mesh per ring: ${( this.samplesPerRing * meshData.length ).toFixed( 0 )}` )
-		console.log( `Total raycast time: ${totalRaycastTime.toFixed( 2 )}ms` )
-		console.log( `Average time per ray: ${( totalRaycastTime / totalRayCount ).toFixed( 4 )}ms` )
-		console.log( `Total generation time: ${totalTime.toFixed( 2 )}ms` )
-		console.log( `Raycast percentage of total: ${( totalRaycastTime / totalTime * 100 ).toFixed( 1 )}%` )
-		console.log( '================================\n' )
-		
 		return lines
 	}
 
@@ -477,25 +426,44 @@ class VenusExample {
 	}
 
 	dispose() {
+		utils.remove( [this.opacity, this.morph, stage3d.control].filter( Boolean ) )
 		stage3d.renderPipeline = null
 		stage3d.renderer.toneMapping = NoToneMapping
-		this.renderPipeline.dispose()
+		this.renderPipeline?.dispose()
 		window.removeEventListener( 'resize', this.onResize )
 		if ( this.line ) {
 			stage3d.remove( this.line )
 			this.line.dispose()
 			this.line = null
 		}
+		for ( const meshList of [this.meshesA, this.meshesB] ) {
+			for ( const obj of meshList ) {
+				if ( obj?.geometry?.boundsTree ) {
+					obj.geometry.disposeBoundsTree?.()
+					obj.geometry.boundsTree = null
+				}
+				if ( obj?.isMergedDummy ) {
+					obj.geometry?.dispose?.()
+				}
+			}
+		}
 		for ( const model of [this.modelA, this.modelB] ) {
 			if ( model ) {
 				model.traverse( obj => {
-					if ( obj.isMesh && obj.geometry.boundsTree ) {
-						obj.geometry.disposeBoundsTree?.()
+					if ( obj.isMesh ) {
+						if ( obj.geometry?.boundsTree ) {
+							obj.geometry.disposeBoundsTree?.()
+							obj.geometry.boundsTree = null
+						}
+						obj.geometry?.dispose?.()
+						obj.material?.dispose?.()
 					}
 				} )
 				stage3d.remove( model )
 			}
 		}
+		this.meshesA = []
+		this.meshesB = []
 		this.texA?.dispose?.()
 		this.texB?.dispose?.()
 		stage3d.control?.dispose()

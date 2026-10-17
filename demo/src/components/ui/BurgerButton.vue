@@ -76,7 +76,7 @@ export default {
 		box-shadow inset 0 1px rgba(255,255,255,.1), 0 12px 32px -14px rgba(0,0,0,.9)
 
 	&:focus-visible
-		outline 2px solid rgba(116,207,255,.9)
+		outline 2px solid rgba(255,255,255,.85)
 		outline-offset 2px
 
 	span
