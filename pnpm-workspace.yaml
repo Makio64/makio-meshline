@@ -9,6 +9,15 @@ allowBuilds:
 
 minimumReleaseAgeExclude:
   - terser@5.50.0
+  - glob@10.5.0
+  - mdast-util-to-hast@13.2.1
+  - brace-expansion@1.1.21 || 5.0.12
+  - picomatch@4.0.4
+  - vite@7.3.7
+  - nanoid@3.3.18
+  - '@humanfs/node@0.16.8'
+  - js-yaml@4.3.2
+  - source-map-js@1.2.2
 
 overrides:
   # Standalone starters keep copy-pasteable registry ranges while workspace
@@ -19,3 +28,4 @@ overrides:
   esbuild@<=0.24.2: '>=0.25.0'
   form-data@>=4.0.0 <4.0.4: '>=4.0.4'
   vite@<=5.4.19: '>=5.4.20'
+  "@vue/server-renderer": ^3.5.42
