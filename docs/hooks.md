@@ -114,6 +114,26 @@ Makio MeshLine exposes **14 GPU hooks** that let you inject custom [TSL (Three.j
 - **`progress`** — `float` from 0 to 1 along the line length
 - **`side`** — `float`, +1 or -1 for each side of the line ribbon
 
+### Silhouette Coordinate (`lineCoord`)
+
+Import `lineCoord` from `'makio-meshline'` when a fragment hook needs the normalized cross-ribbon coordinate without allocating or interpolating full UVs (`needsUV( true )`):
+
+- **`lineCoord.y`** — `float` interpolated from `-1` on one stroke edge to `+1` on the other (`0` at the centerline)
+- **`lineCoord.x`** — `0` when UVs are off, or `vUV.x` when UVs are enabled
+
+```js
+import { MeshLine, lineCoord } from 'makio-meshline'
+import { Fn, abs, float, max, sqrt, vec4 } from 'three/tsl'
+
+// Reconstruct a 3D cylindrical profile across a flat billboard ribbon
+const tubeShade = Fn( ( [color] ) => {
+  const y = lineCoord.y
+  const z = sqrt( max( float( 0 ), float( 1 ).sub( y.mul( y ) ) ) )
+  const rim = float( 1 ).sub( abs( y ).mul( 0.35 ) )
+  return vec4( color.rgb.mul( z.mul( 0.7 ).add( 0.3 ) ).mul( rim ), color.a )
+} )
+```
+
 ---
 
 ## Position Hooks
@@ -429,6 +449,8 @@ const line = new MeshLine()
 ## Performance Tips
 
 - **Hooks run on the GPU** — they add shader instructions, not CPU overhead.
+- **Prefer `progress` and `lineCoord.y` / `side` over `uv` when not sampling textures** — `MeshLineNodeMaterial` lazily emits `vProgress`, `vSide`, and `uvCoords` only when referenced. In `discardFn`, `fragmentColorFn`, and `fragmentAlphaFn`, reading `progress` or `lineCoord.y` instead of `uv` and setting `.needsUV( false )` saves a `vec2` vertex attribute and a `vec2` interpolated varying.
+- **Define reusable `Fn()` hooks at module scope** — Three.js deduplicates compiled shaders by exact WGSL/GLSL string. Sharing a module-level `Fn()` and passing per-line parameters via `uniform()` lets multiple lines reuse a single compiled shader stage.
 - **Keep it simple** — complex branching or deep function chains increase shader compilation time.
 - **Use uniforms for animation** — pass `time`, `uniform()` values, or `attribute()` data rather than recompiling the shader each frame.
 - **Avoid setting hooks after `build()`** — changing a hook forces a full shader recompilation. Set all hooks before calling `.build()`.

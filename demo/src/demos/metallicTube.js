@@ -1,3 +1,14 @@
+/**
+ * Metallic Tube: reconstructs an analytic 3D cylinder normal across a single
+ * camera-facing `MeshLine` ribbon using `lineCoord.y` and `.normalFn()`, then
+ * evaluates Three.js standard PBR lighting and a studio PMREM environment.
+ *
+ * Key APIs:
+ * - `lineCoord.y` (-1..+1 cross-ribbon coordinate without allocating UVs)
+ * - `.join({ type: 'round' })` for exact round silhouettes at projected folds
+ * - `.normalFn()` to capture the unsplit screen-space bisector tangent
+ * - Custom `MeshLineNodeMaterial` subclass borrowing PBR lighting stages
+ */
 import { lineCoord, MeshLine, MeshLineNodeMaterial } from 'makio-meshline'
 import { color, float, Fn, mix, positionLocal, smoothstep, uniform, uv, varyingProperty, vec2, vec3 } from 'three/tsl'
 import {
@@ -198,7 +209,6 @@ class MetallicTubeExample {
 		stage.onUpdate.add( this.update )
 		stage.onResize.add( this.onResize )
 		keyboard.onDown.add( this.onKeyDown )
-		window.addEventListener( 'resize', this.onResize )
 		this.onResize()
 	}
 
@@ -397,7 +407,6 @@ class MetallicTubeExample {
 		stage.onUpdate.remove( this.update )
 		stage.onResize.remove( this.onResize )
 		keyboard.onDown.remove( this.onKeyDown )
-		window.removeEventListener( 'resize', this.onResize )
 
 		this.hudBar?.remove()
 		this.hud?.remove()
@@ -445,4 +454,5 @@ class MetallicTubeExample {
 	}
 }
 
+export { captureTubeFrame, createStudioEnvironment, MetallicTubeNodeMaterial }
 export default MetallicTubeExample

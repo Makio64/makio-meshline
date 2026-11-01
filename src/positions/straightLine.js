@@ -7,14 +7,10 @@
  */
 export function straightLine( width = 1, segments = 2, isVertical = false ) {
 	const positions = new Float32Array( ( segments + 1 ) * 3 )
-	
-	for ( let i = 0; i <= segments; i++ ) {
-		const t = i / segments
-		const index = i * 3
+	const axisOffset = isVertical ? 1 : 0
 
-		positions[ index ] = isVertical ? 0 : t * width
-		positions[ index + 1 ] = isVertical ? t * width : 0
-		positions[ index + 2 ] = 0
+	for ( let i = 0, index = axisOffset; i <= segments; i++, index += 3 ) {
+		positions[ index ] = ( i / segments ) * width
 	}
 
 	return positions
@@ -33,17 +29,16 @@ export function straightLineBetween( start, end, segments = 1 ) {
 	const x1 = start.x ?? start[0] ?? 0
 	const y1 = start.y ?? start[1] ?? 0
 	const z1 = start.z ?? start[2] ?? 0
-	const x2 = end.x ?? end[0] ?? 0
-	const y2 = end.y ?? end[1] ?? 0
-	const z2 = end.z ?? end[2] ?? 0
-	
-	for ( let i = 0; i <= segments; i++ ) {
-		const t = i / segments
-		const index = i * 3
+	const dx = ( end.x ?? end[0] ?? 0 ) - x1
+	const dy = ( end.y ?? end[1] ?? 0 ) - y1
+	const dz = ( end.z ?? end[2] ?? 0 ) - z1
 
-		positions[ index ] = x1 + t * ( x2 - x1 )
-		positions[ index + 1 ] = y1 + t * ( y2 - y1 )
-		positions[ index + 2 ] = z1 + t * ( z2 - z1 )
+	for ( let i = 0, index = 0; i <= segments; i++, index += 3 ) {
+		const t = i / segments
+
+		positions[ index ] = x1 + t * dx
+		positions[ index + 1 ] = y1 + t * dy
+		positions[ index + 2 ] = z1 + t * dz
 	}
 
 	return positions

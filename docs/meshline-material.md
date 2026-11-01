@@ -23,7 +23,7 @@ Creates a new MeshLineNodeMaterial with the specified parameters.
 
 ### Rendering Properties
 
-- `transparent` (boolean) — whether the material is rendered with transparency. Default: auto-detected (true if `alphaMap` is set, `opacity < 1`, or `transparent` flag is true).
+- `transparent` (boolean) — whether the material is rendered with transparency. Default: auto-detected (true if `alphaMap` is set, `opacity < 1`, `antialias` is true, or `transparent` flag is true).
 - `depthWrite` (boolean) — whether to write depth. By default it is `false` when the material is transparent and `true` otherwise.
 - `depthTest` (boolean) — whether to perform depth testing. Default: `true`.
 - `wireframe` (boolean) — render line as wireframe. Default: `false`.
@@ -32,11 +32,15 @@ Creates a new MeshLineNodeMaterial with the specified parameters.
 ### Line Appearance
 
 - `sizeAttenuation` (boolean) — when `true`, `lineWidth` is projected as a scene-space width and attenuates with distance. When `false`, `lineWidth` is a constant CSS-pixel width. Default: `true`.
+- `antialias` (boolean) — when `true`, pads the stroke by 0.5 device pixels per side in the vertex stage and fades edge coverage over 1 device pixel in the fragment stage (`fwidth`), forcing `transparent = true`. Default: `false`.
 - `resolution` (`THREE.Vector2`) — viewport resolution for correct aspect scaling. Default: `new Vector2(1, 1)`.
+- `dpr` (number) — device pixel ratio uniform kept for custom hooks and backward compatibility. Default: `window.devicePixelRatio || 1`.
 - `lineWidth` (number) — full line width. Units depend on `sizeAttenuation`: scene/view units when `true`, CSS pixels when `false`. Default: `1`.
 - `color` (number | `THREE.Color`) — line color. Default: `0xffffff`.
 - `gradientColor` (`THREE.Color` | null) — optional gradient end color. Default: `null`.
 - `opacity` (number) — global opacity. Default: `1`.
+- `join` (`MeshLineJoinType | MeshLineJoinOptions`) — join configuration (`type: 'miter' | 'bevel' | 'round'`, `limit`, `fold: 'geometry' | 'exact' | false`).
+- `miterLimit` (number) — maximum miter expansion factor at sharp bends. Default: `4`.
 
 ### Textures
 
@@ -117,14 +121,26 @@ Two consequences worth knowing:
 - Coverage is written into alpha, so `antialias` forces `transparent = true`. Expect the usual transparent-draw ordering.
 - The emitted geometry grows by half a device pixel on each side. Because the pad is applied along the miter bisector, a sharp corner grows further along that bisector — bounded, like the miter itself, by `join.limit`. That is invisible for ordinary strokes but is a real change if you are matching a line against a pixel grid.
 
-### Shadow Nodes
+### Shadow Casting & Receiving (`setShadow` / `receiveShadow`)
 
-When shadow casting is enabled, `setShadow(true)` creates `castShadowPositionNode` and, for dashed lines, `maskShadowNode`. You can also assign `castShadowNode` after build to customize the shadow color. Use a `vec4` so Three's shadow pass receives both RGB and alpha:
+When shadow casting is enabled (`line.shadow(true)` or `material.setShadow(true)`), `MeshLineNodeMaterial` creates `castShadowPositionNode` and, for dashed lines, `maskShadowNode`. You can also assign `castShadowNode` after build to customize the shadow color. Use a `vec4` so Three's shadow pass receives both RGB and alpha:
 
 ```js
 line.material.castShadowNode = vec4( 0.7, 0.7, 0.7, 1 )
 line.material.needsUpdate = true
 ```
+
+When shadow receiving is enabled on the mesh (`line.shadow(true, true)` or `line.setReceiveShadow(true)` with `renderer.shadowMap.enabled = true`), `MeshLineNodeMaterial` automatically:
+1. Reconstructs a 3D cylindrical tube normal in view space (`setupNormal()`) from the screen-space perpendicular and `vSide` (`across = vSide`, `arch = sqrt(max(0, 1 - across²))`),
+2. Offsets `builder.context.shadowPositionWorld` along `normalWorld` by the scene-space half-width (`vShadowTube.z`) so self-shadowing across overlapping or intersecting lines is free of shadow acne, and
+3. Modulates `reflectedLight.indirectDiffuse` in `setupLightingModel()` by the directional/spot shadow mask weighted by `dot(N, L)` above an ambient floor.
+
+### Key Material Methods
+
+- `buildLine(options?: MeshLineMaterialOptions): void` — Configures uniforms, join/fold state, shadow nodes, and hook callbacks.
+- `setJoin(join?: MeshLineJoinType | MeshLineJoinOptions): void` — Switches the join type, miter limit, and fold policy (`'geometry' | 'exact' | false`) in place while preserving viewport resolution, uniforms, and depth state.
+- `setShadow(enabled?: boolean): void` — Enables or clears `castShadowPositionNode` and `maskShadowNode`.
+- `clipFoldedJoins(alpha: Node<'float'>): Node<'float'>` — Evaluates the exact round fold/corner clip used by `fold: 'exact'` and `type: 'round'` (also invoked by `MeshLinePicker` so picked silhouettes match rendered strokes).
 
 ### Textures
 
@@ -204,9 +220,9 @@ The depth is taken after `positionFn` / `gpuPositionNode` and before `vertexFn`,
 
 ### Position Accessors
 
-Three derives `positionLocal`, `positionWorld` and `positionWorldDirection` from the geometry's `position` attribute, as well as the vertex-stage `positionView` behind hardware clip distances, and before r183 the fragment-stage one. A line placed by `positionFn` or `gpuPositionNode` only uses that attribute as a template, so the material points these accessors, and `positionPrevious` for motion vectors, at the placed line instead. Fragment hooks such as `fragmentColorFn` or `discardFn`, a custom `scene.fogNode`, clipping planes and TRAA or motion blur all see where each instance and GPU-computed point is drawn.
+Three derives `positionLocal`, `positionWorld` and `positionWorldDirection` from the geometry's `position` attribute, as well as the vertex-stage `positionView` behind hardware clip distances. A line placed by `positionFn` or `gpuPositionNode` only uses that attribute as a template, so the material points these accessors, and `positionPrevious` for motion vectors, at the placed line instead. Fragment hooks such as `fragmentColorFn` or `discardFn`, a custom `scene.fogNode`, clipping planes and TRAA or motion blur all see where each instance and GPU-computed point is drawn.
 
-The value is the centerline after `positionFn` / `gpuPositionNode` and before `vertexFn`, so it is constant across the stroke's width. From r183, three rebuilds the fragment-stage `positionView` from the emitted clip position, which also includes the stroke offset. Only builds whose shaders read one of these accessors compute them; other lines pay nothing. `positionGeometry` always returns the raw template.
+The value is the centerline after `positionFn` / `gpuPositionNode` and before `vertexFn`, so it is constant across the stroke's width. Three rebuilds the fragment-stage `positionView` from the emitted clip position, which also includes the stroke offset. Only builds whose shaders read one of these accessors compute them; other lines pay nothing. `positionGeometry` always returns the raw template.
 
 
 ## Usage Examples

@@ -38,6 +38,7 @@ const rice = new MeshLine()
 			z
 		)
 	} ) )
+	.build()
 
 rice.addInstanceAttribute( 'instanceTransform', 4 )
 
@@ -45,7 +46,6 @@ for ( let i = 0; i < bladeCount; i++ ) {
 	rice.setInstanceValue( 'instanceTransform', i, [x, z, height, bend] )
 }
 
-rice.build()
 scene.add( rice )
 ```
 

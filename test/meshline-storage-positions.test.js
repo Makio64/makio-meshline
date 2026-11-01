@@ -34,7 +34,7 @@ test( 'storagePositions drives instanced lines in WGSL, with and without a ring-
 		const graph = buildShaderGraph( renderer, line )
 		assert.match( graph.vertexShader, /@vertex/ )
 		assert.match( graph.vertexShader, /var<storage, read>/, 'the render pass only needs a read-only binding' )
-		if ( head ) assert.match( graph.vertexShader, /%/, 'ring-buffer sampling wraps around the run' )
+		if ( head ) assert.match( graph.vertexShader, /%|&\s*7u\b/, 'ring-buffer sampling wraps around the run' )
 		line.dispose()
 	}
 } )

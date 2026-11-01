@@ -1,14 +1,22 @@
+/**
+ * Shadows (Cast & Receive): three concentric dashed `MeshLine` rings that both
+ * cast and receive shadows under orbiting RGB spotlights.
+ *
+ * Key APIs:
+ * - `.shadow( true, true )` for simultaneous shadow casting and receiving
+ *   (with 3D cylindrical tube normal reconstruction on billboards)
+ * - `.dash( { count, ratio } )` with animated `line.material.dashOffset.value`
+ */
 import { circlePositions, MeshLine } from 'makio-meshline'
 import {
 	AmbientLight,
 	BackSide,
 	Mesh,
-	MeshStandardMaterial,
+	MeshStandardNodeMaterial,
 	PCFSoftShadowMap,
 	SphereGeometry,
 	SpotLight,
-} from 'three'
-import { MeshStandardNodeMaterial } from 'three/webgpu'
+} from 'three/webgpu'
 
 import stage from '@/makio/core/stage'
 import OrbitControl from '@/makio/three/controls/OrbitControl'
@@ -113,7 +121,7 @@ class ShadowExample {
 
 	initSphere() {
 		const geometry = new SphereGeometry( 1.4, 64, 48 )
-		const material = new MeshStandardMaterial( {
+		const material = new MeshStandardNodeMaterial( {
 			color: 0xFFFFFF,
 			roughness: 0.45,
 			metalness: 0,

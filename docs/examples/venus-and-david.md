@@ -31,6 +31,7 @@ const line = new MeshLine()
 		const toPosition = attribute( 'toPosition', 'vec3' )
 		return mix( fromPosition, toPosition, morph ).add( position )
 	} ) )
+	.build()
 
 line.addInstanceAttributes( {
 	fromPosition: 3,
@@ -42,10 +43,9 @@ for ( let i = 0; i < ringCount; i++ ) {
 	line.setInstanceValue( 'toPosition', i, davidSamples[i] )
 }
 
-line.build()
 scene.add( line )
 
 morph.value = 0.5
 ```
 
-The live demo adds BVH sampling, interaction, and bloom, but the morph itself is just `mix()` between two instanced position attributes.
+The live demo keeps its rings in two `DataTexture`s read by `gpuPositionNode()` and adds BVH sampling, interaction, and bloom, but the morph itself is still one `mix()` between two position sets.

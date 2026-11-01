@@ -1,6 +1,6 @@
 # Makio MeshLine (v2) — Complete AI Agent Reference
 
-> `makio-meshline` is a TSL-first Three.js line and ribbon library for `WebGPURenderer` (WebGPU and WebGL2 backends). Zero runtime dependencies beyond Three.js (`>=0.180.0` for core, `>=0.183.0` for `makio-meshline/gpu-culling` and `makio-meshline/gpu-path`).
+> `makio-meshline` is a TSL-first Three.js line and ribbon library for `WebGPURenderer` (WebGPU and WebGL2 backends). Zero runtime dependencies beyond Three.js (`>=0.186.0` for every entry point).
 
 ---
 
@@ -68,12 +68,12 @@ import {
 } from 'makio-meshline'
 ```
 
-### `makio-meshline/gpu-culling` (Three.js r183+ WebGPU)
+### `makio-meshline/gpu-culling` (native WebGPU)
 ```js
 import MeshLineCullingSystem, { MeshLineCullingHandle } from 'makio-meshline/gpu-culling'
 ```
 
-### `makio-meshline/gpu-path` (Three.js r183+ WebGPU)
+### `makio-meshline/gpu-path` (native WebGPU)
 ```js
 import MeshLineGPUPath from 'makio-meshline/gpu-path'
 ```
@@ -108,7 +108,8 @@ Every option can be passed to `new MeshLine( options )` / `line.configure( optio
 | `miterLimit` / `.miterLimit( limit )` | `number` (`4`) | Update miter clamp limit uniform in-place. |
 | `cap` / `.cap( options )` | `'butt' \| 'square' \| 'round' \| { type, segments }` | Open-endpoint cap policy for surface and `MeshLineGPUPath`. |
 | `smoothSharpBends` / `.smoothSharpBends( bool )` | `boolean` (`false`) | Opt-in CPU corner subdivision for static sharp billboard polylines. |
-| `shadow` / `.shadow( bool )` | `boolean` (`false`) | Enable shadow casting (`castShadow = true` + custom shadow position node). |
+| `shadow` / `.shadow( enabled?, receiveShadow? )` | `boolean` (`false`) | Enable shadow casting and receiving (`receiveShadow` defaults to `enabled`; uses 3D cylindrical tube normal reconstruction on billboards). |
+| `receiveShadow` / `.setReceiveShadow( bool )` | `boolean` (`false`) | Enable or disable shadow receiving independently of `castShadow`. |
 | `wireframe` / `.wireframe( bool )` | `boolean` (`false`) | Render triangle wireframe. |
 | `dynamic` / `.dynamic( bool )` | `boolean` (`false`) | Use `DynamicDrawUsage` and keep `previous`/`next` attributes for fast `setPositions()` / `setPositionRange()`. |
 | `instances` / `.instances( count )` | `number` | Enable GPU instancing with `count` instances. |

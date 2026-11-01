@@ -1,3 +1,8 @@
+/**
+ * Sandbox — interactive MeshLine configurator and live code generator.
+ * Demonstrates: shape presets, gradients, dashes, sizeAttenuation, join({ type, limit, fold }),
+ * antialias, smoothSharpBends, and live copy-paste code output.
+ */
 import GUI from 'lil-gui'
 import { circlePositions, MeshLine, sineWavePositions, squarePositions, straightLine } from 'makio-meshline'
 import { markRaw, reactive, watch } from 'vue'
@@ -98,7 +103,6 @@ class SandboxExample {
 		this.uiComponent = markRaw( SandboxView )
 		this.line = null
 		this.gui = null
-		this.animationHandler = null
 		this.highlighter = null
 		this.hasNoMenu = false
 		this.animatedDashOffset = 0
@@ -140,7 +144,6 @@ class SandboxExample {
 			wireframe: false,
 			joinType: 'miter',
 			joinFold: 'geometry',
-			bevelJoins: false,
 			antialias: false,
 			miterLimit: 4,
 			smoothSharpBends: false,
@@ -527,6 +530,7 @@ class SandboxExample {
 
 		this.gui?.destroy()
 		stage3d.control?.dispose()
+		stage3d.control = null
 	}
 
 }

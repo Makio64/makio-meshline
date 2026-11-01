@@ -17,6 +17,7 @@
 
 - Treat Vue and React Three Fiber support as first-class integration surfaces for the library, not incidental demos.
 - Keep the center of demo canvases clear. New demos should omit the generic `this.text` instruction overlay; place essential copy in unobtrusive edge-aligned UI or integrate short labels into the scene composition.
+- Follow "Demo Conventions" in `CLAUDE.md` when writing or editing `demo/src/demos/`.
 - Framework wrappers in `examples/` should read like starter code users can drop into their own projects.
 - Keep framework wrappers aligned with the public `MeshLine` API and `MeshLineConfigureOptions`: if a prop is exposed, wire its build and update behavior; if an API is intentionally omitted, document that the wrapper covers only common options.
 - Keep docs pages aligned with the actual files under `examples/react-three-fiber/src/` and `examples/vue/src/`.
@@ -34,7 +35,7 @@
 ## Quick Reference for AI Agents Using `makio-meshline`
 
 ### 1. Package Entry Points
-- **`makio-meshline`** (Three.js r180+):
+- **`makio-meshline`** (Three.js r186+):
   - `MeshLine` (default & named export) — fluent facade extending `THREE.Mesh`
   - `MeshLineGeometry`, `MeshLineNodeMaterial` — screen-space billboard geometry & TSL material
   - `MeshLineSurfaceGeometry`, `MeshLineSurfaceNodeMaterial` — world-space lit ribbon/road geometry & PBR material
@@ -42,9 +43,9 @@
   - `MeshLinePicker`, `MeshLinePickerHelper` — GPU offscreen pixel picker & debug overlay
   - `lineCoord` — normalized stroke silhouette coordinate (`vec2`, `y` in `[-1, 1]`) for TSL hooks
   - Position helpers: `circlePositions`, `squarePositions`, `rectanglePositions`, `sineWavePositions`, `straightLine`, `straightLineBetween`, `storagePositions`
-- **`makio-meshline/gpu-culling`** (Three.js r183+ WebGPU):
+- **`makio-meshline/gpu-culling`** (native WebGPU):
   - `MeshLineCullingSystem` — per-chunk frustum culling + indirect draw compaction
-- **`makio-meshline/gpu-path`** (Three.js r183+ WebGPU):
+- **`makio-meshline/gpu-path`** (native WebGPU):
   - `MeshLineGPUPath` — point-centric GPU path with optional multi-stride simplification and automatic CPU fallback
 
 ### 2. Golden Rules (Avoid Common Mistakes)
@@ -62,6 +63,15 @@
    - Pack multiple custom instance or vertex attributes into a single interleaved buffer via `line.addInstanceAttributes( { offset: 3, phase: 1 } )` instead of separate `addInstanceAttribute()` calls.
 6. **Viewport Resize & Cleanup**:
    - Use `.autoResize()` or call `line.resize( width, height )` on window resize, and always call `line.dispose()` when removing a line permanently.
+7. **Prefer `progress` and `lineCoord.y` / `side` Over `uv()` in Fragment Hooks**:
+   - In `discardFn`, `fragmentColorFn`, and `fragmentAlphaFn`, use the `progress` (`0..1`) and `side` (`-1..1`) hook arguments or `lineCoord.y` instead of calling `uv()`, and set `.needsUV( false )` when no texture map is used. This saves a `vec2` `uv` vertex buffer attribute and avoids interpolating an extra `vec2` `vUv` varying.
+8. **Multi-Line Shader & Pipeline Deduplication**:
+   - Three.js deduplicates compiled `ProgrammableStage` shaders by exact generated WGSL/GLSL source string. When rendering multiple `MeshLine` instances, define reusable `Fn()` hooks once at module scope and drive per-line variations with uniforms (`color`, `lineWidth`, `dash`, or custom `uniform()`) rather than embedding different JS literal constants per line.
+   - For multi-shader galleries or complex scenes, warm up pipelines before starting entrance animations: render one frame and `await renderer.backend?.device?.queue?.onSubmittedWorkDone?.()`.
+9. **Join Fold Policy (`join.fold`) & Early-Z / HSR**:
+   - Keep the default `join: { type: 'miter', fold: 'geometry' }` unless pixel-exact circular fold silhouettes are required. `'geometry'` resolves projected 3D folds in the vertex shader with **zero `discard`**, preserving GPU early-Z and tile-based Hidden Surface Removal (HSR). Only opt into `join: { fold: 'exact' }` or `join: { type: 'round' }` when exact disc clipping is needed.
+10. **Hardware MSAA vs Analytic `.antialias( true )`**:
+    - Leave `.antialias( false )` (default) when rendering with MSAA: billboard edges are real geometry smoothed natively by MSAA while remaining opaque (`depthWrite: true`). Enable `.antialias( true )` only without MSAA or for sub-pixel lines (it enables alpha blending).
 
 ### 3. TSL Hook Signatures (All Destructure `[...]`)
 | Method | Signature inside `Fn( ( [...] ) => ... )` | Returns |
@@ -105,7 +115,7 @@ const road = new MeshLine()
 	.surface( { frame: 'fixed-up', up: [0, 1, 0], bank: bankAngles, uvMode: 'distance', uvScale: 6 } )
 	.join( { type: 'round', limit: 3, segments: 8 } )
 	.cap( { type: 'round', segments: 8 } )
-	.shadow( true )
+	.shadow( true, true ) // castShadow = true, receiveShadow = true (also works on billboards!)
 	.build()
 scene.add( road )
 ```

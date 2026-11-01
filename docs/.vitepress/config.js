@@ -15,6 +15,7 @@ const PAGE_DESCRIPTIONS = {
   'common-patterns.md': 'Copy practical Makio MeshLine recipes for circles, dashed lines, gradients, textures, dynamic updates, and sharp-corner handling in Three.js.',
   'advanced-patterns.md': 'Explore advanced Makio MeshLine patterns for GPU positions, instancing, batching, animated dashes, and custom TSL material hooks.',
   'performance.md': 'Performance tips for Makio MeshLine covering instancing, batching, dynamic position updates, GPU positioning, and sharp-corner rendering.',
+  'benchmarks.md': 'Interactive V2 benchmarks diagram rendered with MeshLine, comparing partial range uploads, O(lines) bounds refreshes, adaptive surface topology, and 200K-point GPU paths.',
   'v2-migration.md': 'Migrate Makio MeshLine v1 applications to V2, including changed defaults, arc-length progress, stricter validation, surfaces, and optional WebGPU entry points.',
   'v2-design.md': 'Makio MeshLine V2 engineering contract for robust screen strokes, road surfaces, compute acceleration, and backend parity.',
   'v2-api-coverage.md': 'Map every Makio MeshLine V2 public export and update API to its canonical reference, runnable demo, optional WebGPU entry point, and framework integration.',
@@ -221,6 +222,7 @@ export default defineConfig( {
       { text: 'Guides', link: '/guide' },
       { text: 'Examples', link: '/examples/basic' },
       { text: 'API', link: '/api' },
+      { text: 'Benchmarks', link: '/benchmarks' },
       { text: 'V2 API Map', link: '/v2-api-coverage' },
       { text: 'Demos', link: DEMO_URL },
     ],
@@ -231,26 +233,26 @@ export default defineConfig( {
         items: [
           { text: 'Makio MeshLine', link: '/why-makio-meshline' },
           { text: 'Getting Started', link: '/guide' },
-          { text: 'Migrate to V2', link: '/v2-migration' }
+          { text: 'Migrate to V2', link: '/v2-migration' },
+          { text: 'V2 Benchmarks', link: '/benchmarks' }
         ]
       },
       {
         text: 'Examples',
         items: [
           { text: 'Interactive Sandbox', link: '/examples/sandbox' },
-          { text: 'Basic Examples', link: '/examples/basic' },
-          { text: 'Vertex Colors', link: '/examples/vertex-colors' },
-          { text: 'Follow', link: '/examples/follow' },
-          { text: 'GPU position', link: '/examples/gpucircle' },
-          { text: 'Compute Curves', link: '/examples/compute-curves' },
+          { text: 'Style Gallery (Basic)', link: '/examples/basic' },
+          { text: 'Waves & Vertex Colors', link: '/examples/vertex-colors' },
+          { text: 'Draw & Trail', link: '/examples/drawlines' },
+          { text: 'GPU Position & Ring Tunnel', link: '/examples/gpucircle' },
           { text: 'Instancing', link: '/examples/instancing' },
-          { text: 'Shadow', link: '/examples/shadow' },
-          { text: 'Road Surface', link: '/examples/road' },
+          { text: 'Compute Curves', link: '/examples/compute-curves' },
+          { text: 'Shadows (Cast & Receive)', link: '/examples/shadow' },
+          { text: 'Road Surface Editor', link: '/examples/road' },
           { text: 'Bamboo Grove', link: '/examples/bamboo' },
-          { text: 'Advanced : Draw Lines', link: '/examples/drawlines' },
           { text: 'Advanced : Rice Field', link: '/examples/ricefield' },
           { text: 'Advanced : Venus & David', link: '/examples/venus-and-david' },
-          { text: 'Demos page', link: DEMO_URL },
+          { text: 'All Live Demos', link: DEMO_URL },
         ]
       },
       {
@@ -288,6 +290,7 @@ export default defineConfig( {
         text: 'Other',
         items: [
           { text: 'Performance', link: '/performance' },
+          { text: 'V2 Benchmarks', link: '/benchmarks' },
           { text: 'Changelog & Roadmap', link: '/changelog-roadmap' },
           { text: 'V2 Design Contract', link: '/v2-design' },
         ]

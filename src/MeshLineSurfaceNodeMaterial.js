@@ -62,9 +62,9 @@ export class MeshLineSurfaceNodeMaterial extends MeshStandardNodeMaterial {
 	copy( source ) {
 		super.copy( source )
 
-		// NodeMaterial.copy() copies every enumerable property as of Three r185,
-		// so clone our configuration after the base copy to avoid retaining the
-		// source material's options object by reference.
+		// NodeMaterial.copy() copies every enumerable property, so clone our
+		// configuration after the base copy to avoid retaining the source
+		// material's options object by reference.
 		this.options = source.options ? {
 			...source.options,
 			surface: source.options.surface ? { ...source.options.surface } : source.options.surface,

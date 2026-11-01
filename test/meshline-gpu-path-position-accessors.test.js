@@ -51,13 +51,13 @@ const createGPUPaths = async () => {
 	return paths
 }
 
-// The reads of declared variables in WGSL main() that some path reaches before
+// The reads of private variables in WGSL main() that some path reaches before
 // a write. Three emits one statement per line and blocks as `if ( ... ) {`,
 // `} else {` and `}`. WGSL only: the GPU mesh renders on native WebGPU, and
 // GLSL reads its storage buffers as per-vertex attributes.
 const findUnassignedReads = shader => {
 	const main = shader.slice( shader.search( /\bfn main\(/ ) )
-	const declared = new Set( [...shader.matchAll( /^var<private>\s+(\w+)\s*:/gm ), ...main.matchAll( /^\s+var\s+(\w+)\s*:/gm )].map( match => match[1] ) )
+	const declared = new Set( [...shader.matchAll( /^var<private>\s+(\w+)\s*:/gm )].map( match => match[1] ) )
 	const frames = [{ assigned: new Set() }]
 	const problems = []
 	const read = text => {
@@ -77,13 +77,6 @@ const findUnassignedReads = shader => {
 		} else if ( line.endsWith( '{' ) ) {
 			read( line.replace( /^for\s*\(\s*(?:var\s+)?\w+/, '' ) )
 			frames.push( { assigned: new Set() } )
-		} else if ( line.startsWith( 'var ' ) ) {
-			// A declaration inside main() (three r183) only reads its initializer.
-			const [, name, value] = line.match( /^var\s+(\w+)\s*:[^=;]*(?:=(.*))?;$/ ) ?? []
-			if ( value !== undefined ) {
-				read( value )
-				write( name )
-			}
 		} else {
 			const assignment = line.match( /^(\w+)((?:\.\w+|\[[^\]]*\])*)\s*([-+*/%&|^]?=)(?!=)(.*)$/ )
 			if ( !assignment ) {

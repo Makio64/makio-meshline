@@ -106,6 +106,7 @@ try {
 				"export { default, MeshLine, MeshLineGeometry, MeshLineNodeMaterial, MeshLineSurfaceGeometry, MeshLineSurfaceNodeMaterial, MeshLineCompute, MeshLinePicker, MeshLinePickerHelper, lineCoord, circlePositions, squarePositions, rectanglePositions, sineWavePositions, straightLine, straightLineBetween, storagePositions } from 'makio-meshline'",
 				"export { default as MeshLineCullingSystem } from 'makio-meshline/gpu-culling'",
 				"export { default as MeshLineGPUPath } from 'makio-meshline/gpu-path'",
+				"export { circlePositions as circlePositionsPure } from 'makio-meshline/positions'",
 			].join( '\n' ) )
 
 			const packageEntry = await import( `${pathToFileURL( smokePath ).href}?verify=${Date.now()}` )
@@ -120,6 +121,7 @@ try {
 				'MeshLinePicker',
 				'MeshLinePickerHelper',
 				'circlePositions',
+				'circlePositionsPure',
 				'squarePositions',
 				'rectanglePositions',
 				'sineWavePositions',

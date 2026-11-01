@@ -1,3 +1,11 @@
+/**
+ * Minimal MeshLine starter: a 64-segment closed circle with a gradient stroke.
+ *
+ * Key APIs:
+ * - `circlePositions( segments, radius )`
+ * - `new MeshLine().lines( points, true ).lineWidth().color().gradientColor()`
+ * - `line.resize()` on window resize and `line.dispose()` on teardown
+ */
 import { circlePositions, MeshLine } from 'makio-meshline'
 
 import OrbitControl from '@/makio/three/controls/OrbitControl'

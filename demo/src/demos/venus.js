@@ -1,12 +1,19 @@
+/**
+ * Venus & David: morphs 64 instanced contour rings between two BVH-sampled
+ * classical sculptures on the GPU using 2D float `DataTexture` lookups.
+ *
+ * Key APIs:
+ * - `.instances( numRings ).segments( samplesPerRing ).closed( true )`
+ * - `.gpuPositionNode()` sampling two `DataTexture` buffers and blending by `morph`
+ * - `.colorFn()`, `.opacityFn()`, and `.widthFn()` driven by `instanceIndex`
+ */
 import { animate, utils } from 'animejs'
 import { MeshLine } from 'makio-meshline'
-import { ACESFilmicToneMapping, NoToneMapping } from 'three'
-import { bloom } from 'three/addons/tsl/display/BloomNode.js'
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
-import { attribute, float, Fn, fract, instanceIndex, mix, pass, texture, uniform, vec2, vec3 } from 'three/tsl'
-import { DataTexture, FloatType, FrontSide, Matrix4, MeshBasicNodeMaterial, Ray, RenderPipeline, RepeatWrapping, RGBAFormat, Vector3 } from 'three/webgpu'
+import { attribute, float, Fn, fract, instanceIndex, mix, texture, uniform, vec2, vec3 } from 'three/tsl'
+import { ACESFilmicToneMapping, DataTexture, FloatType, FrontSide, Matrix4, MeshBasicNodeMaterial, NoToneMapping, Ray, RepeatWrapping, RGBAFormat } from 'three/webgpu'
 import { MeshBVH, SAH } from 'three-mesh-bvh'
 import { markRaw } from 'vue'
 
@@ -15,6 +22,7 @@ import OrbitControl from '@/makio/three/controls/OrbitControl'
 import stage3d from '@/makio/three/stage3d'
 import { backInOut } from '@/makio/tsl/easing'
 import { isMobile } from '@/makio/utils/detect'
+import { createBloomPipeline } from '@/utils/bloomPipeline'
 import { createDemoHint } from '@/utils/demoHint'
 import { centerAndScaleModel } from '@/utils/modelUtils'
 
@@ -32,12 +40,11 @@ class VenusExample {
 		this.invMat = new Matrix4()
 		this.samplesPerRing = isMobile ? 64 : 96
 		this.numRings = 64
-		this.center = new Vector3()
 		this.linesA = null
 		this.linesB = null
 		this.morph = uniform( 0 )
 		this.opacity = uniform( 0 )
-		this.gui = null
+		this.bloom = null
 		this.hint = null
 		this.texA = null
 		this.texB = null
@@ -59,7 +66,7 @@ class VenusExample {
 		// BVH raycasting setup is done in loadModels()
 		await this.loadModels()
 		await this.initScene()
-		await this.initRenderPipeline()
+		this.bloom = createBloomPipeline( { strength: 0.5, radius: 0.01, threshold: 0.4, resolutionScale: 1 } )
 		this.hint = createDemoHint( 'BVH-traced contour rings · GPU morph · drag to orbit', { accent: '#fb923c', hideAfter: 9000 } )
 
 		setTimeout( () => {
@@ -68,17 +75,6 @@ class VenusExample {
 		}, 10 )
 
 		window.addEventListener( 'resize', this.onResize )
-	}
-
-	async initRenderPipeline() {
-		this.renderPipeline = new RenderPipeline( stage3d.renderer )
-		const scenePass = pass( stage3d.scene, stage3d.camera )
-		const scenePassColor = scenePass.getTextureNode( 'output' )
-		const bloomIntensity = 0.5
-		const bloomRadius = 0.01
-		const bloomPass = bloom( scenePassColor, bloomIntensity, bloomRadius, 0.4 )
-		this.renderPipeline.outputNode = scenePassColor.add( bloomPass )
-		stage3d.renderPipeline = this.renderPipeline
 	}
 
 	async loadModels() {
@@ -432,9 +428,9 @@ class VenusExample {
 		this.hint?.remove()
 		this.hint = null
 		utils.remove( [this.opacity, this.morph, stage3d.control].filter( Boolean ) )
-		stage3d.renderPipeline = null
+		this.bloom?.dispose()
+		this.bloom = null
 		stage3d.renderer.toneMapping = NoToneMapping
-		this.renderPipeline?.dispose()
 		window.removeEventListener( 'resize', this.onResize )
 		if ( this.line ) {
 			stage3d.remove( this.line )
@@ -472,6 +468,7 @@ class VenusExample {
 		this.texA?.dispose?.()
 		this.texB?.dispose?.()
 		stage3d.control?.dispose()
+		stage3d.control = null
 	}
 
 }

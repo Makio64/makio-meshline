@@ -72,10 +72,12 @@ It also supports `Instancing` and optimized CPU batching.
 - **Range Updates**: `setPositionRange()` edits a fixed span of a CPU billboard line and marks only that span plus its one-point neighbor halo for upload. Use it for brushes, tails, and local path deformation; surfaces and smoothed topology still need `setPositions()`.
 - **Bulk Instance Writes**: Fill the attribute returned by `addInstanceAttribute()` directly before its first draw to avoid a staging copy. After upload, `setInstanceValues()` updates a whole attribute (or contiguous subrange) with one version change instead of one change per instance.
 - **Portable Vertex-Buffer Budget**: WebGPU guarantees eight vertex-buffer slots. Each independent geometry or node-backed custom attribute consumes one; interleaved attributes share a slot. Use `getVertexBufferUsage()` to inspect the geometry layout, pass `reservedBuffers` when your application supplies additional streams, and use `addVertexAttributes()` / `addInstanceAttributes()` to interleave related values. The facade rejects known over-budget builds before pipeline creation.
-- **Lazy progress data**: The `MeshLine` facade omits the progress attribute and its arc-length pass until gradients, dashes, width callbacks, GPU positions, or hooks actually consume progress. Set `needsProgress: true` when a custom low-level consumer reads it directly.
+- **Lazy progress & UV varyings**: The `MeshLine` facade omits the `progress` attribute and its arc-length pass until gradients, dashes, width callbacks, GPU positions, or hooks actually consume progress. In the shader graph, `vProgress`, `vSide`, and `uvCoords` are emitted as varyings only when a fragment hook or map actually references them, and opaque lines without alpha/discard features skip `opacityNode` altogether. Set `needsProgress: true` when a custom low-level consumer reads it directly.
+- **Early-Z Preserving Join Folds (`join.fold = 'geometry'`)**: Projected 3D folds default to `'geometry'` mode, which projects the stroke radius once in NDC and splits/overlaps folded join rows in the vertex shader with **zero fragment `discard`**. This preserves hardware early-Z and tile-based Hidden Surface Removal (HSR). Opt into `join: { fold: 'exact' }` or `join: { type: 'round' }` only when pixel-exact circular fold silhouettes are needed.
 - **Lean Surface Buffers**: Roads always emit positions and normals. UVs, tangents, progress, and side are added only when maps, normal mapping, or an explicit low-level consumer needs them.
 - **Surface topology on demand**: Ordinary miter/butt roads keep the compact two-row strip. Bevel wedges, round fans, caps, and reversal splits allocate extra vertices only when requested or mathematically required. `join.segments` is a half-turn budget and shallow corners automatically use fewer triangles; `cap.segments` controls a full semicircle.
 - **Miter Clamp + Optional Corner Smoothing**: The shader miter is always on (no branch cost, simpler than the old opt-in path). For static sharp polylines, opt into `smoothSharpBends` to split near-hairpin corners on the CPU before they reach the shader. Leave it off for dynamic lines or custom per-vertex attributes that need stable topology.
+- **Cached Unpadded Bounds ($O(\text{lines})$ Padding Refresh)**: `MeshLineGeometry` caches each line's unpadded bounding box and sphere so animating `lineWidth()`, `miterLimit()`, `join()`, or `sizeAttenuation()` updates world-space padding in $O(\text{lines})$ microseconds (`0.25 µs` on a 200K-point line—**6,780× faster**) instead of rescanning every vertex.
 - **Hybrid Culling**: The optional [GPU culling system](./gpu-culling.md) keeps small paths on Three's CPU object test and can compact offscreen chunks of a very large opaque path into one native-WebGPU indirect draw.
 - **Point-centric GPU path**: The optional experimental [GPU path](./gpu-path.md) stores source points once and renders one non-indexed indirect draw. Raw mode derives neighbours without a segment buffer or compute dispatch; simplification emits stable records with a 256-lane prefix above 256 chunks. The complete CPU line remains its fail-open reference.
 - **WebGPU Compute Curves**: `MeshLineCompute.step()` dispatches a motion pass and a cumulative arc-length pass over storage-buffer curve state, avoiding per-frame JavaScript point uploads for autonomous curve fields. Measure the complete simulation and render workload on target hardware; moving state to the GPU is not itself a performance guarantee.
@@ -85,6 +87,10 @@ It also supports `Instancing` and optimized CPU batching.
 - Use Instancing when all your lines have the same number of segments.
 - Use `Float32Array` for initial positions to avoid conversions.
 - Reuse arrays in hot loops to reduce GC pressure.
+- **Prefer `progress` and `lineCoord.y` / `side` over `uv()` in fragment hooks**: In `discardFn`, `fragmentColorFn`, and `fragmentAlphaFn`, use the hook's `progress` (`0..1`) and `side` (`-1..1`) arguments or `lineCoord.y` instead of calling `uv()`, and pass `.needsUV( false )` when no texture map is used. This avoids allocating a `vec2` `uv` vertex buffer and interpolating an extra `vec2` varying.
+- **Share compiled shaders across multiple lines**: Three.js caches compiled `ProgrammableStage` shaders by exact WGSL/GLSL string. When rendering multiple `MeshLine` instances, define reusable `Fn()` hooks at module scope and drive per-line differences via uniforms (`color`, `lineWidth`, `dash`, or custom `uniform()`) instead of baking different literal constants into per-line hooks.
+- **Warm up multi-shader scenes before reveal animations**: Call `.build()` on every line, render one frame (`renderer.render( scene, camera )`), and `await renderer.backend?.device?.queue?.onSubmittedWorkDone?.()` before starting entrance timelines so pipelines compile up front without first-frame stalls.
+- **Leave `.antialias( false )` when using MSAA**: Hardware MSAA smooths the billboard geometry silhouette natively while keeping the line in the opaque pass (`depthWrite: true`). Enable `.antialias( true )` only on non-MSAA targets or for sub-pixel lines.
 - For a local edit, reuse a small `Float32Array` and call `line.setPositionRange( patch, startPoint )`. If progress, UV, endpoint metadata, or a width callback depends on arc length, those derived values must still refresh for the affected line.
 - For custom vertex data, create the attribute with `addVertexAttribute()` and upload bulk changes with `setVertexValues()`. Point-scoped data on a regular billboard must be duplicated over `[incoming+, incoming-, outgoing+, outgoing-]`; `startVertex` addresses those physical rows. Same-topology rebuilds preserve it, while point/line-count changes remove custom attributes, so recreate and refill them after an intentional topology change.
 - Keep automatic frustum culling disabled for CSS-pixel width, GPU-positioned lines, and arbitrary position/neighbour/width/normal/final-vertex hooks unless you maintain conservative bounds yourself.
@@ -96,33 +102,25 @@ It also supports `Instancing` and optimized CPU batching.
 - For picking or hover, set `raycaster.params.Line.firstHitOnly = true` when you only need the nearest hit.
 - Test both backends on target devices. Backend wins depend on the scene, driver, and workload.
 
-## Reproducible V2 CPU Benchmark
+## Reproducible V2 Benchmarks
 
-Run the repository benchmark on the target machine:
+See the dedicated [V2 Benchmarks](./benchmarks.md) page for full tables across every workload, or explore the live `MeshLine`-rendered benchmark diagram below:
+
+<BenchmarkDiagram />
+
+Run the repository benchmark suite on your target machine:
 
 ```bash
 pnpm bench:v2
-```
-
-It reports median screen build/update time, update time with bounds, surface build time, and exact generated buffer bytes at several point counts. Screen and surface numbers are separated because a transported road frame is intentionally more expensive than a camera-facing fixed strip. Treat local results as the decision input; do not infer a compute win merely from moving work off the CPU.
-
-For range-update CPU and upload measurements, run:
-
-```bash
 pnpm bench:hotpaths
-```
-
-To compare compact road geometry with bevel, round-join, and round-cap topology, run:
-
-```bash
+pnpm bench:bounds
 pnpm bench:surface-topology -- 50000 7
 ```
 
-The command reports median build time, expanded vertex/index counts, and buffer bytes for each policy. Round fans scale linearly with their segment budget, so use the lowest subdivision count that is visually smooth at the target road width and camera distance.
-
-In the 50k-point development benchmark, making the round budget angle-adaptive reduced the round-8 case from 549,982 to 199,996 vertices and from 18.31 MiB to 6.29 MiB (about 66% less geometry storage). The compact cap-only path finished with 100,016 vertices—just 16 beyond miter/butt—and avoided the former duplicated Float64 segment staging pass. Counts and bytes are deterministic; timings remain machine- and load-dependent.
-
-On the V2 development machine, a 128-point edit inside a 200k-point default billboard path changed the position/neighbor upload from 14.4 MB to 9.3 KB and the median CPU update from about 2.1 ms to about 0.003 ms. These are workload and machine measurements, not fixed runtime guarantees.
+- `pnpm bench:v2` reports median screen build/update time, update time with bounds, surface build/update time, and exact generated buffer bytes from `1,000` to `200,000` points.
+- `pnpm bench:hotpaths` compares full `setPositions()` against partial `setPositionRange()` CPU times and pending upload bytes. On a 200K-point default billboard path, a 128-point edit reduces the position/neighbor upload from `28.8 MB` to `18.6 KB` (**-99.94%**) and median CPU update time from `1.28 ms` to `0.0039 ms` (**331× faster**).
+- `pnpm bench:bounds` measures padding-only bound refreshes (`lineWidth()`, `join({ limit })`, `sizeAttenuation()`) against full point rescans (`setPositions(..., true)`), dropping a 200K-point single-line width update from `1.58 ms` to `0.00025 ms` (**6,300× faster**).
+- `pnpm bench:surface-topology -- 50000 7` compares compact road geometry with bevel, round-join, and round-cap topology. Angle-adaptive round fans reduce the 50K-point `round8-butt` case from `549,982` to `199,996` vertices and from `18.31 MiB` to `6.29 MiB` (**65.6% less geometry storage**), compact `miter-round8` adds only `16` cap vertices (`100,016` total), and bisector frame transport + orthonormal join basis + flat scratch pool cuts 50K-point surface builds to `3.32–3.92 ms` (**3.3×–5.6× faster**).
 
 ## GPU LOD break-even
 

@@ -1,4 +1,4 @@
-import { assign, attribute, bool, cameraNear, cameraProjectionMatrix, cameraWorldMatrix, dFdx, dFdy, Discard, dot, float, Fn, If, inverseSqrt, max, min, mix, mod, modelViewMatrix, modelWorldMatrixInverse, nodeObject, normalView, normalWorld, positionGeometry, positionLocal, positionPrevious, positionWorld, smoothstep, step, texture, uint, uniform, uv, varying, varyingProperty, vec2, vec3, vec4, vertexIndex } from 'three/tsl'
+import { assign, attribute, cameraNear, cameraProjectionMatrix, cameraWorldMatrix, dFdx, dFdy, Discard, dot, float, Fn, fract, If, inverseSqrt, max, min, mix, modelViewMatrix, modelWorldMatrixInverse, nodeObject, normalView, normalWorld, positionGeometry, positionLocal, positionPrevious, positionWorld, smoothstep, step, texture, uint, uniform, uv, varying, varyingProperty, vec2, vec3, vec4, vertexIndex } from 'three/tsl'
 import { Color, DoubleSide, MeshBasicNodeMaterial, Node, NormalBlending, Vector2 } from 'three/webgpu'
 
 const DEFAULT_MITER_LIMIT = 4
@@ -21,16 +21,14 @@ const sanitizeMiterLimit = value => {
 // stretched by aspect). Directions measured in this space correspond 1:1 to
 // screen-pixel directions — they're what the miter math consumes.
 const fix = Fn( ( [i_immutable, aspect_immutable] ) => {
-	const aspect = float( aspect_immutable ).toVar()
-	const i = vec4( i_immutable ).toVar()
+	const aspect = float( aspect_immutable )
+	const i = vec4( i_immutable )
 	// A centerline point can touch/cross the camera plane before raster clipping.
 	// Keep the shader finite there; exact segment trimming needs variable segment
 	// topology, but a signed epsilon prevents NaN/Inf from contaminating the join.
-	const signedEpsilon = mix( float( -1e-6 ), float( 1e-6 ), step( float( 0 ), i.w ) ).toVar( 'signedEpsilon' )
+	const signedEpsilon = mix( float( -1e-6 ), float( 1e-6 ), step( float( 0 ), i.w ) )
 	const safeW = mix( signedEpsilon, i.w, step( float( 1e-6 ), i.w.abs() ) ).toVar( 'safeW' )
-	const ndc = vec2( i.xy.div( safeW ) ).toVar( 'ndc' )
-	const res = vec2( ndc.x.mul( aspect ), ndc.y ).toVar( 'res' )
-	return res
+	return vec2( i.x.mul( aspect ), i.y ).div( safeW )
 } ).setLayout( {
 	name: 'fix', type: 'vec2', inputs: [
 		{ name: 'i', type: 'vec4' },
@@ -44,7 +42,6 @@ const aJoinRole = attribute( 'joinRole', 'float' )
 const aProgress = attribute( 'progress', 'float' )
 const aColor = attribute( 'vertexColor', 'vec3' )
 const aWidth = attribute( 'width', 'float' )
-const vProgress = varyingProperty( 'float', 'vProgress' )
 const vColor = varyingProperty( 'vec4', 'vColor' )
 // View-space depth of the emitted vertex, read by scene fog (see setupShaders).
 const vViewZ = varyingProperty( 'float', 'vViewZ' )
@@ -63,7 +60,7 @@ const outgoingVertex = hasJoinRole.select(
 	indexedOutgoingVertex
 )
 const encodedSide = hasJoinRole.select(
-	aJoinRole.abs().lessThan( float( 1.5 ) ).select( float( 1 ), float( -1 ) ),
+	float( 3 ).sub( aJoinRole.abs().mul( 2 ) ),
 	vertexSide
 )
 
@@ -152,12 +149,11 @@ const resolveFoldMode = options => {
 // MeshLineGPUPath's point buffer, has a centerline that its geometry's
 // `position` attribute is only a template for. Three derives
 // `positionLocal`, `positionWorld` and the vertex-stage `positionView` (hardware
-// clip distances; before r183 also the fragment one) from that attribute, at the
-// top of the vertex stage, and pairs `positionLocal` with `positionPrevious` in
-// motion vectors. This node runs there and points both at the placed centerline
-// instead, each only in builds that read it: setup and analyze have registered
-// every reader's varying by the time code is generated, so other builds emit
-// nothing.
+// clip distances) from that attribute, at the top of the vertex stage, and pairs
+// `positionLocal` with `positionPrevious` in motion vectors. This node runs there
+// and points both at the placed centerline instead, each only in builds that
+// read it: setup and analyze have registered every reader's varying by the time
+// code is generated, so other builds emit nothing.
 export class PlacedPositionNode extends Node {
 
 	static get type() {
@@ -417,12 +413,18 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 		let previousProgress = progress
 		let nextProgress = progress
 		if ( this._needsEndpointMetadata ) {
-			const previousProgressOpen = progress.sub( endpoint.z ).clamp( 0, 1 )
-			const nextProgressOpen = progress.add( endpoint.w ).clamp( 0, 1 )
-			const previousProgressClosed = mod( progress.sub( endpoint.z ).add( 1 ), float( 1 ) )
-			const nextProgressClosed = mod( progress.add( endpoint.w ), float( 1 ) )
-			previousProgress = mix( previousProgressOpen, previousProgressClosed, endpoint.y ).toVar( 'previousProgress' )
-			nextProgress = mix( nextProgressOpen, nextProgressClosed, endpoint.y ).toVar( 'nextProgress' )
+			const needsPrevProgress = !!( this.gpuPositionNode || this.positionFn || this.previousFn )
+			const needsNextProgress = !!( this.gpuPositionNode || this.positionFn || this.nextFn )
+			if ( needsPrevProgress ) {
+				const previousProgressOpen = progress.sub( endpoint.z ).clamp( 0, 1 )
+				const previousProgressClosed = fract( progress.sub( endpoint.z ) )
+				previousProgress = mix( previousProgressOpen, previousProgressClosed, endpoint.y ).toVar( 'previousProgress' )
+			}
+			if ( needsNextProgress ) {
+				const nextProgressOpen = progress.add( endpoint.w ).clamp( 0, 1 )
+				const nextProgressClosed = fract( progress.add( endpoint.w ) )
+				nextProgress = mix( nextProgressOpen, nextProgressClosed, endpoint.y ).toVar( 'nextProgress' )
+			}
 		}
 
 		// Get base positions
@@ -464,13 +466,13 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 			// Get base positions in LOCAL space
 			const { pos, previous, next } = this.getLinePositions( progress, endpoint )
 
-			// Transform to VIEW space
-			const posView = modelViewMatrix.mul( vec4( pos, 1.0 ) ).xyz
-			const prevView = modelViewMatrix.mul( vec4( previous, 1.0 ) ).xyz
-			const nextView = modelViewMatrix.mul( vec4( next, 1.0 ) ).xyz
-			const posClip = cameraProjectionMatrix.mul( vec4( posView, 1.0 ) ).toVar( 'shadowPosClip' )
-			const prevClip = cameraProjectionMatrix.mul( vec4( prevView, 1.0 ) ).toVar( 'shadowPrevClip' )
-			const nextClip = cameraProjectionMatrix.mul( vec4( nextView, 1.0 ) ).toVar( 'shadowNextClip' )
+			// Transform to VIEW space once and reuse for both clip projection and 3D deltas
+			const posView = modelViewMatrix.mul( vec4( pos, 1.0 ) ).toVar( 'shadowPosView' )
+			const prevView = modelViewMatrix.mul( vec4( previous, 1.0 ) ).toVar( 'shadowPrevView' )
+			const nextView = modelViewMatrix.mul( vec4( next, 1.0 ) ).toVar( 'shadowNextView' )
+			const posClip = cameraProjectionMatrix.mul( posView ).toVar( 'shadowPosClip' )
+			const prevClip = cameraProjectionMatrix.mul( prevView ).toVar( 'shadowPrevClip' )
+			const nextClip = cameraProjectionMatrix.mul( nextView ).toVar( 'shadowNextClip' )
 			const posScreen = fix( posClip, float( 1 ) ).toVar( 'shadowPosScreen' )
 			const prevScreen = fix( prevClip, float( 1 ) ).toVar( 'shadowPrevScreen' )
 			const nextScreen = fix( nextClip, float( 1 ) ).toVar( 'shadowNextScreen' )
@@ -488,18 +490,22 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 			// Calculate a finite line direction in VIEW space. Open endpoints and
 			// projected reversals reuse the owning physical body's direction, matching
 			// the visible pass without reconnecting the duplicated join pairs.
-			const delta1Raw = posView.sub( prevView ).toVar( 'shadowDelta1Raw' )
-			const delta2Raw = nextView.sub( posView ).toVar( 'shadowDelta2Raw' )
-			const reversalStart = outgoingVertex.and( projectedReversal ).select( float( 1 ), float( 0 ) )
-			const reversalEnd = outgoingVertex.not().and( projectedReversal ).select( float( 1 ), float( 0 ) )
-			const atStart = max( max( endpointMarker.negate(), float( 0 ) ), reversalStart ).toVar( 'shadowAtStart' )
-			const atEnd = max( max( endpointMarker, float( 0 ) ), reversalEnd ).toVar( 'shadowAtEnd' )
-			const delta1 = mix( delta1Raw, delta2Raw, atStart ).toVar( 'shadowDelta1' )
-			const delta2 = mix( delta2Raw, delta1Raw, atEnd ).toVar( 'shadowDelta2' )
+			const delta1Raw = posView.xyz.sub( prevView.xyz ).toVar( 'shadowDelta1Raw' )
+			const delta2Raw = nextView.xyz.sub( posView.xyz ).toVar( 'shadowDelta2Raw' )
+			const reversalStart = outgoingVertex.and( projectedReversal )
+			const reversalEnd = outgoingVertex.not().and( projectedReversal )
+			const atStart = ( this._needsEndpointMetadata
+				? endpointMarker.lessThan( float( -0.5 ) ).or( reversalStart )
+				: reversalStart ).toVar( 'shadowAtStart' )
+			const atEnd = ( this._needsEndpointMetadata
+				? endpointMarker.greaterThan( float( 0.5 ) ).or( reversalEnd )
+				: reversalEnd ).toVar( 'shadowAtEnd' )
+			const delta1 = atStart.select( delta2Raw, delta1Raw ).toVar( 'shadowDelta1' )
+			const delta2 = atEnd.select( delta1Raw, delta2Raw ).toVar( 'shadowDelta2' )
 			const minimumLength = float( 0.0001 )
 			const delta1Length = delta1.length().toVar( 'shadowDelta1Length' )
 			const delta2Length = delta2.length().toVar( 'shadowDelta2Length' )
-			const directionFallback = vec3( 1, 0, 0 ).toVar( 'shadowDirectionFallback' )
+			const directionFallback = vec3( 1, 0, 0 )
 			const dir1Raw = delta1.div( max( delta1Length, minimumLength ) ).toVar( 'shadowDir1Raw' )
 			const dir2Raw = delta2.div( max( delta2Length, minimumLength ) ).toVar( 'shadowDir2Raw' )
 			const dir1 = mix(
@@ -520,21 +526,14 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 				directionSum.div( max( directionSumLength, minimumLength ) ),
 				directionBlend
 			).toVar( 'shadowBlendedDirection' )
-			const blendedDirectionLength = blendedDirection.length().toVar( 'shadowBlendedDirectionLength' )
-			const dir = mix(
-				bodyDirection,
-				blendedDirection.div( max( blendedDirectionLength, minimumLength ) ),
-				step( minimumLength, blendedDirectionLength )
-			).toVar( 'shadowDir' )
 
-			// Calculate perpendicular in VIEW space (billboard to camera)
-			// In View space, camera is at (0,0,0) looking down -Z
-			// We want the vector perpendicular to the line and the view direction (Z axis)
-			// This is effectively the 2D normal in the XY plane
-			const perpendicularRaw = vec3( dir.y.negate(), dir.x, 0 ).toVar( 'shadowPerpendicularRaw' )
+			// Calculate perpendicular in VIEW space (billboard to camera).
+			// Normalizing the 2D XY projection directly makes a prior 3D normalization
+			// of `blendedDirection` redundant (positive scalar factors cancel out).
+			const perpendicularRaw = vec2( blendedDirection.y.negate(), blendedDirection.x ).toVar( 'shadowPerpendicularRaw' )
 			const perpendicularLength = perpendicularRaw.length().toVar( 'shadowPerpendicularLength' )
 			const perp = mix(
-				vec3( 1, 0, 0 ),
+				vec2( 1, 0 ),
 				perpendicularRaw.div( max( perpendicularLength, minimumLength ) ),
 				step( minimumLength, perpendicularLength )
 			).toVar( 'shadowPerpendicular' )
@@ -543,12 +542,14 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 			const bodyVisible = step( screenMinimumLength, bodyScreenLength )
 			const w = this.getLineWidth( this.lineWidth.mul( 0.5 ), progress, side ).mul( bodyVisible )
 
-			// Apply offset in VIEW space
-			const posViewNew = posView.add( perp.mul( side.mul( w ) ) )
-
-			// Transform back to LOCAL space
-			const worldPos = cameraWorldMatrix.mul( vec4( posViewNew, 1.0 ) )
-			return modelWorldMatrixInverse.mul( worldPos ).xyz
+			// Transform the 2D view-space offset (z = 0, w = 0) to local space and add to `pos`.
+			const offsetView = perp.mul( side.mul( w ) )
+			const worldOffset = cameraWorldMatrix.element( 0 ).xyz.mul( offsetView.x )
+				.add( cameraWorldMatrix.element( 1 ).xyz.mul( offsetView.y ) )
+			const localOffset = modelWorldMatrixInverse.element( 0 ).xyz.mul( worldOffset.x )
+				.add( modelWorldMatrixInverse.element( 1 ).xyz.mul( worldOffset.y ) )
+				.add( modelWorldMatrixInverse.element( 2 ).xyz.mul( worldOffset.z ) )
+			return pos.add( localOffset )
 		} )()
 
 		this.maskShadowNode = null
@@ -557,14 +558,13 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 		if ( this.dashCount ) {
 			this.maskShadowNode = Fn( () => {
 				const vProg = varying( aProgress )
-				let cyclePosition = mod( vProg.mul( this.dashCount ).add( this.dashOffset ), float( 1 ) ).toVar( 'cyclePosition' )
+				let cyclePosition = fract( vProg.mul( this.dashCount ).add( this.dashOffset ) ).toVar( 'cyclePosition' )
 
 				if ( this.dashFn ) {
 					cyclePosition.assign( this.dashFn( cyclePosition, vProg, varying( shadowSide ) ) )
 				}
 
-				const dashMask = step( cyclePosition, this.dashRatio )
-				return dashMask.greaterThan( 0.001 )
+				return cyclePosition.lessThanEqual( this.dashRatio )
 			} )()
 		}
 	}
@@ -642,16 +642,16 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 		const receivingShadows = builder.object?.receiveShadow === true && builder.renderer?.shadowMap?.enabled === true
 		this._receivingShadows = receivingShadows
 
-		// Scene fog reads `positionView`: r183+ rebuild it per fragment from the
-		// clip position with an inverse projection, r180-r182 interpolate a vec3
-		// derived from `positionLocal` (see PlacedPositionNode). The vertex stage
-		// already has the placed view depth, so fog reads it from one float
-		// varying instead, declared only when this build applies fog.
+		// Scene fog reads `positionView`, which three rebuilds per fragment from
+		// the clip position with an inverse projection. The vertex stage already
+		// has the placed view depth, so fog reads it from one float varying
+		// instead, declared only when this build applies fog.
 		const fogDepth = this.fog === true && !!builder.fogNode
 		if ( fogDepth ) builder.context.getViewZ = () => vViewZ
 
 		// Cache frequently-used attributes to prevent duplicate GPU computation
-		const progress = ( this._needsProgress ? aProgress : float( 0 ) ).toVar( 'varProgress' )
+		const progress = this._needsProgress ? aProgress : float( 0 )
+		const vProgress = varying( progress, 'vProgress' )
 		const lineSide = this.options.needsSide ? aSide : encodedSide
 		const side = lineSide.toVar( 'varSide' )
 		// Fragment hooks need an interpolated float. Reusing the IndexNode there
@@ -688,11 +688,6 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 				vColor.assign( color )
 			}
 
-			// Only assign vProgress if needed to reduce varying bandwidth
-			if ( this.gradient || this.dashCount || this.gradientFn || this.opacityFn || this.dashFn || this.uvFn || this.fragmentColorFn || this.fragmentAlphaFn || this.discardFn ) {
-				vProgress.assign( progress )
-			}
-
 			const aspect = this.resolution.x.div( this.resolution.y ).toVar( 'aspect' )
 			// View space first, then projection: three's own positionView -> clip
 			// order. A per-vertex P * MV matrix product costs more than the extra
@@ -722,9 +717,11 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 			const delta2RawLen = delta2Raw.length().toVar( 'delta2RawLen' )
 			const projectedDir1 = delta1Raw.div( max( delta1RawLen, minDirectionLength ) ).toVar( 'projectedDir1' )
 			const projectedDir2 = delta2Raw.div( max( delta2RawLen, minDirectionLength ) ).toVar( 'projectedDir2' )
-			const projectedReversal = delta1RawLen.greaterThanEqual( minDirectionLength )
+			const hasBothDirections = delta1RawLen.greaterThanEqual( minDirectionLength )
 				.and( delta2RawLen.greaterThanEqual( minDirectionLength ) )
-				.and( dot( projectedDir1, projectedDir2 ).lessThanEqual( float( SCREEN_REVERSAL_DOT_THRESHOLD ) ) )
+			const rawTurnDot = dot( projectedDir1, projectedDir2 ).toVar( 'rawTurnDot' )
+			const projectedReversal = hasBothDirections
+				.and( rawTurnDot.lessThanEqual( float( SCREEN_REVERSAL_DOT_THRESHOLD ) ) )
 			const reversalStart = outgoingVertex.and( projectedReversal )
 			const reversalEnd = outgoingVertex.not().and( projectedReversal )
 			// Endpoint markers are exactly -1/0/1, so a row either keeps or swaps its
@@ -746,7 +743,7 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 			// fallback instead of swapping strip sides or manufacturing a miter spike.
 			const delta1Len = atStart.select( delta2RawLen, delta1RawLen ).toVar( 'delta1Len' )
 			const delta2Len = atEnd.select( delta1RawLen, delta2RawLen ).toVar( 'delta2Len' )
-			const dirFallback = vec2( 1, 0 ).toVar( 'dirFallback' )
+			const dirFallback = vec2( 1, 0 )
 			const dir1Raw = atStart.select( projectedDir2, projectedDir1 ).toVar( 'dir1Raw' )
 			const dir2Raw = atEnd.select( projectedDir1, projectedDir2 ).toVar( 'dir2Raw' )
 			const dir1 = mix(
@@ -758,7 +755,7 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 			const dirSum = dir1.add( dir2 ).toVar( 'dirSum' )
 			const dirSumLen = dirSum.length().toVar( 'dirSumLen' )
 
-			const perpRaw = vec2( dirSum.y.negate(), dirSum.x ).toVar( 'perpRaw' )
+			const perpRaw = vec2( dirSum.y.negate(), dirSum.x )
 			const bodyDirection = outgoingVertex.select( dir2, dir1 ).toVar( 'bodyDirection' )
 			const perpFallback = vec2( bodyDirection.y.negate(), bodyDirection.x ).toVar( 'perpFallback' )
 			const limitBlend = dirSumLen.smoothstep(
@@ -770,42 +767,56 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 			let foldState = null
 			let foldReach = null
 			if ( foldMode !== 'off' ) {
-				// Device pixels per unit of the aspect-corrected NDC the directions live
-				// in, from the line's own resolution like the antialias block.
-				const pixelsPerNdc = this.resolution.y.mul( this.dpr ).mul( 0.5 ).toVar( 'pixelsPerNdc' )
 				// Every copy of this point (both rows, both sides) must reach the same
 				// joint decision and clip to the same disc, so a `side`-dependent width
 				// hook contributes its wider side: two radii interpolated across the
 				// stroke would notch the arc where the rows meet.
-				const foldWidth = ( this.widthFn
-					? max( this.getLineWidth( this.lineWidth, progress, float( 1 ) ), this.getLineWidth( this.lineWidth, progress, float( -1 ) ) )
-					: w ).toVar( 'foldWidth' )
+				const foldWidth = this.widthFn
+					? max( this.getLineWidth( this.lineWidth, progress, float( 1 ) ), this.getLineWidth( this.lineWidth, progress, float( -1 ) ) ).toVar( 'foldWidth' )
+					: w
 				const baseHalfWidth = foldWidth.mul( 0.5 )
-				const baseRadiusPx = ( this.sizeAttenuation
-					? cameraProjectionMatrix.mul( vec4( 0, baseHalfWidth, 0, 0 ) ).y
-						.div( max( finalPosition.w.abs(), float( 1e-6 ) ) ).mul( pixelsPerNdc )
-					: baseHalfWidth.mul( this.dpr )
-				).toVar( 'baseRadiusPx' )
+				// Device pixels per unit of the aspect-corrected NDC the directions live
+				// in, needed only when the exact fragment disc is active. In geometry
+				// mode the pixel conversion cancels out of both `innerRetreat` and `reach`.
+				// `(cameraProjectionMatrix * vec4(0, y, 0, 0)).y` is `cameraProjectionMatrix[1][1] * y`.
+				const projScaleY = cameraProjectionMatrix.element( 1 ).y
+				const invSafeW = max( finalPosition.w.abs(), float( 1e-6 ) )
+				const pixelsPerNdc = foldMode === 'exact'
+					? this.resolution.y.mul( this.dpr ).mul( 0.5 ).toVar( 'pixelsPerNdc' )
+					: null
+				const foldRadiusPx = foldMode === 'exact'
+					? ( this.sizeAttenuation
+						? projScaleY.mul( baseHalfWidth ).div( invSafeW ).mul( pixelsPerNdc )
+						: baseHalfWidth.mul( this.dpr )
+					).toVar( 'foldRadiusPx' )
+					: null
+				const baseRadiusNdc = foldMode === 'geometry'
+					? ( this.sizeAttenuation
+						? projScaleY.mul( baseHalfWidth ).div( invSafeW )
+						: foldWidth.div( this.resolution.y )
+					).toVar( 'baseRadiusNdc' )
+					: foldRadiusPx.div( pixelsPerNdc )
 
 				// Joints only: open ends stay butt, and a joint near the camera plane
 				// keeps the plain miter path rather than trusting its projection.
-				const openEnd = delta1RawLen.lessThan( minDirectionLength ).or( delta2RawLen.lessThan( minDirectionLength ) )
-				const markedEnd = this._needsEndpointMetadata ? endpointMarker.abs().greaterThan( float( 0.5 ) ) : bool( false )
+				const interiorPoint = this._needsEndpointMetadata
+					? hasBothDirections.and( endpointMarker.abs().lessThanEqual( float( 0.5 ) ) )
+					: hasBothDirections
 				const nearestW = min( finalPosition.w, min( prevPos.w, nextPos.w ) )
 				const inFront = cameraProjectionMatrix.element( 3 ).w.greaterThan( float( 0.5 ) )
 					.or( nearestW.greaterThan( cameraNear.mul( 0.5 ) ) )
-				const jointRow = openEnd.not().and( markedEnd.not() ).and( inFront ).toVar( 'foldJointRow' )
+				const jointRow = interiorPoint.and( inFront ).toVar( 'foldJointRow' )
 
 				// A miter pulls the inner vertex back r·tan(θ/2) along both bodies. Once
 				// that passes the shorter adjacent projected segment — a foreshortened
 				// run near a fold — the strip would fold over itself, so split instead.
+				// At a joint row `min(delta1Len, delta2Len) >= 1e-7`, so clamping
+				// `innerRetreat >= 1e-9` keeps the ratio >= 100 (`smoothstep = 1`) without
+				// an extra branch or hoisting `tanHalfTurn` outside `if (foldJointRow)`.
 				const cosHalfTurn = dirSumLen.mul( 0.5 ).clamp( float( 1e-4 ), float( 1 ) )
 				const tanHalfTurn = float( 1 ).sub( cosHalfTurn.mul( cosHalfTurn ) ).max( 0 ).sqrt().div( cosHalfTurn )
-				const innerRetreat = baseRadiusPx.div( pixelsPerNdc ).mul( tanHalfTurn ).toVar( 'innerRetreat' )
-				const foldBlend = innerRetreat.lessThan( float( 1e-9 ) ).select(
-					float( 1 ),
-					min( delta1Len, delta2Len ).div( innerRetreat ).smoothstep( 0.75, 1 )
-				)
+				const innerRetreat = max( baseRadiusNdc.mul( tanHalfTurn ), float( 1e-9 ) )
+				const foldBlend = min( delta1Len, delta2Len ).div( innerRetreat ).smoothstep( 0.75, 1 )
 
 				// How the path turns in 3D, from view-space bodies: invariant under
 				// camera motion, so the authored/smooth weight never flickers.
@@ -837,28 +848,36 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 				// 0 keeps both rows on the shared miter; 1 leaves each row butt-ended on
 				// its own body, extended so the two pieces meet in the join. A
 				// projected reversal has no usable miter at all and always splits.
-				const splitWeight = max( float( 1 ).sub( miterBlend ), projectedReversal.select( float( 1 ), float( 0 ) ) ).toVar( 'splitWeight' )
+				const splitWeight = max( float( 1 ).sub( miterBlend ), float( projectedReversal ) ).toVar( 'splitWeight' )
 
 				// The raw projected bodies, not the endpoint-substituted dir1/dir2.
-				const sinHalfTurn = projectedDir2.sub( projectedDir1 ).length().mul( 0.5 ).toVar( 'sinHalfTurn' )
+				// For unit vectors, |d2 - d1| / 2 == sqrt(max(0, (1 - dot(d1, d2)) * 0.5)).
+				const sinHalfTurn = float( 1 ).sub( rawTurnDot ).mul( 0.5 ).max( 0 ).sqrt()
 				if ( foldMode === 'geometry' ) {
 					// Split rows overlap past the joint along their own bodies: zero while
 					// mitered, growing with the split to the depth of the round join,
 					// r·sin(θ/2). The two rectangles then always meet at the bisector, so
 					// a fold reads as a convex, slightly faceted cap (corners at most 0.41 r
 					// out) rather than a notched one.
-					foldReach = { pixelsPerNdc, extent: jointRow.select( splitWeight.sqrt().mul( sinHalfTurn ), float( 0 ) ) }
+					const radiusNdc = this.widthFn
+						? ( this.sizeAttenuation
+							? projScaleY.mul( w.mul( 0.5 ) ).div( invSafeW )
+							: w.div( this.resolution.y ) )
+						: baseRadiusNdc
+					foldReach = { jointRow, radiusNdc, extent: splitWeight.sqrt().mul( sinHalfTurn ) }
 				} else {
 					// The clip disc only feeds the fragment clip, and a `toVar()` is
 					// emitted whether or not anything reads it, so only this mode builds it.
-					const miterFactor = float( 2 ).div( max( projectedDir1.add( projectedDir2 ).length(), float( 2e-4 ) ) ).toVar( 'miterFactor' )
+					// For unit vectors, |d1 + d2| == sqrt(max(0, 2 + 2 * dot(d1, d2))).
+					const rawDirSumLen = float( 2 ).add( rawTurnDot.mul( 2 ) ).max( 0 ).sqrt()
+					const miterFactor = float( 2 ).div( max( rawDirSumLen, float( 2e-4 ) ) ).toVar( 'miterFactor' )
 					// Clip radius as a multiple of the stroke radius. Smooth folds get the
 					// round silhouette (plus the tolerance); authored corners keep their full
 					// miter up to the limit, then melt continuously to round by twice the
 					// limit instead of dropping to a notch.
 					const limit = float( 2 ).div( this._miterThreshold )
 					const melt = smoothstep( limit, limit.mul( 2 ), miterFactor )
-					const roundFactor = min( miterFactor, float( 1 ).add( float( FOLD_TOLERANCE_PX ).div( max( baseRadiusPx, float( FOLD_TOLERANCE_PX ) ) ) ) )
+					const roundFactor = min( miterFactor, float( 1 ).add( float( FOLD_TOLERANCE_PX ).div( max( foldRadiusPx, float( FOLD_TOLERANCE_PX ) ) ) ) )
 					const authoredFactor = min( miterFactor, limit.sub( limit.sub( 1 ).mul( melt ) ) )
 					const clipFactor = mix( roundFactor, authoredFactor, authored ).toVar( 'clipFactor' )
 
@@ -869,7 +888,7 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 						pixelsPerNdc,
 						miterFactor,
 						sinHalfTurn,
-						foldWidth,
+						radiusPx: foldRadiusPx,
 						endFactor: foldJoint.select( max( clipFactor, float( 1 ) ), float( 0 ) ).toVar( 'foldEndFactor' ),
 						splitRow: foldJoint.and( split ).toVar( 'foldSplitRow' ),
 					}
@@ -899,8 +918,11 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 				vShadowTube.assign( vec3( unitPerp, shadowHalfWidth ) )
 			}
 
-			const normal = vec4( 0, 0, 0, 1 ).toVar( 'normal' )
-			normal.xy.assign( unitPerp.mul( miterHalfWidth ) )
+			const needsVec4Normal = !!( this.normalFn || this.vertexFn )
+			const normal = ( needsVec4Normal
+				? vec4( unitPerp.mul( miterHalfWidth ), 0, 1 )
+				: unitPerp.mul( miterHalfWidth )
+			).toVar( 'normal' )
 
 			// Apply normal modifier if provided. Supported joins still pass their unit
 			// bisector; a bounded fallback passes the owning body's direction so hooks
@@ -912,14 +934,19 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 
 			if ( this.sizeAttenuation ) {
 				// `lineWidth` is a full view/world-space width. Project the offset as
-				// a direction (w = 0), so perspective naturally attenuates with depth.
-				normal.xy.assign( cameraProjectionMatrix.mul( vec4( normal.xy, 0, 0 ) ).xy )
+				// a 2D direction (z = 0, w = 0) via the first two projection columns.
+				const projectedNormal = cameraProjectionMatrix.element( 0 ).xy.mul( normal.x ).add(
+					cameraProjectionMatrix.element( 1 ).xy.mul( normal.y )
+				)
+				if ( needsVec4Normal ) normal.xy.assign( projectedNormal )
+				else normal.assign( projectedNormal )
 			} else {
 				// `lineWidth` is a full CSS-pixel width. `resolution` is also CSS-sized:
 				// the canvas still uses more physical pixels on high-DPR screens, but
 				// the visible CSS size stays stable instead of being multiplied twice.
 				normal.x.divAssign( aspect )
-				normal.xy.mulAssign( finalPosition.w.mul( 2 ).div( this.resolution.y ) )
+				if ( needsVec4Normal ) normal.xy.mulAssign( finalPosition.w.mul( 2 ).div( this.resolution.y ) )
+				else normal.mulAssign( finalPosition.w.mul( 2 ).div( this.resolution.y ) )
 			}
 
 			if ( this.antialias ) {
@@ -927,7 +954,8 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 				// half a pixel, and rescale the coordinate so |vAaCoord| == 1 still
 				// marks the *unpadded* edge. The fragment band is then centred on the
 				// real silhouette instead of eaten out of the stroke.
-				const halfNdc = normal.xy.div( max( finalPosition.w.abs(), float( 1e-6 ) ) ).toVar( 'halfNdc' )
+				const normalXY = needsVec4Normal ? normal.xy : normal
+				const halfNdc = normalXY.div( max( finalPosition.w.abs(), float( 1e-6 ) ) ).toVar( 'halfNdc' )
 				const halfPx = vec2(
 					halfNdc.x.mul( this.resolution.x ),
 					halfNdc.y.mul( this.resolution.y )
@@ -945,7 +973,8 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 				const edgePad = float( AA_EDGE_PADDING_PX ).div( max( cosHalfAngle, float( 1e-4 ) ) ).toVar( 'edgePad' )
 				const paddedHalfPx = max( halfPx, float( AA_MINIMUM_HALF_PX ) ).add( edgePad ).toVar( 'paddedHalfPx' )
 				const aaScale = paddedHalfPx.div( max( halfPx, float( 1e-6 ) ) ).toVar( 'aaScale' )
-				normal.xy.mulAssign( aaScale )
+				if ( needsVec4Normal ) normal.xy.mulAssign( aaScale )
+				else normal.mulAssign( aaScale )
 				vAaCoord.assign( side.mul( aaScale ) )
 				// A stroke thinner than one device pixel can no longer lose width to
 				// the geometry clamp above, so fade it by its true coverage instead.
@@ -959,44 +988,35 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 			// select, never a multiply — NaN * 0 is still NaN) so `normalFn`,
 			// `sizeAttenuation` and `vertexFn` keep running on the collapsed row.
 			// This matches what the shadow path already does with `bodyVisible`.
-			const bodyLength = outgoingVertex.select( delta2RawLen, delta1RawLen )
+			const bodyLength = outgoingVertex.select( delta2RawLen, delta1RawLen ).toVar( 'bodyLength' )
 			const bodyVisible = bodyLength.greaterThanEqual( minDirectionLength )
-			finalPosition.xy.addAssign( bodyVisible.select( normal.xy, vec2( 0 ) ).mul( side ) )
+			const normalOffset = needsVec4Normal ? normal.xy : normal
+			finalPosition.xy.addAssign( bodyVisible.select( normalOffset, vec2( 0 ) ).mul( side ) )
 			if ( foldReach ) {
 				// Geometry mode: split rows overlap past the joint along their own body.
-				const { pixelsPerNdc, extent } = foldReach
-				const radiusPx = ( this.sizeAttenuation
-					? cameraProjectionMatrix.mul( vec4( 0, w.mul( 0.5 ), 0, 0 ) ).y
-						.div( max( finalPosition.w.abs(), float( 1e-6 ) ) ).mul( pixelsPerNdc )
-					: w.mul( 0.5 ).mul( this.dpr )
-				)
+				// `jointRow` already requires `hasBothDirections`, which implies `bodyVisible`.
+				const { jointRow, radiusNdc, extent } = foldReach
 				const ownBodyDirection = outgoingVertex.select( projectedDir2.negate(), projectedDir1 )
-				const reach = ownBodyDirection.mul( extent.mul( radiusPx ).div( pixelsPerNdc ) )
-				finalPosition.xy.addAssign( bodyVisible.select( vec2( reach.x.div( aspect ), reach.y ).mul( finalPosition.w ), vec2( 0 ) ) )
+				const reach = ownBodyDirection.mul( extent.mul( radiusNdc ) )
+				finalPosition.xy.addAssign( jointRow.select( vec2( reach.x.div( aspect ), reach.y ).mul( finalPosition.w ), vec2( 0 ) ) )
 			}
 
 			if ( foldState ) {
-				const { pixelsPerNdc, miterFactor, sinHalfTurn, foldWidth, endFactor, splitRow } = foldState
-				// The clip disc's radius in device pixels, shared by the whole joint.
-				const radiusPx = ( this.sizeAttenuation
-					? cameraProjectionMatrix.mul( vec4( 0, foldWidth.mul( 0.5 ), 0, 0 ) ).y
-						.div( max( finalPosition.w.abs(), float( 1e-6 ) ) ).mul( pixelsPerNdc )
-					: foldWidth.mul( 0.5 ).mul( this.dpr )
-				).toVar( 'foldRadiusPx' )
+				const { pixelsPerNdc, miterFactor, sinHalfTurn, radiusPx, endFactor, splitRow } = foldState
 
 				// A split row reaches past the joint along its own body just far enough
 				// to cover its half of the clipped join: min(factor, miter) · r · sin(θ/2).
-				const ownBodyDirection = outgoingVertex.select( projectedDir2, projectedDir1 )
+				const ownBodyDirection = outgoingVertex.select( projectedDir2.negate(), projectedDir1 )
 				const reachPx = min( endFactor, miterFactor ).mul( radiusPx ).mul( sinHalfTurn ).add( FOLD_EXTENSION_PADDING_PX )
-				const reach = ownBodyDirection.mul( outgoingVertex.select( float( -1 ), float( 1 ) ) ).mul( reachPx.div( pixelsPerNdc ) )
+				const reach = ownBodyDirection.mul( reachPx.div( pixelsPerNdc ) )
 				const reachClip = vec2( reach.x.div( aspect ), reach.y ).mul( finalPosition.w )
-				finalPosition.xy.addAssign( bodyVisible.and( splitRow ).select( reachClip, vec2( 0 ) ) )
+				finalPosition.xy.addAssign( splitRow.select( reachClip, vec2( 0 ) ) )
 
 				// Segment frame of this row's body, in device pixels (y up).
 				const segmentStart = outgoingVertex.select( currentP, prevP ).mul( pixelsPerNdc ).toVar( 'foldSegmentStart' )
-				const segmentVector = outgoingVertex.select( nextP, currentP ).mul( pixelsPerNdc ).sub( segmentStart )
-				const segmentLength = segmentVector.length().toVar( 'foldSegmentLength' )
-				const along = segmentLength.greaterThan( float( 1e-6 ) ).select( segmentVector.div( segmentLength ), vec2( 1, 0 ) ).toVar( 'foldAlong' )
+				const segmentLength = bodyLength.mul( pixelsPerNdc ).toVar( 'foldSegmentLength' )
+				const rawAlong = outgoingVertex.select( projectedDir2, projectedDir1 )
+				const along = bodyVisible.select( rawAlong, vec2( 1, 0 ) ).toVar( 'foldAlong' )
 				const across = vec2( along.y.negate(), along.x )
 				const affine = vec2( finalPosition.x.mul( aspect ), finalPosition.y ).mul( pixelsPerNdc ).sub( segmentStart.mul( finalPosition.w ) )
 				vFoldFrame.assign( vec4( dot( affine, along ), dot( affine, across ), finalPosition.w, segmentLength ) )
@@ -1039,14 +1059,13 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 			}
 			return positionFinite.select( finalPosition, vec4( 2, 2, 2, 1 ) )
 		} )()
-		let uvCoords
+		let uvCoords = null
 		if ( ( this.map && this.map.value ) || ( this.alphaMap && this.alphaMap.value ) || this.uvFn || this.fragmentColorFn || this.fragmentAlphaFn || this.discardFn ) {
-			uvCoords = uv().mul( this.repeat || vec2( 1, 1 ) ).add( this.mapOffset || vec2( 0, 0 ) ).toVar( 'uvCoords' )
-
-			// Apply UV modifier if provided
-			if ( this.uvFn ) {
-				uvCoords = this.uvFn( uvCoords, vProgress, fragmentSide )
-			}
+			uvCoords = uv()
+			if ( this.repeat ) uvCoords = uvCoords.mul( this.repeat )
+			if ( this.mapOffset ) uvCoords = uvCoords.add( this.mapOffset )
+			if ( this.uvFn ) uvCoords = this.uvFn( uvCoords.toVar( 'uvCoords' ), vProgress, fragmentSide )
+			if ( this.repeat || this.mapOffset || this.uvFn ) uvCoords = uvCoords.toVar( 'uvCoords' )
 		}
 		// Folded-join coverage: 1 away from any clipped end, the disc's box-filter
 		// coverage past one. The opacity node applies it last, after every
@@ -1081,8 +1100,10 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 		const foldBlended = this._isBlended()
 
 		// Color node
-		this.colorNode = Fn( () => {
-			let color = ( this._needsVaryingColor ? vColor : vec4( this.color, 1 ) ).toVar( 'color' )
+		const baseColorNode = this._needsVaryingColor ? vColor : vec4( this.color, 1 )
+		const hasColorModifiers = Boolean( this.gradient || ( this.map && this.map.value ) || this.fragmentColorFn )
+		this.colorNode = hasColorModifiers ? Fn( () => {
+			let color = baseColorNode.toVar( 'color' )
 			if ( this.gradient ) {
 				let gradientFactor = vProgress.toVar( 'gradientFactor' )
 
@@ -1104,11 +1125,27 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 			}
 
 			return color
-		} )()
+		} )() : baseColorNode
 
 		// Opacity node
-		this.opacityNode = Fn( () => {
-			let alpha = float( 1 ).toVar( 'alpha' )
+		const hasAlphaModifiers = Boolean(
+			this.antialias ||
+			( foldCoverage && foldBlended ) ||
+			( this.alphaMap && this.alphaMap.value ) ||
+			this.opacity ||
+			this.opacityFn ||
+			this.fragmentAlphaFn
+		)
+		const hasOpacityNode = Boolean(
+			hasAlphaModifiers ||
+			foldCoverage ||
+			this.dashCount ||
+			this.discardFn
+		)
+		// Default to literal `float( 1 )` rather than `null` so Three.js NodeMaterial
+		// does not allocate a fallback `materialOpacity` uniform on every opaque line.
+		this.opacityNode = hasOpacityNode ? Fn( () => {
+			let alpha = hasAlphaModifiers ? float( 1 ).toVar( 'alpha' ) : float( 1 )
 
 			if ( this.antialias ) {
 				// Evaluated before any Discard so the derivative stays in uniform
@@ -1150,7 +1187,7 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 			}
 
 			if ( this.dashCount ) {
-				let cyclePosition = mod( vProgress.mul( this.dashCount ).add( this.dashOffset ), float( 1 ) ).toVar( 'cyclePosition' )
+				let cyclePosition = fract( vProgress.mul( this.dashCount ).add( this.dashOffset ) ).toVar( 'cyclePosition' )
 
 				// Apply dash modifier if provided
 				if ( this.dashFn ) {
@@ -1158,8 +1195,7 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 				}
 
 				// dashRatio represents a dash portion: 0.1 = 10% dash, 90% gap
-				const dashMask = step( cyclePosition, this.dashRatio )
-				Discard( dashMask.lessThan( 0.001 ) )
+				Discard( cyclePosition.greaterThan( this.dashRatio ) )
 			}
 
 			if ( this.discardFn ) {
@@ -1178,7 +1214,7 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 			}
 
 			return alpha
-		} )()
+		} )() : float( 1 )
 
 	}
 

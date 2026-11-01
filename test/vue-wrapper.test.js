@@ -236,3 +236,64 @@ test( 'Vue wrapper keeps its exposed facade stable across live and structural up
 	assert.equal( geometryDisposeCount, 1 )
 	assert.equal( materialDisposeCount, 1 )
 } )
+
+test( 'Vue wrapper integrates with TresJS useTres context and TresGroup instance refs', async () => {
+	const tresScene = new Group()
+	const tresGroup = new Group()
+	tresScene.add( tresGroup )
+
+	const sizes = reactive( {
+		width: ref( 800 ),
+		height: ref( 600 ),
+		pixelRatio: ref( 1.5 ),
+	} )
+	const parentProp = shallowRef( null )
+	const wrapperRef = ref( null )
+	const Root = {
+		setup() {
+			provide( ssrContextKey, { modules: new Set() } )
+			provide( 'useTres', {
+				scene: shallowRef( tresScene ),
+				sizes,
+			} )
+			return () => h( MeshLine, {
+				parent: parentProp.value,
+				points: new Float32Array( [-1, 0, 0, 0, 1, 0, 1, 0, 0] ),
+				lineWidth: 0.3,
+				ref: wrapperRef,
+			} )
+		},
+	}
+
+	const app = hostRenderer.createApp( Root )
+	const container = createHostNode( 'root' )
+	app.mount( container )
+	await nextTick()
+
+	const line = unref( wrapperRef.value?.line )
+	assert.equal( line?.parent, tresScene )
+	assert.equal( line.material.resolution.value.x, 800 )
+	assert.equal( line.material.resolution.value.y, 600 )
+	assert.equal( line.material.dpr.value, 1.5 )
+
+	// Reactive TresJS viewport resize updates line resolution and DPR
+	sizes.width = 1280
+	sizes.height = 720
+	sizes.pixelRatio = 2
+	await nextTick()
+	await nextTick()
+	assert.equal( line.material.resolution.value.x, 1280 )
+	assert.equal( line.material.resolution.value.y, 720 )
+	assert.equal( line.material.dpr.value, 2 )
+
+	// Passing a TresJS group wrapper ({ instance }) re-parents the same MeshLine instance
+	parentProp.value = { instance: tresGroup }
+	await nextTick()
+	await nextTick()
+	assert.equal( unref( wrapperRef.value?.line ), line )
+	assert.equal( line.parent, tresGroup )
+
+	app.unmount()
+	await nextTick()
+	assert.equal( line.parent, null )
+} )

@@ -1,3 +1,8 @@
+/**
+ * Flying Baguettes — 30 animated loaves batched in a single MeshLine with fake 3D relief lighting.
+ * Demonstrates: .lines( lineArrays, false ), .dynamic( true ), .needsProgress( false ), .map( texture ),
+ * .normalFn( fn ), .fragmentColorFn( fn ), and custom per-vertex attributes via .addVertexAttribute().
+ */
 import { MeshLine } from 'makio-meshline'
 import { attribute, cameraPosition, clamp, color, dot, float, Fn, fract, max, mix, modelViewMatrix, normalize, positionGeometry, positionWorldDirection, pow, select, sin, smoothstep, sqrt, texture, time, uniform, varyingProperty, vec2, vec3, vec4 } from 'three/tsl'
 import { CatmullRomCurve3, Fog, RepeatWrapping, SRGBColorSpace, TextureLoader, Vector3 } from 'three/webgpu'
@@ -458,6 +463,7 @@ class FlyingBaguettesExample {
 		window.removeEventListener( 'resize', this.onResize )
 		stage3d.remove( this.line )
 		stage3d.control?.dispose()
+		stage3d.control = null
 		this.line?.dispose()
 		this.line = null
 		this.hint?.remove()

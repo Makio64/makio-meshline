@@ -37,6 +37,7 @@ function onWindowResize() {
 	camera.updateProjectionMatrix()
 	renderer.setPixelRatio( Math.min( window.devicePixelRatio, 2 ) )
 	renderer.setSize( window.innerWidth, window.innerHeight )
+	// Or chain .autoResize() when creating the line to track window resizes automatically.
 	line.resize( window.innerWidth, window.innerHeight )
 }
 

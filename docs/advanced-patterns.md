@@ -64,22 +64,35 @@ function update() {
 
 No buffers recreated, only a sub-data upload.
 
-## 4. Sharp Corners
+## 4. Sharp Corners & Join Modes
 
-Two-layer approach: the shader-side miter clamp caps spikes by default, and optional CPU-side geometry smoothing can split any corner sharper than ~60° interior bend into two cutoff points. Enable smoothing when corner quality matters more than exact input-to-GPU vertex mapping.
+Billboard lines support `.join({ type: 'miter' | 'bevel' | 'round', limit, fold: 'geometry' | 'exact' | false })` and `.miterLimit( limit )` without changing your point array:
 
 ```js
-const sharp = new MeshLine()
-  .lines(myPolyline)
-  .lineWidth(0.8)
-	.smoothSharpBends(true)      // opt in: changes topology at sharp corners
-  .join({ limit: 2 })          // tighter cap = bevel-like residual spikes
-  .build()
-// Default smoothSharpBendsAlpha (0.001) is near-imperceptible once enabled.
-// Raise it (e.g. .smoothSharpBendsAlpha(0.05)) if you want a visible bevel cap.
+// Crisp bevel at sharp bends (adds 2 bridge triangles per interior corner)
+const beveled = new MeshLine()
+	.lines( myPolyline )
+	.lineWidth( 0.8 )
+	.join( { type: 'bevel', limit: 2 } )
+	.build()
+
+// Exact round silhouette at every bend and projected 3D fold
+const rounded = new MeshLine()
+	.lines( myPolyline )
+	.lineWidth( 0.8 )
+	.join( { type: 'round', limit: 2 } )
+	.build()
+
+// Optional CPU-side corner subdivision (changes logical point count)
+const subdivided = new MeshLine()
+	.lines( myPolyline )
+	.lineWidth( 0.8 )
+	.smoothSharpBends( true )
+	.miterLimit( 2 )
+	.build()
 ```
 
-See [common-patterns › Sharp Corners](./common-patterns.md#11-sharp-corners-miter-smoothing) for a side-by-side comparison of the knobs.
+See [common-patterns › Sharp Corners](./common-patterns.md#11-sharp-corners-miter-smoothing) and [Projected Folds](./common-patterns.md#12-projected-folds) for a side-by-side comparison of the knobs.
 
 ## 5. Animated Dashes
 

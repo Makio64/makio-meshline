@@ -79,27 +79,51 @@ const props = defineProps( {
 const emit = defineEmits( ['ready'] )
 const lineRef = shallowRef( null )
 const injectedParent = inject( 'meshline-parent', null )
+const injectedTres = inject( 'useTres', null )
 let mounted = false
 let previousClosed = props.closed
 let hadLinePoints = resolveLines() != null
 
+function resolveObject3D( candidate ) {
+	const unwrapped = unref( candidate )
+	if ( !unwrapped ) return null
+	if ( typeof unwrapped.add === 'function' ) return unwrapped
+	const instance = unref( unwrapped.instance )
+	if ( instance && typeof instance.add === 'function' ) return instance
+	const scene = unref( unwrapped.scene )
+	if ( scene && typeof scene.add === 'function' ) return scene
+	return null
+}
+
 function resolveParent() {
-	return unref( props.parent ) || unref( injectedParent )
+	return resolveObject3D( props.parent ) ||
+		resolveObject3D( injectedParent ) ||
+		resolveObject3D( injectedTres )
 }
 
 function resolveLines() {
 	return props.points ?? props.lines
 }
 
+function resolveTresSizes() {
+	return unref( unref( injectedTres )?.sizes )
+}
+
 function defaultDpr() {
+	const tresPixelRatio = unref( resolveTresSizes()?.pixelRatio )
+	if ( Number.isFinite( tresPixelRatio ) && tresPixelRatio > 0 ) return tresPixelRatio
 	return typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1
 }
 
 function defaultRenderWidth() {
+	const tresWidth = unref( resolveTresSizes()?.width )
+	if ( Number.isFinite( tresWidth ) && tresWidth > 0 ) return tresWidth
 	return typeof window === 'undefined' ? 1024 : window.innerWidth
 }
 
 function defaultRenderHeight() {
+	const tresHeight = unref( resolveTresSizes()?.height )
+	if ( Number.isFinite( tresHeight ) && tresHeight > 0 ) return tresHeight
 	return typeof window === 'undefined' ? 768 : window.innerHeight
 }
 
@@ -149,7 +173,7 @@ function getBuildOptions() {
 		alphaMap: props.alphaMap,
 		opacity: props.opacity,
 		alphaTest: props.alphaTest,
-		transparent: props.transparent || props.opacity < 1 || props.alphaMap != null,
+		transparent: Boolean( props.transparent || props.antialias || props.opacity < 1 || props.alphaMap != null ),
 		wireframe: props.wireframe,
 		shadow: props.shadow,
 		receiveShadow: props.receiveShadow,
@@ -162,9 +186,9 @@ function getBuildOptions() {
 		gpuPositionNode: props.gpuPositionNode,
 		usage: props.usage,
 		instanceCount: props.instanceCount ?? -1,
-		needsUV: props.needsUV ?? false,
+		needsUV: props.needsUV,
 		needsWidth: props.needsWidth ?? false,
-		needsProgress: props.needsProgress ?? false,
+		needsProgress: props.needsProgress,
 		needsPrevious: props.needsPrevious ?? !props.gpuPositionNode,
 		needsNext: props.needsNext ?? !props.gpuPositionNode,
 		needsSide: props.needsSide ?? false,
@@ -201,7 +225,7 @@ function applyLiveOptions() {
 
 	line.lineWidth( props.lineWidth )
 	line.color( props.color )
-	line.transparent( props.transparent || props.opacity < 1 || props.alphaMap != null )
+	line.transparent( Boolean( props.transparent || props.antialias || props.opacity < 1 || props.alphaMap != null ) )
 	line.opacity( props.opacity )
 	line.alphaTest( props.alphaTest )
 	line.wireframe( props.wireframe )
@@ -358,10 +382,16 @@ watch( () => [
 	props.mapOffset,
 	props.alphaMap,
 	props.dpr,
+	unref( resolveTresSizes()?.pixelRatio ),
 	props.verbose,
 ], applyLiveOptions, { flush: 'post' } )
 
-watch( () => [props.renderWidth, props.renderHeight], applyRenderSize, { flush: 'post' } )
+watch( () => [
+	props.renderWidth,
+	props.renderHeight,
+	unref( resolveTresSizes()?.width ),
+	unref( resolveTresSizes()?.height ),
+], applyRenderSize, { flush: 'post' } )
 
 defineExpose( { line: lineRef } )
 </script>

@@ -72,11 +72,12 @@ If you're building with React or Vue, jump to a ready-to-run example with a decl
 
 ## Next Steps
 
-- Start with the [Basic Example](./examples/basic.md) to compare common options and open the vanilla starter
-- Build a camera-independent road with the [Road Surface example](./examples/road.md)
-- Inspect the [Variable Topology gallery](https://meshline-demo.makio.io/examples/variable-topology) for wireframed joins, caps, reversals, and native-WebGPU clipping
-- Check [Follow](./examples/follow.md) and [Draw Lines](./examples/drawlines.md) for dynamic updates
+- Start with the [Style Gallery (Basic Example)](./examples/basic.md) to compare common options and open the vanilla starter
+- Build a camera-independent road with the [Road Surface Editor](./examples/road.md)
+- Inspect the [Joins & Caps gallery](https://meshline-demo.makio.io/examples/variable-topology) for wireframed joins, caps, reversals, and native-WebGPU clipping
+- Check [Draw & Trail](./examples/drawlines.md) for dynamic updates and spring-driven trails
 - Use the [Sandbox](./examples/sandbox.md) to tune parameters and copy the generated line
-- Move to [Instancing](./examples/instancing.md) and [GPU Circle](./examples/gpucircle.md) once the basics are clear
+- Move to [Instancing](./examples/instancing.md) and [GPU Position & Ring Tunnel](./examples/gpucircle.md) once the basics are clear
+- Explore the [V2 Benchmarks](./benchmarks.md) to see interactive performance diagrams rendered with `MeshLine`
 - Check other examples in the [Live Demos](https://meshline-demo.makio.io) to see the more advanced scenes in action
 - Check out the [API Reference](./api.md) to explore all the available customization options.

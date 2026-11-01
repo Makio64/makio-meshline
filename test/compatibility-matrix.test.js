@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url'
 const rootDirectory = fileURLToPath( new URL( '../', import.meta.url ) )
 const scriptPath = fileURLToPath( new URL( '../scripts/verify-compatibility.mjs', import.meta.url ) )
 const manifest = JSON.parse( await readFile( new URL( '../package.json', import.meta.url ), 'utf8' ) )
+const packageManifest = JSON.parse( await readFile( new URL( '../src/package.json', import.meta.url ), 'utf8' ) )
 
 const listMatrix = ( ...args ) => {
 	const result = spawnSync( process.execPath, [scriptPath, ...args, '--list'], {
@@ -17,26 +18,24 @@ const listMatrix = ( ...args ) => {
 	return JSON.parse( result.stdout )
 }
 
-test( 'required compatibility matrix covers minimum core, minimum optional entries, and pinned current', () => {
+test( 'required compatibility matrix covers the minimum supported and pinned current Three.js', () => {
 	const matrix = listMatrix()
 	assert.deepEqual( matrix.map( profile => profile.id ), [
-		'core-minimum',
-		'optional-minimum',
+		'minimum',
 		'pinned-current',
-	] )
-	assert.deepEqual( matrix.map( profile => profile.coverage ), [
-		'core',
-		'core+optional',
-		'core+optional',
 	] )
 	assert.ok( matrix.every( profile => profile.required ) )
 
-	assert.equal( matrix[0].three, manifest.meshlineCompatibility.coreMinimum.three )
-	assert.equal( matrix[0].types, manifest.meshlineCompatibility.coreMinimum.types )
-	assert.equal( matrix[1].three, manifest.meshlineCompatibility.optionalMinimum.three )
-	assert.equal( matrix[1].types, manifest.meshlineCompatibility.optionalMinimum.types )
-	assert.equal( matrix[2].three, manifest.devDependencies.three )
-	assert.equal( matrix[2].types, manifest.devDependencies['@types/three'] )
+	assert.equal( matrix[0].three, manifest.meshlineCompatibility.minimum.three )
+	assert.equal( matrix[0].types, manifest.meshlineCompatibility.minimum.types )
+	assert.equal( matrix[1].three, manifest.devDependencies.three )
+	assert.equal( matrix[1].types, manifest.devDependencies['@types/three'] )
+} )
+
+test( 'the published peer range starts at the tested minimum', () => {
+	const { minimum } = manifest.meshlineCompatibility
+	assert.equal( packageManifest.peerDependencies.three, `>=${minimum.three}` )
+	assert.equal( packageManifest.peerDependencies['@types/three'], `>=${minimum.types}` )
 } )
 
 test( 'every profile runs the node-level shader tests against its own Three.js', async () => {
@@ -45,19 +44,12 @@ test( 'every profile runs the node-level shader tests against its own Three.js',
 		if ( !file.endsWith( '.test.js' ) ) continue
 		if ( /['"][^'"\n]*\/helpers\/shaderBuilder\.js['"]/.test( await readFile( new URL( file, import.meta.url ), 'utf8' ) ) ) helperTests.push( file )
 	}
-	const [core, ...optionalProfiles] = listMatrix( '--include-dev-canary' )
-	for ( const profile of optionalProfiles ) assert.deepEqual( profile.shaderTests, helperTests, profile.id )
-
-	// The minimum core release skips only the tests of r183+ optional entries.
-	const coreSkipped = helperTests.filter( file => !core.shaderTests.includes( file ) )
-	assert.ok( core.shaderTests.includes( 'meshline-fold-joins.test.js' ) )
-	assert.ok( coreSkipped.every( file => /gpu-path|culling/.test( file ) ), `core-minimum skips ${coreSkipped.join( ', ' )}` )
+	for ( const profile of listMatrix( '--include-dev-canary' ) ) assert.deepEqual( profile.shaderTests, helperTests, profile.id )
 } )
 
 test( 'Three.js dev canary is explicit and non-blocking', () => {
 	const [canary] = listMatrix( '--dev-canary-only' )
 	assert.equal( canary.id, 'dev-canary' )
 	assert.equal( canary.three, 'github:mrdoob/three.js#dev' )
-	assert.equal( canary.coverage, 'core+optional' )
 	assert.equal( canary.required, false )
 } )

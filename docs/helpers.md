@@ -6,6 +6,9 @@ description: "Reference helper functions like circlePositions, squarePositions, 
 
 Utility functions that generate `Float32Array` point data for common line shapes.
 
+> [!TIP]
+> The six CPU position generators (`circlePositions`, `squarePositions`, `rectanglePositions`, `sineWavePositions`, `straightLine`, and `straightLineBetween`) are also exported from `makio-meshline/positions` with **zero runtime imports**, so they can be used in `@makio/mini3` (`@makio/mini3/meshline`) or worker scripts without pulling in Three.js.
+
 ## circlePositions()
 
 ```ts
@@ -223,7 +226,7 @@ Pass `toBuffer` and `morph` to interpolate on the GPU between two `StorageBuffer
 - `options.head` (uniform, optional) — newest slot for ring-buffer trails.
 - `options.toBuffer` (`StorageBufferAttribute`, optional) — target point storage for GPU morph transitions (`vec3` or `vec4`, matching `buffer.count`).
 - `options.morph` (float node or number, optional) — `0..1` blend factor between `buffer` and `toBuffer` when `toBuffer` is provided.
-- `options.closed` (boolean or float node, optional) — when `true` (or `> 0.5` per instance), wraps progress across `pointsPerLine` segments so `progress = 1` closes back to point `0`.
+- `options.closed` (boolean or float node, optional) — when `true` (or `0..1` per instance), wraps neighbor samples across the loop seam (`point[pointsPerLine - 1]` repeats `point[0]`, and `previous`/`next` wrap modulo `pointsPerLine - 1`).
 
 #### Returns
 
@@ -279,8 +282,7 @@ const morph = uniform( 0 )
 
 const isobars = new MeshLine()
 	.instances( TRACKS )
-	.segments( POINTS )
-	.closed( true )
+	.segments( POINTS - 1 )
 	.gpuPositionNode( storagePositions( fromBuffer, {
 		pointsPerLine: POINTS,
 		toBuffer,
@@ -291,4 +293,4 @@ const isobars = new MeshLine()
 	.build()
 ```
 
-Storage buffers require the native WebGPU backend. The [Lorenz Trails demo](https://meshline-demo.makio.io/examples/lorenz-trails) uses the ring-buffer pattern, and the [Isobar Transitions demo](https://meshline-demo.makio.io/examples/isobars) uses dual-buffer morphing with closed-loop wrapping.
+Storage buffers require the native WebGPU backend. The [Lorenz Attractor demo](https://meshline-demo.makio.io/examples/lorenz-trails) uses the ring-buffer pattern, and the [Isobars demo](https://meshline-demo.makio.io/examples/isobars) uses dual-buffer morphing with closed-loop wrapping.

@@ -205,8 +205,9 @@ The tables list the surface-specific contract. Both classes retain their inherit
 | `new MeshLineSurfaceGeometry(options?)` | `MeshLineSurfaceGeometry` | Optionally builds one or more centerlines immediately. `isMeshLineSurfaceGeometry` is always `true`. |
 | `geometry.buildLine(options?)` | `void` | Merges configuration and rebuilds when `lines` are present. |
 | `geometry.setLines(points, closed?)` | `void` | Replaces centerlines (and optional open/closed state) and rebuilds all derived frames, joins, attributes, indices, and bounds. |
-| `geometry.setPositions(points, updateBounding?, closed?)` | `void` | Surface alias for a complete `setLines()` rebuild; range updates are intentionally unavailable. |
+| `geometry.setPositions(points)` | `void` | Surface alias for `setLines(points)`; reuses same-capacity buffers in place when topology is unchanged. Range updates are intentionally unavailable. |
 | `geometry.setUsage(usage, name?)` | `void` | Replaces all generated attributes, or one named attribute, with the requested usage. |
+| `geometry.copyToGeometry(targetGeometry)` | `targetGeometry` | Copies `position`, `uv`, `normal`, and `index` into a Three.js `BufferGeometry` or a `@makio/mini3` `Geometry` (in canonical `position`, `uv`, `normal` attribute order). |
 | `geometry.dispose()` | `void` | Releases geometry buffers. |
 | `new MeshLineSurfaceNodeMaterial(options?)` | `MeshLineSurfaceNodeMaterial` | Optionally configures the PBR material immediately. `isMeshLineSurfaceNodeMaterial` is always `true`. |
 | `material.buildLine(options?)` | `void` | Reconfigures the supported base, alpha, depth, wireframe, and surface PBR fields. |
@@ -215,6 +216,6 @@ The tables list the surface-specific contract. Both classes retain their inherit
 
 The geometry always exposes standard `position` and `normal` attributes. It adds `uv` for texture maps, `tangent` for normal mapping (or low-level `needsTangents`), and `progress`/`side` only when explicitly requested. This keeps the default road buffer compact while remaining compatible with ordinary mesh raycasting, lighting, and tooling.
 
-See the complete [Road Surface example](./examples/road.md) for a generated texture and standalone Three.js setup.
+See the complete [Road Editor example](./examples/road.md) and the live [Surface Studio demo](https://meshline-demo.makio.io/examples/surface) for generated PBR textures and standalone Three.js setup.
 
-The interactive [Variable Topology gallery](https://meshline-demo.makio.io/examples/variable-topology) overlays wireframes for every join/cap policy and includes a split reversal case.
+The interactive [Joins & Caps gallery](https://meshline-demo.makio.io/examples/variable-topology) overlays wireframes for every join/cap policy and includes a split reversal case.

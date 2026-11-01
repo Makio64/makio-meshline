@@ -1,14 +1,11 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { color, float, fog, Fn, instanceIndex, lights, positionLocal, positionView, positionWorld, positionWorldDirection, rangeFogFactor, uniform, vec3, vec4, velocity } from 'three/tsl'
+import { color, exponentialHeightFogFactor, float, fog, Fn, instanceIndex, lights, positionLocal, positionView, positionWorld, positionWorldDirection, rangeFogFactor, uniform, vec3, vec4, velocity } from 'three/tsl'
 import { DirectionalLight, Mesh, NodeMaterial, Vector4 } from 'three/webgpu'
 
 import MeshLine from '../src/MeshLine.js'
 import { createRenderer, createShaderBuilder } from './helpers/shaderBuilder.js'
-
-// Three r183+. Older peers have no height fog factor to test.
-const { exponentialHeightFogFactor } = await import( 'three/tsl' )
 
 const buildShaders = ( renderer, object, { fogNode = null, lightsNode = null, clipPlanes = null, hardwareClipping = false } = {} ) => {
 	const builder = createShaderBuilder( renderer, object, { fogNode, lightsNode } )
@@ -78,14 +75,12 @@ test( 'height fog, hardware clip distances and motion vectors follow the placed 
 	for ( const forceWebGL of [false, true] ) {
 		const renderer = createRenderer( forceWebGL )
 		for ( const line of createPlacedLines() ) {
-			if ( exponentialHeightFogFactor ) {
-				// The height term reads positionWorld; the depth still comes from the
-				// line's own fog varying.
-				const fogNode = fog( uniform( color( 0x808080 ) ), exponentialHeightFogFactor( uniform( 0.05 ), uniform( 2 ) ) )
-				const { vertexShader, fragmentShader } = buildShaders( renderer, line, { fogNode } )
-				assertPlaced( vertexShader, 'positionLocal', /\bv_positionWorld = / )
-				assert.match( fragmentShader, /\bvViewZ\b/ )
-			}
+			// The height term reads positionWorld; the depth still comes from the
+			// line's own fog varying.
+			const fogNode = fog( uniform( color( 0x808080 ) ), exponentialHeightFogFactor( uniform( 0.05 ), uniform( 2 ) ) )
+			const { vertexShader, fragmentShader } = buildShaders( renderer, line, { fogNode } )
+			assertPlaced( vertexShader, 'positionLocal', /\bv_positionWorld = / )
+			assert.match( fragmentShader, /\bvViewZ\b/ )
 
 			// Clip distances are computed per vertex from the vertex-stage positionView.
 			const clipped = buildShaders( renderer, line, { clipPlanes: [new Vector4( 0, 1, 0, 0 )], hardwareClipping: true } )
@@ -104,21 +99,17 @@ test( 'height fog, hardware clip distances and motion vectors follow the placed 
 	}
 } )
 
-test( 'fragment positionView and clipping planes read the placed line on every three version', () => {
+test( 'fragment positionView and clipping planes read the placed line', () => {
 	for ( const forceWebGL of [false, true] ) {
 		const renderer = createRenderer( forceWebGL )
 		for ( const line of createPlacedLines( lineColor => vec4( lineColor.rgb.mul( positionView.z ), lineColor.a ) ) ) {
 			for ( const options of [{}, { clipPlanes: [new Vector4( 0, 1, 0, 0 )] }] ) {
 				const { vertexShader, fragmentShader } = buildShaders( renderer, line, options )
-				if ( /cameraProjectionMatrixInverse/.test( fragmentShader ) ) {
-					// r183+ rebuild it from the emitted clip position: already the
-					// placed stroke, so nothing is published for it.
-					assert.match( fragmentShader, /\bv_clipSpace\b/ )
-					assert.doesNotMatch( vertexShader, /\bpositionLocal\b/ )
-				} else {
-					// r180-r182 interpolate a vertex-stage value derived from positionLocal.
-					assertPlaced( vertexShader, 'positionLocal', /\bv_positionView = / )
-				}
+				// Rebuilt per fragment from the emitted clip position: already the
+				// placed stroke, so nothing is published for it.
+				assert.match( fragmentShader, /cameraProjectionMatrixInverse/ )
+				assert.match( fragmentShader, /\bv_clipSpace\b/ )
+				assert.doesNotMatch( vertexShader, /\bpositionLocal\b/ )
 			}
 			line.dispose()
 		}

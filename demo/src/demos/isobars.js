@@ -1,3 +1,8 @@
+/**
+ * Isobar Contours — marching-squares synoptic pressure contours morphing on the GPU.
+ * Demonstrates: storagePositions( fromBuffer, { pointsPerLine, toBuffer, morph, closed: true } ),
+ * .gpuPositionNode( fn ), .instances( capacity ), and per-instance attributes.
+ */
 import { MeshLine, storagePositions } from 'makio-meshline'
 import { attribute, float, Fn, mix, smoothstep, uniform, varyingProperty } from 'three/tsl'
 import {
@@ -1257,4 +1262,5 @@ class IsobarsExample {
 	}
 }
 
+export { buildIsobarTracks, extractIsobarsForState, IsobarBank, resampleContour }
 export default IsobarsExample

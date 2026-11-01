@@ -17,13 +17,16 @@ Use the sandbox to tune one line until it looks right, then copy the generated s
 ```javascript
 import { MeshLine, circlePositions } from 'makio-meshline'
 
+const positions = circlePositions( 64, 10 )
+
 const line = new MeshLine()
-	.lines( circlePositions( 64 ), true )
+	.lines( positions )
+	.closed( true )
 	.color( 0xff3300 )
-	.gradientColor( 0x0033ff )
 	.lineWidth( 12 )
+	.gradientColor( 0x0033ff )
 	.dash( { count: 8, ratio: 0.5 } )
-	.join( { type: 'miter', limit: 2 } )
+	.join( { limit: 2 } )
 	.build()
 
 scene.add( line )

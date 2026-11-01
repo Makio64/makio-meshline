@@ -19,6 +19,10 @@
       "types": "./gpu-path.d.ts",
       "import": "./MeshLineGPUPath.js"
     },
+    "./positions": {
+      "types": "./positions.d.ts",
+      "import": "./positions/index.js"
+    },
     "./package.json": "./package.json"
   },
   "files": [
@@ -36,6 +40,7 @@
     "MeshLineGPUPath.js",
     "gpu-culling.d.ts",
     "gpu-path.d.ts",
+    "positions.d.ts",
     "positions/*.js",
     "README.md",
     "LICENSE",
@@ -43,8 +48,8 @@
   ],
   "sideEffects": false,
   "peerDependencies": {
-    "@types/three": ">=0.180.0",
-    "three": ">=0.180.0"
+    "@types/three": ">=0.186.0",
+    "three": ">=0.186.0"
   },
   "peerDependenciesMeta": {
     "@types/three": {
@@ -107,7 +112,7 @@
     "prepublishOnly": "pnpm -w run lint && pnpm -w run test && pnpm -w run test:types && pnpm -w run verify:package"
   },
   "devDependencies": {
-    "@types/three": "0.185.4",
-    "three": "0.185.1"
+    "@types/three": "0.186.0",
+    "three": "0.186.1"
   }
 }

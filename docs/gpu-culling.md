@@ -23,7 +23,7 @@ const culling = MeshLineCullingSystem.attach( renderer, scene, {
 const handle = culling.add( line )
 ```
 
-This entry point requires Three.js r183 or newer. The normal `makio-meshline` entry point keeps its wider peer range and does not load the WebGPU indirect APIs.
+This entry point requires native WebGPU (Three.js r186+, like every entry point). The normal `makio-meshline` entry point does not load the WebGPU indirect APIs.
 
 See [V2 API and Demo Coverage](./v2-api-coverage.md) for the matching live demo, baseline switches, and WebGL2 fallback check.
 
@@ -37,6 +37,7 @@ These options are accepted by both `MeshLineCullingSystem.attach( renderer, scen
 | --- | --- | --- | --- |
 | `mode` | `'auto' \| 'webgpu'` | `'auto'` | Auto applies the measured size thresholds; WebGPU mode forces an eligible line onto the native path. |
 | `autoUpdate` | `boolean` | `true` | Runs culling from the scene pre-render hook. Set `false` when the engine calls `update(camera)` explicitly. |
+| `cullCamera` | `Camera \| null` | `null` | Optional detached camera whose frustum is culled against when rendering from a different observer camera (for example, an overview/"god view" camera). |
 | `fallback` | `'draw-all' \| 'cpu'` | `'draw-all'` | Draw-all favors no false negatives; CPU restores Three's object-frustum policy when possible. |
 | `chunkSize` | `number` | `128` | Positive integer triangles per spatial chunk. A handle can override it. |
 | `maxChunks` | `number` | `65,536` | Positive integer allocation guard per handle. |
@@ -61,6 +62,7 @@ The bounds callback receives `{ chunkIndex, indexStart, indexCount, geometry, ob
 | Property | Type | Meaning |
 | --- | --- | --- |
 | `renderer`, `scene` | `WebGPURenderer`, `Scene` | Objects owned by this integration. |
+| `cullCamera` | `Camera \| null` | Optional detached camera used for frustum testing during `autoUpdate` when rendering from an observer camera. |
 | `isNativeWebGPU` | `boolean` | Whether the renderer currently exposes the required native-WebGPU compute path. |
 | `backendReason` | `string` | Human-readable backend/fallback explanation. |
 | `size` | `number` | Number of currently attached handles. |
@@ -69,7 +71,7 @@ The bounds callback receives `{ chunkIndex, indexStart, indexCount, geometry, ob
 
 | Method | Returns | Contract |
 | --- | --- | --- |
-| `MeshLineCullingSystem.attach(renderer, scene, options?)` | `MeshLineCullingSystem` | Returns the shared live system for a renderer/scene pair. |
+| `MeshLineCullingSystem.attach(renderer, scene, options?)` | `MeshLineCullingSystem` | Returns the shared live system for a renderer/scene pair (and updates `cullCamera` if passed in `options`). |
 | `new MeshLineCullingSystem(renderer, scene, options?)` | `MeshLineCullingSystem` | Creates an independent system. Prefer `attach()` for normal scene integration. |
 | `add(line, options?)` | `MeshLineCullingHandle \| null` | Registers one built `MeshLine`; returns `null` after disposal or for an invalid object. |
 | `remove(lineOrHandle)` | `void` | Removes either the source line or its handle and restores owned render state. |

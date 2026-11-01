@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { BufferGeometry } from 'three/webgpu'
 
 import MeshLineSurfaceGeometry from '../src/MeshLineSurfaceGeometry.js'
 
@@ -976,3 +977,50 @@ function dot( a, b ) {
 function vectorLength( vector ) {
 	return Math.hypot( vector[0], vector[1], vector[2] )
 }
+
+test( 'MeshLineSurfaceGeometry.copyToGeometry populates Mini3 Geometry and Three.js BufferGeometry', async () => {
+	const { circlePositions } = await import( '../src/positions/index.js' )
+	const surface = new MeshLineSurfaceGeometry( {
+		lines: circlePositions( 12, 2 ),
+		closed: true,
+		lineWidth: 0.6,
+		surface: { frame: 'fixed-up', up: [0, 0, 1], uvMode: 'distance', uvScale: 2 },
+		join: { type: 'round', limit: 3, segments: 6 },
+	} )
+
+	// Mock @makio/mini3 Geometry (records insertion order of attributes: position, uv, normal)
+	const mini3Geometry = {
+		attributes: new Map(),
+		indexData: null,
+		setAttribute( name, data, itemSize ) {
+			this.attributes.set( name, { data, itemSize } )
+			return this
+		},
+		setIndex( data ) {
+			this.indexData = data
+		},
+	}
+
+	const returnedMini3 = surface.copyToGeometry( mini3Geometry )
+	assert.equal( returnedMini3, mini3Geometry )
+	assert.deepEqual( [...mini3Geometry.attributes.keys()], ['position', 'uv', 'normal'] )
+	assert.equal( mini3Geometry.attributes.get( 'position' ).itemSize, 3 )
+	assert.equal( mini3Geometry.attributes.get( 'uv' ).itemSize, 2 )
+	assert.equal( mini3Geometry.attributes.get( 'normal' ).itemSize, 3 )
+	assert.ok( mini3Geometry.attributes.get( 'position' ).data instanceof Float32Array )
+	assert.ok( mini3Geometry.attributes.get( 'uv' ).data instanceof Float32Array )
+	assert.ok( mini3Geometry.attributes.get( 'normal' ).data instanceof Float32Array )
+	assert.ok( mini3Geometry.indexData instanceof Uint16Array )
+	assert.equal(
+		mini3Geometry.attributes.get( 'position' ).data.length / 3,
+		mini3Geometry.attributes.get( 'uv' ).data.length / 2,
+	)
+
+	const threeTarget = new BufferGeometry()
+	const returnedThree = surface.copyToGeometry( threeTarget )
+	assert.equal( returnedThree, threeTarget )
+	assert.equal( threeTarget.getAttribute( 'position' ).count, surface.getAttribute( 'position' ).count )
+	assert.equal( threeTarget.getAttribute( 'uv' ).count, surface.getAttribute( 'uv' ).count )
+	assert.equal( threeTarget.getAttribute( 'normal' ).count, surface.getAttribute( 'normal' ).count )
+	assert.equal( threeTarget.getIndex().count, surface.getIndex().count )
+} )

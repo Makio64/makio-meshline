@@ -7,13 +7,12 @@
  */
 export const circlePositions = ( segments = 100, radius = 1 ) => {
 	const positions = new Float32Array( segments * 3 )
+	const tau = Math.PI * 2
 
-	for ( let i = 0; i < segments; i++ ) {
-		const angle = ( i / segments ) * Math.PI * 2
-		const index = i * 3
+	for ( let i = 0, index = 0; i < segments; i++, index += 3 ) {
+		const angle = ( i / segments ) * tau
 		positions[ index ] = Math.sin( angle ) * radius
 		positions[ index + 1 ] = Math.cos( angle ) * radius
-		positions[ index + 2 ] = 0
 	}
 
 	return positions

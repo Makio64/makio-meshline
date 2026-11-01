@@ -60,6 +60,7 @@ This first implementation intentionally avoids a custom material fork. The stora
 | `homeStrength` | `1.4` | Spring force back to the generated home curve |
 | `mouseStrength` | `8` | Mouse attractor strength |
 | `mouseRadius` | `5` | Mouse attractor radius |
+| `mouse` / `mouseTarget` | `null` | Initial `Vector3` or `[x, y, z]` attractor position |
 | `audioLevel` | `0` | Scalar flow-force boost intended for audio input |
 | `depthStrength` | `0` | Placeholder vertical bias; it does not sample scene depth yet |
 | `textureStrength` | `0` | Placeholder seeded force variation; it does not sample a texture yet |
@@ -71,6 +72,7 @@ This first implementation intentionally avoids a custom material fork. The stora
 ```js
 curves
 	.mode( 'follow' )
+	.stiffness( 0.9 )
 	.mouseStrength( 14 )
 	.mouseRadius( 7 )
 	.curlStrength( 5 )
@@ -93,7 +95,8 @@ import { float, Fn, mod, smoothstep, uniform } from 'three/tsl'
 const dashSpacing = uniform( 1.5 )
 
 curves
-	.fragmentAlphaFn( Fn( ( [alpha, uvCoords, progress] ) => {
+	.needsUV( false )
+	.fragmentAlphaFn( Fn( ( [alpha, , progress] ) => {
 		const cycle = mod( curves.arcLengthNode( progress ).div( dashSpacing ), 1 )
 		const dashIn = smoothstep( 0, 0.08, cycle )
 		const dashOut = float( 1 ).sub( smoothstep( 0.55, 0.63, cycle ) )

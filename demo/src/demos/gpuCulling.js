@@ -1,3 +1,7 @@
+/**
+ * GPU Frustum Culling — 400,000-point alpine pass with per-chunk GPU frustum culling and indirect draw compaction.
+ * Demonstrates: MeshLineCullingSystem, cullCamera, Overview ("God View") vs Pass POV, and live index compaction telemetry.
+ */
 import { MeshLine } from 'makio-meshline'
 import MeshLineCullingSystem from 'makio-meshline/gpu-culling'
 import { float, Fn, mix, positionGeometry, sin, smoothstep, vec3, vec4 } from 'three/tsl'
@@ -887,10 +891,11 @@ class GpuCullingExample {
 			this.frustumMesh.geometry.dispose()
 			this.frustumMesh.material.dispose()
 		}
-		if ( this.control && this.controlActive ) {
-			this.control.disable()
+		if ( this.control ) {
+			this.control.dispose()
 			this.controlActive = false
 		}
+		stage3d.control = null
 		if ( stage3d.scene ) stage3d.scene.fog = null
 		if ( window.__meshLineCullingHandle === this.handle ) window.__meshLineCullingHandle = null
 		if ( window.__meshLineCullingMetrics === this.metrics ) window.__meshLineCullingMetrics = null

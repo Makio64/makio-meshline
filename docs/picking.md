@@ -176,6 +176,10 @@ Unregisters a MeshLine and disposes its picking material.
 
 Read-only snapshot of the currently registered MeshLines in registration order. Returns a fresh array each call.
 
+### `picker.hitRadius`
+
+Read-only multiplier (`number`, default `15`) applied to each registered line's width during the offscreen picking pass.
+
 ### `picker.debugScene` and `picker.updateDebug()`
 
 For *raw* debugging, render `picker.debugScene` directly to inspect the ID-colored picking proxies. Call `picker.updateDebug()` before rendering that scene so proxy transforms, visibility, render order, instance count, resolution, DPR, and effective hit width match the live lines. Colors here are the encoded slot/instance IDs — useful for verifying the picking pipeline, but not visually meaningful. For a *human-readable* overlay, prefer `MeshLinePickerHelper` below.
@@ -242,11 +246,11 @@ The bundled [Laser Heist demo](https://meshline-demo.makio.io/examples/laser-hei
 All three modes feed the same `hoveredLaserId`, which drives the alarm-pulse animation. Switching modes live proves the CPU and GPU strategies produce the same hit results, and the debug overlay makes the GPU picker's hit zones inspectable.
 
 ```js
-this.picker = new MeshLinePicker( renderer, scene, camera, { targetSize: 5 } )
+this.picker = new MeshLinePicker( renderer, scene, camera, { targetSize: 18, hitRadius } )
 this.picker.add( this.line )
 
 runRaycast() {
-  this.raycaster.setFromCamera( _mouseNDC, camera )
+  this.raycaster.setFromCamera( _mouseVec, camera )
   const hit = this.raycaster.intersectObject( this.line )[ 0 ]
   this.hoveredLaserId = hit?.instanceId ?? -1
 }
@@ -254,7 +258,7 @@ runRaycast() {
 async runPicker() {
   const rect = renderer.domElement.getBoundingClientRect()
   const hit = await this.picker.pick( mouse.x - rect.left, mouse.y - rect.top )
-  this.hoveredLaserId = hit?.line === this.line ? hit.instanceId : -1
+  this.hoveredLaserId = hit?.instanceId ?? -1
 }
 ```
 

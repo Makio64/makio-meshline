@@ -46,6 +46,19 @@ const passthroughSnapshot = Object.freeze( { passthrough: true } )
 
 const isObject = value => value !== null && ( typeof value === 'object' || typeof value === 'function' )
 
+// Restoring the source index or disposing compute nodes never frees a storage
+// or indirect buffer. Three r186 frees one only through the renderer's attribute
+// map, which also keeps renderer.info.memory in step; r187+ also on
+// attribute.dispose().
+const releaseStorageAttribute = ( renderer, attribute ) => {
+	try {
+		renderer?._attributes?.delete?.( attribute )
+	} catch {
+		// Already released, or its device is gone.
+	}
+	attribute.dispose?.()
+}
+
 const finitePositiveInteger = ( value, fallback ) => {
 	const number = Number( value )
 	return Number.isSafeInteger( number ) && number > 0 ? number : fallback
@@ -307,13 +320,15 @@ const writeChunkBounds = ( target, chunks, indexArray, position, object, boundsO
 			maxY = entry[4]
 			maxZ = entry[5]
 		} else if ( directArray ) {
-			let prevVertex = -1
+			let prevVertex0 = -1
+			let prevVertex1 = -1
 			const end = indexStart + indexCount
 			for ( let i = indexStart; i < end; i++ ) {
 				const vertex = indexArray[i]
-				if ( vertex === prevVertex ) continue
+				if ( vertex === prevVertex0 || vertex === prevVertex1 ) continue
 				if ( vertex >= posCount ) return false
-				prevVertex = vertex
+				prevVertex1 = prevVertex0
+				prevVertex0 = vertex
 				const vOffset = vertex * stride
 				const x = directArray[vOffset]
 				const y = directArray[vOffset + 1]
@@ -327,10 +342,15 @@ const writeChunkBounds = ( target, chunks, indexArray, position, object, boundsO
 				if ( z > maxZ ) maxZ = z
 			}
 		} else {
+			let prevVertex0 = -1
+			let prevVertex1 = -1
 			const end = indexStart + indexCount
 			for ( let i = indexStart; i < end; i++ ) {
 				const vertex = indexArray[i]
+				if ( vertex === prevVertex0 || vertex === prevVertex1 ) continue
 				if ( vertex >= posCount ) return false
+				prevVertex1 = prevVertex0
+				prevVertex0 = vertex
 				const x = position.getX( vertex )
 				const y = position.getY( vertex )
 				const z = position.getZ( vertex )
@@ -344,8 +364,11 @@ const writeChunkBounds = ( target, chunks, indexArray, position, object, boundsO
 			}
 		}
 
-		if ( ![minX, minY, minZ, maxX, maxY, maxZ].every( Number.isFinite ) ) return false
-		if ( minX > maxX || minY > maxY || minZ > maxZ ) return false
+		if (
+			!Number.isFinite( minX ) || !Number.isFinite( minY ) || !Number.isFinite( minZ ) ||
+			!Number.isFinite( maxX ) || !Number.isFinite( maxY ) || !Number.isFinite( maxZ ) ||
+			minX > maxX || minY > maxY || minZ > maxZ
+		) return false
 
 		minX -= localPadding[0]
 		minY -= localPadding[1]
@@ -461,7 +484,7 @@ class MeshLineCullingHandle {
 		try {
 			this._restoreAllSnapshots()
 			this._restoreOwnedGeometryState()
-			this._disposeComputeNodes()
+			this._disposeResources()
 			this._resources = null
 			this._readback = null
 			this.prepared = false
@@ -582,7 +605,11 @@ class MeshLineCullingHandle {
 		} )().compute( 1 )
 
 		const chunkIndexCount = chunk => min( chunk.y, uint( this.indexCount ).sub( chunk.x ) )
-		const largestChunk = resources.chunks.reduce( ( largest, chunk ) => Math.max( largest, chunk[1] ), 0 )
+		let largestChunk = 0
+		for ( let i = 0; i < resources.chunks.length; i++ ) {
+			const count = resources.chunks[i][1]
+			if ( count > largestChunk ) largestChunk = count
+		}
 		const cooperativeCopy = largestChunk >= COOPERATIVE_COPY_MIN_INDICES
 
 		// Pass 1, one thread per chunk: test the AABB and reserve the chunk's
@@ -591,8 +618,9 @@ class MeshLineCullingHandle {
 		resources.cullNode = Fn( () => {
 			If( instanceIndex.lessThan( uint( this.chunkCount ) ), () => {
 				const chunk = chunkBuffer.element( instanceIndex )
-				const center = boundsBuffer.element( instanceIndex.mul( uint( 2 ) ) )
-				const extent = boundsBuffer.element( instanceIndex.mul( uint( 2 ) ).add( uint( 1 ) ) )
+				const boundsIndex = instanceIndex.shiftLeft( uint( 1 ) ).toVar()
+				const center = boundsBuffer.element( boundsIndex )
+				const extent = boundsBuffer.element( boundsIndex.add( uint( 1 ) ) )
 				const visible = bool( true ).toVar()
 
 				for ( let planeIndex = 0; planeIndex < 6; planeIndex++ ) {
@@ -625,16 +653,18 @@ class MeshLineCullingHandle {
 			return
 		}
 
+		const offsetReadBuffer = storage( resources.offsetAttribute, 'uint', this.chunkCount ).toReadOnly()
+
 		// Pass 2, one workgroup per chunk: lanes stride through the reserved range
 		// together, so every step reads and writes one contiguous block.
 		resources.copyNode = Fn( () => {
-			const chunkIndex = instanceIndex.div( uint( COPY_WORKGROUP_SIZE ) ).toVar()
+			const chunkIndex = instanceIndex.shiftRight( uint( 6 ) ).toVar()
 			If( chunkIndex.lessThan( uint( this.chunkCount ) ), () => {
-				const outputStart = offsetBuffer.element( chunkIndex ).toVar()
+				const outputStart = offsetReadBuffer.element( chunkIndex ).toVar()
 				If( outputStart.notEqual( uint( UINT32_MAX ) ), () => {
 					const chunk = chunkBuffer.element( chunkIndex )
 					const sourceStart = chunk.x.toVar()
-					const lane = instanceIndex.mod( uint( COPY_WORKGROUP_SIZE ) )
+					const lane = instanceIndex.bitAnd( uint( COPY_WORKGROUP_SIZE - 1 ) )
 					Loop( {
 						start: lane,
 						end: chunkIndexCount( chunk ),
@@ -738,7 +768,7 @@ class MeshLineCullingHandle {
 	}
 
 	_fail( reason, error = null, cpuFallback = false ) {
-		this._disposeComputeNodes()
+		this._disposeResources()
 		this.reason = reason
 		this.lastError = error ?? null
 		this.prepared = false
@@ -970,10 +1000,15 @@ class MeshLineCullingHandle {
 			isOpaqueMaterial( this.line.material )
 	}
 
-	_disposeComputeNodes() {
-		this._resources?.resetNode?.dispose?.()
-		this._resources?.cullNode?.dispose?.()
-		this._resources?.copyNode?.dispose?.()
+	_disposeResources() {
+		const resources = this._resources
+		if ( !resources ) return
+		resources.resetNode?.dispose?.()
+		resources.cullNode?.dispose?.()
+		resources.copyNode?.dispose?.()
+		for ( const resource of Object.values( resources ) ) {
+			if ( resource?.isStorageBufferAttribute === true ) releaseStorageAttribute( this.system?.renderer, resource )
+		}
 	}
 
 	remove() {
@@ -981,7 +1016,7 @@ class MeshLineCullingHandle {
 		this.removed = true
 		this._restoreAllSnapshots()
 		this._restoreOwnedGeometryState()
-		this._disposeComputeNodes()
+		this._disposeResources()
 		if ( this.line && this._hooksInstalled ) {
 			if ( this.line.onBeforeRender === this._beforeRenderHook ) this.line.onBeforeRender = this._originalBeforeRender
 			if ( this.line.onAfterRender === this._afterRenderHook ) this.line.onAfterRender = this._originalAfterRender

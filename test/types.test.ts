@@ -3,6 +3,7 @@ import { uniform } from 'three/tsl'
 
 import MeshLineCullingSystem from 'makio-meshline/gpu-culling'
 import MeshLineGPUPath from 'makio-meshline/gpu-path'
+import { circlePositions as circlePositionsSubpath, straightLineBetween as straightLineBetweenSubpath } from 'makio-meshline/positions'
 
 import {
 	MeshLine,
@@ -53,6 +54,12 @@ const surfaceGeometry = new MeshLineSurfaceGeometry( {
 	needsTangents: true,
 } )
 surfaceGeometry.setUsage( DynamicDrawUsage, 'position' )
+surfaceGeometry.copyToGeometry( {
+	setAttribute() {},
+	setIndex() {},
+} )
+void circlePositionsSubpath( 16, 2 )
+void straightLineBetweenSubpath( [0, 0, 0], [1, 1, 1], 4 )
 
 const material = new MeshLineNodeMaterial( {
 	lineWidth: 2,

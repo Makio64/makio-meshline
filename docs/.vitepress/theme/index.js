@@ -2,12 +2,13 @@ import DefaultTheme from 'vitepress/theme'
 import { onMounted, watch, nextTick, h } from 'vue'
 import { useRoute } from 'vitepress'
 import TrailBackground from './TrailBackground.vue'
+import BenchmarkDiagram from './BenchmarkDiagram.vue'
 import './custom.css'
 
 export default {
   extends: DefaultTheme,
   enhanceApp({ app }) {
-    // Optional: Add any app-level enhancements here
+    app.component('BenchmarkDiagram', BenchmarkDiagram)
   },
   Layout() {
     return h(DefaultTheme.Layout, null, {

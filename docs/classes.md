@@ -40,7 +40,7 @@ const geom = new MeshLineGeometry({
 
 Important API:
 
-* `setLines( lines[] )` – replace poly-lines (rebuilds all buffers).
+* `setLines( lines, closed? )` – replace poly-lines (rebuilds all buffers).
 * `setPositions( lines, updateBounding? )` – super-fast in-place update when point counts stay constant.
 * `setPositionRange( patch, startPoint, options? )` – update and upload only a fixed local span plus its neighbor halo.
 
@@ -71,9 +71,10 @@ Use `MeshLine` for ordinary WebGPU/WebGL2 lines. Use `MeshLineCompute` when curv
 
 A specialized Three.js `NodeMaterial` that renders the line buffers with:
 
-* Screen-space thickness or size-attenuation
-* Optional gradients, textures, dashes
-* Always-on bounded miter join, tuned via `miterLimit`, with optional sharp-bend subdivision for static paths
+* Screen-space thickness or size-attenuation, plus optional analytic 1-px edge antialiasing (`antialias`)
+* Optional gradients, textures, dashes, and shadow casting + 3D cylindrical shadow receiving (`receiveShadow`)
+* Bounded `miter`, `bevel`, or `round` joins (`setJoin()`), tuned via `miterLimit`, with camera-invariant 3D fold protection (`join.fold`: `'geometry' | 'exact' | false`) and optional sharp-bend subdivision for static paths
+* Normalized `lineCoord` stroke-silhouette coordinates and 14 TSL hooks
 
 ```ts
 import { MeshLineNodeMaterial } from 'makio-meshline'
@@ -134,9 +135,27 @@ Read [World-Space Surfaces](/surface) before using the low-level classes directl
 
 ---
 
+## `MeshLinePicker` & `MeshLinePickerHelper`
+
+GPU offscreen pixel-picker (`MeshLinePicker`) and Three.js-style hit-zone visual overlay (`MeshLinePickerHelper`) for picking GPU-positioned, instanced, or hook-deformed lines under the cursor.
+
+```ts
+import { MeshLinePicker, MeshLinePickerHelper } from 'makio-meshline'
+
+const picker = new MeshLinePicker( renderer, scene, camera, { hitRadius: 15 } )
+picker.add( line )
+
+const helper = new MeshLinePickerHelper( picker, { opacity: 0.45 } )
+scene.add( helper )
+```
+
+See [GPU Picking](/picking) for details.
+
+---
+
 ## `MeshLineCullingSystem`
 
-Optional native-WebGPU chunk AABB culling and index compaction for a very large opaque `MeshLine`. It lives in a separate Three.js r183+ entry point:
+Optional native-WebGPU chunk AABB culling and index compaction for a very large opaque `MeshLine`. It lives in a separate native-WebGPU entry point:
 
 ```ts
 import MeshLineCullingSystem from 'makio-meshline/gpu-culling'

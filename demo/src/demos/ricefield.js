@@ -1,3 +1,8 @@
+/**
+ * Ricefield — QuadTree terrain wireframe and 8,000+ interactive instanced grass blades.
+ * Demonstrates: .instances( count ), .addInstanceAttribute( name, components ),
+ * .positionFn( fn ), .colorFn( fn ), and WebGPU compute wind/cursor simulation.
+ */
 import { animate, utils } from 'animejs'
 import { MeshLine, rectanglePositions } from 'makio-meshline'
 import { abs, add, atan, cameraPosition, clamp, color, dot, float, Fn, fract, If, instanceIndex, length, max, mix, mul, normalize, positionWorld, positionWorldDirection, pow, reflect, reflector, sin, smoothstep as tslSmoothstep, storage, sub, texture, time, uniform, vec2, vec3, vec4, viewportSize } from 'three/tsl'
@@ -573,7 +578,7 @@ class RicefieldExample {
 		} )
 		
 		// Create storage buffer BEFORE MeshLine
-		// Three.js r181+ requires storage buffers to exist when shader hooks reference them
+		// Three.js requires storage buffers to exist when shader hooks reference them
 		this.scaleStorageBuffer = new StorageInstancedBufferAttribute( this.riceInstances.length, 2 )
 		this.transformStorageBuffer = new StorageInstancedBufferAttribute( this.riceInstances.length, 4 )
 		for ( let i = 0; i < this.riceInstances.length; i++ ) {

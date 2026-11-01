@@ -25,6 +25,7 @@ import {
 	uvec2,
 	uvec4,
 	vec2,
+	vec3,
 	vec4,
 	vertexIndex,
 	workgroupArray,
@@ -83,6 +84,18 @@ const finitePositiveInteger = ( value, fallback ) => {
 }
 
 const isPowerOfTwo = value => Number.isSafeInteger( value ) && value > 0 && value <= MAX_CHUNK_SEGMENTS && Number.isInteger( Math.log2( value ) )
+
+// Geometry, material and compute-node disposal never free a storage or indirect
+// buffer. Three r186 frees one only through the renderer's attribute map, which
+// also keeps renderer.info.memory in step; r187+ also on attribute.dispose().
+const releaseStorageAttribute = ( renderer, attribute ) => {
+	try {
+		renderer?._attributes?.delete?.( attribute )
+	} catch {
+		// Already released, or its device is gone.
+	}
+	attribute.dispose?.()
+}
 
 const normalizeTopologyOptions = ( options = {}, fallback = null ) => {
 	const fallbackJoin = fallback?._options?.join ?? { type: 'miter', limit: 4, segments: 8 }
@@ -282,17 +295,32 @@ const normalizeOpenPoints = points => {
 
 	const result = new Float32Array( flat.length )
 	let write = 0
-	for ( let read = 0; read < flat.length; read += 3 ) {
-		const x = Math.fround( Number( flat[read] ) )
-		const y = Math.fround( Number( flat[read + 1] ) )
-		const z = Math.fround( Number( flat[read + 2] ) )
-		if ( !Number.isFinite( x ) || !Number.isFinite( y ) || !Number.isFinite( z ) ) {
-			throw new Error( `[MeshLineGPUPath] non-finite or Float32-overflowing point at index ${read / 3}` )
+	if ( flat instanceof Float32Array ) {
+		for ( let read = 0; read < flat.length; read += 3 ) {
+			const x = flat[read]
+			const y = flat[read + 1]
+			const z = flat[read + 2]
+			if ( !( x - x === 0 && y - y === 0 && z - z === 0 ) ) {
+				throw new Error( `[MeshLineGPUPath] non-finite or Float32-overflowing point at index ${read / 3}` )
+			}
+			if ( write > 0 && result[write - 3] === x && result[write - 2] === y && result[write - 1] === z ) continue
+			result[write++] = x
+			result[write++] = y
+			result[write++] = z
 		}
-		if ( write > 0 && result[write - 3] === x && result[write - 2] === y && result[write - 1] === z ) continue
-		result[write++] = x
-		result[write++] = y
-		result[write++] = z
+	} else {
+		for ( let read = 0; read < flat.length; read += 3 ) {
+			const x = Math.fround( Number( flat[read] ) )
+			const y = Math.fround( Number( flat[read + 1] ) )
+			const z = Math.fround( Number( flat[read + 2] ) )
+			if ( !( x - x === 0 && y - y === 0 && z - z === 0 ) ) {
+				throw new Error( `[MeshLineGPUPath] non-finite or Float32-overflowing point at index ${read / 3}` )
+			}
+			if ( write > 0 && result[write - 3] === x && result[write - 2] === y && result[write - 1] === z ) continue
+			result[write++] = x
+			result[write++] = y
+			result[write++] = z
+		}
 	}
 
 	if ( write < 6 ) throw new Error( '[MeshLineGPUPath] at least two distinct points are required' )
@@ -348,6 +376,8 @@ const findReversalBreaks = ( points, threshold = REVERSAL_DOT_THRESHOLD ) => {
 	const pointCount = normalized.length / 3
 	const breaks = new Uint8Array( pointCount )
 	if ( pointCount < 3 ) return breaks
+	const negativeThreshold = threshold <= 0
+	const thresholdSqGuard = negativeThreshold ? threshold * threshold * ( 1 - 1e-12 ) : 0
 	let curX = normalized[3]
 	let curY = normalized[4]
 	let curZ = normalized[5]
@@ -355,8 +385,7 @@ const findReversalBreaks = ( points, threshold = REVERSAL_DOT_THRESHOLD ) => {
 	let incomingY = curY - normalized[1]
 	let incomingZ = curZ - normalized[2]
 	let incomingLenSq = incomingX * incomingX + incomingY * incomingY + incomingZ * incomingZ
-	for ( let point = 1; point < pointCount - 1; point++ ) {
-		const nextOffset = ( point + 1 ) * 3
+	for ( let point = 1, nextOffset = 6; point < pointCount - 1; point++, nextOffset += 3 ) {
 		const nextX = normalized[nextOffset]
 		const nextY = normalized[nextOffset + 1]
 		const nextZ = normalized[nextOffset + 2]
@@ -366,12 +395,14 @@ const findReversalBreaks = ( points, threshold = REVERSAL_DOT_THRESHOLD ) => {
 		const outgoingLenSq = outgoingX * outgoingX + outgoingY * outgoingY + outgoingZ * outgoingZ
 		const prodLenSq = incomingLenSq * outgoingLenSq
 		if ( prodLenSq > 0 ) {
-			const directionDot = (
-				incomingX * outgoingX +
-				incomingY * outgoingY +
-				incomingZ * outgoingZ
-			) / Math.sqrt( prodLenSq )
-			if ( directionDot <= threshold ) breaks[point] = 1
+			const dotVal = incomingX * outgoingX + incomingY * outgoingY + incomingZ * outgoingZ
+			if ( negativeThreshold ) {
+				if ( dotVal <= 0 && dotVal * dotVal >= thresholdSqGuard * prodLenSq && dotVal / Math.sqrt( prodLenSq ) <= threshold ) {
+					breaks[point] = 1
+				}
+			} else if ( dotVal / Math.sqrt( prodLenSq ) <= threshold ) {
+				breaks[point] = 1
+			}
 		}
 		curX = nextX
 		curY = nextY
@@ -686,24 +717,28 @@ const createProceduralPrimitiveRecords = ( segmentRecords, topologyOptions = {} 
 const computeDyadicChunkErrors = ( points, chunks ) => {
 	const normalized = points instanceof Float32Array ? points : normalizeOpenPoints( points )
 	if ( !Array.isArray( chunks ) || chunks.length === 0 ) throw new Error( '[MeshLineGPUPath] a non-empty chunk plan is required' )
-	const maximumSegments = Math.max( ...chunks.map( chunk => chunk.segmentCount ) )
+	let maximumSegments = 0
+	for ( let i = 0; i < chunks.length; i++ ) {
+		if ( chunks[i].segmentCount > maximumSegments ) maximumSegments = chunks[i].segmentCount
+	}
 	const levelCount = Math.ceil( Math.log2( maximumSegments ) ) + 1
 	const errors = new Float32Array( chunks.length * levelCount )
 
 	for ( let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex++ ) {
 		const chunk = chunks[chunkIndex]
+		const pointStart = chunk.pointStart
+		const segmentCount = chunk.segmentCount
 		for ( let level = 1; level < levelCount; level++ ) {
-			const stride = 2 ** level
+			const stride = 1 << level
 			let maximumError = 0
-			for ( let local = 0; local <= chunk.segmentCount; local++ ) {
-				const intervalStart = Math.floor( local / stride ) * stride
-				const intervalEnd = Math.min( intervalStart + stride, chunk.segmentCount )
-				maximumError = Math.max( maximumError, pointSegmentDistance(
-					normalized,
-					chunk.pointStart + local,
-					chunk.pointStart + intervalStart,
-					chunk.pointStart + intervalEnd
-				) )
+			for ( let intervalStart = 0; intervalStart < segmentCount; intervalStart += stride ) {
+				const intervalEnd = Math.min( intervalStart + stride, segmentCount )
+				const sIdx = pointStart + intervalStart
+				const eIdx = pointStart + intervalEnd
+				for ( let local = intervalStart + 1; local < intervalEnd; local++ ) {
+					const dist = pointSegmentDistance( normalized, pointStart + local, sIdx, eIdx )
+					if ( dist > maximumError ) maximumError = dist
+				}
 			}
 			errors[chunkIndex * levelCount + level] = maximumError
 		}
@@ -723,21 +758,22 @@ const computeDyadicImportance = ( points, chunks = null ) => {
 	const importance = new Float32Array( pointCount )
 
 	for ( const chunk of plan ) {
-		importance[chunk.pointStart] = MAX_FLOAT32
-		importance[chunk.pointStart + chunk.segmentCount] = MAX_FLOAT32
-		const levelCount = Math.ceil( Math.log2( chunk.segmentCount ) ) + 1
+		const pointStart = chunk.pointStart
+		const segmentCount = chunk.segmentCount
+		importance[pointStart] = MAX_FLOAT32
+		importance[pointStart + segmentCount] = MAX_FLOAT32
+		const levelCount = Math.ceil( Math.log2( segmentCount ) ) + 1
 		for ( let level = 1; level < levelCount; level++ ) {
-			const stride = 2 ** level
-			for ( let local = 1; local < chunk.segmentCount; local++ ) {
-				const intervalStart = Math.floor( local / stride ) * stride
-				const intervalEnd = Math.min( intervalStart + stride, chunk.segmentCount )
-				const error = pointSegmentDistance(
-					normalized,
-					chunk.pointStart + local,
-					chunk.pointStart + intervalStart,
-					chunk.pointStart + intervalEnd
-				)
-				importance[chunk.pointStart + local] = Math.max( importance[chunk.pointStart + local], error )
+			const stride = 1 << level
+			for ( let intervalStart = 0; intervalStart < segmentCount; intervalStart += stride ) {
+				const intervalEnd = Math.min( intervalStart + stride, segmentCount )
+				const sIdx = pointStart + intervalStart
+				const eIdx = pointStart + intervalEnd
+				for ( let local = intervalStart + 1; local < intervalEnd; local++ ) {
+					const idx = pointStart + local
+					const error = pointSegmentDistance( normalized, idx, sIdx, eIdx )
+					if ( error > importance[idx] ) importance[idx] = error
+				}
 			}
 		}
 	}
@@ -824,22 +860,23 @@ const createStableSegmentRecords = ( pointCount, chunks, visible = null, keep = 
 }
 
 const packPoints = ( points, breaks = null ) => {
-	const packed = new Float32Array( points.length / 3 * 4 )
-	for ( let point = 0; point < points.length / 3; point++ ) {
-		packed[point * 4] = points[point * 3]
-		packed[point * 4 + 1] = points[point * 3 + 1]
-		packed[point * 4 + 2] = points[point * 3 + 2]
-		packed[point * 4 + 3] = breaks?.[point] ? 1 : 0
+	const pointCount = points.length / 3
+	const packed = new Float32Array( pointCount * 4 )
+	for ( let point = 0, r = 0, w = 0; point < pointCount; point++, r += 3, w += 4 ) {
+		packed[w] = points[r]
+		packed[w + 1] = points[r + 1]
+		packed[w + 2] = points[r + 2]
+		packed[w + 3] = breaks !== null && breaks[point] ? 1 : 0
 	}
 	return packed
 }
 
 const packChunks = chunks => {
 	const packed = new Uint32Array( chunks.length * 4 )
-	for ( let i = 0; i < chunks.length; i++ ) {
-		packed[i * 4] = chunks[i].pointStart
-		packed[i * 4 + 1] = chunks[i].segmentStart
-		packed[i * 4 + 2] = chunks[i].segmentCount
+	for ( let i = 0, w = 0; i < chunks.length; i++, w += 4 ) {
+		packed[w] = chunks[i].pointStart
+		packed[w + 1] = chunks[i].segmentStart
+		packed[w + 2] = chunks[i].segmentCount
 	}
 	return packed
 }
@@ -1147,7 +1184,10 @@ export class MeshLineGPUPath extends Group {
 		// become a cusp after projection. Variable topology therefore stays at
 		// full detail until classification runs in the active camera's clip space.
 		const simplify = simplifyRequested && !advancedTopology
-		const runCount = 1 + this._breaks.reduce( ( count, split ) => count + ( split ? 1 : 0 ), 0 )
+		let runCount = 1
+		for ( let i = 0; i < this._breaks.length; i++ ) {
+			if ( this._breaks[i] ) runCount++
+		}
 		const resourcePlan = assertGPUResourcePlan( createGPUResourcePlan( {
 			pointCount,
 			segmentCount,
@@ -1190,7 +1230,9 @@ export class MeshLineGPUPath extends Group {
 
 		const points = storage( pointAttribute, 'vec4', pointCount ).toReadOnly()
 		const segments = segmentAttribute ? storage( segmentAttribute, 'uvec4', segmentCount ) : null
+		const segmentsRead = segmentAttribute ? storage( segmentAttribute, 'uvec4', segmentCount ).toReadOnly() : null
 		const primitives = primitiveAttribute ? storage( primitiveAttribute, 'uvec2', primitiveAttribute.count ) : null
+		const primitivesRead = primitiveAttribute ? storage( primitiveAttribute, 'uvec2', primitiveAttribute.count ).toReadOnly() : null
 		const toleranceNode = simplify ? uniform( this.gpuOptions.localTolerance ) : null
 		const resolutionNode = uniform( this._resolution.clone() )
 		const wireframe = Boolean( this.lineOptions.wireframe )
@@ -1198,9 +1240,12 @@ export class MeshLineGPUPath extends Group {
 		const computeNodes = []
 
 		if ( simplify ) {
+			const chunkShift = levelCount - 1
 			const chunks = storage( chunkAttribute, 'uvec4', chunkCount ).toReadOnly()
 			const errors = storage( errorAttribute, 'float', chunkCount * levelCount )
+			const errorsRead = storage( errorAttribute, 'float', chunkCount * levelCount ).toReadOnly()
 			const states = storage( stateAttribute, 'uvec4', chunkCount )
+			const statesRead = storage( stateAttribute, 'uvec4', chunkCount ).toReadOnly()
 			const indirect = storage( indirectAttribute, 'uint', 8 )
 
 			const errorNode = Fn( () => {
@@ -1208,27 +1253,37 @@ export class MeshLineGPUPath extends Group {
 				If( invocation.lessThan( uint( chunkCount * levelCount ) ), () => {
 					const chunkIndex = invocation.div( uint( levelCount ) )
 					const level = invocation.mod( uint( levelCount ) )
-					const stride = uint( 1 ).shiftLeft( level )
-					const chunk = chunks.element( chunkIndex )
 					const maximumError = float( 0 ).toVar()
 
-					Loop( { start: uint( 0 ), end: chunk.z.add( uint( 1 ) ), type: 'uint', condition: '<' }, ( { i } ) => {
-						const intervalStart = i.div( stride ).mul( stride )
-						const intervalEnd = min( intervalStart.add( stride ), chunk.z )
-						const point = points.element( chunk.x.add( i ) ).xyz
-						const start = points.element( chunk.x.add( intervalStart ) ).xyz
-						const end = points.element( chunk.x.add( intervalEnd ) ).xyz
-						const chord = end.sub( start )
-						const denominator = max( dot( chord, chord ), 1e-12 )
-						const t = dot( point.sub( start ), chord ).div( denominator ).clamp( 0, 1 )
-						maximumError.assign( max( maximumError, length( point.sub( start.add( chord.mul( t ) ) ) ) ) )
-						If(
-							points.element( chunk.x.add( i ) ).w.greaterThan( float( 0.5 ) )
-								.and( i.greaterThan( uint( 0 ) ) )
-								.and( i.lessThan( chunk.z ) )
-								.and( i.mod( stride ).notEqual( uint( 0 ) ) ),
-							() => { maximumError.assign( float( MAX_FLOAT32 ) ) }
-						)
+					If( level.greaterThan( uint( 0 ) ), () => {
+						const stride = uint( 1 ).shiftLeft( level )
+						const strideMask = stride.sub( uint( 1 ) )
+						const chunk = chunks.element( chunkIndex )
+						const currentIntervalStart = uint( UINT32_MAX ).toVar()
+						const start = vec3( 0 ).toVar()
+						const chord = vec3( 0 ).toVar()
+						const denominator = float( 1 ).toVar()
+
+						Loop( { start: uint( 1 ), end: chunk.z, type: 'uint', condition: '<' }, ( { i } ) => {
+							If( i.bitAnd( strideMask ).notEqual( uint( 0 ) ), () => {
+								const intervalStart = i.shiftRight( level ).shiftLeft( level )
+								If( intervalStart.notEqual( currentIntervalStart ), () => {
+									currentIntervalStart.assign( intervalStart )
+									const intervalEnd = min( intervalStart.add( stride ), chunk.z )
+									start.assign( points.element( chunk.x.add( intervalStart ) ).xyz )
+									const end = points.element( chunk.x.add( intervalEnd ) ).xyz
+									chord.assign( end.sub( start ) )
+									denominator.assign( max( dot( chord, chord ), 1e-12 ) )
+								} )
+								const pointRecord = points.element( chunk.x.add( i ) ).toVar()
+								const point = pointRecord.xyz
+								const t = dot( point.sub( start ), chord ).div( denominator ).clamp( 0, 1 )
+								maximumError.assign( max( maximumError, length( point.sub( start.add( chord.mul( t ) ) ) ) ) )
+								If( pointRecord.w.greaterThan( float( 0.5 ) ), () => {
+									maximumError.assign( float( MAX_FLOAT32 ) )
+								} )
+							} )
+						} )
 					} )
 					errors.element( invocation ).assign( maximumError )
 				} )
@@ -1239,9 +1294,10 @@ export class MeshLineGPUPath extends Group {
 				If( chunkIndex.lessThan( uint( chunkCount ) ), () => {
 					const chunk = chunks.element( chunkIndex )
 					const selectedStride = uint( 1 ).toVar()
+					const errorBase = chunkIndex.mul( uint( levelCount ) ).toVar()
 					for ( let level = 1; level < levelCount; level++ ) {
-						const candidateStride = uint( 2 ** level )
-						const error = errors.element( chunkIndex.mul( uint( levelCount ) ).add( uint( level ) ) )
+						const candidateStride = uint( 1 << level )
+						const error = errorsRead.element( errorBase.add( uint( level ) ) )
 						If( error.lessThanEqual( toleranceNode ), () => {
 							selectedStride.assign( candidateStride )
 						} )
@@ -1327,9 +1383,9 @@ export class MeshLineGPUPath extends Group {
 			const emitNode = Fn( () => {
 				const sourceSegment = instanceIndex.toUint()
 				If( sourceSegment.lessThan( uint( segmentCount ) ), () => {
-					const chunkIndex = sourceSegment.div( uint( this.gpuOptions.chunkSegments ) )
+					const chunkIndex = sourceSegment.shiftRight( uint( chunkShift ) )
 					const chunk = chunks.element( chunkIndex )
-					const state = states.element( chunkIndex )
+					const state = statesRead.element( chunkIndex )
 					const localSegment = sourceSegment.sub( chunk.y )
 					If( localSegment.lessThan( chunk.z ).and( localSegment.mod( state.x ).equal( uint( 0 ) ) ), () => {
 						const a = chunk.x.add( localSegment )
@@ -1341,7 +1397,7 @@ export class MeshLineGPUPath extends Group {
 							previous.assign( a.sub( min( state.x, localSegment ) ) )
 						} ).ElseIf( chunkIndex.greaterThan( uint( 0 ) ), () => {
 							const previousChunk = chunks.element( chunkIndex.sub( uint( 1 ) ) )
-							const previousState = states.element( chunkIndex.sub( uint( 1 ) ) )
+							const previousState = statesRead.element( chunkIndex.sub( uint( 1 ) ) )
 							previous.assign( a.sub( min( previousState.x, previousChunk.z ) ) )
 						} )
 
@@ -1349,7 +1405,7 @@ export class MeshLineGPUPath extends Group {
 							next.assign( min( b.add( state.x ), chunk.x.add( chunk.z ) ) )
 						} ).ElseIf( chunkIndex.add( uint( 1 ) ).lessThan( uint( chunkCount ) ), () => {
 							const nextChunk = chunks.element( chunkIndex.add( uint( 1 ) ) )
-							const nextState = states.element( chunkIndex.add( uint( 1 ) ) )
+							const nextState = statesRead.element( chunkIndex.add( uint( 1 ) ) )
 							next.assign( b.add( min( nextState.x, nextChunk.z ) ) )
 						} )
 						If( points.element( a ).w.greaterThan( float( 0.5 ) ), () => { previous.assign( a ) } )
@@ -1365,13 +1421,15 @@ export class MeshLineGPUPath extends Group {
 
 			if ( advancedTopology ) {
 				const primitiveStates = storage( primitiveStateAttribute, 'uvec4', segmentCount )
+				const primitiveStatesRead = storage( primitiveStateAttribute, 'uvec4', segmentCount ).toReadOnly()
+				const indirectRead = storage( indirectAttribute, 'uint', 8 ).toReadOnly()
 				const primitiveClassifyNode = Fn( () => {
 					const segment = instanceIndex.toUint()
-					const retainedCount = indirect.element( uint( 0 ) )
+					const retainedCount = indirectRead.element( uint( 0 ) )
 					If( segment.lessThan( uint( segmentCount ) ), () => {
 						const count = uint( 0 ).toVar()
 						If( segment.lessThan( retainedCount ), () => {
-							const record = segments.element( segment )
+							const record = segmentsRead.element( segment )
 							count.assign( uint( 2 ) )
 							If( record.w.notEqual( record.z ), () => { count.addAssign( uint( topologyLayout.joinCapacity ) ) } )
 							If( record.x.equal( record.y ), () => { count.addAssign( uint( topologyLayout.capPrimitives ) ) } )
@@ -1442,9 +1500,9 @@ export class MeshLineGPUPath extends Group {
 				const primitiveEmitNode = Fn( () => {
 					const segment = instanceIndex.toUint()
 					If( segment.lessThan( uint( segmentCount ) ), () => {
-						const state = primitiveStates.element( segment )
+						const state = primitiveStatesRead.element( segment )
 						If( state.x.greaterThan( uint( 0 ) ), () => {
-							const record = segments.element( segment )
+							const record = segmentsRead.element( segment )
 							const write = state.y.toVar()
 							primitives.element( write ).assign( uvec2( uint( PRIMITIVE_BODY_A ), segment ) )
 							write.addAssign( uint( 1 ) )
@@ -1452,19 +1510,19 @@ export class MeshLineGPUPath extends Group {
 							write.addAssign( uint( 1 ) )
 							If( record.w.notEqual( record.z ), () => {
 								Loop( { start: uint( 0 ), end: uint( topologyLayout.joinCapacity ), type: 'uint', condition: '<' }, ( { i } ) => {
-									primitives.element( write ).assign( uvec2( i.mul( uint( 1 << PRIMITIVE_TYPE_BITS ) ).add( uint( PRIMITIVE_JOIN ) ), segment ) )
+									primitives.element( write ).assign( uvec2( i.shiftLeft( uint( PRIMITIVE_TYPE_BITS ) ).bitOr( uint( PRIMITIVE_JOIN ) ), segment ) )
 									write.addAssign( uint( 1 ) )
 								} )
 							} )
 							If( record.x.equal( record.y ), () => {
 								Loop( { start: uint( 0 ), end: uint( topologyLayout.capPrimitives ), type: 'uint', condition: '<' }, ( { i } ) => {
-									primitives.element( write ).assign( uvec2( i.mul( uint( 1 << PRIMITIVE_TYPE_BITS ) ).add( uint( PRIMITIVE_START_CAP ) ), segment ) )
+									primitives.element( write ).assign( uvec2( i.shiftLeft( uint( PRIMITIVE_TYPE_BITS ) ).bitOr( uint( PRIMITIVE_START_CAP ) ), segment ) )
 									write.addAssign( uint( 1 ) )
 								} )
 							} )
 							If( record.w.equal( record.z ), () => {
 								Loop( { start: uint( 0 ), end: uint( topologyLayout.capPrimitives ), type: 'uint', condition: '<' }, ( { i } ) => {
-									primitives.element( write ).assign( uvec2( i.mul( uint( 1 << PRIMITIVE_TYPE_BITS ) ).add( uint( PRIMITIVE_END_CAP ) ), segment ) )
+									primitives.element( write ).assign( uvec2( i.shiftLeft( uint( PRIMITIVE_TYPE_BITS ) ).bitOr( uint( PRIMITIVE_END_CAP ) ), segment ) )
 									write.addAssign( uint( 1 ) )
 								} )
 							} )
@@ -1490,8 +1548,8 @@ export class MeshLineGPUPath extends Group {
 
 		const material = this._createGPUMaterial( {
 			points,
-			segments,
-			primitives,
+			segments: segmentsRead,
+			primitives: primitivesRead,
 			resolutionNode,
 			wireframeNode,
 			simplify,
@@ -1559,6 +1617,8 @@ export class MeshLineGPUPath extends Group {
 		const opacity = Number( this.fallback.material.opacity?.value ?? this.lineOptions.opacity ?? 1 )
 		const opacityNode = uniform( opacity )
 		const sizeAttenuation = this.lineOptions.sizeAttenuation !== false
+		const projCol0 = sizeAttenuation ? cameraProjectionMatrix.element( 0 ).xy : null
+		const projCol1 = sizeAttenuation ? cameraProjectionMatrix.element( 1 ).xy : null
 		const paddingFactor = Math.max(
 			topology.join.type === 'miter' ? miterLimit : 1,
 			topology.cap.type === 'square' ? Math.SQRT2 : 1
@@ -1566,13 +1626,11 @@ export class MeshLineGPUPath extends Group {
 		let clipPadding
 		if ( sizeAttenuation ) {
 			const paddingRadius = widthNode.mul( 0.5 * paddingFactor )
-			const projectedX = cameraProjectionMatrix.mul( vec4( paddingRadius, 0, 0, 0 ) )
-			const projectedY = cameraProjectionMatrix.mul( vec4( 0, paddingRadius, 0, 0 ) )
 			clipPadding = vec4(
 				0,
 				0,
-				abs( projectedX.x ).add( abs( projectedY.x ) ),
-				abs( projectedX.y ).add( abs( projectedY.y ) )
+				abs( projCol0.x ).add( abs( projCol1.x ) ).mul( paddingRadius ),
+				abs( projCol0.y ).add( abs( projCol1.y ) ).mul( paddingRadius )
 			)
 		} else {
 			clipPadding = vec4(
@@ -1691,23 +1749,24 @@ export class MeshLineGPUPath extends Group {
 				.or( triangleVertex.equal( uint( 4 ) )
 					.or( triangleVertex.equal( uint( 5 ) ) ) )
 				.toVar()
-			const mvp = cameraProjectionMatrix.mul( modelViewMatrix )
-			const previousRaw = mvp.mul( vec4( points.element( record.x ).xyz, 1 ) ).toVar()
-			const aRaw = mvp.mul( vec4( points.element( record.y ).xyz, 1 ) ).toVar()
-			const bRaw = mvp.mul( vec4( points.element( record.z ).xyz, 1 ) ).toVar()
-			const nextRaw = mvp.mul( vec4( points.element( record.w ).xyz, 1 ) ).toVar()
+			const pointA = points.element( record.y ).xyz.toVar()
+			const pointB = points.element( record.z ).xyz.toVar()
+			const previousRaw = cameraProjectionMatrix.mul( modelViewMatrix.mul( vec4( points.element( record.x ).xyz, 1 ) ) ).toVar()
+			const aRaw = cameraProjectionMatrix.mul( modelViewMatrix.mul( vec4( pointA, 1 ) ) ).toVar()
+			const bRaw = cameraProjectionMatrix.mul( modelViewMatrix.mul( vec4( pointB, 1 ) ) ).toVar()
+			const nextRaw = cameraProjectionMatrix.mul( modelViewMatrix.mul( vec4( points.element( record.w ).xyz, 1 ) ) ).toVar()
 			const bodyRange = clipRange( aRaw, bRaw, clipPadding ).toVar()
 			const previousRange = clipRange( previousRaw, aRaw, clipPadding ).toVar()
 			const nextRange = clipRange( bRaw, nextRaw, clipPadding ).toVar()
-			const fetched = [effectiveVertex, segmentIndex, record, usesB, positiveSide, previousRaw, aRaw, bRaw, nextRaw, bodyRange, previousRange, nextRange]
+			const fetched = [effectiveVertex, segmentIndex, record, usesB, positiveSide, pointA, pointB, previousRaw, aRaw, bRaw, nextRaw, bodyRange, previousRange, nextRange]
 			// A vertex is stroked from its body's clipped A or B end. Those are
 			// mixes of homogeneous clip positions, so the same mixes of the local
 			// points are exactly where they come from. The end is picked without
 			// a conditional: one would first emit the shared clip range inside a
 			// branch, leaving it unset for the other branch and for the stroke.
 			centerline = mix(
-				points.element( record.y ).xyz,
-				points.element( record.z ).xyz,
+				pointA,
+				pointB,
 				mix( bodyRange.x, bodyRange.y, float( usesB ) )
 			)
 			material.vertexNode = Fn( () => {
@@ -1746,25 +1805,22 @@ export class MeshLineGPUPath extends Group {
 				const delta2Raw = nextP.sub( currentP )
 				const delta1RawLength = length( delta1Raw ).toVar()
 				const delta2RawLength = length( delta2Raw ).toVar()
+				const projectedDir1 = delta1Raw.div( max( delta1RawLength, MIN_DIRECTION_LENGTH ) ).toVar()
+				const projectedDir2 = delta2Raw.div( max( delta2RawLength, MIN_DIRECTION_LENGTH ) ).toVar()
 				const projectedReversal = delta1RawLength.greaterThanEqual( float( MIN_DIRECTION_LENGTH ) )
 					.and( delta2RawLength.greaterThanEqual( float( MIN_DIRECTION_LENGTH ) ) )
-					.and( dot(
-						delta1Raw.div( max( delta1RawLength, MIN_DIRECTION_LENGTH ) ),
-						delta2Raw.div( max( delta2RawLength, MIN_DIRECTION_LENGTH ) )
-					).lessThanEqual( float( REVERSAL_DOT_THRESHOLD ) ) )
+					.and( dot( projectedDir1, projectedDir2 ).lessThanEqual( float( REVERSAL_DOT_THRESHOLD ) ) )
 				const atStart = previousReachesA.not().or( clippedStart )
 					.or( usesB.not().and( projectedReversal ) )
-					.select( float( 1 ), float( 0 ) )
+					.toVar()
 				const atEnd = nextStartsB.not().or( clippedEnd )
 					.or( usesB.and( projectedReversal ) )
-					.select( float( 1 ), float( 0 ) )
-				const delta1 = mix( delta1Raw, delta2Raw, atStart )
-				const delta2 = mix( delta2Raw, delta1Raw, atEnd )
-				const delta1Length = length( delta1 )
-				const delta2Length = length( delta2 )
+					.toVar()
+				const delta1Length = atStart.select( delta2RawLength, delta1RawLength )
+				const delta2Length = atEnd.select( delta1RawLength, delta2RawLength )
 				const fallbackDirection = vec2( 1, 0 )
-				const direction1Raw = delta1.div( max( delta1Length, MIN_DIRECTION_LENGTH ) )
-				const direction2Raw = delta2.div( max( delta2Length, MIN_DIRECTION_LENGTH ) )
+				const direction1Raw = atStart.select( projectedDir2, projectedDir1 )
+				const direction2Raw = atEnd.select( projectedDir1, projectedDir2 )
 				const direction1 = mix(
 					mix( fallbackDirection, direction2Raw, step( MIN_DIRECTION_LENGTH, delta2Length ) ),
 					direction1Raw,
@@ -1797,7 +1853,7 @@ export class MeshLineGPUPath extends Group {
 				)
 				const offset = unitPerpendicular.mul( halfWidth ).toVar()
 				if ( sizeAttenuation ) {
-					offset.assign( cameraProjectionMatrix.mul( vec4( offset, 0, 0 ) ).xy )
+					offset.assign( projCol0.mul( offset.x ).add( projCol1.mul( offset.y ) ) )
 				} else {
 					offset.x.divAssign( aspect )
 					offset.mulAssign( currentPosition.w.mul( 2 ).div( resolutionNode.y ) )
@@ -1811,15 +1867,16 @@ export class MeshLineGPUPath extends Group {
 			} )()
 		} else {
 			const primitive = primitives.element( effectiveVertex.div( uint( 3 ) ) )
-			const primitiveType = primitive.x.mod( uint( 1 << PRIMITIVE_TYPE_BITS ) ).toVar()
-			const primitiveSlot = primitive.x.div( uint( 1 << PRIMITIVE_TYPE_BITS ) ).toVar()
+			const primitiveType = primitive.x.bitAnd( uint( ( 1 << PRIMITIVE_TYPE_BITS ) - 1 ) ).toVar()
+			const primitiveSlot = primitive.x.shiftRight( uint( PRIMITIVE_TYPE_BITS ) ).toVar()
 			const triangleVertex = effectiveVertex.mod( uint( 3 ) ).toVar()
 			const record = segments.element( primitive.y ).toVar()
-			const mvp = cameraProjectionMatrix.mul( modelViewMatrix )
-			const previousRaw = mvp.mul( vec4( points.element( record.x ).xyz, 1 ) ).toVar()
-			const aRaw = mvp.mul( vec4( points.element( record.y ).xyz, 1 ) ).toVar()
-			const bRaw = mvp.mul( vec4( points.element( record.z ).xyz, 1 ) ).toVar()
-			const nextRaw = mvp.mul( vec4( points.element( record.w ).xyz, 1 ) ).toVar()
+			const pointA = points.element( record.y ).xyz.toVar()
+			const pointB = points.element( record.z ).xyz.toVar()
+			const previousRaw = cameraProjectionMatrix.mul( modelViewMatrix.mul( vec4( points.element( record.x ).xyz, 1 ) ) ).toVar()
+			const aRaw = cameraProjectionMatrix.mul( modelViewMatrix.mul( vec4( pointA, 1 ) ) ).toVar()
+			const bRaw = cameraProjectionMatrix.mul( modelViewMatrix.mul( vec4( pointB, 1 ) ) ).toVar()
+			const nextRaw = cameraProjectionMatrix.mul( modelViewMatrix.mul( vec4( points.element( record.w ).xyz, 1 ) ) ).toVar()
 			const bodyRange = clipRange( aRaw, bRaw, clipPadding ).toVar()
 			const previousRange = clipRange( previousRaw, aRaw, clipPadding ).toVar()
 			const nextRange = clipRange( bRaw, nextRaw, clipPadding ).toVar()
@@ -1828,7 +1885,7 @@ export class MeshLineGPUPath extends Group {
 				triangleVertex.equal( uint( 2 ) ),
 				triangleVertex.notEqual( uint( 1 ) )
 			).toVar()
-			const fetched = [effectiveVertex, primitiveType, primitiveSlot, triangleVertex, record, previousRaw, aRaw, bRaw, nextRaw, bodyRange, previousRange, nextRange, bodyA, usesB]
+			const fetched = [effectiveVertex, primitiveType, primitiveSlot, triangleVertex, record, pointA, pointB, previousRaw, aRaw, bRaw, nextRaw, bodyRange, previousRange, nextRange, bodyA, usesB]
 			// Bodies are stroked from their clipped A or B end, as in the fixed
 			// strip. Joins and end caps are stroked from B and start caps from A,
 			// and only while that end is unclipped. Picked without conditionals
@@ -1836,8 +1893,8 @@ export class MeshLineGPUPath extends Group {
 			const bodyEnd = mix( bodyRange.x, bodyRange.y, float( usesB ) )
 			const capEnd = float( primitiveType.notEqual( uint( PRIMITIVE_START_CAP ) ) )
 			centerline = mix(
-				points.element( record.y ).xyz,
-				points.element( record.z ).xyz,
+				pointA,
+				pointB,
 				mix( capEnd, bodyEnd, float( primitiveType.lessThan( uint( PRIMITIVE_JOIN ) ) ) )
 			)
 			material.vertexNode = Fn( () => {
@@ -1851,21 +1908,19 @@ export class MeshLineGPUPath extends Group {
 				const nextPosition = mix( bRaw, nextRaw, nextRange.y )
 				const reachesA = bodyRange.x.lessThanEqual( float( CLIP_RANGE_EPSILON ) ).toVar()
 				const reachesB = bodyRange.y.greaterThanEqual( float( 1 - CLIP_RANGE_EPSILON ) ).toVar()
+				const padX = clipPadding.x.add( 1 )
+				const padY = clipPadding.y.add( 1 )
 				const aInsideClip = aRaw.w.greaterThan( float( 0 ) )
 					.and( aRaw.z.greaterThanEqual( float( 0 ) ) )
 					.and( aRaw.z.lessThanEqual( aRaw.w ) )
-					.and( aRaw.x.add( aRaw.w.mul( clipPadding.x.add( 1 ) ) ).add( clipPadding.z ).greaterThanEqual( float( 0 ) ) )
-					.and( aRaw.w.mul( clipPadding.x.add( 1 ) ).sub( aRaw.x ).add( clipPadding.z ).greaterThanEqual( float( 0 ) ) )
-					.and( aRaw.y.add( aRaw.w.mul( clipPadding.y.add( 1 ) ) ).add( clipPadding.w ).greaterThanEqual( float( 0 ) ) )
-					.and( aRaw.w.mul( clipPadding.y.add( 1 ) ).sub( aRaw.y ).add( clipPadding.w ).greaterThanEqual( float( 0 ) ) )
+					.and( abs( aRaw.x ).lessThanEqual( aRaw.w.mul( padX ).add( clipPadding.z ) ) )
+					.and( abs( aRaw.y ).lessThanEqual( aRaw.w.mul( padY ).add( clipPadding.w ) ) )
 					.toVar()
 				const bInsideClip = bRaw.w.greaterThan( float( 0 ) )
 					.and( bRaw.z.greaterThanEqual( float( 0 ) ) )
 					.and( bRaw.z.lessThanEqual( bRaw.w ) )
-					.and( bRaw.x.add( bRaw.w.mul( clipPadding.x.add( 1 ) ) ).add( clipPadding.z ).greaterThanEqual( float( 0 ) ) )
-					.and( bRaw.w.mul( clipPadding.x.add( 1 ) ).sub( bRaw.x ).add( clipPadding.z ).greaterThanEqual( float( 0 ) ) )
-					.and( bRaw.y.add( bRaw.w.mul( clipPadding.y.add( 1 ) ) ).add( clipPadding.w ).greaterThanEqual( float( 0 ) ) )
-					.and( bRaw.w.mul( clipPadding.y.add( 1 ) ).sub( bRaw.y ).add( clipPadding.w ).greaterThanEqual( float( 0 ) ) )
+					.and( abs( bRaw.x ).lessThanEqual( bRaw.w.mul( padX ).add( clipPadding.z ) ) )
+					.and( abs( bRaw.y ).lessThanEqual( bRaw.w.mul( padY ).add( clipPadding.w ) ) )
 					.toVar()
 				const previousReachesA = previousVisible
 					.and( previousRange.y.greaterThanEqual( float( 1 - CLIP_RANGE_EPSILON ) ) )
@@ -1908,9 +1963,7 @@ export class MeshLineGPUPath extends Group {
 				let startScreenHalfWidth
 				let endScreenHalfWidth
 				if ( sizeAttenuation ) {
-					const projectedHalfWidthX = abs( cameraProjectionMatrix.mul( vec4( halfWidth, 0, 0, 0 ) ).x ).mul( aspect )
-					const projectedHalfWidthY = abs( cameraProjectionMatrix.mul( vec4( 0, halfWidth, 0, 0 ) ).y )
-					const projectedHalfWidth = max( projectedHalfWidthX, projectedHalfWidthY )
+					const projectedHalfWidth = max( abs( projCol0.x ).mul( aspect ), abs( projCol1.y ) ).mul( halfWidth )
 					startScreenHalfWidth = projectedHalfWidth.div( max( aRaw.w, MIN_CLIP_W ) )
 					endScreenHalfWidth = projectedHalfWidth.div( max( bRaw.w, MIN_CLIP_W ) )
 				} else {
@@ -1962,7 +2015,7 @@ export class MeshLineGPUPath extends Group {
 				const startOuterMiterValid = startInnerDefined.and( startInnerSupported )
 					.and( startInnerScale.lessThanEqual( halfWidth.mul( float( miterLimit ) ) ) )
 				// Miter bodies and joins both read this one. Built for miter joins
-				// only: three r183 still emits a var that nothing reads.
+				// only: three still emits a var that nothing reads.
 				const endOuterMiterValid = topology.join.type === 'miter'
 					? endInnerDefined.and( endInnerSupported )
 						.and( endInnerScale.lessThanEqual( halfWidth.mul( float( miterLimit ) ) ) )
@@ -2049,8 +2102,7 @@ export class MeshLineGPUPath extends Group {
 
 				If( primitiveType.equal( uint( PRIMITIVE_JOIN ) ), () => {
 					const joinVisible = bodyVisible.and( reachesB ).and( nextStartsB ).and( bInsideClip ).toVar()
-					const turnCross = bodyDirection.x.mul( outgoingDirection.y ).sub( bodyDirection.y.mul( outgoingDirection.x ) )
-					const turnSign = turnCross.greaterThanEqual( float( 0 ) ).select( float( 1 ), float( -1 ) )
+					const turnSign = endTurnCross.greaterThanEqual( float( 0 ) ).select( float( 1 ), float( -1 ) )
 					const outerSide = turnSign.negate()
 					const outerIncoming = bodyNormal.mul( outerSide )
 					const outerOutgoing = outgoingNormal.mul( outerSide )
@@ -2082,7 +2134,7 @@ export class MeshLineGPUPath extends Group {
 									endJoinPivotOffset,
 									triangleVertex.equal( uint( 1 ) ).select( startRadius, endRadius ).mul( halfWidth )
 								) )
-								emitted.assign( joinVisible.and( abs( turnCross ).greaterThan( float( MIN_DIRECTION_LENGTH ) ) ) )
+								emitted.assign( joinVisible.and( abs( endTurnCross ).greaterThan( float( MIN_DIRECTION_LENGTH ) ) ) )
 							} )
 						} else {
 							const outerA = outerIncoming.mul( halfWidth )
@@ -2100,7 +2152,7 @@ export class MeshLineGPUPath extends Group {
 								joinVisible
 									.and( emitJoin )
 									.and( primitiveSlot.equal( uint( 0 ) ) )
-									.and( abs( turnCross ).greaterThan( float( MIN_DIRECTION_LENGTH ) ) )
+									.and( abs( endTurnCross ).greaterThan( float( MIN_DIRECTION_LENGTH ) ) )
 							)
 						}
 					} )
@@ -2135,7 +2187,7 @@ export class MeshLineGPUPath extends Group {
 
 				const clipOffset = strokeOffset.toVar()
 				if ( sizeAttenuation ) {
-					clipOffset.assign( cameraProjectionMatrix.mul( vec4( strokeOffset, 0, 0 ) ).xy )
+					clipOffset.assign( projCol0.mul( strokeOffset.x ).add( projCol1.mul( strokeOffset.y ) ) )
 				} else {
 					clipOffset.x.divAssign( aspect )
 					clipOffset.mulAssign( finalPosition.w.mul( 2 ).div( resolutionNode.y ) )
@@ -2159,6 +2211,9 @@ export class MeshLineGPUPath extends Group {
 		for ( const node of this._computeNodes ) node?.dispose?.()
 		this.gpuMesh?.geometry?.dispose?.()
 		this.gpuMesh?.material?.dispose?.()
+		for ( const resource of Object.values( this._resources ?? {} ) ) {
+			if ( resource?.isStorageBufferAttribute === true ) releaseStorageAttribute( this._renderer, resource )
+		}
 		this.gpuMesh = null
 		this._computeNodes = []
 		this._resources = null

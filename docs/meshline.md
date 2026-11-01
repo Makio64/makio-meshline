@@ -44,13 +44,14 @@ See [Common Patterns](./common-patterns.md) for more examples.
 - `lineWidth(lineWidth: number)` - Set the full line width. With `sizeAttenuation(false)` this is CSS pixels; with the default `sizeAttenuation(true)` it is projected as a scene-space width.
 - `widthCallback(callback: (progress: number, pointIndex?: number, lineIndex?: number) => number)` - Set an arc-length-based variable width multiplier
 - `sizeAttenuation(enable: boolean)` - Enable scene-space projected width. Disable it for constant CSS-pixel width.
+- `antialias(enabled?: boolean)` - Enable analytic 1-device-pixel edge antialiasing (defaults `enabled` to `true` and enables `transparent`)
 - `gradientColor(color: number | THREE.Color)` - Set gradient end color
 - `vertexColors(colors: Float32Array | number[] | null)` - Set one RGB color per logical path point; billboard geometry expands each value across its four physical rows. A multi-line batch takes every line's colors concatenated in line order, or one line's worth shared by every line. On a built line a new array refreshes the colors in place; turning them on or off (`null`) rebuilds
 - `opacity(opacity: number)` - Set opacity level
 
 **Material Properties:**
 - `alphaTest(threshold: number)` - Set alpha test threshold
-- `transparent(enable: boolean)` - Enable/disable transparency, enable by default if opacity != 1 or alphaMap
+- `transparent(enable: boolean)` - Enable/disable transparency (enabled automatically when `opacity < 1`, `alphaMap` is set, or `antialias` is enabled)
 - `wireframe(enable: boolean)` - Enable/disable wireframe mode
 
 **Textures:**
@@ -62,7 +63,8 @@ See [Common Patterns](./common-patterns.md) for more examples.
 - `dash({ count: number, ratio?: number, offset?: number } | null | false)` - Configure dash pattern, or pass `null` / `false` to disable dashes
 
 **Shadow:**
-- `shadow(enabled: boolean)` - Enable shadow casting
+- `shadow(enabled: boolean, receiveShadow?: boolean)` - Enable/disable shadow casting, and optionally set `receiveShadow` at the same time
+- `setReceiveShadow(enabled: boolean)` - Enable/disable shadow receiving on the line (billboard lines reconstruct a 3D cylindrical tube normal and offset `shadowPositionWorld` so self-shadows and scene shadows shade smoothly without acne)
 
 **Advanced:**
 
@@ -171,6 +173,7 @@ interface MeshLineConfigureOptions {
   lineWidth?: number                         // Line width (default: 0.3)
   widthCallback?: (progress: number, pointIndex?: number, lineIndex?: number) => number
   sizeAttenuation?: boolean
+  antialias?: boolean                        // Analytic 1-px edge antialiasing
   gradientColor?: number | null              // End-gradient colour
   vertexColors?: Float32Array | number[]     // Per-point RGB colors
 
@@ -207,6 +210,7 @@ interface MeshLineConfigureOptions {
 
   // ***Shadow***
   shadow?: boolean
+  receiveShadow?: boolean
 
   // ***Rendering flags***
   opacity?: number
@@ -296,6 +300,8 @@ interface MeshLineSurfaceOptions {
 
 - **`sizeAttenuation`** (`boolean`) — Whether `lineWidth` is projected in scene space. When `false`, lines maintain constant CSS-pixel width regardless of distance. Default: `true`.
 
+- **`antialias`** (`boolean`) — Pads the billboard stroke outward by half a device pixel per side and fades edge coverage over one device pixel in the fragment stage (`fwidth`), keeping sub-pixel strokes continuous. Automatically sets `transparent: true`. Default: `false`.
+
 - **`gradientColor`** (`number | null`) — Optional gradient end color. When set, the line will smoothly transition from `color` to `gradientColor` along its length. Default: `null` (no gradient).
 
 - **`vertexColors`** (`Float32Array | number[] | null`) — Per-logical-point RGB colors. Supply a flat array in the 0–1 range with three values per authored point; the geometry duplicates each color across the point's physical billboard rows. Each point color is multiplied with the base `color`. Best used with `Float32Array` for performance. Default: `null` (no vertex colors).
@@ -330,7 +336,9 @@ line.material.dashOffset.value += 0.01
 
 ### Shadow
 
-- **`shadow`** (`boolean`) — Enable shadow casting for the line. When enabled, the line will cast shadows in your scene. Requires proper Three.js shadow setup (renderer shadowMap enabled, lights with castShadow, and receiving meshes with receiveShadow). Default: `false`.
+- **`shadow`** (`boolean`) — Enable shadow casting for the line (`castShadow = true` plus the custom billboard shadow position and dash mask nodes). Requires `renderer.shadowMap.enabled = true` and shadow-casting lights. Default: `false`.
+
+- **`receiveShadow`** (`boolean`) — Enable shadow receiving on the line (`.shadow( true, true )` or `.setReceiveShadow( true )`). On world-space surfaces, standard PBR normals receive shadows directly. On camera-facing billboards, `MeshLineNodeMaterial` reconstructs a 3D cylindrical tube normal (`vShadowTube`), offsets `shadowPositionWorld` along that normal by the half-width to avoid self-shadow acne, and modulates the unlit billboard color with incoming light shadows. Default: `false`.
 
 > **Custom Shadow Color:** After building the line, access `material.castShadowNode` to customize shadow appearance. Use a `vec4` so the shadow keeps an explicit alpha channel. For example, `material.castShadowNode = vec4( 0.7, 0.7, 0.7, 1 )` creates lighter, softer shadows.
 

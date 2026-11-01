@@ -93,10 +93,19 @@ When editing code, maintain these style conventions exactly as they appear in ex
   - `MeshLineCompute.js` — WebGPU compute-driven curve simulation engine
   - `MeshLinePicker.js` / `MeshLinePickerHelper.js` — GPU pixel-picker and visual debug helper
   - `positions/` — `circlePositions`, `squarePositions`, `rectanglePositions`, `sineWavePositions`, `straightLine`, `straightLineBetween`, `storagePositions` (supports ring-buffer `head`, two-buffer GPU `toBuffer`/`morph`, and `closed` loop seam wrapping)
-- `src/gpu-culling/index.js` (`makio-meshline/gpu-culling`, Three.js r183+):
+- `src/gpu-culling/index.js` (`makio-meshline/gpu-culling`, native WebGPU):
   - `MeshLineCullingSystem` — Native-WebGPU chunk frustum culling + single indirect draw compaction
-- `src/gpu-path/index.js` (`makio-meshline/gpu-path`, Three.js r183+):
+- `src/gpu-path/index.js` (`makio-meshline/gpu-path`, native WebGPU):
   - `MeshLineGPUPath` — Point-centric GPU path with optional multi-stride simplification and automatic CPU fallback
+
+### Demo Conventions (`demo/src/demos/`)
+Demos teach the MeshLine API, so everything else stays out of them:
+- `export default class XExample` with `async init()`. `ExampleView` subscribes its `update` and `onResize` arrow fields once `init()` resolves, and runs `stage3d.clearDemo()` after the optional `dispose()`.
+- Setup: `stage3d.initRender( { background, fov, near, far } )` and `stage3d.orbit( radius, { target, phi, minRadius, autoRotate, ... } )`, passing only non-default values.
+- Lifetime: objects in the scene are disposed automatically. Wrap anything else in `stage3d.own( resource )` and subscribe with `stage3d.listen( source, ...args )`. Write `dispose()` only for teardown that must run before that.
+- No constructor of `null` placeholders, no nulling on dispose, no `Math.min( dt, 100 )` (`stage` already caps `dt`).
+- UI: `createDemoHint()`, `createDemoControls()` and `onShortcut()`. A larger HUD goes to a Vue `uiComponent`.
+- Points: `linePoints( count, ( t, i ) => [x, y, z] )` and `times( count, fn )` from `@/utils/points`, at init only. Per-frame paths stay allocation-free.
 
 ### Critical Rules When Writing `makio-meshline` Code
 1. **TSL `Fn()` Array Destructuring**: Always destructure the array parameter inside `Fn( ( [param1, param2] ) => ... )`.
@@ -108,6 +117,6 @@ When editing code, maintain these style conventions exactly as they appear in ex
 
 ## Dependencies
 
-- **Three.js >=0.180.0** (peer dependency; optional `gpu-culling` and `gpu-path` entries require `>=0.183.0`)
+- **Three.js >=0.186.0** (peer dependency for every entry point, including `gpu-culling` and `gpu-path`)
 - Demo uses Vue 3, Vite, and Three.js `WebGPURenderer`
 - Documentation uses VitePress (see `AGENTS.md` and `docs/public/llms-full.txt` for full agent recipes)

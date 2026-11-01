@@ -1,3 +1,8 @@
+/**
+ * Bamboo Grove — four instanced MeshLine layers (culms, nodes, twigs, leaves) with shadows and wind.
+ * Demonstrates: .instances( count ), .addInstanceAttributes( spec ), billboard shadow casting & receiving,
+ * .widthCallback( fn ), and shared TSL vertex/color/normal hooks.
+ */
 import { MeshLine } from 'makio-meshline'
 import { attribute, cameraPosition, color, cos, dot, Fn, fract, max, mix, normalize, positionWorldDirection, pow, sin, smoothstep, texture, uniform, uv, vec3, vec4 } from 'three/tsl'
 import { DirectionalLight, Fog, HemisphereLight, Mesh, MeshStandardNodeMaterial, PCFSoftShadowMap, PlaneGeometry, RepeatWrapping, TextureLoader, Vector3 } from 'three/webgpu'
@@ -63,6 +68,7 @@ class BambooGroveExample {
 		this.partButtons = new Map()
 		this.hudStyle = null
 		this.wireframeEnabled = false
+		this.previousShadowState = null
 		this.partVisibility = {
 			stalks: true,
 			nodes: true,
@@ -77,6 +83,11 @@ class BambooGroveExample {
 
 	async init() {
 		await stage3d.initRender( { background: MIST } )
+		this.previousShadowState = {
+			enabled: stage3d.renderer.shadowMap.enabled,
+			type: stage3d.renderer.shadowMap.type,
+			transmitted: stage3d.renderer.shadowMap.transmitted,
+		}
 		stage3d.renderer.shadowMap.enabled = true
 		stage3d.renderer.shadowMap.type = PCFSoftShadowMap
 		stage3d.renderer.shadowMap.transmitted = true
@@ -889,9 +900,14 @@ class BambooGroveExample {
 		this.noise?.dispose()
 		this.noise = null
 
-		stage3d.renderer.shadowMap.enabled = false
-		stage3d.renderer.shadowMap.transmitted = false
+		if ( this.previousShadowState ) {
+			stage3d.renderer.shadowMap.enabled = this.previousShadowState.enabled
+			stage3d.renderer.shadowMap.type = this.previousShadowState.type
+			stage3d.renderer.shadowMap.transmitted = this.previousShadowState.transmitted
+			this.previousShadowState = null
+		}
 		stage3d.control?.dispose()
+		stage3d.control = null
 	}
 
 }

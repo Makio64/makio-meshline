@@ -1,3 +1,8 @@
+/**
+ * Draw Lines — interactive brush-trail ribbon with partial vertex and position uploads.
+ * Demonstrates: .dynamic( true ), .needsWidth( true ), .join({ type: 'bevel' }),
+ * .setPositionRange( points, 0, { lineIndex } ), and .setVertexValues( 'width', slice ).
+ */
 import { MeshLine } from 'makio-meshline'
 import { attribute, Fn, mix, vec3, vec4 } from 'three/tsl'
 import { AdditiveBlending, Color, MathUtils, Plane, Raycaster, Vector2, Vector3 } from 'three/webgpu'
@@ -44,7 +49,6 @@ const pointerNDC = new Vector2()
 
 class DrawLinesExample {
 	constructor() {
-		this.text = ''
 		this.paths = []
 		this.activeLineCount = LINES_FOLLOWING_MOUSE
 		this.activeWidthValues = null
@@ -655,6 +659,7 @@ class DrawLinesExample {
 
 		stage3d.remove( this.meshline )
 		stage3d.control?.dispose()
+		stage3d.control = null
 		this.meshline?.dispose()
 		this.meshline = null
 	}

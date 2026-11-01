@@ -1,3 +1,8 @@
+/**
+ * Verlet Ropes — 52 interactive hanging cords with PBD physics and Catmull-Rom GPU spline sampling.
+ * Demonstrates: .instances( count ), .segments( count ), .gpuPositionNode( fn ) reading a
+ * StorageBufferAttribute, and TSL braided cord shading.
+ */
 import { MeshLine } from 'makio-meshline'
 import { abs, clamp, cos, dot, float, floor, Fn, instanceIndex, length, Loop, max, min, mix, sin, smoothstep, sqrt, storage, uniform, uv, vec2, vec3, vec4 } from 'three/tsl'
 import { Plane, Raycaster, StorageBufferAttribute, Vector2, Vector3 } from 'three/webgpu'

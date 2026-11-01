@@ -4,19 +4,19 @@ outline: false
 pageClass: example-page
 ---
 
-# Draw Lines
+# Draw & Trail
 
-This is the same idea as Follow, but instead of keeping a single live trail you keep the points that the user painted. The demo opens with a deterministic infinity-stroke replay, so the follower motion is visible before the first drag; every stroke you add gets its own replay followers.
+Instead of keeping a single live cursor trail, this demo records every stroke you paint and spawns replay followers along it. The scene opens with a deterministic infinity-stroke replay so the follower motion is visible before your first drag; every stroke you add gets its own colored brush followers.
 
-<iframe title="Makio MeshLine Draw Lines demo" src="https://meshline-demo.makio.io/examples/drawlines?noUI" width="100%" height="600" style="border: 1px solid #ddd; border-radius: 8px;"></iframe>
+<iframe title="Makio MeshLine Draw & Trail demo" src="https://meshline-demo.makio.io/examples/drawlines?noUI" width="100%" height="600" style="border: 1px solid #ddd; border-radius: 8px;"></iframe>
 
-[Open the full Draw Lines demo](https://meshline-demo.makio.io/examples/drawlines)
+[Open the full Draw & Trail demo](https://meshline-demo.makio.io/examples/drawlines)
 
 ## Minimal Pattern
 
 ```javascript
 import { MeshLine } from 'makio-meshline'
-import { Plane, Raycaster, Vector2, Vector3 } from 'three'
+import { Plane, Raycaster, Vector2, Vector3 } from 'three/webgpu'
 
 const maxPoints = 120
 const stroke = []

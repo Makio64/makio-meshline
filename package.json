@@ -23,25 +23,21 @@
     "release:check": "pnpm lint && pnpm test && pnpm test:types && pnpm build && pnpm docs:build && pnpm --filter makio-meshline-vanilla-example build && pnpm --filter makio-meshline-r3f-example build && pnpm --filter makio-meshline-vue-example build && pnpm verify:package && pnpm verify:compat"
   },
   "meshlineCompatibility": {
-    "coreMinimum": {
-      "three": "0.180.0",
-      "types": "0.180.0"
-    },
-    "optionalMinimum": {
-      "three": "0.183.0",
-      "types": "0.183.0"
+    "minimum": {
+      "three": "0.186.0",
+      "types": "0.186.0"
     }
   },
   "devDependencies": {
     "@stylistic/eslint-plugin": "^5.10.0",
-    "@types/three": "0.185.4",
+    "@types/three": "0.186.0",
     "eslint": "^10.8.1",
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-simple-import-sort": "^14.0.0",
     "eslint-plugin-unused-imports": "^4.4.1",
     "eslint-plugin-vue": "^10.10.0",
     "makio-meshline": "workspace:*",
-    "three": "0.185.1",
+    "three": "0.186.1",
     "typescript": "^7.0.2"
   },
   "engines": {

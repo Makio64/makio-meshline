@@ -1,7 +1,12 @@
+/**
+ * Feature Gallery — 12 side-by-side specimens of MeshLine styling and TSL hooks.
+ * Demonstrates: gradients, dashes, alpha maps, widthCallback, widthFn, colorFn,
+ * gradientFn, dashFn, opacityFn, fragmentColorFn, fragmentAlphaFn, and lineCoord.
+ */
 import { animate, utils } from 'animejs'
 import { circlePositions, lineCoord, MeshLine } from 'makio-meshline'
 import { CSS2DObject, CSS2DRenderer } from 'three/addons/renderers/CSS2DRenderer.js'
-import { color, float, Fn, fract, mix, screenUV, sin, smoothstep, step, time, uniform, uv, vec2, vec3, vec4 } from 'three/tsl'
+import { color, float, Fn, fract, mix, screenUV, sin, smoothstep, time, uniform, vec2, vec3, vec4 } from 'three/tsl'
 import { CanvasTexture, Group, Mesh, MeshBasicMaterial, PlaneGeometry, RepeatWrapping } from 'three/webgpu'
 
 import { stage } from '@/makio/core/stage'
@@ -51,6 +56,10 @@ const rimGlow = Fn( ( [baseColor] ) => {
 	const edge = lineCoord.y.abs()
 	const rim = smoothstep( 0.35, 0.92, edge )
 	return mix( baseColor.mul( 0.28 ), vec3( 0.86, 0.98, 1.0 ), rim )
+} )
+
+const createRevealDiscard = ( percent1, percent2 ) => Fn( ( [progress] ) => {
+	return progress.greaterThan( percent1 ).or( progress.lessThan( percent2.oneMinus() ) )
 } )
 
 const LINE_CONFIGS = [
@@ -381,6 +390,7 @@ class FeatureGalleryExample {
 	createScene() {
 		this.clearScene()
 		this.textures = this.createTextures()
+		this.backgroundPlaneGeometry = new PlaneGeometry( 2.2, 2.2 )
 
 		LINE_CONFIGS.forEach( ( config, index ) => {
 			// Each cell pivots on its own, so the line and its checker card tilt
@@ -396,7 +406,7 @@ class FeatureGalleryExample {
 
 			if ( config.background ) {
 				const plane = new Mesh(
-					new PlaneGeometry( 2.2, 2.2 ),
+					this.backgroundPlaneGeometry,
 					new MeshBasicMaterial( { map: this.textures.checker, transparent: true, opacity: 0 } )
 				)
 				plane.position.z = -0.3
@@ -504,17 +514,17 @@ class FeatureGalleryExample {
 	}
 
 	createLine( config ) {
+		const usesUV = Boolean( config.map || config.alphaMap || config.uvFn )
 		const line = new MeshLine()
 			.lines( BASE_POSITIONS, config.closed )
 			.color( config.color )
 			.lineWidth( config.lineWidth )
 			.wireframe( config.wireframe ?? false )
+			.needsUV( usesUV )
 
 		line.percent1 = uniform( 0 )
 		line.percent2 = uniform( 1 )
-		line.discardFn( Fn( () => {
-			return step( uv().x, line.percent1 ).mul( step( uv().x.oneMinus(), line.percent2 ) ).lessThan( 0.00001 )
-		} ) )
+		line.discardFn( createRevealDiscard( line.percent1, line.percent2 ) )
 
 		if ( config.dash ) line.dash( config.dash )
 		if ( config.gradientColor ) line.gradientColor( config.gradientColor )
@@ -550,9 +560,10 @@ class FeatureGalleryExample {
 		} )
 		this.backgroundPlanes.forEach( plane => {
 			utils.remove( plane.material )
-			plane.geometry.dispose()
 			plane.material.dispose()
 		} )
+		this.backgroundPlaneGeometry?.dispose()
+		this.backgroundPlaneGeometry = null
 		this.cells.forEach( cell => stage3d.remove( cell ) )
 		this.labels.forEach( label => {
 			stage3d.remove( label )

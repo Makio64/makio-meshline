@@ -41,9 +41,8 @@ test( 'scene fog fades positionFn and gpuPositionNode lines by their own view de
 				// The vertex stage hands fog the view depth of the placed point...
 				assert.equal( ( vertexShader.match( /\bvViewZ = /g ) || [] ).length, 1 )
 				assert.match( vertexShader, /= viewPosition\.z;/ )
-				// ...and the fragment stage fades by it: not by the template's
-				// `position` attribute (three r180-r182), and without rebuilding the
-				// view position per fragment through an inverse projection (r183+).
+				// ...and the fragment stage fades by it, without rebuilding the view
+				// position per fragment through an inverse projection.
 				assert.match( fragmentShader, /\(\s*-\s*vViewZ\s*\)/ )
 				assert.doesNotMatch( fragmentShader, /v_positionView|v_clipSpace|cameraProjectionMatrixInverse/ )
 				assert.doesNotMatch( fragmentShader, /\bdiscard\b/ )

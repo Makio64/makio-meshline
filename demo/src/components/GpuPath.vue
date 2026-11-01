@@ -7,10 +7,6 @@
 			<span><strong>{{ segmentSummary }}</strong> segs</span>
 			<span class="GpuPathInfo__sep" aria-hidden="true">·</span>
 			<strong>{{ badgeLabel }}</strong>
-			<template v-if="ui.mode === 'gpu-topology'">
-				<span class="GpuPathInfo__sep" aria-hidden="true">·</span>
-				<span>{{ ui.joinType }} / {{ ui.capType }}</span>
-			</template>
 		</div>
 
 		<aside

@@ -1,4 +1,4 @@
-import { clamp, float, floor, Fn, instanceIndex, length, Loop, max, min, mix, normalize, sin, smoothstep, storage, uniform, vec3 } from 'three/tsl'
+import { clamp, float, floor, Fn, instanceIndex, length, Loop, max, min, mix, normalize, sin, smoothstep, storage, uint, uniform, vec3 } from 'three/tsl'
 import { StorageBufferAttribute, Vector3 } from 'three/webgpu'
 
 import MeshLine from './MeshLine.js'
@@ -58,6 +58,18 @@ function hash01( value ) {
 	return s - Math.floor( s )
 }
 
+// Material and compute-node disposal never free a storage buffer. Three r186
+// frees one only through the renderer's attribute map, which also keeps
+// renderer.info.memory in step; r187+ also on attribute.dispose().
+function releaseStorageAttribute( renderer, attribute ) {
+	try {
+		renderer?._attributes?.delete?.( attribute )
+	} catch {
+		// Already released, or its device is gone.
+	}
+	attribute.dispose?.()
+}
+
 function readVector3Like( value, target ) {
 	if ( !value ) return target
 	if ( Array.isArray( value ) ) {
@@ -114,6 +126,7 @@ export default class MeshLineCompute extends MeshLine {
 		this._baseBuffer = null
 		this._seedBuffer = null
 		this._distanceBuffer = null
+		this._storageRenderer = null
 
 		this._uTime = uniform( 0 )
 		this._uDelta = uniform( 1 / 60 )
@@ -312,6 +325,7 @@ export default class MeshLineCompute extends MeshLine {
 			return false
 		}
 
+		this._storageRenderer = renderer
 		const safeDelta = Math.max( 0.0001, Math.min( Number( delta ) || 1 / 60, 1 / 15 ) )
 		this._time += safeDelta
 		this._uTime.value = this._time
@@ -360,6 +374,7 @@ export default class MeshLineCompute extends MeshLine {
 		const changed = !this._positionBuffer || curveCount !== this._bufferCurveCount || pointsPerCurve !== this._bufferPointsPerCurve
 
 		if ( changed ) {
+			this._releaseStorage()
 			this._positionBuffer = new StorageBufferAttribute( totalPoints, 3 )
 			this._velocityBuffer = new StorageBufferAttribute( totalPoints, 3 )
 			this._baseBuffer = new StorageBufferAttribute( totalPoints, 4 )
@@ -372,6 +387,7 @@ export default class MeshLineCompute extends MeshLine {
 
 		if ( changed || !this._computeBuilt ) {
 			this._seedStorageArrays()
+			this._disposeComputeNodes()
 			this._computeNode = this._createComputeNode()
 			this._distanceComputeNode = this._createDistanceComputeNode()
 			this._distanceSampleNode = this._createDistanceSampleNode()
@@ -434,7 +450,10 @@ export default class MeshLineCompute extends MeshLine {
 				seed[p4 + 3] = curveRatio
 
 				if ( i > 0 ) {
-					accumulatedDistance += Math.hypot( x - lastX, y - lastY, z - lastZ )
+					const dx = x - lastX
+					const dy = y - lastY
+					const dz = z - lastZ
+					accumulatedDistance += Math.sqrt( dx * dx + dy * dy + dz * dz )
 				}
 				distance[pointIndex] = accumulatedDistance
 				lastX = x
@@ -457,7 +476,7 @@ export default class MeshLineCompute extends MeshLine {
 	_createDistanceSampleNode() {
 		const pointsPerCurve = this._computeOptions.pointsPerCurve
 		const storageCount = this._storageCount
-		const distances = storage( this._distanceBuffer, 'float', storageCount )
+		const distances = storage( this._distanceBuffer, 'float', storageCount ).toReadOnly()
 		const lastPoint = float( pointsPerCurve - 1 )
 
 		return Fn( ( [progress] ) => {
@@ -465,9 +484,9 @@ export default class MeshLineCompute extends MeshLine {
 			const point0 = floor( p ).toVar()
 			const point1 = clamp( point0.add( 1 ), 0, lastPoint ).toVar()
 			const mixValue = p.sub( point0 ).toVar()
-			const curveOffset = float( instanceIndex ).mul( pointsPerCurve ).toVar()
-			const index0 = curveOffset.add( point0 ).toUint().toVar()
-			const index1 = curveOffset.add( point1 ).toUint().toVar()
+			const curveOffset = instanceIndex.toUint().mul( uint( pointsPerCurve ) ).toVar()
+			const index0 = curveOffset.add( point0.toUint() ).toVar()
+			const index1 = curveOffset.add( point1.toUint() ).toVar()
 
 			return mix( distances.element( index0 ), distances.element( index1 ), mixValue )
 		} )
@@ -486,25 +505,28 @@ export default class MeshLineCompute extends MeshLine {
 		const pointsPerCurve = this._computeOptions.pointsPerCurve
 		const positions = storage( this._positionBuffer, 'vec3', count )
 		const velocities = storage( this._velocityBuffer, 'vec3', count )
-		const bases = storage( this._baseBuffer, 'vec4', count )
+		const bases = storage( this._baseBuffer, 'vec4', count ).toReadOnly()
 		const distances = storage( this._distanceBuffer, 'float', count )
+		const lastLocalIndex = uint( pointsPerCurve - 1 )
 
 		return Fn( () => {
-			const curveOffset = float( instanceIndex ).mul( pointsPerCurve ).toVar( 'distanceCurveOffset' )
+			const firstIndex = instanceIndex.toUint().mul( uint( pointsPerCurve ) ).toVar( 'firstDistanceIndex' )
 			const accumulatedDistance = float( 0 ).toVar( 'accumulatedDistance' )
-			const firstIndex = curveOffset.toUint().toVar( 'firstDistanceIndex' )
 			const maxSpeed = max( 0.2, this._uBounds.mul( 0.5 ) ).toVar( 'constraintMaxSpeed' )
 			const inverseDelta = float( 1 ).div( this._uDelta ).toVar( 'constraintInverseDelta' )
 			distances.element( firstIndex ).assign( accumulatedDistance )
+			const point0 = positions.element( firstIndex ).toVar( 'distancePoint0' )
+			const point1 = positions.element( firstIndex.add( uint( 1 ) ) ).toVar( 'distancePoint1' )
+			const base0 = bases.element( firstIndex ).xyz.toVar( 'distanceBase0' )
 
 			Loop( pointsPerCurve - 1, ( { i } ) => {
-				const index0 = curveOffset.add( i ).toUint().toVar( 'distanceIndex0' )
-				const index1 = curveOffset.add( i ).add( 1 ).toUint().toVar( 'distanceIndex1' )
-				const index2 = curveOffset.add( min( i.add( 2 ), pointsPerCurve - 1 ) ).toUint()
-				const point0 = positions.element( index0 ).toVar( 'distancePoint0' )
-				const point1 = positions.element( index1 ).toVar( 'distancePoint1' )
-				const restLength = length( bases.element( index1 ).xyz.sub( bases.element( index0 ).xyz ) )
-				const midpoint = point0.add( positions.element( index2 ) ).mul( 0.5 )
+				const stepIndex = i.toUint()
+				const index1 = firstIndex.add( stepIndex ).add( uint( 1 ) ).toVar( 'distanceIndex1' )
+				const index2 = firstIndex.add( min( stepIndex.add( uint( 2 ) ), lastLocalIndex ) )
+				const point2 = positions.element( index2 ).toVar( 'distancePoint2' )
+				const base1 = bases.element( index1 ).xyz.toVar( 'distanceBase1' )
+				const restLength = length( base1.sub( base0 ) )
+				const midpoint = point0.add( point2 ).mul( 0.5 )
 				const smoothed = mix( point1, midpoint, this._uStiffness.mul( BEND_SMOOTHING ) )
 				const offset = smoothed.sub( point0 ).toVar( 'constraintOffset' )
 				const offsetLength = max( length( offset ), 0.000001 )
@@ -519,6 +541,9 @@ export default class MeshLineCompute extends MeshLine {
 				positions.element( index1 ).assign( corrected )
 				accumulatedDistance.addAssign( length( corrected.sub( point0 ) ) )
 				distances.element( index1 ).assign( accumulatedDistance )
+				point0.assign( corrected )
+				point1.assign( point2 )
+				base0.assign( base1 )
 			} )
 		} )().compute( curveCount )
 	}
@@ -527,8 +552,8 @@ export default class MeshLineCompute extends MeshLine {
 		const count = this._storageCount
 		const positions = storage( this._positionBuffer, 'vec3', count )
 		const velocities = storage( this._velocityBuffer, 'vec3', count )
-		const bases = storage( this._baseBuffer, 'vec4', count )
-		const seeds = storage( this._seedBuffer, 'vec4', count )
+		const bases = storage( this._baseBuffer, 'vec4', count ).toReadOnly()
+		const seeds = storage( this._seedBuffer, 'vec4', count ).toReadOnly()
 
 		const position = positions.element( instanceIndex )
 		const velocity = velocities.element( instanceIndex )
@@ -556,7 +581,7 @@ export default class MeshLineCompute extends MeshLine {
 			const toMouse = this._uMouse.sub( position ).toVar( 'toMouse' )
 			const mouseDistance = length( toMouse ).toVar( 'mouseDistance' )
 			const mouseFalloff = float( 1 ).sub( smoothstep( 0, this._uMouseRadius, mouseDistance ) ).toVar( 'mouseFalloff' )
-			const mouseDirection = normalize( toMouse ).toVar( 'mouseDirection' )
+			const mouseDirection = toMouse.div( max( mouseDistance, 0.000001 ) ).toVar( 'mouseDirection' )
 			const headBias = float( 1 ).sub( pointProgress ).mul( 0.85 ).add( 0.15 ).toVar( 'headBias' )
 			const audioBoost = this._uAudioLevel.mul( 1.5 ).add( 1 ).toVar( 'audioBoost' )
 			const textureBoost = this._uTextureStrength.mul( seed.z.sub( 0.5 ) ).toVar( 'textureBoost' )
@@ -580,17 +605,37 @@ export default class MeshLineCompute extends MeshLine {
 		} )().compute( count )
 	}
 
-	_disposeCompute = () => {
+	_onBeforeRender( renderer ) {
+		// Render-only use uploads the storage too, so remember who owns it.
+		if ( renderer ) this._storageRenderer = renderer
+		super._onBeforeRender( renderer )
+	}
+
+	_disposeComputeNodes() {
+		this._computeNode?.dispose()
+		this._distanceComputeNode?.dispose()
 		this._computeNode = null
 		this._distanceComputeNode = null
-		this._distanceSampleNode = null
+	}
+
+	_releaseStorage() {
+		for ( const attribute of [this._positionBuffer, this._velocityBuffer, this._baseBuffer, this._seedBuffer, this._distanceBuffer] ) {
+			if ( attribute ) releaseStorageAttribute( this._storageRenderer, attribute )
+		}
 		this._positionBuffer = null
 		this._velocityBuffer = null
 		this._baseBuffer = null
 		this._seedBuffer = null
 		this._distanceBuffer = null
+	}
+
+	_disposeCompute = () => {
+		this._disposeComputeNodes()
+		this._distanceSampleNode = null
 		this._computeBuilt = false
 		this._disposeMeshLine?.()
+		this._releaseStorage()
+		this._storageRenderer = null
 	}
 }
 

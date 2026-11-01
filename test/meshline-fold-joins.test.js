@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import { Fn, vec3 } from 'three/tsl'
-import { PerspectiveCamera, REVISION, Scene } from 'three/webgpu'
+import { PerspectiveCamera, Scene } from 'three/webgpu'
 
 import MeshLine from '../src/MeshLine.js'
 import MeshLinePicker from '../src/MeshLinePicker.js'
@@ -93,12 +93,9 @@ test( 'picker and helper proxies keep the exact clip and follow join changes', (
 		picker._syncProxies()
 		helper.update()
 		assert.doesNotMatch( compile( renderer, entry.proxy ).fragmentShader, /\bdiscard\b/ )
-		// r180 discards alpha <= 0 in every blended node material without an
-		// alphaTest (removed in r181, mrdoob/three.js#31927), so the translucent
-		// helper keeps that discard there; the fold clip goes on every release.
 		const helperFragment = compile( renderer, helper.children[0] ).fragmentShader
 		assert.doesNotMatch( helperFragment, /foldCoverageValue/ )
-		if ( Number.parseInt( REVISION ) >= 181 ) assert.doesNotMatch( helperFragment, /\bdiscard\b/ )
+		assert.doesNotMatch( helperFragment, /\bdiscard\b/ )
 		helper.dispose?.()
 		picker.dispose()
 		line.dispose()

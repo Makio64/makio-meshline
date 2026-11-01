@@ -16,9 +16,9 @@
 
 ## Package Entry Points
 
-- `makio-meshline` (Three.js r180+): `MeshLine`, `MeshLineGeometry`, `MeshLineNodeMaterial`, `MeshLineSurfaceGeometry`, `MeshLineSurfaceNodeMaterial`, `MeshLineCompute`, `MeshLinePicker`, `MeshLinePickerHelper`, `lineCoord`, `circlePositions`, `squarePositions`, `rectanglePositions`, `sineWavePositions`, `straightLine`, `straightLineBetween`, `storagePositions`
-- `makio-meshline/gpu-culling` (Three.js r183+ WebGPU): `MeshLineCullingSystem`, `MeshLineCullingHandle`
-- `makio-meshline/gpu-path` (Three.js r183+ WebGPU): `MeshLineGPUPath`
+- `makio-meshline` (Three.js r186+): `MeshLine`, `MeshLineGeometry`, `MeshLineNodeMaterial`, `MeshLineSurfaceGeometry`, `MeshLineSurfaceNodeMaterial`, `MeshLineCompute`, `MeshLinePicker`, `MeshLinePickerHelper`, `lineCoord`, `circlePositions`, `squarePositions`, `rectanglePositions`, `sineWavePositions`, `straightLine`, `straightLineBetween`, `storagePositions`
+- `makio-meshline/gpu-culling` (native WebGPU): `MeshLineCullingSystem`, `MeshLineCullingHandle`
+- `makio-meshline/gpu-path` (native WebGPU): `MeshLineGPUPath`
 
 ## Documentation Pages
 
@@ -35,4 +35,5 @@
 - [React Three Fiber](https://meshline.makio.io/react-three-fiber.html): Declarative `<MeshLine>` component for R3F
 - [Vue](https://meshline.makio.io/vue.html): Declarative `<MeshLine>` component for Vue 3
 - [Performance Guide](https://meshline.makio.io/performance.html): Memory layout, batching, instancing, and WebGPU vertex-buffer budgets
+- [V2 Benchmarks](https://meshline.makio.io/benchmarks.html): Interactive MeshLine-rendered performance diagrams and V2 benchmark suite results
 - [V2 Migration Guide](https://meshline.makio.io/v2-migration.html): Upgrading from `makio-meshline` v1 to v2

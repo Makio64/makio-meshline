@@ -730,6 +730,11 @@ export class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 // MeshLine world-space surface profile
 // ---------------------------------------------------------------------------
 
+export interface MeshLineExternalGeometryTarget {
+	setAttribute( name: string, data: Float32Array | BufferAttribute, itemSize?: number ): unknown
+	setIndex?( data: Uint16Array | Uint32Array | BufferAttribute | null ): unknown
+}
+
 export class MeshLineSurfaceGeometry extends BufferGeometry {
 	readonly isMeshLineSurfaceGeometry: true
 	constructor( options?: MeshLineSurfaceGeometryOptions )
@@ -737,6 +742,7 @@ export class MeshLineSurfaceGeometry extends BufferGeometry {
 	setLines( points: MultiLinePoints, closed?: boolean | boolean[] ): void
 	setPositions( points: MultiLinePoints ): void
 	setUsage( usage: MeshLineUsage, name?: string | null ): void
+	copyToGeometry<T extends BufferGeometry | MeshLineExternalGeometryTarget>( targetGeometry: T ): T
 	dispose(): void
 }
 

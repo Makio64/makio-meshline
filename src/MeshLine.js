@@ -1,4 +1,5 @@
 import {
+	Box3,
 	BufferAttribute,
 	InstancedBufferAttribute,
 	InstancedInterleavedBuffer,
@@ -23,10 +24,12 @@ import { straightLine } from "./positions/straightLine.js"
 const _inverseMatrix = new Matrix4()
 const _ray = new Ray()
 const _sphere = new Sphere()
+const _box = new Box3()
 const _vStart = new Vector3()
 const _vEnd = new Vector3()
 const _interRay = new Vector3()
 const _interSegment = new Vector3()
+const _closestPoint = new Vector3()
 
 // SSR-safe helpers
 const isBrowser = typeof window !== 'undefined'
@@ -268,9 +271,9 @@ export default class MeshLine extends Mesh {
 		if ( options.gpuPositionNode !== undefined ) this.gpuPositionNode( options.gpuPositionNode )
 		if ( options.usage !== undefined ) this.usage( options.usage )
 		if ( options.instanceCount !== undefined ) this.instances( options.instanceCount )
-		if ( options.needsUV !== undefined ) this.needsUV( options.needsUV )
+		if ( 'needsUV' in options ) this.needsUV( options.needsUV )
 		if ( options.needsWidth !== undefined ) this.needsWidth( options.needsWidth )
-		if ( options.needsProgress !== undefined ) this.needsProgress( options.needsProgress )
+		if ( 'needsProgress' in options ) this.needsProgress( options.needsProgress )
 		if ( options.needsPrevious !== undefined ) this.needsPrevious( options.needsPrevious )
 		if ( options.needsNext !== undefined ) this.needsNext( options.needsNext )
 		if ( options.needsSide !== undefined ) this.needsSide( options.needsSide )
@@ -1237,33 +1240,43 @@ export default class MeshLine extends Mesh {
 
 	_getBuildOptions() {
 		const options = this._options
-		const needsProgress = !!(
-			options.needsProgress ||
-			options.gpuPositionNode ||
-			options.widthCallback ||
-			options.gradientColor != null ||
-			options.dashCount ||
-			options.positionFn ||
-			options.previousFn ||
-			options.nextFn ||
-			options.widthFn ||
-			options.normalFn ||
-			options.colorFn ||
-			options.gradientFn ||
-			options.opacityFn ||
-			options.dashFn ||
-			options.uvFn ||
-			options.vertexFn ||
-			options.fragmentColorFn ||
-			options.fragmentAlphaFn ||
-			options.discardFn
-		)
+		const needsProgress = options.needsProgress !== undefined
+			? !!(
+				options.needsProgress ||
+				options.gpuPositionNode ||
+				options.widthCallback ||
+				options.gradientColor != null ||
+				options.dashCount
+			)
+			: !!(
+				options.gpuPositionNode ||
+				options.widthCallback ||
+				options.gradientColor != null ||
+				options.dashCount ||
+				options.positionFn ||
+				options.previousFn ||
+				options.nextFn ||
+				options.widthFn ||
+				options.normalFn ||
+				options.colorFn ||
+				options.gradientFn ||
+				options.opacityFn ||
+				options.dashFn ||
+				options.uvFn ||
+				options.vertexFn ||
+				options.fragmentColorFn ||
+				options.fragmentAlphaFn ||
+				options.discardFn
+			)
+		const needsUV = options.needsUV !== undefined
+			? !!( options.needsUV || options.map || options.alphaMap || options.uvFn )
+			: !!( options.map || options.alphaMap || options.uvFn || options.fragmentColorFn || options.fragmentAlphaFn || options.discardFn )
 		return {
 			...options,
 			needsWidth: !!( options.needsWidth || options.widthCallback ),
 			needsProgress,
 			needsSide: options.needsSide ?? false,
-			needsUV: !!( options.needsUV || options.map || options.alphaMap || options.uvFn || options.fragmentColorFn || options.fragmentAlphaFn || options.discardFn ),
+			needsUV,
 			needsVertexColor: !!( options.needsVertexColor || options.vertexColors ),
 			needsPrevious: options.needsPrevious ?? !options.gpuPositionNode,
 			needsNext: options.needsNext ?? !options.gpuPositionNode,
@@ -1296,8 +1309,10 @@ export default class MeshLine extends Mesh {
 		}
 	}
 
-	_onBeforeRender() {
+	_onBeforeRender( renderer ) {
 		this.ensureBuilt()
+		// Later rebuilds free the GPU buffers they replace through this renderer.
+		this.geometry._trackRenderer?.( renderer )
 		if ( this._pendingInstanceAttributes.size === 0 ) return
 		for ( const attribute of this._pendingInstanceAttributes ) this._renderedInstanceAttributes.add( attribute )
 		this._pendingInstanceAttributes.clear()
@@ -1767,7 +1782,7 @@ export default class MeshLine extends Mesh {
 		const firstHitOnly = lineParams.firstHitOnly === true || raycaster.firstHitOnly === true
 
 		// Detect instancing from attributes rather than Mesh.count
-		// (Three.js r183+ manages Mesh.count internally and may override it)
+		// (Three.js manages Mesh.count internally and may override it)
 		const startAttr = geometry.getAttribute( 'instanceStart' )
 		const endAttr = geometry.getAttribute( 'instanceEnd' )
 		const isInstanced = !!( startAttr && endAttr && isInstancedAttribute( startAttr ) )
@@ -1805,8 +1820,11 @@ export default class MeshLine extends Mesh {
 		const nearSq = near * near
 		const farSq = Number.isFinite( far ) ? far * far : Infinity
 		const rayOrigin = raycaster.ray.origin
-		let closestHit = null
-		let closestDistance = Infinity
+		let hasClosestHit = false
+		let closestDistanceSq = Infinity
+		let closestIndex = 0
+		let closestLineIndex = undefined
+		let closestInstanceId = undefined
 
 		const commitHit = ( index, lineIndex, instanceId ) => {
 			_interRay.applyMatrix4( matrixWorld )
@@ -1814,10 +1832,19 @@ export default class MeshLine extends Mesh {
 
 			if ( distanceSq < nearSq || distanceSq > farSq ) return
 
-			const distance = Math.sqrt( distanceSq )
-			if ( firstHitOnly && distance >= closestDistance ) return
+			if ( firstHitOnly ) {
+				if ( distanceSq >= closestDistanceSq ) return
+				closestDistanceSq = distanceSq
+				closestIndex = index
+				closestLineIndex = lineIndex
+				closestInstanceId = instanceId
+				_closestPoint.copy( _interSegment )
+				hasClosestHit = true
+				return
+			}
+
 			const hit = {
-				distance,
+				distance: Math.sqrt( distanceSq ),
 				point: _interSegment.clone().applyMatrix4( matrixWorld ),
 				index,
 				face: null,
@@ -1827,12 +1854,6 @@ export default class MeshLine extends Mesh {
 
 			if ( lineIndex !== undefined ) hit.lineIndex = lineIndex
 			if ( instanceId !== undefined ) hit.instanceId = instanceId
-
-			if ( firstHitOnly ) {
-				closestDistance = distance
-				closestHit = hit
-				return
-			}
 
 			intersects.push( hit )
 		}
@@ -1856,20 +1877,30 @@ export default class MeshLine extends Mesh {
 		} else {
 
 			// Standard lines from geometry._lines
-			for ( let lineIdx = 0; lineIdx < geometry._lines.length; lineIdx++ ) {
+			const lines = geometry._lines
+			const lineBoxes = geometry.boundingBoxes?.length === lines.length ? geometry.boundingBoxes : null
+			if ( lines.length > 1 && geometry.boundingBox && !geometry.boundingBox.isEmpty() ) {
+				_box.copy( geometry.boundingBox ).expandByScalar( localThreshold )
+				if ( _ray.intersectsBox( _box ) === false ) return
+			}
+			for ( let lineIdx = 0; lineIdx < lines.length; lineIdx++ ) {
 
-				const line = geometry._lines[lineIdx]
+				const line = lines[lineIdx]
 				const numPoints = line.length / 3
+				if ( numPoints < 2 ) continue
 
-				for ( let i = 0; i < numPoints - 1; i++ ) {
+				if ( lineBoxes ) {
+					_box.copy( lineBoxes[lineIdx] ).expandByScalar( localThreshold )
+					if ( _ray.intersectsBox( _box ) === false ) continue
+				}
 
-					const o1 = i * 3
-					const o2 = ( i + 1 ) * 3
+				_vStart.set( line[0], line[1], line[2] )
+				for ( let i = 0, o2 = 3; i < numPoints - 1; i++, o2 += 3 ) {
 
-					_vStart.set( line[o1], line[o1 + 1], line[o1 + 2] )
 					_vEnd.set( line[o2], line[o2 + 1], line[o2 + 2] )
 
 					const distSq = _ray.distanceSqToSegment( _vStart, _vEnd, _interRay, _interSegment )
+					_vStart.copy( _vEnd )
 
 					if ( distSq > localThresholdSq ) continue
 
@@ -1878,8 +1909,18 @@ export default class MeshLine extends Mesh {
 			}
 		}
 
-		if ( firstHitOnly && closestHit ) {
-			intersects.push( closestHit )
+		if ( firstHitOnly && hasClosestHit ) {
+			const hit = {
+				distance: Math.sqrt( closestDistanceSq ),
+				point: _closestPoint.clone().applyMatrix4( matrixWorld ),
+				index: closestIndex,
+				face: null,
+				faceIndex: null,
+				object: this,
+			}
+			if ( closestLineIndex !== undefined ) hit.lineIndex = closestLineIndex
+			if ( closestInstanceId !== undefined ) hit.instanceId = closestInstanceId
+			intersects.push( hit )
 		}
 	}
 

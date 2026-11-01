@@ -16,7 +16,7 @@ This is a very small pattern: keep one target point, a short trail array, and re
 
 ```javascript
 import { MeshLine } from 'makio-meshline'
-import { Plane, Raycaster, Vector2, Vector3 } from 'three'
+import { Plane, Raycaster, Vector2, Vector3 } from 'three/webgpu'
 
 const pointCount = 24
 const trail = Array.from( { length: pointCount }, () => new Vector3() )
@@ -28,6 +28,7 @@ const raycaster = new Raycaster()
 
 const line = new MeshLine()
 	.lines( positions )
+	.dynamic( true )
 	.color( 0x00ff88 )
 	.lineWidth( 0.12 )
 	.build()

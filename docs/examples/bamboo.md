@@ -21,37 +21,37 @@ import { attribute, Fn, vec3 } from 'three/tsl'
 const stalkCount = 20
 
 const stalks = new MeshLine()
-  .lines( straightLine( 1, 32, true ) )
-  .instances( stalkCount )
-  .color( 0x497849 )
-  .lineWidth( 0.1 )
-  .widthFn( Fn( ( [width] ) => {
-    return width.mul( attribute( 'instanceTransform', 'vec4' ).w )
-  } ) )
-  .shadow( true, true )
-  .positionFn( Fn( ( [position, progress] ) => {
-    const transform = attribute( 'instanceTransform', 'vec4' )
-    const lean = attribute( 'instanceLean', 'vec3' )
-    const leanAmount = lean.x.mul( progress.mul( progress ) )
+	.lines( straightLine( 1, 32, true ) )
+	.instances( stalkCount )
+	.color( 0x497849 )
+	.lineWidth( 0.1 )
+	.widthFn( Fn( ( [width] ) => {
+		return width.mul( attribute( 'instanceTransform', 'vec4' ).w )
+	} ) )
+	.shadow( true, true )
+	.positionFn( Fn( ( [position, progress] ) => {
+		const transform = attribute( 'instanceTransform', 'vec4' )
+		const lean = attribute( 'instanceLean', 'vec3' )
+		const leanAmount = lean.x.mul( progress.mul( progress ) )
 
-    return vec3(
-      transform.x.add( lean.y.mul( leanAmount ) ),
-      position.y.mul( transform.z ),
-      transform.y.add( lean.z.mul( leanAmount ) )
-    )
-  } ) )
+		return vec3(
+			transform.x.add( lean.y.mul( leanAmount ) ),
+			position.y.mul( transform.z ),
+			transform.y.add( lean.z.mul( leanAmount ) )
+		)
+	} ) )
+	.build()
 
 stalks.addInstanceAttributes( {
-  instanceTransform: 4,
-  instanceLean: 3
+	instanceTransform: 4,
+	instanceLean: 3,
 } )
 
 for ( let i = 0; i < stalkCount; i++ ) {
-  stalks.setInstanceValue( 'instanceTransform', i, [x, z, height, width] )
-  stalks.setInstanceValue( 'instanceLean', i, [lean, dirX, dirZ] )
+	stalks.setInstanceValue( 'instanceTransform', i, [x, z, height, width] )
+	stalks.setInstanceValue( 'instanceLean', i, [lean, dirX, dirZ] )
 }
 
-stalks.build()
 scene.add( stalks )
 ```
 

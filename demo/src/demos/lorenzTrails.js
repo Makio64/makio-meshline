@@ -1,3 +1,8 @@
+/**
+ * Lorenz Trails — 64 chaotic attractor ring-buffer trails read directly from a GPU StorageBufferAttribute.
+ * Demonstrates: storagePositions( storageAttr, { pointsPerLine, head } ), .gpuPositionNode( fn ),
+ * .instances( count ), and WebGPU compute integration.
+ */
 import { MeshLine, storagePositions } from 'makio-meshline'
 import { cos, float, Fn, instanceIndex, Loop, storage, uint, uniform, vec3, vec4 } from 'three/tsl'
 import { StorageBufferAttribute } from 'three/webgpu'

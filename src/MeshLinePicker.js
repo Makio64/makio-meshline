@@ -1,4 +1,4 @@
-import { float, Fn, instanceIndex, uniform, vec4 } from 'three/tsl'
+import { float, Fn, instanceIndex, uint, uniform, vec4 } from 'three/tsl'
 import { Color, Mesh, NoColorSpace, NoToneMapping, RenderTarget, RGBAFormat, Scene, UnsignedByteType, Vector2 } from 'three/webgpu'
 
 import MeshLineNodeMaterial from './MeshLineNodeMaterial.js'
@@ -24,7 +24,28 @@ class MeshLinePickingMaterial extends MeshLineNodeMaterial {
 	}
 
 	buildLine( options = {} ) {
-		super.buildLine( options )
+		super.buildLine( {
+			...options,
+			antialias: false,
+			transparent: false,
+			alphaTest: 0,
+			depthWrite: true,
+			needsVertexColor: false,
+			needsUV: false,
+			gradientColor: null,
+			map: null,
+			alphaMap: null,
+			colorFn: null,
+			gradientFn: null,
+			opacityFn: null,
+			dashCount: null,
+			dashRatio: null,
+			dashFn: null,
+			uvFn: null,
+			discardFn: null,
+			fragmentColorFn: null,
+			fragmentAlphaFn: null,
+		} )
 		this.transparent = false
 		this.alphaTest = 0
 		this.depthWrite = true
@@ -36,15 +57,14 @@ class MeshLinePickingMaterial extends MeshLineNodeMaterial {
 		const slotF = this._slot
 		const instanced = this.options && this.options.instanceCount > 0
 
-		this.colorNode = Fn( () => {
-			if ( instanced ) {
-				const idx = float( instanceIndex )
-				const hi = idx.div( 256 ).floor()
-				const lo = idx.sub( hi.mul( 256 ) )
-				return vec4( slotF, hi.div( 255 ), lo.div( 255 ), 1 )
-			}
-			return vec4( slotF, float( 0 ), float( 0 ), 1 )
-		} )()
+		this.colorNode = instanced
+			? Fn( () => {
+				const idx = instanceIndex.toUint()
+				const hi = float( idx.shiftRight( uint( 8 ) ) ).mul( 1 / 255 )
+				const lo = float( idx.bitAnd( uint( 255 ) ) ).mul( 1 / 255 )
+				return vec4( slotF, hi, lo, 1 )
+			} )()
+			: vec4( slotF, float( 0 ), float( 0 ), 1 )
 
 		// Keep exact joins exact, so a hit never lands on a clipped fold.
 		this.opacityNode = this._foldCoverageNode ? Fn( () => this.clipFoldedJoins( float( 1 ) ) )() : float( 1 )
@@ -242,21 +262,16 @@ export default class MeshLinePicker {
 			const packedStride = ts * 4
 			const stride = buffer.length === packedStride * ts ? packedStride : this._bytesPerRow
 
-			const center = Math.floor( ts / 2 )
-			const order = this._pixelOrder( ts )
-			for ( const [ox, oy] of order ) {
-				const pi = ( center + oy ) * stride + ( center + ox ) * 4
+			const offsets = this._pixelOffsets( ts, stride )
+			for ( let i = 0; i < offsets.length; i++ ) {
+				const pi = offsets[ i ]
 				const r = buffer[ pi ]
-				const g = buffer[ pi + 1 ]
-				const b = buffer[ pi + 2 ]
-				const a = buffer[ pi + 3 ]
-				if ( a === 0 || r === 0 ) continue
+				if ( r === 0 || buffer[ pi + 3 ] === 0 ) continue
 				const entry = this._registry.get( r )
 				if ( !entry ) continue
-				const instanceId = ( g << 8 ) | b
 				return {
 					line: entry.line,
-					instanceId: entry.instanced ? instanceId : -1,
+					instanceId: entry.instanced ? ( ( buffer[ pi + 1 ] << 8 ) | buffer[ pi + 2 ] ) : -1,
 				}
 			}
 			return null
@@ -297,9 +312,11 @@ export default class MeshLinePicker {
 	_syncProxies() {
 		this.scene.updateMatrixWorld()
 		for ( const entry of this._registry.values() ) {
+			const visible = entry.line.visible
+			entry.proxy.visible = visible
+			if ( !visible ) continue
 			if ( entry.line.count > 0 ) entry.proxy.count = entry.line.count
 			entry.proxy.matrixWorld.copy( entry.line.matrixWorld )
-			entry.proxy.visible = entry.line.visible
 			entry.proxy.renderOrder = entry.line.renderOrder
 			this._syncProxyMaterial( entry )
 		}
@@ -338,6 +355,21 @@ export default class MeshLinePicker {
 		const trimmed = order.map( ( [dx, dy] ) => [dx, dy] )
 		this._pixelOrderCache = { ts, order: trimmed }
 		return trimmed
+	}
+
+	_pixelOffsets( ts, stride ) {
+		if ( this._pixelOffsetsCache?.ts === ts && this._pixelOffsetsCache.stride === stride ) {
+			return this._pixelOffsetsCache.offsets
+		}
+		const order = this._pixelOrder( ts )
+		const center = Math.floor( ts / 2 )
+		const offsets = new Int32Array( order.length )
+		for ( let i = 0; i < order.length; i++ ) {
+			const [ox, oy] = order[ i ]
+			offsets[ i ] = ( center + oy ) * stride + ( center + ox ) * 4
+		}
+		this._pixelOffsetsCache = { ts, stride, offsets }
+		return offsets
 	}
 
 	/**

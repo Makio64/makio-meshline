@@ -1,10 +1,19 @@
+/**
+ * Laser Heist: compares CPU `Raycaster` against GPU `MeshLinePicker` and
+ * `MeshLinePickerHelper` on instanced security lasers.
+ *
+ * Key APIs:
+ * - `new MeshLinePicker( renderer, scene, camera, { targetSize, hitRadius } )`
+ * - `new MeshLinePickerHelper( picker, { opacity } )`
+ * - Packed instance attributes via `addInstanceAttributes()` and `setInstanceValues()`
+ * - `gpuPositionNode()` for instanced 2-point laser beams
+ */
 import { MeshLine, MeshLinePicker, MeshLinePickerHelper } from 'makio-meshline'
-import { ACESFilmicToneMapping, NoToneMapping } from 'three'
 import { bloom } from 'three/addons/tsl/display/BloomNode.js'
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { attribute, cos, float, Fn, fract, instanceIndex, mix, pass, reflector, screenUV, sin, smoothstep, time, uniform, uv, vec2, vec3, vec4 } from 'three/tsl'
-import { AdditiveBlending, AmbientLight, BoxGeometry, CylinderGeometry, InstancedMesh, Mesh, MeshStandardNodeMaterial, Object3D, PlaneGeometry, PMREMGenerator, Raycaster, RenderPipeline, SphereGeometry, SpotLight, StaticDrawUsage, Vector2 } from 'three/webgpu'
+import { ACESFilmicToneMapping, AdditiveBlending, AmbientLight, BoxGeometry, CylinderGeometry, InstancedMesh, Mesh, MeshStandardNodeMaterial, NoToneMapping, Object3D, PlaneGeometry, PMREMGenerator, Raycaster, RenderPipeline, SphereGeometry, SpotLight, StaticDrawUsage, Vector2 } from 'three/webgpu'
 import { markRaw } from 'vue'
 
 import HeistUI from '@/components/Heist.vue'
@@ -620,6 +629,7 @@ class HeistExample {
 		this.environmentMap = null
 		stage3d.scene.backgroundNode = null
 		stage3d.control?.dispose()
+		stage3d.control = null
 		this.hint?.remove()
 		this.hint = null
 	}

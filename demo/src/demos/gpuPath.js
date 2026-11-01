@@ -1,3 +1,8 @@
+/**
+ * GPU Path & Simplification — 200,000-point path with multi-stride GPU simplification.
+ * Demonstrates: MeshLineGPUPath, .prepare( renderer, camera ), .wireframe( enabled ),
+ * and automatic CPU fallback.
+ */
 import { MeshLine } from 'makio-meshline'
 import MeshLineGPUPath from 'makio-meshline/gpu-path'
 import { markRaw, reactive } from 'vue'
@@ -42,7 +47,6 @@ const requestedMode = ( gpuRequested, simplifyRequested, topologyMode, capType )
 
 class GpuPathExample {
 	constructor() {
-		this.text = ''
 		this.uiComponent = markRaw( GpuPathUI )
 		this.ui = reactive( {
 			mode: 'gpu-simplified',

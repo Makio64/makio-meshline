@@ -1,3 +1,8 @@
+/**
+ * Surface Ribbon Track — world-space lit ribbon loops with RMF/fixed-up framing and banking.
+ * Demonstrates: .surface({ frame: 'rmf', bank, uvMode: 'distance', roughness, metalness }),
+ * .join({ type: 'round', limit, segments }), and TSL surface material nodes.
+ */
 import { MeshLine } from 'makio-meshline'
 import { color, float, Fn, fract, fwidth, min, mix, positionLocal, positionWorldDirection, reflector, smoothstep, uv, vec4 } from 'three/tsl'
 import {

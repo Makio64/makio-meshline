@@ -1,3 +1,8 @@
+/**
+ * Instanced Warp Tunnel — 150 procedural rosette rings rendered in a single instanced draw call.
+ * Demonstrates: .instances( count ), .segments( count ), .closed( true ), .gpuPositionNode( fn ),
+ * and packed custom instance attributes via .addInstanceAttributes( spec ).
+ */
 import { MeshLine } from 'makio-meshline'
 import { attribute, cos, float, Fn, instanceIndex, mod, sin, smoothstep, uniform, vec3, vec4 } from 'three/tsl'
 import { AdditiveBlending, Color, MathUtils, Vector2 } from 'three/webgpu'

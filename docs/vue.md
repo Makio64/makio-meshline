@@ -46,11 +46,14 @@ async function init() {
   camera.position.z = 10
 
   renderer = new THREE.WebGPURenderer( { canvas: canvasRef.value, antialias: true } )
-  renderer.setPixelRatio( window.devicePixelRatio )
+  renderer.setPixelRatio( Math.min( window.devicePixelRatio, 2 ) )
   renderer.setSize( viewport.width, viewport.height )
   await renderer.init()
 
-  if ( disposed ) return
+  if ( disposed ) {
+    renderer.dispose()
+    return
+  }
 
   controls = new OrbitControls( camera, renderer.domElement )
   controls.enableDamping = true
@@ -106,7 +109,7 @@ function dispose() {
 
 The full wrapper source lives in [`examples/vue/src/MeshLine.vue`](https://github.com/Makio64/makio-meshline/blob/main/examples/vue/src/MeshLine.vue). It is a renderless component that attaches a `MeshLine` to the `parent` Object3D you provide, and it also supports an injected `meshline-parent` for provider-style scene setup.
 
-The wrapper accepts either `points` or `lines`, including `BufferGeometry`. It emits `ready` for each instance it creates and exposes `{ line }` via `defineExpose()`. The instance remains stable when ordinary build-time props change: its geometry and material are rebuilt in place instead of replacing the public object. This includes shader-structural props such as `antialias`. Adding or removing `points`/`lines` creates a fresh instance so the wrapper can switch cleanly between explicit data and `segments`-generated positions. Appearance props such as `lineWidth`, `color`, `opacity`, `map`, and `alphaMap` update live.
+The wrapper accepts either `points` or `lines`, including `BufferGeometry`. It emits `ready` for each instance it creates and exposes `{ line }` via `defineExpose()`. The instance remains stable when ordinary build-time props change: its geometry and material are rebuilt in place instead of replacing the public object. This includes shader-structural props such as `antialias`. Adding or removing `points`/`lines` creates a fresh instance so the wrapper can switch cleanly between explicit data and `segments`-generated positions. Appearance and shadow props such as `lineWidth`, `miterLimit`, `color`, `gradientColor`, `opacity`, `alphaTest`, `dash`, `map`, `alphaMap`, `repeat`, `mapOffset`, `shadow`, `receiveShadow`, `dpr`, and `sizeAttenuation` update live.
 
 Point buffers and option objects are watched by identity. Replace the `points`, `surface`, `join`, `cap`, or `dash` reference to trigger a declarative update. For per-frame edits to the same `Float32Array`, call `setPositions()` on the exposed line instead. This avoids deep reactive traversal of large buffers and Three.js resources such as textures. Pass the renderer's CSS-sized viewport through `renderWidth` and `renderHeight`, as above, so screen-line resolution stays correct after a resize.
 
@@ -181,6 +184,49 @@ Call `addRoadLights( scene )` in `init()` after creating the scene.
 The `join` prop accepts `'miter'`, `'bevel'`, `'round'`, or `{ type, limit, segments, inner, fold }`; surface `bevel` and `round` modes emit true wedges/fans, and over-limit miters fall back to a bounded bevel. `join.inner` defaults to `'exact'`; use `'clip'` when an interactively edited road should trim an infeasible inner footprint instead of rejecting it. `join.segments` is a half-turn budget, so shallow arcs use fewer triangles. `cap` accepts `butt`, `square`, `round`, or `{ type, segments }`; round caps use the full semicircle budget. Reversals split into independent capped runs instead of sharing an undefined miter.
 
 The default surface-disabled path (or explicit `:surface="false"`) preserves the existing screen-line behavior. The surface wrapper intentionally covers the common lit-road options; billboard-only dashes, gradients, `sizeAttenuation`, GPU positions, instancing, and custom line-extrusion TSL hooks are not adapted to a surface material. Screen-line hook props remain available. Use the exposed `line` ref or the `ready` event for a custom surface node graph or other low-level work.
+
+## TresJS Integration (`@tresjs/core`)
+
+`MeshLine.vue` also integrates natively with [TresJS](https://tresjs.org/) without adding `@tresjs/core` as a dependency:
+
+- **Automatic scene & viewport binding**: When mounted inside `<TresCanvas>`, `<MeshLine>` automatically reads the `useTres` context (`scene` and `sizes.width` / `sizes.height` / `sizes.pixelRatio`), so you can omit `:parent`, `:render-width`, and `:render-height`.
+- **TresJS Group refs**: Passing a `<TresGroup ref="groupRef">` template ref to `:parent="groupRef"` automatically unwraps `.instance` (or attaches directly to the `THREE.Group`).
+- **Direct `<primitive>` usage**: You can also instantiate `new MeshLine()` directly and pass it to TresJS's `<primitive :object="line" />`.
+
+```vue
+<script setup>
+import { TresCanvas } from '@tresjs/core'
+import { circlePositions } from 'makio-meshline'
+import { WebGPURenderer } from 'three/webgpu'
+import { toValue } from 'vue'
+
+import MeshLine from './MeshLine.vue'
+
+const points = circlePositions( 64, 3 )
+
+async function createWebGPURenderer( ctx ) {
+	const renderer = new WebGPURenderer( {
+		canvas: toValue( ctx.canvas ),
+		antialias: true,
+	} )
+	await renderer.init()
+	return renderer
+}
+</script>
+
+<template>
+	<TresCanvas :renderer="createWebGPURenderer" window-size>
+		<TresPerspectiveCamera :position="[0, 0, 10]" />
+		<MeshLine
+			:points="points"
+			closed
+			:line-width="0.2"
+			:color="0xff8800"
+			:gradient-color="0xffffff"
+		/>
+	</TresCanvas>
+</template>
+```
 
 ## Next Steps
 

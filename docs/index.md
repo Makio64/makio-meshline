@@ -65,21 +65,22 @@ This site documents the `2.0.0` API. Existing V1 users should read [Migrating fr
 - GPU-driven circles, waves, and parametric curves
 - Instanced vegetation, ropes, and wire sculptures
 - Gradient, dashed, and textured lines for motion design
-- Shadow-casting line meshes for stylized environments
+- Shadow-casting and shadow-receiving line meshes for stylized environments
 - Camera-independent road, track, and ribbon surfaces with true joins and caps
 
 ## Why It Stands Out
 
 - TSL-powered hooks let you customize position, width, color, opacity, UVs, dashes, and discard logic directly in the shader.
 - Instancing and batched lines keep draw calls low when one line turns into hundreds or thousands.
-- GPU position nodes let you animate lines without pushing vertex updates from the CPU every frame.
-- The API stays small enough to learn quickly, with helpers like `circlePositions`, `squarePositions`, `rectanglePositions`, `sineWavePositions`, and `straightLine`.
+- GPU position nodes and `storagePositions()` let you animate trails and morphing contours without pushing vertex updates from the CPU every frame.
+- The API stays small enough to learn quickly, with helpers like `circlePositions`, `squarePositions`, `rectanglePositions`, `sineWavePositions`, `straightLine`, and `storagePositions`.
 
 ## Start Here
 
 - Read [Getting Started](./guide.md) for installation and the first line setup.
 - Upgrading an existing application? Follow [Migrating from v1 to V2](./v2-migration.md).
-- Open the [Basic Example](./examples/basic.md) to compare common options side by side and find the complete vanilla starter.
+- Explore [V2 Benchmarks](./benchmarks.md) for interactive `MeshLine`-rendered performance diagrams.
+- Open the [Style Gallery (Basic Example)](./examples/basic.md) to compare common options side by side and find the complete vanilla starter.
 - Use the [Interactive Sandbox](./examples/sandbox.md) to tune a line visually and export code.
 - Browse the [API Reference](./api.md) once you want hooks, joins, helpers, instancing, or GPU positions.
 
@@ -87,15 +88,15 @@ This site documents the `2.0.0` API. Existing V1 users should read [Migrating fr
 
 | Capability | Included |
 | --- | --- |
-| Wide and thick lines | Yes |
+| Wide and thick lines with analytic edge AA | Yes |
 | Gradients and dashed lines | Yes |
 | Texture and alpha maps | Yes |
-| TSL material hooks | Yes |
-| GPU-driven positions | Yes |
+| TSL material hooks + `lineCoord` | Yes |
+| GPU-driven positions & storage-buffer trails | Yes |
 | Instancing | Yes |
-| Shadow casting | Yes |
+| Shadow casting & receiving (3D tube normals) | Yes |
 | World-space road surfaces | Yes |
-| Surface bevel/round joins and caps | Yes |
+| Billboard & surface bevel/round joins and caps | Yes |
 | WebGPU and WebGL2 via `WebGPURenderer` | Yes |
-| Native-WebGPU chunk culling | Optional, Three.js r183+ |
-| Point-centric indirect GPU path + screen topology | Experimental, Three.js r183+ |
+| Native-WebGPU chunk culling | Optional |
+| Point-centric indirect GPU path + screen topology | Experimental |

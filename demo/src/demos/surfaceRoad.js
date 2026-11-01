@@ -1,3 +1,9 @@
+/**
+ * Road Builder — interactive G1-continuous 3D road planner on world-space surface geometry.
+ * Demonstrates: .surface({ frame: 'fixed-up', bank, uvMode: 'distance', roughness, metalness }),
+ * .join({ type: 'round', limit, segments }), .cap({ type: 'round' }), .shadow( true, true ),
+ * and procedural TSL road markings.
+ */
 import { MeshLine } from 'makio-meshline'
 import {
 	BoxGeometry,
@@ -246,7 +252,6 @@ class SurfaceRoadExample {
 
 	constructor() {
 		this.uiComponent = markRaw( SurfaceRoadUI )
-		this.text = ''
 		this.ui = reactive( {
 			controls: 0,
 			samples: 0,

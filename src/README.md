@@ -2,10 +2,10 @@
 
 A modern MeshLine library for Three.js wide screen strokes and world-space road/ribbon surfaces, with gradients, dashes, textures, shadows, GPU positions, and instancing.
 
-- Supports: Three.js r180+, `WebGPURenderer` (WebGPU and WebGL2 backends)
+- Supports: Three.js r186+, `WebGPURenderer` (WebGPU and WebGL2 backends)
 - Features: gradients, dashes, textures, vertex colors, shadows, GPU positions, storage-buffer trails, instancing, TSL hooks, lit road/ribbon surfaces, optional native-WebGPU chunk culling, and an experimental point-centric GPU path
 
-Release compatibility is checked from the packed artifact at the core minimum (r180), optional-entry minimum (r183), and pinned workspace Three.js version. The moving Three.js `dev` branch runs as an advisory canary.
+Release compatibility is checked from the packed artifact at the minimum supported (r186.0) and pinned workspace Three.js versions. The moving Three.js `dev` branch runs as an advisory canary.
 
 ## Install
 
@@ -60,7 +60,7 @@ const road = new MeshLine()
   .build()
 ```
 
-For a very large opaque path on Three.js r183+, the optional entry point can compact visible chunks into one indirect draw:
+For a very large opaque path on native WebGPU, the optional entry point can compact visible chunks into one indirect draw:
 
 ```js
 import MeshLineCullingSystem from 'makio-meshline/gpu-culling'
@@ -77,7 +77,7 @@ const snapshot = await handle.readCullingSnapshot()
 console.log(snapshot?.culledChunks)
 ```
 
-For one very large static open path, the experimental r183+ point-centric entry point emits stable segment records and an indirect draw while retaining a full CPU fallback:
+For one very large static open path, the experimental point-centric entry point emits stable segment records and an indirect draw while retaining a full CPU fallback:
 
 ```js
 import MeshLineGPUPath from 'makio-meshline/gpu-path'
@@ -106,6 +106,7 @@ The point-centric GPU path and compute/simplification labs remain experimental. 
 WebGPU guarantees eight vertex-buffer slots. Feature-heavy instanced lines should pack related custom values so they consume one slot:
 
 ```js
+line.build()
 line.addInstanceAttributes( {
   instanceOffset: 3,
   instanceScale: 1

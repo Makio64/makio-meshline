@@ -22,21 +22,13 @@ const requireExactVersion = ( value, label ) => {
 	return value
 }
 
+// Every entry point (root, gpu-culling, gpu-path) shares one minimum Three.js.
 const stableProfiles = [
 	{
-		id: 'core-minimum',
-		label: 'minimum core',
-		three: requireExactVersion( compatibility.coreMinimum?.three, 'meshlineCompatibility.coreMinimum.three' ),
-		types: requireExactVersion( compatibility.coreMinimum?.types, 'meshlineCompatibility.coreMinimum.types' ),
-		optionalEntries: false,
-		required: true,
-	},
-	{
-		id: 'optional-minimum',
-		label: 'minimum optional entries',
-		three: requireExactVersion( compatibility.optionalMinimum?.three, 'meshlineCompatibility.optionalMinimum.three' ),
-		types: requireExactVersion( compatibility.optionalMinimum?.types, 'meshlineCompatibility.optionalMinimum.types' ),
-		optionalEntries: true,
+		id: 'minimum',
+		label: 'minimum supported',
+		three: requireExactVersion( compatibility.minimum?.three, 'meshlineCompatibility.minimum.three' ),
+		types: requireExactVersion( compatibility.minimum?.types, 'meshlineCompatibility.minimum.types' ),
 		required: true,
 	},
 	{
@@ -44,7 +36,6 @@ const stableProfiles = [
 		label: 'pinned current',
 		three: requireExactVersion( currentThreeVersion, 'devDependencies.three' ),
 		types: requireExactVersion( currentTypesVersion, 'devDependencies.@types/three' ),
-		optionalEntries: true,
 		required: true,
 	},
 ]
@@ -54,7 +45,6 @@ const devCanary = {
 	label: 'Three.js dev canary',
 	three: 'github:mrdoob/three.js#dev',
 	types: requireExactVersion( currentTypesVersion, 'devDependencies.@types/three' ),
-	optionalEntries: true,
 	required: false,
 }
 
@@ -63,16 +53,11 @@ const devCanary = {
 // releases, so each profile runs them against its own install.
 const testDirectory = resolve( rootDirectory, 'test' )
 const shaderBuilderImport = /['"]\.\/helpers\/shaderBuilder\.js['"]/
-const optionalEntryShaderTests = new Set( ['meshline-gpu-path-position-accessors.test.js'] )
 const shaderTests = []
 for ( const file of ( await readdir( testDirectory ) ).filter( file => file.endsWith( '.test.js' ) ).sort() ) {
 	if ( shaderBuilderImport.test( await readFile( resolve( testDirectory, file ), 'utf8' ) ) ) shaderTests.push( file )
 }
 if ( shaderTests.length === 0 ) throw new Error( 'No test/*.test.js file imports ./helpers/shaderBuilder.js' )
-for ( const file of optionalEntryShaderTests ) {
-	if ( !shaderTests.includes( file ) ) throw new Error( `Optional-entry shader test ${file} is not a test/*.test.js file importing ./helpers/shaderBuilder.js` )
-}
-const shaderTestsFor = profile => shaderTests.filter( file => profile.optionalEntries || !optionalEntryShaderTests.has( file ) )
 
 // What the shader tests import. Each profile runs a copy below its consumer, so
 // the tests and the library resolve that profile's `three`; src/ links its own
@@ -95,9 +80,8 @@ const publicProfile = profile => ( {
 	label: profile.label,
 	three: profile.three,
 	types: profile.types,
-	coverage: profile.optionalEntries ? 'core+optional' : 'core',
 	required: profile.required,
-	shaderTests: shaderTestsFor( profile ),
+	shaderTests,
 } )
 
 if ( argumentsSet.has( '--list' ) ) {
@@ -127,58 +111,38 @@ const sanitizedEnvironment = Object.fromEntries(
 	Object.entries( process.env ).filter( ([key]) => !key.toLowerCase().startsWith( 'npm_config_' ) )
 )
 
-const createRuntimeSmoke = optionalEntries => {
-	const source = [
-		"import MeshLine, { MeshLineGeometry, MeshLinePicker, MeshLineSurfaceGeometry } from 'makio-meshline'",
-		"if ( MeshLine !== MeshLine.prototype.constructor ) throw new Error( 'Default MeshLine export is invalid' )",
-		"if ( !MeshLineGeometry || !MeshLineSurfaceGeometry || !MeshLinePicker ) throw new Error( 'Core named exports are missing' )",
-		'const line = new MeshLine( { segments: 2 } ).build()',
-	]
+const createRuntimeSmoke = () => [
+	"import MeshLine, { MeshLineGeometry, MeshLinePicker, MeshLineSurfaceGeometry } from 'makio-meshline'",
+	"if ( MeshLine !== MeshLine.prototype.constructor ) throw new Error( 'Default MeshLine export is invalid' )",
+	"if ( !MeshLineGeometry || !MeshLineSurfaceGeometry || !MeshLinePicker ) throw new Error( 'Core named exports are missing' )",
+	'const line = new MeshLine( { segments: 2 } ).build()',
+	"const { default: MeshLineCullingSystem } = await import( 'makio-meshline/gpu-culling' )",
+	"const { default: MeshLineGPUPath } = await import( 'makio-meshline/gpu-path' )",
+	"if ( typeof MeshLineCullingSystem !== 'function' ) throw new Error( 'GPU culling export is invalid' )",
+	"if ( typeof MeshLineGPUPath !== 'function' ) throw new Error( 'GPU path export is invalid' )",
+	'const path = new MeshLineGPUPath( { lines: new Float32Array( [0, 0, 0, 1, 0, 0] ) } )',
+	"if ( path.isMeshLineGPUPath !== true ) throw new Error( 'GPU path could not be constructed' )",
+	'path.dispose()',
+	'line.dispose()',
+].join( '\n' )
 
-	if ( optionalEntries ) {
-		source.push(
-			"const { default: MeshLineCullingSystem } = await import( 'makio-meshline/gpu-culling' )",
-			"const { default: MeshLineGPUPath } = await import( 'makio-meshline/gpu-path' )",
-			"if ( typeof MeshLineCullingSystem !== 'function' ) throw new Error( 'GPU culling export is invalid' )",
-			"if ( typeof MeshLineGPUPath !== 'function' ) throw new Error( 'GPU path export is invalid' )",
-			'const path = new MeshLineGPUPath( { lines: new Float32Array( [0, 0, 0, 1, 0, 0] ) } )',
-			"if ( path.isMeshLineGPUPath !== true ) throw new Error( 'GPU path could not be constructed' )",
-			'path.dispose()',
-		)
-	}
-
-	source.push( 'line.dispose()' )
-	return source.join( '\n' )
-}
-
-const createTypeSmoke = optionalEntries => {
-	const source = [
-		"import MeshLine, { type MeshLineConfigureOptions, MeshLineSurfaceGeometry } from 'makio-meshline'",
-		'const options: MeshLineConfigureOptions = { lines: new Float32Array( [0, 0, 0, 1, 0, 0] ), lineWidth: 0.3 }',
-		'const line: MeshLine = new MeshLine( options )',
-		'const surface: MeshLineSurfaceGeometry | null = null',
-		'void line',
-		'void surface',
-	]
-
-	if ( optionalEntries ) {
-		source.unshift(
-			"import MeshLineCullingSystem, { type MeshLineCullingSystemOptions } from 'makio-meshline/gpu-culling'",
-			"import MeshLineGPUPath, { type MeshLineGPUPathOptions } from 'makio-meshline/gpu-path'",
-		)
-		source.push(
-			"const cullingOptions: MeshLineCullingSystemOptions = { mode: 'auto' }",
-			'const cullingConstructor: typeof MeshLineCullingSystem = MeshLineCullingSystem',
-			'const gpuOptions: MeshLineGPUPathOptions = { chunkSegments: 128 }',
-			'const gpuPath: MeshLineGPUPath = new MeshLineGPUPath( options, gpuOptions )',
-			'gpuPath.dispose()',
-			'void cullingOptions',
-			'void cullingConstructor',
-		)
-	}
-
-	return source.join( '\n' )
-}
+const createTypeSmoke = () => [
+	"import MeshLineCullingSystem, { type MeshLineCullingSystemOptions } from 'makio-meshline/gpu-culling'",
+	"import MeshLineGPUPath, { type MeshLineGPUPathOptions } from 'makio-meshline/gpu-path'",
+	"import MeshLine, { type MeshLineConfigureOptions, MeshLineSurfaceGeometry } from 'makio-meshline'",
+	'const options: MeshLineConfigureOptions = { lines: new Float32Array( [0, 0, 0, 1, 0, 0] ), lineWidth: 0.3 }',
+	'const line: MeshLine = new MeshLine( options )',
+	'const surface: MeshLineSurfaceGeometry | null = null',
+	'void line',
+	'void surface',
+	"const cullingOptions: MeshLineCullingSystemOptions = { mode: 'auto' }",
+	'const cullingConstructor: typeof MeshLineCullingSystem = MeshLineCullingSystem',
+	'const gpuOptions: MeshLineGPUPathOptions = { chunkSegments: 128 }',
+	'const gpuPath: MeshLineGPUPath = new MeshLineGPUPath( options, gpuOptions )',
+	'gpuPath.dispose()',
+	'void cullingOptions',
+	'void cullingConstructor',
+].join( '\n' )
 
 const verifyProfile = async ( profile, temporaryDirectory, tarballPath, shaderTestSnapshot ) => {
 	const consumerDirectory = resolve( temporaryDirectory, profile.id )
@@ -220,14 +184,14 @@ const verifyProfile = async ( profile, temporaryDirectory, tarballPath, shaderTe
 	}
 
 	const runtimeSmokePath = resolve( consumerDirectory, 'smoke.mjs' )
-	await writeFile( runtimeSmokePath, createRuntimeSmoke( profile.optionalEntries ) )
+	await writeFile( runtimeSmokePath, createRuntimeSmoke() )
 	assertCommand(
 		run( process.execPath, [runtimeSmokePath], { cwd: consumerDirectory } ),
 		`${profile.label} runtime smoke`
 	)
 
 	const typeSmokePath = resolve( consumerDirectory, 'smoke.ts' )
-	await writeFile( typeSmokePath, createTypeSmoke( profile.optionalEntries ) )
+	await writeFile( typeSmokePath, createTypeSmoke() )
 	assertCommand( run( tscCommand, [
 		'--noEmit',
 		'--strict',
@@ -243,7 +207,7 @@ const verifyProfile = async ( profile, temporaryDirectory, tarballPath, shaderTe
 	await cp( shaderTestSnapshot, shaderTestDirectory, { recursive: true } )
 	const shaderTestRun = run(
 		process.execPath,
-		['--test', '--test-reporter=spec', ...shaderTestsFor( profile ).map( file => `test/${file}` )],
+		['--test', '--test-reporter=spec', ...shaderTests.map( file => `test/${file}` )],
 		{ cwd: shaderTestDirectory }
 	)
 	if ( shaderTestRun.status !== 0 ) {
@@ -311,7 +275,7 @@ for ( const result of results ) {
 	const marker = result.status === 'passed' ? 'PASS' : result.status === 'advisory-failed' ? 'WARN' : 'FAIL'
 	const installed = result.installedThree ? `three@${result.installedThree}, @types/three@${result.installedTypes}` : `three@${result.three}`
 	const shaderTestCount = result.shaderTestCount ? `, ${result.shaderTestCount} shader tests` : ''
-	console.log( `[${marker}] ${result.id}: ${result.coverage} runtime + declarations + ${result.shaderTests.length} shader test files (${installed}${shaderTestCount})` )
+	console.log( `[${marker}] ${result.id}: runtime + declarations + ${result.shaderTests.length} shader test files (${installed}${shaderTestCount})` )
 	if ( result.error ) console.log( result.error )
 }
 

@@ -100,7 +100,7 @@ export interface MeshLineCullingHandle {
 }
 
 /**
- * Optional native-WebGPU chunk culling. Requires Three.js r183 or newer.
+ * Optional native-WebGPU chunk culling.
  * Unsupported cases fail open and render the complete source geometry.
  */
 export class MeshLineCullingSystem {

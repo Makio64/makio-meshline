@@ -1,3 +1,8 @@
+/**
+ * GPU Simplification Prototype — hierarchical Douglas-Peucker polyline simplification in WebGPU compute shaders.
+ * Demonstrates: WebGPU compute simplification passes, prefix-sum compaction, indirect draw commands,
+ * and reference comparison against MeshLine.
+ */
 import { MeshLine } from 'makio-meshline'
 import {
 	abs,

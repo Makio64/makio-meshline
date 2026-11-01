@@ -14,17 +14,17 @@ The preferred entry point is still `MeshLine`, and an ordinary camera-facing lin
 
 | Profile | Three.js | Renderer/backend | Status |
 | --- | --- | --- | --- |
-| `makio-meshline` | r180+ | `WebGPURenderer` with WebGPU or WebGL2 | Main cross-backend API |
-| `makio-meshline/gpu-culling` | r183+ | Native WebGPU | Optional, conservative accelerator |
-| `makio-meshline/gpu-path` | r183+ | Native WebGPU | Experimental, with a CPU `MeshLine` fallback |
+| `makio-meshline` | r186+ | `WebGPURenderer` with WebGPU or WebGL2 | Main cross-backend API |
+| `makio-meshline/gpu-culling` | r186+ | Native WebGPU | Optional, conservative accelerator |
+| `makio-meshline/gpu-path` | r186+ | Native WebGPU | Experimental, with a CPU `MeshLine` fallback |
 
 Update both packages together and test both renderer backends used by your application:
 
 ```bash
-pnpm up makio-meshline@^2 three@^0.183
+pnpm up makio-meshline@^2 three@^0.186
 ```
 
-Three.js r183 is only required when importing an optional native-WebGPU entry point. The main entry remains compatible with r180+.
+V2 requires Three.js r186 or newer for every entry point (peer `three >=0.186.0`).
 
 ## Behavior changes to review
 
@@ -89,7 +89,7 @@ line.setFrustumCulled( true )
 
 ### Join and cap policies depend on the profile
 
-The normal billboard profile supports `join: { type: 'miter' | 'bevel' | 'round', limit, fold: 'geometry' | 'exact' | false }`: `'geometry'` (default) splits projected 3D folds in the vertex stage with no fragment cost, `'exact'` clips folds and `'round'` joins to an exact round silhouette in the fragment stage, and `'bevel'` uses a 4-vertex-per-corner split strip. Geometric arc-fan topology and `cap: { type: 'square' | 'round' }` are features of the world-space surface profile and the experimental native-WebGPU path.
+The normal billboard profile allocates 4 vertices per logical point (`[incoming+, incoming-, outgoing+, outgoing-]`) and supports `join: { type: 'miter' | 'bevel' | 'round', limit, fold: 'geometry' | 'exact' | false }`: `'geometry'` (default) splits projected 3D folds in the vertex stage with no fragment cost, `'exact'` clips folds and `'round'` joins to an exact round silhouette in the fragment stage, and `'bevel'` adds 6 bridge indices (2 triangles) per interior corner to connect the incoming and outgoing pairs cleanly. Geometric arc-fan topology and `cap: { type: 'square' | 'round' }` are features of the world-space surface profile and the experimental native-WebGPU path.
 
 ## Choose the rendering profile explicitly
 
@@ -140,7 +140,7 @@ instancedLine.setInstanceValues( 'instanceOffset', packedOffsets, startInstance 
 
 ## Application migration checklist
 
-- [ ] Upgrade `makio-meshline` and Three.js together; use r183+ if an optional WebGPU entry point is imported.
+- [ ] Upgrade `makio-meshline` and Three.js together; V2 requires r186+.
 - [ ] Compare sharp paths with `smoothSharpBends` off and opt in only where subdivision is intended.
 - [ ] Check dashes, gradients, width callbacks, UV-dependent effects, and custom hooks on unevenly spaced points.
 - [ ] Validate values coming from UI, files, or network data before configuring a line.

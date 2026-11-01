@@ -17,7 +17,7 @@ The `MeshLineGeometry` class builds the line mesh geometry from raw point data, 
 new MeshLineGeometry(options?: MeshLineGeometryOptions)
 ```
 
-### MeshLineGeometryOptions (partial)
+### MeshLineGeometryOptions
 
 ```ts
 type LinePoint = [x: number, y: number, z?: number] | THREE.Vector2 | THREE.Vector3 | { x: number, y: number, z?: number }
@@ -25,9 +25,17 @@ type LinePoints = Float32Array | number[] | THREE.BufferGeometry | LinePoint[]
 
 interface MeshLineGeometryOptions {
   lines?: LinePoints | LinePoints[]          // One line or multiple lines
+  points?: LinePoints | LinePoints[]         // Alias for lines
   closed?: boolean | boolean[]               // Close the loop(s)
-  widthCallback?: (t: number) => number      // variable width 
-  usage?: THREE.Usage                        // Optional buffer usage hint : StaticDrawUsage / DynamicDrawUsage / StreamDrawUsage
+  lineWidth?: number                         // Used for world-space bounding-volume padding
+  sizeAttenuation?: boolean                  // Whether lineWidth is scene-space (pads bounds)
+  miterLimit?: number                        // Miter limit factor for bounds padding
+  join?: MeshLineJoinType | MeshLineJoinOptions
+  vertexColors?: Float32Array | number[] | null
+  widthCallback?: (progress: number, pointIndex?: number, lineIndex?: number) => number
+  usage?: THREE.Usage                        // StaticDrawUsage / DynamicDrawUsage / StreamDrawUsage
+  dynamic?: boolean                          // Shorthand for DynamicDrawUsage
+  frustumCulled?: boolean                    // Skip bounds computation when false
   verbose?: boolean                          // Console logging
 
   // Optional CPU-side corner smoothing (see "Smooth sharp bends" below)
@@ -43,6 +51,7 @@ interface MeshLineGeometryOptions {
   needsSide?: boolean
   needsProgress?: boolean
   needsWidth?: boolean
+  needsVertexColor?: boolean
 }
 ```
 
@@ -230,7 +239,7 @@ It is opt-in because it changes `index.count` — from `(points - 1) * 6` to `(p
 Two caveats:
 
 - The bridge covers the outer notch and also re-covers ground the two bodies already hold on the inner side. That is free for an opaque line and double-blends for a transparent or additively blended one.
-- It is a bevel, not a round join: the corner is cut flat rather than swept. For true round fans and caps, use the world-space [surface profile](./surface.md) or the optional [GPU path](./gpu-path.md).
+- In geometry, it is a flat bevel bridge rather than a tessellated triangle fan. On billboards, `line.join( { type: 'round' } )` or `line.join( { fold: 'exact' } )` clips the outer corner to a round silhouette in the fragment shader; for tessellated triangle-fan round joins and caps in geometry, use the world-space [surface profile](./surface.md) or the optional [GPU path](./gpu-path.md).
 
 The alternative for very sharp static polylines remains [smooth sharp bends](#smooth-sharp-bends), which subdivides the corner on the CPU instead of filling it on the GPU. The two are independent and can be combined.
 

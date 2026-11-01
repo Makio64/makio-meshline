@@ -23,40 +23,40 @@ import { attribute, Fn, vec4 } from 'three/tsl'
 const instanceCount = 100
 
 const line = new MeshLine()
-  .lines( circlePositions( 32 ), true )
-  .instances( instanceCount )
-  .lineWidth( 0.05 )
-  .color( 0xffffff )
-  .positionFn( Fn( ( [position] ) => {
-    return position.add( attribute( 'instanceOffset', 'vec3' ) )
-  } ) )
-  .colorFn( Fn( () => {
-    return vec4( attribute( 'instanceColor', 'vec3' ), 1 )
-  } ) )
+	.lines( circlePositions( 32 ), true )
+	.instances( instanceCount )
+	.lineWidth( 0.05 )
+	.color( 0xffffff )
+	.positionFn( Fn( ( [position] ) => {
+		return position.add( attribute( 'instanceOffset', 'vec3' ) )
+	} ) )
+	.colorFn( Fn( () => {
+		return vec4( attribute( 'instanceColor', 'vec3' ), 1 )
+	} ) )
+	.build()
 
 line.addInstanceAttributes( {
-  instanceOffset: 3,
-  instanceColor: 3
+	instanceOffset: 3,
+	instanceColor: 3,
 } )
 
 for ( let i = 0; i < instanceCount; i++ ) {
-  const angle = i / instanceCount * Math.PI * 2
-  const radius = 5 + Math.random() * 10
+	const angle = i / instanceCount * Math.PI * 2
+	const radius = 5 + Math.random() * 10
 
-  line.setInstanceValue( 'instanceOffset', i, [
-    Math.cos( angle ) * radius,
-    ( Math.random() - 0.5 ) * 10,
-    Math.sin( angle ) * radius
-  ])
+	line.setInstanceValue( 'instanceOffset', i, [
+		Math.cos( angle ) * radius,
+		( Math.random() - 0.5 ) * 10,
+		Math.sin( angle ) * radius,
+	] )
 
-  line.setInstanceValue( 'instanceColor', i, [
-    Math.random(),
-    Math.random(),
-    Math.random()
-  ])
+	line.setInstanceValue( 'instanceColor', i, [
+		Math.random(),
+		Math.random(),
+		Math.random(),
+	] )
 }
 
-line.build()
 scene.add( line )
 ```
 

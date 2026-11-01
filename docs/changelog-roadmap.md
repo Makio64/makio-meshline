@@ -14,9 +14,11 @@ The publishable manifest, standalone starters, changelog, and documentation now 
 
 ### Main API
 
-- Robust finite screen joins, explicit endpoint/closed metadata, near-plane guards, and normalized arc-length progress.
+- Robust finite screen joins (`miter`, `bevel`, `round` with `fold: 'geometry' | 'exact' | false`), analytic edge antialiasing (`antialias( true )`), explicit endpoint/closed metadata, near-plane guards, and normalized arc-length progress.
+- Full shadow casting and receiving (`shadow( true, true )` / `setReceiveShadow( true )`) across both billboards (using 3D cylindrical tube normal reconstruction and world-space shadow bias) and world-space surfaces.
 - Camera-independent road/ribbon surfaces with transport or fixed-up frames, banking, distance UVs, PBR maps, true bevel/round joins and caps, and explicit reversal splits.
-- Stable-layout update helpers: `setPositionRange()`, `setVertexValues()`, and `setInstanceValues()`.
+- GPU storage-buffer position helper (`storagePositions()`) for zero-CPU-upload circular ring-buffer trails and line morphing, plus `lineCoord` for cross-ribbon silhouette effects without UVs.
+- Stable-layout update helpers (`setPositionRange()`, `setVertexValues()`, `setInstanceValues()`) and cached unpadded bounds (`O(lines)` refresh on `lineWidth()` / `miterLimit()` changes).
 - Lazy optional attributes and stricter validation for point data, dimensions, widths, opacity, dashes, joins, caps, and surface construction.
 - Safer default frustum behavior for CSS-pixel and shader-positioned lines.
 
@@ -28,10 +30,10 @@ The publishable manifest, standalone starters, changelog, and documentation now 
 
 ### Optional native-WebGPU entries
 
-- `makio-meshline/gpu-culling` adds conservative chunk AABB compaction for measured, very large opaque lines and surfaces. It requires Three.js r183+ and fails open when bounds or a render pass are ambiguous.
-- `makio-meshline/gpu-path` is an experimental point-centric renderer for one very large static open path. It adds indirect drawing, homogeneous clipping, projected finite-leg guards, bounded center-pivot fallbacks, optional local-space simplification, and a complete CPU `MeshLine` fallback.
+- `makio-meshline/gpu-culling` adds conservative chunk AABB compaction (with optional detached `cullCamera` debug inspection) for measured, very large opaque lines and surfaces. It requires native WebGPU and fails open when bounds or a render pass are ambiguous.
+- `makio-meshline/gpu-path` is an experimental point-centric renderer for one very large static open path. It adds indirect drawing, homogeneous clipping, projected finite-leg guards, bounded center-pivot fallbacks, optional local-space simplification, `.wireframe()` inspection, and a complete CPU `MeshLine` fallback.
 
-The regular `MeshLine` export from the main `makio-meshline` entry remains the preferred API and supports Three.js r180+ through `WebGPURenderer` on WebGPU and WebGL2. Read [Migrating from v1 to V2](./v2-migration.md) for behavior changes and application checks, and the [V2 Design Contract](./v2-design.md) for the geometry guarantees.
+The regular `MeshLine` export from the main `makio-meshline` entry remains the preferred API and supports Three.js r186+ through `WebGPURenderer` on WebGPU and WebGL2. Read [Migrating from v1 to V2](./v2-migration.md) for behavior changes and application checks, [V2 Benchmarks](./benchmarks.md) for interactive `MeshLine`-rendered performance diagrams, and the [V2 Design Contract](./v2-design.md) for the geometry guarantees.
 
 ### Deliberately not promoted
 
@@ -45,8 +47,8 @@ The regular `MeshLine` export from the main `makio-meshline` entry remains the p
 Documentation status:
 
 - [x] Publish a V1-to-V2 migration guide with changed behavior, compatibility ranges, and fallback expectations.
-- [x] Separate the main cross-backend API from optional r183+ native-WebGPU entry points.
-- [x] Record experimental limitations and link migration, design, performance, and release pages from navigation.
+- [x] Separate the main cross-backend API from optional native-WebGPU entry points.
+- [x] Record experimental limitations and link migration, design, performance, benchmarks, and release pages from navigation.
 - [x] Finalize the repository `CHANGELOG.md` entry for `2.0.0`.
 - [x] Remove prerelease status notices and align the public documentation with `2.0.0`.
 
@@ -56,7 +58,7 @@ Package and verification status:
 - [x] Target `^2.0.0` from standalone starters while forcing workspace builds to exercise the current source.
 - [x] Synchronize the packaged `src/README.md` with the public feature/status wording.
 - [x] Run `pnpm lint`, `pnpm build`, `pnpm docs:build`, and the standalone vanilla, React Three Fiber, and Vue example builds from a clean checkout.
-- [x] Install the packed artifact in isolated consumers and run runtime/declaration smoke tests at the r180 core minimum, r183 optional-entry minimum, and pinned current Three.js version.
+- [x] Install the packed artifact in isolated consumers and run runtime/declaration smoke tests at the r186.0 minimum and the pinned current Three.js version.
 - [x] Run browser render coverage on both `WebGPURenderer` backends used by the compatibility claim.
 - [x] Inspect the real npm tarball and smoke-test root, `gpu-culling`, and `gpu-path` package imports through the exports map.
 - [x] Keep a non-blocking compatibility canary against the moving Three.js `dev` branch.
@@ -65,7 +67,7 @@ Package and verification status:
 
 ## Release history
 
-- **v2.0.0**: Arc-length progress, exact-by-default billboard topology, world-space road/ribbon surfaces, partial position updates, hardened bounds and validation, complete framework starters, optional native-WebGPU chunk culling, an experimental point-centric GPU path with CPU fallback, and experimental WebGPU compute curves.
+- **v2.0.0**: Arc-length progress, 4-vertex billboard topology with `miter`/`bevel`/`round` joins and `geometry`/`exact` fold modes, analytic edge antialiasing, shadow casting and receiving with 3D cylindrical tube normals, world-space road/ribbon surfaces, `storagePositions()` GPU trails/morphing, partial position updates (`setPositionRange()`), `O(lines)` bounds refresh, complete framework starters, optional native-WebGPU chunk culling, an experimental point-centric GPU path with CPU fallback, and experimental WebGPU compute curves.
 - **v1.4.0**: New `MeshLinePickerHelper` (Three.js-style helper that overlays the GPU picker's hit-zones with a distinct hue per instance), new `picker.lines` snapshot getter, aligned point-array input handling, TypeScript declarations, and material shadow-node docs.
 - **v1.3.2**: Normalize `lineWidth` semantics, stabilize GPU-positioned endpoint tangents, fix pre-build `.opacity()`, and expand options-object configuration.
 - **v1.3.1**: Corner rendering overhaul — uniform thickness at every bend, stable miter at oblique camera angles, and CPU-side smoothing (`smoothSharpBends`) for very sharp polylines. `useMiterLimit` option removed; miter is always on.
@@ -84,7 +86,6 @@ Full changelog: [CHANGELOG.md](https://github.com/Makio64/makio-meshline/blob/ma
 ## Roadmap
 
 - **Mid-term**:
-  - Add `receiveShadow` support.
   - Extend `MeshLineCompute` with real texture/audio/depth force integrations and compute-aware segment picking.
   - Promote the optional GPU path's variable topology after multi-line/closed, shadows, XR, and picking gates.
 - **Long-term**:

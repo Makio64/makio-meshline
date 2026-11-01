@@ -58,7 +58,10 @@ export function storagePositions( buffer, { pointsPerLine, head = null, toBuffer
 	const points = storage( buffer, itemType, buffer.count ).toReadOnly()
 	const toPoints = toBuffer ? storage( toBuffer, itemType, toBuffer.count ).toReadOnly() : null
 	const length = uint( pointsPerLine )
+	const isPowerOfTwo = ( pointsPerLine & ( pointsPerLine - 1 ) ) === 0
+	const lengthMask = isPowerOfTwo ? uint( pointsPerLine - 1 ) : null
 	const lastPoint = float( pointsPerLine - 1 )
+	const invLastPoint = float( 1 / ( pointsPerLine - 1 ) )
 
 	return Fn( ( [progress] ) => {
 		// Progress may leave [0, 1] when the material samples previous/next past
@@ -69,7 +72,7 @@ export function storagePositions( buffer, { pointsPerLine, head = null, toBuffer
 		const rawP = progress.mul( lastPoint ).toVar()
 		let p = rawP
 		if ( closed !== null && closed !== false ) {
-			const wrappedP = rawP.mod( lastPoint ).add( lastPoint ).mod( lastPoint )
+			const wrappedP = rawP.sub( floor( rawP.mul( invLastPoint ) ).mul( lastPoint ) )
 			const outside = rawP.lessThan( 0 ).or( rawP.greaterThan( lastPoint ) )
 			p = closed === true
 				? outside.select( wrappedP, rawP ).toVar()
@@ -78,17 +81,23 @@ export function storagePositions( buffer, { pointsPerLine, head = null, toBuffer
 
 		const pivot = clamp( floor( p ), 0, lastPoint.sub( 1 ) ).toVar()
 		const t = p.sub( pivot )
-		const base = instanceIndex.mul( length ).toVar()
-		const step = pivot.toUint().toVar()
+		const base = instanceIndex.mul( length )
+		const step = pivot.toUint()
 
 		let first
 		let second
 		if ( head ) {
-			first = base.add( head.add( length ).sub( step ).mod( length ) )
-			second = base.add( head.add( length ).sub( step.add( 1 ) ).mod( length ) )
+			const headOffset = uint( head ).add( length ).sub( step ).toVar()
+			if ( isPowerOfTwo ) {
+				first = base.add( headOffset.bitAnd( lengthMask ) )
+				second = base.add( headOffset.sub( uint( 1 ) ).bitAnd( lengthMask ) )
+			} else {
+				first = base.add( headOffset.mod( length ) )
+				second = base.add( headOffset.sub( uint( 1 ) ).mod( length ) )
+			}
 		} else {
-			first = base.add( step )
-			second = first.add( 1 )
+			first = base.add( step ).toVar()
+			second = first.add( uint( 1 ) )
 		}
 
 		const fromSample = mix( points.element( first ).xyz, points.element( second ).xyz, t )

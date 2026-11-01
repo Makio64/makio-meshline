@@ -8,9 +8,8 @@ Quick recipes covering typical simple use-cases. Copy-paste and tweak.
 
 Start with these self-contained examples if you want the same ideas in full demo form:
 
-- [Basic Example](./examples/basic.md)
-- [Follow](./examples/follow.md)
-- [Draw Lines](./examples/drawlines.md)
+- [Style Gallery (Basic Example)](./examples/basic.md)
+- [Draw & Trail](./examples/drawlines.md)
 - [Instancing](./examples/instancing.md)
 - [Interactive sandbox](./examples/sandbox.md)
 

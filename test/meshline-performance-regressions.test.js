@@ -1,11 +1,17 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { Fn, vec3 } from 'three/tsl'
-import { Box3 } from 'three/webgpu'
+import { Fn, uint, uniform, vec3 } from 'three/tsl'
+import { Box3, NodeMaterial, PerspectiveCamera, Ray, Raycaster, Scene, StorageBufferAttribute, Vector3 } from 'three/webgpu'
 
 import MeshLine from '../src/MeshLine.js'
+import MeshLineCompute from '../src/MeshLineCompute.js'
 import MeshLineGeometry from '../src/MeshLineGeometry.js'
+import MeshLineGPUPath, { _gpuPathInternals } from '../src/MeshLineGPUPath.js'
+import { lineCoord } from '../src/MeshLineNodeMaterial.js'
+import MeshLinePicker from '../src/MeshLinePicker.js'
+import MeshLineSurfaceGeometry from '../src/MeshLineSurfaceGeometry.js'
+import { storagePositions } from '../src/positions/storagePositions.js'
 import { buildShaderGraph, createRenderer } from './helpers/shaderBuilder.js'
 
 const createWave = ( pointCount, amplitude = 1, offset = 0 ) => {
@@ -110,17 +116,27 @@ test( 'billboard vertex graph projects each point once and reuses projected dire
 			assert.equal( ( shader.match( /modelViewMatrix \* vec4/g ) || [] ).length, 3 )
 			assert.equal( ( shader.match( /cameraProjectionMatrix \* view(Position|Previous|Next)\b/g ) || [] ).length, 3 )
 			assert.doesNotMatch( shader, /cameraProjectionMatrix \* modelViewMatrix\s*\)/ )
-			// Two raw projected deltas, the miter sum and the blended perpendicular,
-			// plus the fold's half-turn sine. The 3D turn takes one inverse square
-			// root per view-space body, emitted once, and no acos().
-			assert.equal( ( shader.match( /\blength\(/g ) || [] ).length, 5 )
+			// Default geometry fold mode projects the half-width once into NDC (`baseRadiusNdc`)
+			// via scalar `cameraProjectionMatrix[1].y` and reuses it for both `innerRetreat`
+			// and `foldReach`, without converting to/from `pixelsPerNdc`, projecting with a
+			// 4x4 matrix multiply, or branching on `innerRetreat`.
+			assert.match( shader, /\bbaseRadiusNdc\b/ )
+			assert.doesNotMatch( shader, /\bpixelsPerNdc\b|\bbaseRadiusPx\b|\binnerRetreat\b|\bdirFallback\b/ )
+			assert.equal( ( shader.match( /cameraProjectionMatrix \* vec4/g ) || [] ).length, 0 )
+			// Encoded side is decoded linearly from `abs(joinRole)` without a `< 1.5` branch.
+			assert.doesNotMatch( shader, /1\.5/ )
+			// Two raw projected deltas, the miter sum, and the blended perpendicular;
+			// the fold's half-turn sine reuses `rawTurnDot = dot(projectedDir1, projectedDir2)`.
+			// The 3D turn takes one inverse square root per view-space body, emitted once, and no acos().
+			assert.equal( ( shader.match( /\blength\(/g ) || [] ).length, 4 )
 			assert.equal( ( shader.match( /\binverse[Ss]qrt\(/g ) || [] ).length, 2 )
 			assert.doesNotMatch( shader, /\bacos\(/ )
 			for ( const value of exactFoldValues ) assert.doesNotMatch( shader, value )
 			// Default folds are resolved in the vertex stage: a discard anywhere in
 			// the fragment stage would cost tile-based GPUs their hidden-surface
-			// removal on every line.
-			assert.doesNotMatch( builder.fragmentShader, /\bdiscard\b/ )
+			// removal on every line. Default opaque lines also avoid allocating a
+			// fallback `materialOpacity` uniform.
+			assert.doesNotMatch( builder.fragmentShader, /\bdiscard\b|DiffuseColor\.w \* (?:object\.|nodeUniform)|\bmaterialOpacity\b/ )
 			line.dispose()
 		}
 	}
@@ -140,6 +156,12 @@ test( 'exact folds clip in the fragment stage while two-point GPU lines keep the
 		const exact = build( { lines: points, join: { type: 'miter', fold: 'exact' } } )
 		assert.match( exact.fragmentShader, /\bdiscard\b/ )
 		assert.match( exact.vertexShader, /vFoldFrame/ )
+		// Exact mode computes `foldRadiusPx` once via scalar `cameraProjectionMatrix[1].y`
+		// and reuses it without a duplicate `baseRadiusPx` or `cameraProjectionMatrix * vec4`.
+		assert.match( exact.vertexShader, /\bfoldRadiusPx\b/ )
+		assert.doesNotMatch( exact.vertexShader, /\bbaseRadiusPx\b/ )
+		assert.equal( ( exact.vertexShader.match( /cameraProjectionMatrix \* vec4/g ) || [] ).length, 0 )
+		assert.equal( ( exact.vertexShader.match( /\blength\(/g ) || [] ).length, 4 )
 		// What the default shader leaves out lives here, with the 3D turn still
 		// emitted once.
 		for ( const value of exactFoldValues ) assert.match( exact.vertexShader, value )
@@ -153,3 +175,366 @@ test( 'exact folds clip in the fragment stage while two-point GPU lines keep the
 		assert.doesNotMatch( laser.vertexShader, /vFoldFrame|foldJointRow|miterFactor/ )
 	}
 } )
+
+test( 'fragment hooks emit only referenced varyings and deduplicate shaders across uniform/topology variants', () => {
+	for ( const forceWebGL of [false, true] ) {
+		const renderer = createRenderer( forceWebGL )
+		const points = new Float32Array( [0, 0, 0, 1, 0, 0, 1, 1, 0] )
+		const compile = options => {
+			const line = new MeshLine( { lines: points, ...options } ).build()
+			const builder = buildShaderGraph( renderer, line )
+			line.dispose()
+			return builder
+		}
+
+		// A fragment hook reading only `lineCoord` should not emit `vProgress` or `uvCoords`,
+		// and explicit `needsUV: false` / `needsProgress: false` should omit those geometry buffers.
+		const rimOnlyLine = new MeshLine( {
+			lines: points,
+			needsUV: false,
+			needsProgress: false,
+			fragmentColorFn: Fn( ( [color] ) => color.mul( lineCoord.y.abs() ) ),
+		} ).build()
+		assert.equal( rimOnlyLine.geometry.getAttribute( 'uv' ), undefined )
+		assert.equal( rimOnlyLine.geometry.getAttribute( 'progress' ), undefined )
+		rimOnlyLine.dispose()
+
+		const rimOnly = compile( {
+			needsUV: false,
+			fragmentColorFn: Fn( ( [color] ) => color.mul( lineCoord.y.abs() ) ),
+		} )
+		assert.doesNotMatch( rimOnly.vertexShader, /\bvProgress\b|\buvCoords\b/ )
+		assert.doesNotMatch( rimOnly.fragmentShader, /\bvProgress\b|\buvCoords\b/ )
+
+		// A `discardFn` reading only `progress` should not emit UV varyings (`uvCoords` / `nodeVarying`),
+		// and lines with different uniform values or open/closed topology share identical shaders.
+		const makeRevealLine = options => {
+			const percent1 = uniform( 0.8 )
+			return compile( {
+				needsUV: false,
+				discardFn: Fn( ( [progress] ) => progress.greaterThan( percent1 ) ),
+				...options,
+			} )
+		}
+		const closedBasic = makeRevealLine( { closed: true, color: 0xce4257, lineWidth: 0.2 } )
+		const openBasic = makeRevealLine( { closed: false, color: 0xfcd581, lineWidth: 0.3 } )
+		assert.doesNotMatch( closedBasic.vertexShader, /\buvCoords\b|\bnodeVarying0\b/ )
+		assert.doesNotMatch( closedBasic.fragmentShader, /\buvCoords\b|\bnodeVarying0\b/ )
+		assert.equal( closedBasic.vertexShader, openBasic.vertexShader )
+		assert.equal( closedBasic.fragmentShader, openBasic.fragmentShader )
+
+		const dashedShort = makeRevealLine( { color: 0xf35b04, lineWidth: 0.3, dashCount: 8, dashRatio: 0.6 } )
+		const dashedLong = makeRevealLine( { color: 0x00ff80, lineWidth: 0.5, dashCount: 6, dashRatio: 0.8 } )
+		assert.equal( dashedShort.vertexShader, dashedLong.vertexShader )
+		assert.equal( dashedShort.fragmentShader, dashedLong.fragmentShader )
+	}
+} )
+
+test( 'MeshLinePicker strips visual-only fragment options so picking proxies omit unused varyings and share shaders', () => {
+	for ( const forceWebGL of [false, true] ) {
+		const renderer = createRenderer( forceWebGL )
+		const scene = new Scene()
+		const camera = new PerspectiveCamera( 60, 1, 0.1, 100 )
+		const picker = new MeshLinePicker( renderer, scene, camera )
+		const points = new Float32Array( [0, 0, 0, 1, 0, 0, 1, 1, 0] )
+
+		const lineA = new MeshLine( {
+			lines: points,
+			color: 0xff0000,
+			gradientColor: 0x00ff00,
+			antialias: true,
+			dashCount: 8,
+			dashRatio: 0.5,
+		} ).build()
+		const lineB = new MeshLine( {
+			lines: points,
+			color: 0x0000ff,
+			colorFn: Fn( ( [c, progress] ) => c.mul( progress ) ),
+			opacityFn: Fn( ( [a, progress] ) => a.mul( progress ) ),
+			discardFn: Fn( ( [progress] ) => progress.greaterThan( 0.9 ) ),
+		} ).build()
+
+		picker.add( lineA ).add( lineB )
+		const proxies = picker.debugScene.children
+		assert.equal( proxies.length, 2 )
+
+		const proxyA = buildShaderGraph( renderer, proxies[0] )
+		const proxyB = buildShaderGraph( renderer, proxies[1] )
+
+		assert.doesNotMatch( proxyA.vertexShader, /\bvProgress\b|\bvPixelWidth\b|\buvCoords\b/ )
+		assert.doesNotMatch( proxyA.fragmentShader, /\bvProgress\b|\bvPixelWidth\b|\buvCoords\b/ )
+		assert.equal( proxyA.vertexShader, proxyB.vertexShader )
+		assert.equal( proxyA.fragmentShader, proxyB.fragmentShader )
+
+		picker.dispose()
+		lineA.dispose()
+		lineB.dispose()
+	}
+} )
+
+test( 'MeshLineCompute arcLengthNode binds distance storage as read-only and canonical surface updates skip index rewrites', () => {
+	const renderer = createRenderer( false )
+	const compute = new MeshLineCompute( { curveCount: 4, pointsPerCurve: 8 } )
+	compute
+		.widthFn( Fn( ( [width, progress] ) => width.mul( compute.arcLengthNode( progress ) ) ) )
+		.build()
+
+	const graph = buildShaderGraph( renderer, compute )
+	const readBindings = graph.vertexShader.match( /var<storage,\s*read>/g ) ?? []
+	assert.equal( readBindings.length, 2 )
+	assert.doesNotMatch( graph.vertexShader, /var<storage,\s*read_write>/ )
+
+	compute.dispose()
+
+	const waveA = createWave( 16, 1, 0 )
+	const waveB = createWave( 16, 2, 1 )
+	const surface = new MeshLineSurfaceGeometry( {
+		lines: waveA,
+		lineWidth: 0.2,
+		join: { type: 'miter', limit: 4 },
+		cap: 'butt',
+	} )
+	const indexAttr = surface.getIndex()
+	const initialIndexVersion = indexAttr.version
+
+	surface.setPositions( waveB )
+	assert.equal( surface.getIndex(), indexAttr )
+	assert.equal( indexAttr.version, initialIndexVersion )
+	surface.dispose()
+} )
+
+test( 'MeshLineGPUPath vertex shader uses 2D projection column reads, read-only storage, and reversal break pre-filtering', async () => {
+	const renderer = createRenderer( false )
+	const stubRenderer = {
+		isWebGPURenderer: true,
+		backend: { isWebGPUBackend: true, device: {} },
+		async init() {},
+		async computeAsync() {},
+		getSize( target ) {
+			return target.set( 800, 600 )
+		},
+	}
+	const path = new MeshLineGPUPath( {
+		lines: new Float32Array( [0, 0, 0, 1, 0, 0, 2, 1, 0, 3, 1, 0, 4, 0, 0] ),
+		lineWidth: 0.5,
+		color: 0x22d3ee,
+	}, {
+		chunkSegments: 2,
+		simplify: { localTolerance: 0.1 },
+	} )
+	assert.equal( await path.prepare( stubRenderer, new PerspectiveCamera() ), true )
+
+	const graph = buildShaderGraph( renderer, path.gpuMesh )
+	// Each of the 4 segment points transforms by modelViewMatrix * vec4 and then
+	// cameraProjectionMatrix * (...), with zero 4x4 matrix-matrix products and zero
+	// cameraProjectionMatrix * vec4 offset projections (2D offsets use projCol0/projCol1).
+	assert.doesNotMatch( graph.vertexShader, /cameraProjectionMatrix \* modelViewMatrix/ )
+	assert.equal( ( graph.vertexShader.match( /modelViewMatrix \* vec4/g ) || [] ).length, 4 )
+	assert.equal( ( graph.vertexShader.match( /cameraProjectionMatrix \* vec4/g ) || [] ).length, 0 )
+	assert.equal( ( graph.vertexShader.match( /\blength\s*\(/g ) || [] ).length, 4 )
+	assert.match( graph.vertexShader, /cameraProjectionMatrix\[\s*0u?\s*\]\.xy/ )
+	assert.match( graph.vertexShader, /cameraProjectionMatrix\[\s*1u?\s*\]\.xy/ )
+	assert.doesNotMatch( graph.vertexShader, /var<storage,\s*read_write>/ )
+
+	path.dispose()
+
+	// Smooth polyline with no sharp reversals should never call Math.sqrt inside findReversalBreaks.
+	const smoothPoints = createWave( 64, 0.2, 0 )
+	const originalSqrt = Math.sqrt
+	let sqrtCalls = 0
+	Math.sqrt = value => {
+		sqrtCalls++
+		return originalSqrt( value )
+	}
+	try {
+		const breaks = _gpuPathInternals.findReversalBreaks( smoothPoints )
+		assert.equal( breaks.every( v => v === 0 ), true )
+		assert.equal( sqrtCalls, 0 )
+	} finally {
+		Math.sqrt = originalSqrt
+	}
+} )
+
+test( 'storagePositions uses bitwise masking for power-of-two ring trails and closed setPositions reuses seam buffers in one pass', () => {
+	const renderer = createRenderer( false )
+	const buffer = new StorageBufferAttribute( 4 * 64, 3 )
+	const head = uniform( uint( 0 ) )
+	const trail = new MeshLine()
+		.instances( 4 )
+		.segments( 63 )
+		.gpuPositionNode( storagePositions( buffer, { pointsPerLine: 64, head } ) )
+		.build()
+
+	const graph = buildShaderGraph( renderer, trail )
+	assert.match( graph.vertexShader, /&\s*63u\b/ )
+	assert.doesNotMatch( graph.vertexShader, /%\s*64u\b/ )
+	trail.dispose()
+
+	// Closed loop setPositions() should compute progress in a single pass (N segments)
+	// and reuse its double-buffered seam array after the second update.
+	const ptsA = createWave( 32, 1, 0 )
+	const ptsB = createWave( 32, 2, 1 )
+	const closedGeo = new MeshLineGeometry( { lines: ptsA, closed: true, needsProgress: true, needsUV: true } )
+	closedGeo.setPositions( ptsB, false )
+	const bufferAfterFirstUpdate = closedGeo._lines[0]
+	closedGeo.setPositions( ptsA, false )
+	const bufferAfterSecondUpdate = closedGeo._lines[0]
+
+	const originalSqrt = Math.sqrt
+	let sqrtCalls = 0
+	Math.sqrt = value => {
+		sqrtCalls++
+		return originalSqrt( value )
+	}
+	try {
+		closedGeo.setPositions( ptsB, false )
+		assert.equal( closedGeo._lines[0], bufferAfterFirstUpdate )
+		assert.equal( sqrtCalls, 32 )
+		closedGeo.setPositions( ptsA, false )
+		assert.equal( closedGeo._lines[0], bufferAfterSecondUpdate )
+	} finally {
+		Math.sqrt = originalSqrt
+	}
+	closedGeo.dispose()
+} )
+
+test( 'dashed fragment shaders use fract without step, shadow vertex shader avoids 4x4 inverse offset transforms, and instanced picker uses bitwise ID encoding', () => {
+	const renderer = createRenderer( false )
+	const points = new Float32Array( [0, 0, 0, 1, 0, 0, 1, 1, 0] )
+
+	const dashedLine = new MeshLine( {
+		lines: points,
+		dashCount: 8,
+		dashRatio: 0.5,
+	} ).build()
+	const dashedGraph = buildShaderGraph( renderer, dashedLine )
+	assert.match( dashedGraph.fragmentShader, /\bfract\s*\(/ )
+	assert.doesNotMatch( dashedGraph.fragmentShader, /\bstep\s*\(/ )
+
+	const shadowLine = new MeshLine( {
+		lines: points,
+		shadow: true,
+	} ).build()
+	const shadowPassMaterial = new NodeMaterial()
+	shadowPassMaterial.positionNode = shadowLine.material.castShadowPositionNode
+	shadowLine.material = shadowPassMaterial
+	const shadowGraph = buildShaderGraph( renderer, shadowLine )
+	// 3 centerline samples (pos, prev, next) inside castShadowPositionNode + 1 final positionLocal transform = 4
+	assert.equal( ( shadowGraph.vertexShader.match( /modelViewMatrix \* vec4/g ) || [] ).length, 4 )
+	assert.equal( ( shadowGraph.vertexShader.match( /\blength\s*\(/g ) || [] ).length, 6 )
+	assert.doesNotMatch( shadowGraph.vertexShader, /cameraWorldMatrix \* vec4|modelWorldMatrixInverse \* vec4/ )
+	assert.match( shadowGraph.vertexShader, /cameraWorldMatrix\[\s*0u?\s*\]\.xyz/ )
+	assert.match( shadowGraph.vertexShader, /\[\s*0u?\s*\]\.xyz \* vec3<f32>\( nodeVar9\.x \)/ )
+	shadowPassMaterial.dispose()
+
+	const scene = new Scene()
+	const camera = new PerspectiveCamera( 60, 1, 0.1, 100 )
+	const picker = new MeshLinePicker( renderer, scene, camera )
+	const instancedLine = new MeshLine( { lines: points } ).instances( 4 ).build()
+	picker.add( instancedLine )
+	const instancedProxy = picker.debugScene.children[0]
+	const pickerGraph = buildShaderGraph( renderer, instancedProxy )
+	assert.match( pickerGraph.fragmentShader, />>\s*8u\b/ )
+	assert.match( pickerGraph.fragmentShader, /&\s*255u\b/ )
+
+	picker.dispose()
+	instancedLine.dispose()
+	dashedLine.dispose()
+	shadowLine.dispose()
+} )
+
+test( 'surface round joins skip atan2 on shallow bends, fused setPositionRange matches full rebuilds, and single-line raycast pre-checks its local AABB', () => {
+	// 1. Shallow bends with turn angle <= pi / segments skip Math.atan2 in round join analysis.
+	const gentlePoints = createWave( 64, 0.05, 0 )
+	const originalAtan2 = Math.atan2
+	let atan2Calls = 0
+	Math.atan2 = ( y, x ) => {
+		atan2Calls++
+		return originalAtan2( y, x )
+	}
+	let roundSurface = null
+	try {
+		roundSurface = new MeshLineSurfaceGeometry( {
+			lines: gentlePoints,
+			lineWidth: 0.1,
+			join: { type: 'round', segments: 8 },
+			cap: 'butt',
+		} )
+		assert.equal( atan2Calls, 0 )
+	} finally {
+		Math.atan2 = originalAtan2
+		roundSurface?.dispose()
+	}
+
+	// 2. Fused setPositionRange paths (progress+uv, progress+endpoint, progress+widthCallback)
+	// match full setPositions rebuilds bit-for-bit across open and closed lines.
+	for ( const closed of [false, true] ) {
+		for ( const extraOptions of [
+			{ needsProgress: true, needsUV: true },
+			{ needsProgress: true, needsEndpointMetadata: true },
+			{ needsProgress: true, needsWidth: true, widthCallback: ( p, i ) => 0.5 + p * 1.25 + ( i & 1 ) * 0.1 },
+		] ) {
+			const basePts = createWave( 40, 1.5, 0 )
+			const patch = new Float32Array( [
+				3.2, 0.9, -0.4,
+				3.7, -0.6, 0.3,
+				4.1, 0.2, 0.8,
+			] )
+			const patchedPts = basePts.slice()
+			patchedPts.set( patch, 10 * 3 )
+
+			const incGeo = new MeshLineGeometry( { lines: basePts.slice(), closed, dynamic: true, ...extraOptions } )
+			// First setPositionRange initializes the arc-length cache; second exercises the fused cache-hit path.
+			incGeo.setPositionRange( basePts.subarray( 10 * 3, 13 * 3 ), 10 )
+			incGeo.setPositionRange( patch, 10 )
+
+			const refGeo = new MeshLineGeometry( { lines: basePts.slice(), closed, dynamic: true, ...extraOptions } )
+			refGeo.setPositions( patchedPts, false )
+
+			for ( const attrName of ['position', 'previous', 'next', 'progress', 'uv', 'endpoint', 'width'] ) {
+				const incAttr = incGeo.getAttribute( attrName )
+				const refAttr = refGeo.getAttribute( attrName )
+				assert.equal( Boolean( incAttr ), Boolean( refAttr ), `presence of ${attrName} (closed=${closed})` )
+				if ( incAttr ) {
+					assert.equal( incAttr.array.length, refAttr.array.length )
+					for ( let i = 0; i < incAttr.array.length; i++ ) {
+						assert.ok(
+							Math.abs( incAttr.array[i] - refAttr.array[i] ) <= 1e-6,
+							`${attrName}[${i}] mismatch (closed=${closed}): ${incAttr.array[i]} vs ${refAttr.array[i]}`
+						)
+					}
+				}
+			}
+
+			incGeo.dispose()
+			refGeo.dispose()
+		}
+	}
+
+	// 3. Single-line raycast rejects rays that hit the boundingSphere but miss the local AABB in O(1).
+	const straight = new Float32Array( 64 * 3 )
+	for ( let i = 0; i < 64; i++ ) straight[i * 3] = i
+	const line = new MeshLine( { lines: straight, lineWidth: 0.2 } ).build()
+	const raycaster = new Raycaster()
+	// Line spans X in [0, 63], Y=0, Z=0; boundingSphere center is (31.5, 0, 0) with radius ~31.64.
+	// A ray at Y=15 (parallel to Z) intersects the boundingSphere (|15| < 31.64) but misses the local AABB (|Y| <= 0.142).
+	raycaster.set( new Vector3( 31.5, 15, 10 ), new Vector3( 0, 0, -1 ) )
+
+	const originalDistSq = Ray.prototype.distanceSqToSegment
+	let segmentChecks = 0
+	Ray.prototype.distanceSqToSegment = function ( ...args ) {
+		segmentChecks++
+		return originalDistSq.apply( this, args )
+	}
+	try {
+		const hits = raycaster.intersectObject( line, false )
+		assert.equal( hits.length, 0 )
+		assert.equal( segmentChecks, 0 )
+	} finally {
+		Ray.prototype.distanceSqToSegment = originalDistSq
+		line.dispose()
+	}
+} )
+
+
+

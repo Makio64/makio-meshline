@@ -1,3 +1,8 @@
+/**
+ * Joins & Caps — interactive specimen table comparing miter, bevel, and round joins and caps.
+ * Demonstrates: .surface(), .join({ type, limit, segments }), .cap({ type, segments }),
+ * 180° reversal cusp splitting, and MeshLineGPUPath screen-space variable topology.
+ */
 import GUI from 'lil-gui'
 import { MeshLine } from 'makio-meshline'
 import MeshLineGPUPath from 'makio-meshline/gpu-path'
@@ -260,7 +265,6 @@ const createSurface = ( points, config, wireframe = false ) => {
 
 class VariableTopologyExample {
 	constructor() {
-		this.text = ''
 		this.surfaces = []
 		this.wires = []
 		this.labels = []

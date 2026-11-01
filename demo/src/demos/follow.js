@@ -1,3 +1,8 @@
+/**
+ * Cursor Trails — 14 spring-driven aurora ribbons chasing the pointer in a single draw call.
+ * Demonstrates: .lines( lineArrays, false ), .dynamic( true ), .setPositions( lineArrays, false ),
+ * .widthCallback( fn ), and custom per-vertex attributes via .addVertexAttribute().
+ */
 import { MeshLine } from 'makio-meshline'
 import { attribute, color, float, Fn, mix, smoothstep, uv, vec3, vec4 } from 'three/tsl'
 import { AdditiveBlending, Color, MathUtils, Plane, Raycaster, Vector2, Vector3 } from 'three/webgpu'

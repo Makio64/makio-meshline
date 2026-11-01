@@ -1,3 +1,8 @@
+/**
+ * GPU Compute Curves — autonomous and interactive curve simulation in WebGPU compute shaders.
+ * Demonstrates: MeshLineCompute, mode ('autonomous' | 'follow' | 'field'), stiffness,
+ * mouseStrength, curlStrength, arcLengthNode( progress ), and TSL widthFn / colorFn / fragmentAlphaFn.
+ */
 import GUI from 'lil-gui'
 import { MeshLineCompute } from 'makio-meshline'
 import { color, float, Fn, instanceIndex, mix, mod, smoothstep, uniform, uv, vec4 } from 'three/tsl'
@@ -110,12 +115,12 @@ class MeshLineComputeExample {
 			} ) )
 			// Pulses travel along each curve by real arc length, so they keep their
 			// spacing while the solver stretches and bends the curve.
-			.fragmentAlphaFn( Fn( ( [alpha, uvCoords, progress] ) => {
+			.needsUV( false )
+			.fragmentAlphaFn( Fn( ( [alpha, , progress, side] ) => {
 				const arcDistance = line.arcLengthNode( progress ).toVar()
 				const cycle = mod( arcDistance.div( this.dashSpacingUniform ).add( this.dashPhaseUniform ), 1 ).toVar()
 				const pulse = smoothstep( 0, 0.1, cycle ).mul( float( 1 ).sub( smoothstep( 0.35, 0.7, cycle ) ) )
-				const across = uvCoords.y.sub( 0.5 ).abs().mul( 2 )
-				const feather = float( 1 ).sub( smoothstep( 0.35, 1, across ) )
+				const feather = float( 1 ).sub( smoothstep( 0.35, 1, side.abs() ) )
 				return alpha.mul( feather ).mul( pulse.mul( 0.65 ).add( 0.35 ) )
 			} ) )
 			.transparent( true )
@@ -192,6 +197,7 @@ class MeshLineComputeExample {
 		this.line?.dispose()
 		this.line = null
 		stage3d.control?.dispose()
+		stage3d.control = null
 		stage3d.scene.backgroundNode = null
 	}
 }

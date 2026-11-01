@@ -1,3 +1,8 @@
+/**
+ * Waves — synthwave sunset horizon with multi-line batched ocean crests.
+ * Demonstrates: .lines( multiLineArray ), .dynamic( true ), .setPositions( flatBuffer, false ),
+ * and per-vertex colors via .vertexColors( array ) + TSL .colorFn().
+ */
 import { MeshLine } from 'makio-meshline'
 import { color, Fn, mix, modelViewMatrix, positionGeometry, positionWorldDirection, smoothstep, vec4 } from 'three/tsl'
 import { Color, MathUtils } from 'three/webgpu'
