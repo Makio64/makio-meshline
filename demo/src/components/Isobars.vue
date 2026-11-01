@@ -5,10 +5,11 @@
 				v-for="( state, index ) in states"
 				:key="state.id"
 				type="button"
+				:title="state.title"
 				:aria-pressed="api.ui.activeState === index"
 				@click="api.jumpToState( index )"
 			>
-				{{ state.title }}
+				{{ api.ui.activeState === index ? state.title : state.id }}
 			</button>
 			<hr aria-hidden="true">
 			<button type="button" @click="api.togglePlaying()">

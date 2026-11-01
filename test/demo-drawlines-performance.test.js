@@ -36,7 +36,7 @@ test( 'Draw Lines exposes a top-middle cleanup button and top-left hint that res
 	assert.match( source, /createDemoControls\( \[\{ id: 'clear', label: 'Clean up', ariaLabel: 'Clean up drawn lines', onClick: this\.clearLines \}\]/ )
 	assert.match( source, /createDemoHint\( 'Drag to add your own stroke', \{ accent: ACCENT, hideAfter: 0 \} \)/ )
 	// `mouse` listens on window, so a press stopped on the bar never starts a stroke.
-	assert.match( controls, /for \( const type of \['pointerdown', 'touchstart', 'wheel'\] \) bar\.addEventListener\( type, event => event\.stopPropagation\(\) \)/ )
+	assert.match( controls, /bar\.addEventListener\( 'pointerdown', event => event\.stopPropagation\(\) \)/ )
 	assert.match( controls, /button\.addEventListener\( 'click', item\.onClick \)/ )
 	assert.match( controls, /if \( item\.ariaLabel \) button\.setAttribute\( 'aria-label', item\.ariaLabel \)/ )
 	assert.match( source, /clearLines = \(\) => \{[\s\S]*?this\.paths\.length = 0[\s\S]*?this\.activeLineCount = LINES_FOLLOWING_MOUSE/ )

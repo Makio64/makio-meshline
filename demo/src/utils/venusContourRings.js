@@ -31,7 +31,7 @@ function sampleRing( bvh, y, radius, sampleCount ) {
 
 	// A miss repeats the previous hit, and the leading gap wraps around to the last one.
 	// A ring past the statue's ends hits nothing: it collapses beside the axis, along the last ray.
-	let point = hits.findLast( Boolean ) ?? new Vector3( 0, y, 0 ).addScaledVector( ray.direction, 0.1 )
+	let point = hits.filter( Boolean ).pop() ?? new Vector3( 0, y, 0 ).addScaledVector( ray.direction, 0.1 )
 	const points = hits.map( hit => {
 		point = hit ?? point
 		return point

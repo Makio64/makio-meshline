@@ -6,7 +6,7 @@ pageClass: example-page
 
 # Follow
 
-This is a very small pattern: keep one target point, a short trail array, and rewrite the line positions every frame.
+This is a very small pattern: keep one target point, a short trail array, and rewrite the line positions every frame. Move your pointer over the demo to lead the trails.
 
 <iframe title="Makio MeshLine Follow demo" src="https://meshline-demo.makio.io/examples/follow?noUI" width="100%" height="600" style="border: 1px solid #ddd; border-radius: 8px;"></iframe>
 

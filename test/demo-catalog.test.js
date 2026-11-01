@@ -116,6 +116,10 @@ test( 'live update APIs stay exercised by the demos that absorbed Live Updates',
 } )
 
 test( 'every catalog entry points to a fresh disposable demo class', async () => {
+	// Every demo leaves the same way: its optional dispose(), then clearDemo().
+	const exampleView = await readFile( new URL( '../demo/src/ExampleView.vue', import.meta.url ), 'utf8' )
+	assert.match( exampleView, /this\.example\.dispose\?\.\(\)\s+stage3d\.clearDemo\(\)/ )
+
 	for ( const demo of demoCatalog ) {
 		const sourcePath = new URL( `../demo/src/demos/${demo.sourceFile}`, import.meta.url )
 		await access( sourcePath )
@@ -123,6 +127,8 @@ test( 'every catalog entry points to a fresh disposable demo class', async () =>
 
 		assert.match( source, /export default class [A-Za-z][A-Za-z0-9_]*/, `${demo.sourceFile} needs a named default class` )
 		assert.match( source, /\n\tasync init\(\)/, `${demo.sourceFile} needs async init()` )
+		// initRender() resets the renderer state the previous demo left, shadows included.
+		assert.match( source, /await stage3d\.initRender\(/, `${demo.sourceFile} must start from stage3d.initRender()` )
 		assert.doesNotMatch( source, /export default new /, `${demo.sourceFile} must create a fresh instance per visit` )
 		assert.doesNotMatch( source, /\n\tshow\(\) \{\s*\}\s*\n\t(?:hide\( cb \))?/, `${demo.sourceFile} has empty transition boilerplate` )
 	}
@@ -135,6 +141,7 @@ test( 'demos stay free of lifecycle boilerplate', async () => {
 		[/Math\.min\( dt, 100 \)/, 'stage already caps dt'],
 		[/addEventListener\( 'resize'/, 'ExampleView subscribes onResize'],
 		[/stage\.onUpdate\.add\( this\.update \)/, 'ExampleView subscribes update'],
+		[/\.addEventListener\(|\bon[A-Z]\w*\.add\(/, 'subscribe with stage3d.listen(), which clearDemo() unsubscribes'],
 		[/^export default [A-Za-z_$][\w$]*\s*$/m, 'export the class where it is declared'],
 		[/createElement\( 'style' \)/, 'styles belong in a stylesheet or a Vue uiComponent'],
 	]
@@ -149,6 +156,29 @@ test( 'demos stay free of lifecycle boilerplate', async () => {
 			assert.doesNotMatch( body, /\bthis\.[\w$]+ = null\b/, `${demo.sourceFile}: no null placeholders in a constructor` )
 		}
 	}
+} )
+
+test( 'clearDemo releases what a demo owns, listens to, or adds to the scene', async () => {
+	const [stage3d, exampleView] = await Promise.all( [
+		readFile( new URL( '../demo/src/makio/three/stage3d.js', import.meta.url ), 'utf8' ),
+		readFile( new URL( '../demo/src/ExampleView.vue', import.meta.url ), 'utf8' ),
+	] )
+	const clearDemo = stage3d.slice( stage3d.indexOf( '\n\tclearDemo() {' ), stage3d.indexOf( '\n\trelease( resource ) {' ) )
+	const release = stage3d.slice( stage3d.indexOf( '\n\trelease( resource ) {' ), stage3d.indexOf( '\n\t//---------------------------------------------------------- RENDER' ) )
+
+	// own(), listen() and orbit() all queue a release, and the frame and resize subscriptions go through listen().
+	assert.match( stage3d, /\n\town\( resource \) \{\s*this\.owned\.push\( resource \)\s*return resource\s*\}/ )
+	assert.match( stage3d, /source\[add\]\( \.\.\.args \)\s*this\.own\( \(\) => source\[remove\]\( \.\.\.args \) \)/ )
+	assert.match( stage3d, /this\.control = this\.own\( new OrbitControl\(/ )
+	assert.match( exampleView, /if \( update \) stage3d\.listen\( stage\.onUpdate, update \)/ )
+	assert.match( exampleView, /if \( onResize \) stage3d\.listen\( stage\.onResize, onResize \)/ )
+	// clearDemo() runs every queued release, then frees whatever is left in the scene.
+	assert.match( clearDemo, /for \( const resource of this\.owned\.splice\( 0 \)\.reverse\(\) \) this\.release\( resource \)/ )
+	assert.match( clearDemo, /this\.scene\.traverse\( object => objects\.push\( object \) \)/ )
+	assert.match( clearDemo, /object\.removeFromParent\(\)\s+object\.geometry\?\.dispose\(\)/ )
+	assert.match( clearDemo, /for \( const material of \[object\.material\]\.flat\(\) \) material\?\.dispose\(\)/ )
+	assert.match( release, /if \( typeof resource === 'function' \) return resource\(\)/ )
+	assert.match( release, /const dispose = resource\.dispose \?\? resource\.destroy \?\? resource\.remove\s+dispose\.call\( resource \)/ )
 } )
 
 test( 'custom source links resolve inside the repository', async () => {

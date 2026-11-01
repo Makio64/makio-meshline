@@ -117,7 +117,7 @@ export default class BambooGroveExample {
 			...BAMBOO_PARTS.map( part => ( { ...part, pressed: true, onClick: () => this.togglePart( part.id ) } ) ),
 			'divider',
 			{ id: 'wireframe', label: 'Wireframe', key: 'W', pressed: false, onClick: () => this.toggleWireframe() },
-		], { accent: '#a3e635', label: 'Bamboo parts visibility' } )
+		], { accent: '#a3e635', label: 'Bamboo parts and wireframe' } )
 	}
 
 	initAtmosphere() {

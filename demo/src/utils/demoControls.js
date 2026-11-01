@@ -41,7 +41,7 @@ export function createDemoControls( items, { accent = '#7dd3fc', label = 'Demo c
 	bar.setAttribute( 'role', 'group' )
 	bar.setAttribute( 'aria-label', label )
 	bar.style.setProperty( '--demo-accent', accent )
-	for ( const type of ['pointerdown', 'touchstart', 'wheel'] ) bar.addEventListener( type, event => event.stopPropagation() )
+	bar.addEventListener( 'pointerdown', event => event.stopPropagation() )
 
 	for ( const item of items ) {
 		if ( item === 'divider' ) {

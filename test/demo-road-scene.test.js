@@ -49,9 +49,10 @@ test( 'bridge dressing is rebuilt from the built road on every update and releas
 	assert.match( stage3d, /object\.geometry\?\.dispose\(\)/ )
 	assert.match( stage3d, /for \( const material of \[object\.material\]\.flat\(\) \) material\?\.dispose\(\)/ )
 	assert.match( stage3d, /\n\t\t\tobject\.dispose\(\)/ )
-	// The road only ever turns shadows on, and the next demo starts from resetForDemo().
+	// The road only ever turns shadows on. Every demo starts from initRender() (see demo-catalog),
+	// whose resetForDemo() turns them off again for the next one.
 	assert.match( scenery, /stage3d\.renderer\.shadowMap\.enabled = true/ )
-	assert.match( stage3d, /this\.resetForDemo\( options \)/ )
+	assert.match( stage3d, /async initRender\( options = \{\} \) \{[\s\S]*?\n\t\tthis\.resetForDemo\( options \)/ )
 	assert.match( stage3d, /this\.renderer\.shadowMap\.enabled = false/ )
 	assert.match( stage3d, /this\.renderer\.shadowMap\.type = PCFShadowMap/ )
 } )

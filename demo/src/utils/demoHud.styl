@@ -81,6 +81,7 @@
 		font 650 11px/1 'Inter', system-ui, -apple-system, sans-serif
 		letter-spacing .06em
 		text-transform uppercase
+		white-space nowrap
 		cursor pointer
 		transition border-color .16s ease, background .16s ease, color .16s ease
 		&::before
@@ -114,7 +115,10 @@
 		color rgba(255, 255, 255, .66)
 	@media (max-width 720px)
 		top calc(12px + var(--sait, 0px))
+		max-width calc(100vw - 116px)
 		padding 3px
+		overflow-x auto
+		scrollbar-width none
 		button
 			min-height 27px
 			padding 0 10px
