@@ -28,11 +28,8 @@ export function createBloomPipeline( {
 	const bloomPass = bloom( sceneColor, strength, radius, threshold )
 	bloomPass.setResolutionScale( resolutionScale )
 	renderPipeline.outputNode = sceneColor.add( bloomPass )
-	if ( renderer === stage3d.renderer ) {
-		stage3d.renderPipeline = renderPipeline
-	}
 
-	return {
+	const bloomPipeline = {
 		renderPipeline,
 		scenePass,
 		bloomPass,
@@ -43,4 +40,11 @@ export function createBloomPipeline( {
 			scenePass.dispose()
 		},
 	}
+
+	if ( renderer === stage3d.renderer ) {
+		stage3d.renderPipeline = renderPipeline
+		stage3d.own( bloomPipeline )
+	}
+
+	return bloomPipeline
 }

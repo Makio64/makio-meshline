@@ -1,39 +1,28 @@
 /**
- * Metallic Tube: reconstructs an analytic 3D cylinder normal across a single
- * camera-facing `MeshLine` ribbon using `lineCoord.y` and `.normalFn()`, then
- * evaluates Three.js standard PBR lighting and a studio PMREM environment.
- *
- * Key APIs:
- * - `lineCoord.y` (-1..+1 cross-ribbon coordinate without allocating UVs)
- * - `.join({ type: 'round' })` for exact round silhouettes at projected folds
- * - `.normalFn()` to capture the unsplit screen-space bisector tangent
- * - Custom `MeshLineNodeMaterial` subclass borrowing PBR lighting stages
+ * Metallic Tube — one camera-facing ribbon shaded as a chrome cylinder: an analytic 3D
+ * normal rebuilt across the line, lit by the standard PBR stages and a studio PMREM.
+ * Demonstrates: lineCoord.y, .join( { type: 'round' } ) for exact round silhouettes at
+ * projected folds, .normalFn( fn ), and a MeshLineNodeMaterial subclass.
  */
 import { lineCoord, MeshLine, MeshLineNodeMaterial } from 'makio-meshline'
-import { color, float, Fn, mix, positionLocal, smoothstep, uniform, uv, varyingProperty, vec2, vec3 } from 'three/tsl'
-import {
-	AdditiveBlending,
-	BackSide,
-	HemisphereLight,
-	Mesh,
-	MeshBasicNodeMaterial,
-	MeshStandardNodeMaterial,
-	NodeMaterial,
-	PlaneGeometry,
-	PMREMGenerator,
-	PointLight,
-	Scene,
-	SphereGeometry,
-} from 'three/webgpu'
+import { Fn, uniform, varyingProperty, vec2, vec3 } from 'three/tsl'
+import { HemisphereLight, Mesh, MeshBasicNodeMaterial, MeshStandardNodeMaterial, NodeMaterial, PointLight, SphereGeometry } from 'three/webgpu'
 
-import { stage } from '@/makio/core/stage'
-import OrbitControl from '@/makio/three/controls/OrbitControl'
 import stage3d from '@/makio/three/stage3d'
-import keyboard from '@/makio/utils/input/keyboard'
-import { menuOpen } from '@/store'
+import { createDemoControls } from '@/utils/demoControls'
+import { createDemoHint } from '@/utils/demoHint'
+import { createFloor, createStudioEnvironment } from '@/utils/metallicTubeStudio'
+import { linePoints } from '@/utils/points'
 
-const POINT_COUNT = 384
-const LIGHT_COLORS = [0x36d9ff, 0xff477e, 0xffc857]
+const ACCENT = '#38bdf8'
+
+// Each light circles the knot at `height` and bobs up and down by `bob`.
+const LIGHTS = [
+	{ hex: 0x36d9ff, radius: 4.6, speed: 0.72, phase: 0, height: 1.5, bob: 1.4, bobSpeed: 1.15, bobPhase: 0 },
+	{ hex: 0xff477e, radius: 3.8, speed: -0.54, phase: 2.1, height: 0.4, bob: 2.2, bobSpeed: 0.86, bobPhase: 1.2 },
+	{ hex: 0xffc857, radius: 5.2, speed: 0.43, phase: 4.2, height: 2.4, bob: 0.8, bobSpeed: 0.67, bobPhase: 3.4 },
+]
+
 const tubePerpendicular = varyingProperty( 'vec2', 'vTubePerpendicular' )
 
 // Compute the cross-section perpendicular from the unsplit screen-space bisector
@@ -42,76 +31,16 @@ const tubePerpendicular = varyingProperty( 'vec2', 'vTubePerpendicular' )
 const captureTubeFrame = Fn( ( [normal, direction, dir1, dir2] ) => {
 	const bisector = dir1.add( dir2 )
 	const bisectorLength = bisector.length()
-	const smoothDirection = bisectorLength.greaterThan( 0.001 ).select(
-		bisector.div( bisectorLength ),
-		direction
-	)
+	const smoothDirection = bisectorLength.greaterThan( 0.001 ).select( bisector.div( bisectorLength ), direction )
 	tubePerpendicular.assign( vec2( smoothDirection.y.negate(), smoothDirection.x ) )
 	return normal
 } )
 
-const createKnotPoints = () => {
-	const points = new Float32Array( POINT_COUNT * 3 )
-
-	for ( let i = 0; i < POINT_COUNT; i++ ) {
-		const t = i / POINT_COUNT * Math.PI * 2
-		const radius = 2.55 + Math.cos( t * 3 ) * 0.8
-		const offset = i * 3
-
-		points[offset] = Math.cos( t * 2 ) * radius
-		points[offset + 1] = Math.sin( t * 3 ) * 0.8
-		points[offset + 2] = Math.sin( t * 2 ) * radius
-	}
-
-	return points
-}
-
-// Softboxes for the reflection studio: [x, y, z, width, height, color, intensity].
-const STUDIO_SOFTBOXES = [
-	[0, 9, 1.5, 14, 7, 0xe8f0ff, 2.4],
-	[-9, 1.8, -2.5, 2.4, 10, 0x36d9ff, 1.2],
-	[9, 2.2, 2.5, 2.4, 10, 0xff477e, 1.1],
-	[1.5, 1.2, -10, 9, 2, 0xffc857, 0.9],
-]
-
-// Bake a small studio (dark floor, soft horizon, softboxes tinted like the
-// orbiting lights) into a PMREM once. Reflecting it through the standard
-// environment pipeline keeps the highlights anchored in the world, blurred by
-// roughness and tinted by the metal, so they slide over the chrome as the view
-// orbits instead of painting fixed bands onto the screen.
-const createStudioEnvironment = ( renderer ) => {
-	const scene = new Scene()
-
-	const direction = positionLocal.normalize()
-	const domeMaterial = new MeshBasicNodeMaterial( { side: BackSide } )
-	const below = mix( vec3( 0.03, 0.022, 0.035 ), vec3( 0.012, 0.014, 0.022 ), smoothstep( -0.05, -0.6, direction.y ) )
-	const above = mix( vec3( 0.12, 0.15, 0.22 ), vec3( 0.025, 0.035, 0.07 ), smoothstep( 0.02, 0.7, direction.y ) )
-	domeMaterial.colorNode = mix( below, above, smoothstep( -0.04, 0.04, direction.y ) )
-	scene.add( new Mesh( new SphereGeometry( 20, 48, 24 ), domeMaterial ) )
-
-	// Feathered panels add onto the dome, so their reflections fall off softly
-	// instead of reading as hard-edged neon strips on a thin tube.
-	const edge = uv().sub( 0.5 ).abs().mul( 2 )
-	const feather = float( 1 ).sub( smoothstep( 0.35, 1, edge.x ) ).mul( float( 1 ).sub( smoothstep( 0.35, 1, edge.y ) ) )
-	STUDIO_SOFTBOXES.forEach( ( [x, y, z, width, height, hex, intensity] ) => {
-		const material = new MeshBasicNodeMaterial( { blending: AdditiveBlending, depthWrite: false } )
-		material.colorNode = color( hex ).mul( intensity ).mul( feather )
-		const panel = new Mesh( new PlaneGeometry( width, height ), material )
-		panel.position.set( x, y, z )
-		panel.lookAt( 0, 0, 0 )
-		scene.add( panel )
-	} )
-
-	const pmrem = new PMREMGenerator( renderer )
-	const target = pmrem.fromScene( scene, 0.04 )
-	pmrem.dispose()
-	scene.traverse( object => {
-		object.geometry?.dispose()
-		object.material?.dispose()
-	} )
-
-	return target
-}
+const createKnotPoints = () => linePoints( 384, t => {
+	const angle = t * Math.PI * 2
+	const radius = 2.55 + Math.cos( angle * 3 ) * 0.8
+	return [Math.cos( angle * 2 ) * radius, Math.sin( angle * 3 ) * 0.8, Math.sin( angle * 2 ) * radius]
+}, { closed: true } )
 
 // Preserve MeshLine's camera-facing vertex extrusion, then borrow the standard
 // material stages that evaluate the analytic tube normal against scene lights.
@@ -120,339 +49,100 @@ class MetallicTubeNodeMaterial extends MeshLineNodeMaterial {
 		return 'MetallicTubeNodeMaterial'
 	}
 
-	constructor( { metalness = 0.88, roughness = 0.16, envMap = null, envMapIntensity = 1 } = {} ) {
+	constructor( envMap ) {
 		super()
 
 		this.lights = true
-		this.metalnessNode = uniform( metalness )
-		this.roughnessNode = uniform( roughness )
+		this.metalnessNode = uniform( 0.88 )
+		this.roughnessNode = uniform( 0.16 )
 		// MeshLineNodeMaterial has no env-map fields of its own; the borrowed
 		// standard environment stage reads these two.
 		this.envMap = envMap
-		this.envMapIntensity = envMapIntensity
+		this.envMapIntensity = 1
 
-		// `lineCoord.y` runs -1..+1 across the emitted cross-section, so it is the
-		// tube's own across-axis. Reading it directly drops the `needsUV( true )`
-		// this used to need just to recover the same number from `uv().y`.
+		// `lineCoord.y` runs -1..+1 across the ribbon without allocating UVs, so it is
+		// the tube's own across-axis. It carries no direction, so the screen-space
+		// perpendicular still has to come across from the normalFn hook.
 		const across = lineCoord.y
-		const arch = float( 1 ).sub( across.mul( across ) ).max( 0 ).sqrt()
-		// `lineCoord` carries no direction, so the screen-space perpendicular still
-		// has to come across from the normalFn hook.
+		const arch = across.mul( across ).oneMinus().max( 0 ).sqrt()
 		this.normalNode = vec3( tubePerpendicular.mul( across ), arch ).normalize()
 	}
 
-	setupNormal( builder ) {
-		return NodeMaterial.prototype.setupNormal.call( this, builder )
-	}
+	// MeshLineNodeMaterial is unlit: take back the stages MeshBasicNodeMaterial replaces...
+	setupNormal( builder ) { return NodeMaterial.prototype.setupNormal.call( this, builder ) }
+	setupOutgoingLight( builder ) { return NodeMaterial.prototype.setupOutgoingLight.call( this, builder ) }
+	setupLightMap( builder ) { return NodeMaterial.prototype.setupLightMap.call( this, builder ) }
 
-	setupOutgoingLight( builder ) {
-		return NodeMaterial.prototype.setupOutgoingLight.call( this, builder )
-	}
-
-	setupLightMap( builder ) {
-		return NodeMaterial.prototype.setupLightMap.call( this, builder )
-	}
-
-	setupEnvironment( builder ) {
-		return MeshStandardNodeMaterial.prototype.setupEnvironment.call( this, builder )
-	}
-
-	setupLightingModel( builder ) {
-		return MeshStandardNodeMaterial.prototype.setupLightingModel.call( this, builder )
-	}
-
-	setupSpecular() {
-		return MeshStandardNodeMaterial.prototype.setupSpecular.call( this )
-	}
-
-	setupVariants( builder ) {
-		return MeshStandardNodeMaterial.prototype.setupVariants.call( this, builder )
-	}
+	// ...and light the result with the standard material's PBR stages.
+	setupEnvironment( builder ) { return MeshStandardNodeMaterial.prototype.setupEnvironment.call( this, builder ) }
+	setupLightingModel( builder ) { return MeshStandardNodeMaterial.prototype.setupLightingModel.call( this, builder ) }
+	setupSpecular() { return MeshStandardNodeMaterial.prototype.setupSpecular.call( this ) }
+	setupVariants( builder ) { return MeshStandardNodeMaterial.prototype.setupVariants.call( this, builder ) }
 }
 
-class MetallicTubeExample {
-	constructor() {
-		this.line = null
-		this.control = null
-		this.hemisphereLight = null
-		this.lights = []
-		this.lightMarkers = []
-		this.markerGeometry = null
-		this.floor = null
-		this.envTarget = null
-		this.hud = null
-		this.hudButton = null
-		this.time = 0
-		this.wireframeEnabled = false
-	}
+export default class MetallicTubeExample {
+	time = 0
 
 	async init() {
 		await stage3d.initRender( { background: 0x04060c } )
+		stage3d.orbit( 10, { minRadius: 6, maxRadius: 15 } )
 
-		stage3d.camera.position.set( 0, 3.2, 9.5 )
-		stage3d.camera.lookAt( 0, 0, 0 )
-		this.control = new OrbitControl( stage3d.camera, 10 )
-		this.control.autoRotate = true
-		this.control.autoRotateSpeed = 0.12
-		this.control.minRadius = 6
-		this.control.maxRadius = 15
-		stage3d.control = this.control
-
-		this.envTarget = createStudioEnvironment( stage3d.renderer )
-		this.createTube()
+		this.createTube( createStudioEnvironment() )
 		this.createLights()
-		this.createFloor()
-		if ( !new URLSearchParams( window.location.search ).has( 'noUI' ) ) {
-			this.createHud()
-		}
+		createFloor()
 
-		stage.onUpdate.add( this.update )
-		stage.onResize.add( this.onResize )
-		keyboard.onDown.add( this.onKeyDown )
-		this.onResize()
+		createDemoHint( 'Analytic cylinder normal · round join', { accent: ACCENT, hideAfter: 0 } )
+		this.controls = createDemoControls(
+			[{ id: 'wireframe', label: 'Wireframe', key: 'W', pressed: false, onClick: this.toggleWireframe }],
+			{ accent: ACCENT },
+		)
 	}
 
-	createTube() {
+	createTube( envMap ) {
 		this.line = new MeshLine()
-		const defaultMaterial = this.line.material
-		this.line.material = new MetallicTubeNodeMaterial( { envMap: this.envTarget.texture } )
-		defaultMaterial.dispose()
-
-		// A tube's silhouette is round wherever the knot turns toward the camera,
-		// so clip those folded joins exactly instead of approximating them.
+		this.line.material = new MetallicTubeNodeMaterial( envMap )
 		this.line
 			.lines( createKnotPoints(), true )
 			.lineWidth( 0.62 )
 			.color( 0xc8d6e8 )
+			// A tube's silhouette is round wherever the knot turns toward the camera,
+			// so clip those folded joins exactly instead of approximating them.
 			.join( { type: 'round' } )
 			.normalFn( captureTubeFrame )
-			.build()
+			.autoResize()
 
 		stage3d.add( this.line )
 	}
 
 	createLights() {
-		this.hemisphereLight = new HemisphereLight( 0x7c9ae0, 0x140918, 0.75 )
-		stage3d.add( this.hemisphereLight )
+		stage3d.add( new HemisphereLight( 0x7c9ae0, 0x140918, 0.75 ) )
 
-		this.markerGeometry = new SphereGeometry( 0.09, 12, 8 )
-		LIGHT_COLORS.forEach( color => {
-			const light = new PointLight( color, 62, 16, 2 )
-			const marker = new Mesh(
-				this.markerGeometry,
-				new MeshBasicNodeMaterial( { color } )
-			)
-
+		const markerGeometry = new SphereGeometry( 0.09, 12, 8 )
+		this.lights = LIGHTS.map( ( { hex } ) => {
+			const light = new PointLight( hex, 62, 16, 2 )
+			light.add( new Mesh( markerGeometry, new MeshBasicNodeMaterial( { color: hex } ) ) )
 			stage3d.add( light )
-			stage3d.add( marker )
-			this.lights.push( light )
-			this.lightMarkers.push( marker )
+			return light
 		} )
 	}
 
-	createFloor() {
-		this.floor = new Mesh(
-			new PlaneGeometry( 24, 24 ),
-			new MeshStandardNodeMaterial( {
-				color: 0x0e1320,
-				roughness: 0.72,
-				metalness: 0.14,
-			} )
-		)
-		this.floor.rotation.x = -Math.PI * 0.5
-		this.floor.position.y = -2.7
-		stage3d.add( this.floor )
-	}
-
-	createHud() {
-		const hud = document.createElement( 'div' )
-		hud.style.cssText = [
-			'position:fixed',
-			'top:calc(18px + var(--sait, 0px))',
-			'left:calc(18px + var(--sail, 0px))',
-			'z-index:20',
-			'display:inline-flex',
-			'align-items:center',
-			'gap:8px',
-			'min-height:36px',
-			'padding:6px 14px',
-			'border:1px solid rgba(255,255,255,0.1)',
-			'border-radius:999px',
-			'background:rgba(8,9,12,0.7)',
-			'box-shadow:0 12px 30px rgba(0,0,0,0.28)',
-			'backdrop-filter:blur(14px)',
-			'-webkit-backdrop-filter:blur(14px)',
-			'color:rgba(244,245,247,0.88)',
-			"font:600 10px/1.2 'Inter',system-ui,sans-serif",
-			'letter-spacing:0.06em',
-			'pointer-events:none',
-			'user-select:none',
-		].join( ';' )
-
-		const dot = document.createElement( 'span' )
-		dot.style.cssText = 'width:6px;height:6px;border-radius:50%;background:#38bdf8;box-shadow:0 0 10px #38bdf8'
-
-		const label = document.createElement( 'span' )
-		label.textContent = 'ANALYTIC CYLINDER NORMAL · ROUND JOIN'
-
-		hud.append( dot, label )
-
-		const bar = document.createElement( 'div' )
-		bar.style.cssText = [
-			'position:fixed',
-			'top:calc(18px + var(--sait, 0px))',
-			'left:50%',
-			'transform:translateX(-50%)',
-			'z-index:20',
-			'display:inline-flex',
-			'align-items:center',
-			'padding:4px',
-			'border:1px solid rgba(255,255,255,0.12)',
-			'border-radius:999px',
-			'background:rgba(8,9,12,0.72)',
-			'box-shadow:0 12px 30px rgba(0,0,0,0.32)',
-			'backdrop-filter:blur(14px)',
-			'-webkit-backdrop-filter:blur(14px)',
-			'user-select:none',
-		].join( ';' )
-
-		const button = document.createElement( 'button' )
-		button.type = 'button'
-		button.textContent = 'Wireframe (W)'
-		button.style.cssText = [
-			'min-height:30px',
-			'padding:0 12px',
-			'border:1px solid transparent',
-			'border-radius:999px',
-			'background:transparent',
-			'color:rgba(244,245,247,0.78)',
-			"font:650 11px/1 'Inter',system-ui,sans-serif",
-			'letter-spacing:0.06em',
-			'text-transform:uppercase',
-			'cursor:pointer',
-		].join( ';' )
-		button.addEventListener( 'pointerdown', event => event.stopPropagation() )
-		button.addEventListener( 'click', () => this.toggleWireframe() )
-
-		bar.appendChild( button )
-		document.body.append( hud, bar )
-		this.hud = hud
-		this.hudBar = bar
-		this.hudButton = button
-	}
-
-	update = ( dt ) => {
+	update = dt => {
 		this.time += dt * 0.001
 
-		const positions = [
-			[
-				Math.cos( this.time * 0.72 ) * 4.6,
-				1.5 + Math.sin( this.time * 1.15 ) * 1.4,
-				Math.sin( this.time * 0.72 ) * 4.6,
-			],
-			[
-				Math.cos( this.time * -0.54 + 2.1 ) * 3.8,
-				0.4 + Math.sin( this.time * 0.86 + 1.2 ) * 2.2,
-				Math.sin( this.time * -0.54 + 2.1 ) * 3.8,
-			],
-			[
-				Math.cos( this.time * 0.43 + 4.2 ) * 5.2,
-				2.4 + Math.sin( this.time * 0.67 + 3.4 ) * 0.8,
-				Math.sin( this.time * 0.43 + 4.2 ) * 5.2,
-			],
-		]
-
-		this.lights.forEach( ( light, index ) => {
-			light.position.set( ...positions[index] )
-			this.lightMarkers[index].position.copy( light.position )
-		} )
+		for ( let i = 0; i < LIGHTS.length; i++ ) {
+			const { radius, speed, phase, height, bob, bobSpeed, bobPhase } = LIGHTS[i]
+			const angle = this.time * speed + phase
+			const y = height + Math.sin( this.time * bobSpeed + bobPhase ) * bob
+			this.lights[i].position.set( Math.cos( angle ) * radius, y, Math.sin( angle ) * radius )
+		}
 
 		this.line.rotation.y = this.time * 0.08
 		this.line.rotation.x = Math.sin( this.time * 0.22 ) * 0.08
 	}
 
-	onResize = () => {
-		this.line?.resize()
-	}
-
-	onKeyDown = ( key, event ) => {
-		const target = event?.target
-		const isEditable = target?.matches?.( 'input, textarea, select, [contenteditable="true"]' )
-		if (
-			event?.repeat || event?.defaultPrevented || event?.altKey || event?.ctrlKey || event?.metaKey ||
-			menuOpen.value || isEditable
-		) return
-
-		if ( key === 'w' || key === 'W' ) this.toggleWireframe()
-	}
-
-	toggleWireframe() {
-		this.wireframeEnabled = !this.wireframeEnabled
-		this.line?.wireframe( this.wireframeEnabled )
-		if ( this.hudButton ) {
-			this.hudButton.style.background = this.wireframeEnabled
-				? 'rgba(56,189,248,0.22)'
-				: 'transparent'
-			this.hudButton.style.borderColor = this.wireframeEnabled
-				? 'rgba(56,189,248,0.55)'
-				: 'transparent'
-			this.hudButton.style.color = this.wireframeEnabled
-				? '#ffffff'
-				: 'rgba(244,245,247,0.78)'
-		}
-		return this.wireframeEnabled
-	}
-
-	dispose() {
-		stage.onUpdate.remove( this.update )
-		stage.onResize.remove( this.onResize )
-		keyboard.onDown.remove( this.onKeyDown )
-
-		this.hudBar?.remove()
-		this.hud?.remove()
-		this.hudBar = null
-		this.hud = null
-		this.hudButton = null
-
-		stage3d.remove( this.line )
-		this.line?.dispose()
-
-		this.lights.forEach( light => {
-			stage3d.remove( light )
-			light.dispose()
-		} )
-		this.lightMarkers.forEach( marker => {
-			stage3d.remove( marker )
-			marker.material.dispose()
-		} )
-		this.markerGeometry?.dispose()
-		this.envTarget?.dispose()
-
-		if ( this.hemisphereLight ) {
-			stage3d.remove( this.hemisphereLight )
-			this.hemisphereLight.dispose()
-		}
-
-		if ( this.floor ) {
-			stage3d.remove( this.floor )
-			this.floor.geometry.dispose()
-			this.floor.material.dispose()
-		}
-
-		this.control?.dispose()
-		if ( stage3d.control === this.control ) stage3d.control = null
-
-		this.line = null
-		this.control = null
-		this.hemisphereLight = null
-		this.lights = []
-		this.lightMarkers = []
-		this.markerGeometry = null
-		this.floor = null
-		this.envTarget = null
-		this.wireframeEnabled = false
+	toggleWireframe = () => {
+		const enabled = !this.line.material.wireframe
+		this.line.wireframe( enabled )
+		this.controls.setPressed( 'wireframe', enabled )
 	}
 }
-
-export { captureTubeFrame, createStudioEnvironment, MetallicTubeNodeMaterial }
-export default MetallicTubeExample

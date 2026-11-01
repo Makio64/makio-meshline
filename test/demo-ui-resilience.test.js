@@ -2,6 +2,8 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 
+import { SpotLight } from 'three'
+
 import Signal from '../demo/src/makio/core/Signal.js'
 import { describeDemoFailure, WebGPURequiredError } from '../demo/src/utils/demoFailure.js'
 
@@ -40,11 +42,12 @@ test( 'ExampleView exposes recovery actions and watches runtime GPU failures', a
 } )
 
 test( 'embedded demos hide navigation chrome and keep async components raw', async () => {
-	const [app, exampleView, codeButton, venus] = await Promise.all( [
+	const [app, exampleView, codeButton, venus, hud] = await Promise.all( [
 		read( 'demo/src/App.vue' ),
 		read( 'demo/src/ExampleView.vue' ),
 		read( 'demo/src/components/ui/CodeButton.vue' ),
 		read( 'demo/src/components/Venus.vue' ),
+		read( 'demo/src/utils/demoHud.styl' ),
 	] )
 
 	assert.match( app, /markRaw\( defineAsyncComponent/ )
@@ -54,7 +57,11 @@ test( 'embedded demos hide navigation chrome and keep async components raw', asy
 	assert.doesNotMatch( exampleView, /class="bottom"/ )
 	assert.match( codeButton, /\.CodeButton-center[\s\S]*?left 50%[\s\S]*?bottom calc\( 18px \+ var\( --saib, 0px \) \)[\s\S]*?transform translateX\( -50% \)/ )
 	assert.match( codeButton, /\.CodeButton-source[\s\S]*?bottom calc\( 18px \+ var\( --saib, 0px \) \)[\s\S]*?right calc\( 18px \+ var\( --sair, 0px \) \)/ )
-	assert.match( venus, /\.morph-ui[\s\S]*?top calc\( 18px \+ var\( --sait, 0px \) \)[\s\S]*?left 50%[\s\S]*?transform translateX\( -50% \)/ )
+	// The morph pill stays at the top center, and is a plain Vue pill so `?noUI` embeds keep it.
+	assert.match( venus, /class="DemoControls"/ )
+	assert.match( venus, /import '@\/utils\/demoHud\.styl'/ )
+	assert.doesNotMatch( venus, /v-if=|v-show=/ )
+	assert.match( hud, /\.DemoControls\n\tposition fixed\n\ttop calc\(18px \+ var\(--sait, 0px\)\)\n\tleft 50%\n\ttransform translateX\(-50%\)/ )
 } )
 
 test( 'demo rendering caps pixel density and keeps the inspector opt-in', async () => {
@@ -80,11 +87,14 @@ test( 'compact demos preserve the canvas until a panel is requested', async () =
 	assert.match( sandboxView, /id: 'preview', label: 'Preview'/ )
 	assert.match( sandboxView, /id: 'controls', label: 'Controls'/ )
 	assert.match( sandboxView, /id: 'code', label: 'Code'/ )
-	assert.match( topology, /compact && this\.isCompactGui !== true \) this\.gui\.close\(\)/ )
+	assert.match( topology, /compact && !this\.isCompactGui \) this\.gui\.close\(\)/ )
 } )
 
 test( 'Variable Topology sweeps the full join angle range with live telemetry and static orientation', async () => {
-	const source = await read( 'demo/src/demos/variableTopology.js' )
+	const [source, surfaceMaterial] = await Promise.all( [
+		read( 'demo/src/demos/variableTopology.js' ),
+		read( 'src/MeshLineSurfaceNodeMaterial.js' ),
+	] )
 
 	assert.match( source, /const JOIN_ANGLE_MIN = 20/ )
 	assert.match( source, /const JOIN_ANGLE_MAX = 165/ )
@@ -92,17 +102,27 @@ test( 'Variable Topology sweeps the full join angle range with live telemetry an
 	assert.match( source, /\.name\( 'Turn \(°\)' \)/ )
 	assert.match( source, /\.name\( 'Miter limit' \)/ )
 	assert.match( source, /Opening \$\{opening\}° · Turn \$\{turn\}° · Miter ×\$\{miterScale\.toFixed\( 2 \)\}/ )
-	assert.match( source, /side: wireframe \? FrontSide : DoubleSide/ )
+	// The mirror sees the ribbon's underside; the wire stays on the single-sided surface default.
+	assert.match( source, /surfaceLine\( points, config, \{ side: DoubleSide, roughness: 0\.68, metalness: 0\.08 \} \)/ )
+	assert.match( source, /surfaceLine\( points, config, \{ roughness: 1 \} \)/ )
+	assert.match( surfaceMaterial, /this\.side = surface\.side \?\? FrontSide/ )
+	assert.match( source, /wire\.material\.forceSinglePass = true/ )
 	assert.doesNotMatch( source, /joinDirectionPhase/ )
 } )
 
 test( 'the shadow showcase keeps debug helpers out of the composition', async () => {
-	const source = await read( 'demo/src/demos/shadow.js' )
+	const [source, hint] = await Promise.all( [
+		read( 'demo/src/demos/shadow.js' ),
+		read( 'demo/src/utils/demoHint.js' ),
+	] )
 
 	assert.doesNotMatch( source, /SpotLightHelper/ )
-	assert.match( source, /shadow\.mapSize\.set\( 512, 512 \)/ )
-	assert.match( source, /Live cast \+ receive · 3 moving spotlights/ )
-	assert.match( source, /this\.hud\?\.remove\(\)/ )
+	// Three lights at 512: the demo leaves the map size at three's default.
+	assert.doesNotMatch( source, /shadow\.mapSize/ )
+	assert.deepEqual( new SpotLight().shadow.mapSize.toArray(), [512, 512] )
+	// stage3d owns the pill and removes it in clearDemo().
+	assert.match( source, /createDemoHint\( 'Live cast \+ receive · 3 moving spotlights'/ )
+	assert.match( hint, /const element = stage3d\.own\( document\.createElement\( 'div' \) \)/ )
 	assert.match( source, /SCULPTURE_RADIUS \/ \( Math\.tan\( halfFov \) \* stage3d\.camera\.aspect \)/ )
 } )
 
@@ -112,8 +132,8 @@ test( 'Rice Field keeps per-instance storage mappable to WebGL2 instanced attrib
 	// Plain StorageBufferAttribute reads compile to nothing on the WebGL2 backend,
 	// which silently drops every stalk; the instanced variant maps to attributes.
 	assert.doesNotMatch( source, /new StorageBufferAttribute\(/ )
-	assert.match( source, /new StorageInstancedBufferAttribute\( this\.riceInstances\.length, 2 \)/ )
-	assert.match( source, /new StorageInstancedBufferAttribute\( this\.riceInstances\.length, 4 \)/ )
+	assert.match( source, /new StorageInstancedBufferAttribute\( stalks\.length, 2 \)/ )
+	assert.match( source, /new StorageInstancedBufferAttribute\( stalks\.length, 4 \)/ )
 } )
 
 test( 'Signal isolates pooled listener nodes across signals and during dispatch removal', () => {

@@ -1,6 +1,7 @@
-import { NoToneMapping, PerspectiveCamera, Scene, WebGPURenderer } from 'three/webgpu'
+import { NoToneMapping, PCFShadowMap, PerspectiveCamera, Scene, WebGPURenderer } from 'three/webgpu'
 
 import stage from '../core/stage'
+import OrbitControl from './controls/OrbitControl'
 
 class Stage3D {
 	constructor() {
@@ -11,6 +12,7 @@ class Stage3D {
 		this.isWebGPU = false
 		this.backend = 'uninitialized'
 		this.isResizeSubscribed = false
+		this.owned = []
 	}
 
 	async initRender( options = {} ) {
@@ -61,44 +63,90 @@ class Stage3D {
 		this.resize()
 	}
 
-	resetForDemo( options = {} ) {
-		const background = options.background ?? 0x000000
-		const clearAlpha = options.clearAlpha ?? 1
-
+	resetForDemo( { background = 0x000000, clearAlpha = 1, fov = 55, near = 1, far = 100 } = {} ) {
 		this.renderer.setClearColor( background, clearAlpha )
 		this.renderer.toneMapping = NoToneMapping
 		this.renderer.shadowMap.enabled = false
 		this.renderer.shadowMap.transmitted = false
+		this.renderer.shadowMap.type = PCFShadowMap
 
-		this.scene.background = null
-		this.scene.backgroundNode = null
-		this.scene.environment = null
-		this.scene.environmentIntensity = 1
-		this.scene.fog = null
-
-		this.camera.fov = 55
-		this.camera.near = 1
-		this.camera.far = 100
+		this.camera.fov = fov
+		this.camera.near = near
+		this.camera.far = far
 		this.camera.zoom = 1
 		this.camera.up.set( 0, 1, 0 )
 		this.camera.position.set( 0, 0, 10 )
 		this.camera.lookAt( 0, 0, 0 )
 		this.camera.updateProjectionMatrix()
 
+		this.resetScene()
+	}
+
+	resetScene() {
+		this.scene.background = null
+		this.scene.backgroundNode = null
+		this.scene.environment = null
+		this.scene.environmentIntensity = 1
+		this.scene.fog = null
+
 		this.control = null
 		this.renderPipeline = null
 		this.postFX = null
 	}
 
+	//---------------------------------------------------------- DEMO LIFETIME
+	// What a demo creates through these helpers, or adds to the scene, is released
+	// by clearDemo(), which ExampleView runs after the demo's optional dispose().
+
+	/** Orbit the camera. Options are OrbitControl properties, plus target, cameraOffset, theta and phi. */
+	orbit( radius, options ) {
+		this.control = this.own( new OrbitControl( this.camera, radius, options ) )
+		return this.control
+	}
+
+	/** Release `resource` with the demo: a function, or anything with dispose(), destroy() or remove(). */
+	own( resource ) {
+		this.owned.push( resource )
+		return resource
+	}
+
+	/** Subscribe to a Signal or an EventTarget for as long as the demo runs. */
+	listen( source, ...args ) {
+		const [add, remove] = source.addEventListener ? ['addEventListener', 'removeEventListener'] : ['add', 'remove']
+		source[add]( ...args )
+		this.own( () => source[remove]( ...args ) )
+	}
+
+	clearDemo() {
+		for ( const resource of this.owned.splice( 0 ).reverse() ) this.release( resource )
+
+		const objects = []
+		this.scene.traverse( object => objects.push( object ) )
+		for ( const object of objects.slice( 1 ) ) {
+			object.removeFromParent()
+			object.geometry?.dispose()
+			for ( const material of [object.material].flat() ) material?.dispose()
+			object.dispose()
+		}
+
+		this.resetScene()
+		this.renderer?.setClearColor( 0x000000 )
+	}
+
+	release( resource ) {
+		if ( typeof resource === 'function' ) return resource()
+		// Before r187 a storage buffer only leaves the GPU through the renderer.
+		if ( resource.isBufferAttribute ) this.renderer._attributes.delete( resource )
+		const dispose = resource.dispose ?? resource.destroy ?? resource.remove
+		dispose.call( resource )
+	}
+
 	//---------------------------------------------------------- RENDER
-	update = ( dt ) => {
+	update = () => {
 		// A collapsed or hidden host (a 0×0 iframe, a closed panel) has no
 		// swapchain to draw into; rendering would only raise validation errors.
 		if ( !this.renderer || stage.width === 0 || stage.height === 0 ) {
 			return
-		}
-		if ( this.control && this.control.enabled ) {
-			this.control?.update( dt )
 		}
 		this.render()
 	}

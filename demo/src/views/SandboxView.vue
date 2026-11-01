@@ -2,7 +2,6 @@
 	<div class="sandbox-view">
 		<div
 			id="sandbox-code"
-			ref="codeOutput"
 			class="code-output"
 			:class="{
 				'no-menu': api.hasNoMenu,
@@ -14,7 +13,7 @@
 				<span class="code-title">Generated Code</span>
 				<button class="copy-button" @click="api.copyCode()">{{ copyLabel }}</button>
 			</div>
-			<div v-if="api.config.highlightedCode && api.config.highlightedCode !== api.config.generatedCode" class="code-content" v-html="api.config.highlightedCode" />
+			<div v-if="api.config.highlightedCode !== api.config.generatedCode" class="code-content" v-html="api.config.highlightedCode" />
 			<pre v-else class="code-content">{{ api.config.generatedCode }}</pre>
 		</div>
 		<nav v-if="api.uiState.compact" class="mobile-dock" aria-label="Sandbox panels">
@@ -42,7 +41,7 @@ export default {
 	data() {
 		return {
 			panels: [
-				{ id: 'preview', label: 'Preview', controls: null },
+				{ id: 'preview', label: 'Preview' },
 				{ id: 'controls', label: 'Controls', controls: 'sandbox-controls' },
 				{ id: 'code', label: 'Code', controls: 'sandbox-code' },
 			],
@@ -60,7 +59,6 @@ export default {
 
 <style lang="stylus" scoped>
 .sandbox-view
-	bottom auto
 	font-family 'Roboto Mono', monospace
 	pointer-events none
 
@@ -77,7 +75,7 @@ export default {
 	flex-direction column
 	max-width 400px
 	pointer-events auto
-	
+
 	&.no-menu
 		right 240px
 		max-width 320px
@@ -120,22 +118,21 @@ export default {
 	font-size 13px
 	line-height 1.6
 	margin 0
-	overflow-x auto
-	overflow-y auto
+	overflow auto
 	flex 1
 	text-align left
-	
+
 	.no-menu &
 		font-size 11px
 		line-height 1.5
 		padding 12px
-	
+
 	// Shiki styles
 	:deep(pre)
 		margin 0
 		padding 0
 		background transparent !important
-	
+
 	:deep(code)
 		font-family inherit
 		font-size inherit

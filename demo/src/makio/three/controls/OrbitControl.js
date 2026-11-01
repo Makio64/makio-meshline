@@ -1,5 +1,6 @@
 import { Vector3 } from 'three/webgpu'
 
+import { reducedMotion } from '@/makio/utils/detect'
 import keyboard from '@/makio/utils/input/keyboard'
 import mouse from '@/makio/utils/input/mouse'
 import pinch from '@/makio/utils/input/pinch'
@@ -10,10 +11,16 @@ import { menuOpen } from '@/store'
 import stage from '../../core/stage'
 
 export default class OrbitControl {
-	constructor( camera, radius, target = null, interactionTarget = window ) {
+	/**
+	 * @param {PerspectiveCamera} camera
+	 * @param {number} [radius] - Distance to the target; defaults to the camera's current one
+	 * @param {object} [options] - `target` and `cameraOffset` as `[x, y, z]`, `theta`, `phi`,
+	 * `interactionTarget`, and any public property below (minPhi, maxRadius, autoRotate...)
+	 */
+	constructor( camera, radius, { target = [], cameraOffset = [], theta = Math.PI * 0.5, phi = Math.PI * 0.5, interactionTarget = window, ...options } = {} ) {
 		this.camera = camera
 
-		this.target = target || new Vector3()
+		this.target = new Vector3( ...target )
 		this.targetOffset = new Vector3()
 
 		// Pan system
@@ -22,7 +29,7 @@ export default class OrbitControl {
 		this.enablePan = true
 
 		this.targetLookAt = new Vector3()
-		this.cameraOffset = new Vector3()
+		this.cameraOffset = new Vector3( ...cameraOffset )
 		this.offset = new Vector3()
 
 		const initialRadius = radius || camera.position.distanceTo( this.target ) || 1
@@ -40,8 +47,9 @@ export default class OrbitControl {
 		this.frictionVx = 0.0008
 		this.frictionVy = 0.0006
 
-		this._phi = Math.PI * 0.5
-		this._theta = Math.PI * 0.5
+		this._phi = phi
+		this._theta = theta
+		this.autoRotate = 0 // radians per millisecond, paused while dragging
 
 		this.blockThetaMouse = false
 		this.blockPhiMouse = false
@@ -69,12 +77,23 @@ export default class OrbitControl {
 		this.extraThetaMin = -0.25
 		this.extraThetaMax = 0.25
 
+		Object.assign( this, options )
+
 		this.interactionTarget = interactionTarget
 		this._pinch = new pinch()
 		this.enable()
-		this.update()
-		this.camera.updateMatrixWorld()
+		this.place()
+	}
 
+	get phi() { return this._phi }
+	set phi( value ) { this._phi = value }
+	get theta() { return this._theta }
+	set theta( value ) { this._theta = value }
+	get isDown() { return this._isDown }
+
+	/** Jump to `radius` without the zoom easing. */
+	snapRadius( radius ) {
+		this.radius = this._radius = radius
 	}
 
 	lock = () => {
@@ -96,6 +115,8 @@ export default class OrbitControl {
 		this.extraTheta += ( this.extraThetaTarget - this.extraTheta ) * 0.03 * ( dt / 16 )
 		this.extraPhi += ( this.extraPhiTarget - this.extraPhi ) * 0.03 * ( dt / 16 )
 
+		if ( this.autoRotate && !this._isDown && !reducedMotion.matches ) this._theta += this.autoRotate * dt
+
 		this._vx = clamp( this._vx, -this.speedMax, this.speedMax )
 		this._vy = clamp( this._vy, -this.speedMax, this.speedMax )
 		this._radius += ( this.radius - this._radius ) * 0.1  * ( dt / 16 )
@@ -113,6 +134,11 @@ export default class OrbitControl {
 			this._vy *= 0.9
 		}
 
+		this.place()
+	}
+
+	// Moves the camera to the current angles and radius
+	place() {
 		if ( this.isThetaRestricted )
 			this._theta = clamp( this._theta, this.minTheta, this.maxTheta )
 
@@ -259,7 +285,7 @@ export default class OrbitControl {
 	}
 
 	disable() {
-		// console.log( 'disable' )
+		this._isDown = false
 		this._pinch.disable()
 		this.interactionTarget.removeEventListener( 'pointerdown', this._onDown )
 		this.interactionTarget.removeEventListener( 'pointerup', this._onUp )

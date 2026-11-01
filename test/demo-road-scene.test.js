@@ -8,54 +8,80 @@ import { pinRoadPaintToControls } from '../demo/src/utils/roadPaint.js'
 import { planRoadPath } from '../demo/src/utils/roadPath.js'
 import MeshLineSurfaceGeometry from '../src/MeshLineSurfaceGeometry.js'
 
-const readDemo = () => readFile( new URL( '../demo/src/demos/surfaceRoad.js', import.meta.url ), 'utf8' )
+const read = path => readFile( new URL( `../${path}`, import.meta.url ), 'utf8' )
+const readDemo = () => read( 'demo/src/demos/surfaceRoad.js' )
+const readBridge = () => read( 'demo/src/utils/surfaceRoadBridge.js' )
 
-const numberConstant = ( source, name ) => {
-	const match = source.match( new RegExp( `const ${name} = ([0-9.]+)` ) )
-	assert.ok( match, `${name} should remain a numeric constant` )
+const numberOption = ( source, name ) => {
+	const match = source.match( new RegExp( `\\b${name}: ([0-9.]+)` ) )
+	assert.ok( match, `${name} should remain a numeric option` )
 	return Number( match[1] )
 }
 
-test( 'the road orbit stays above the horizon instead of diving under the terrain', async () => {
-	const source = await readDemo()
-	const maxPhi = numberConstant( source, 'CAMERA_MAX_PHI' )
+const updateRoad = source => source.slice( source.indexOf( '\n\tupdateRoad() {' ), source.indexOf( '\n\tupdate = () => {' ) )
 
-	assert.ok( maxPhi < Math.PI / 2, 'a polar angle past 90° puts the camera below its target' )
-	assert.match( source, /this\.control\.maxPhi = CAMERA_MAX_PHI/ )
-	assert.match( source, /this\.control\.minPhi = CAMERA_MIN_PHI/ )
+test( 'the road orbit stays above the horizon instead of diving under the terrain', async () => {
+	const [source, orbit] = await Promise.all( [
+		readDemo(),
+		read( 'demo/src/makio/three/controls/OrbitControl.js' ),
+	] )
+	const setup = source.slice( source.indexOf( 'stage3d.orbit( CAMERA_RADIUS, {' ), source.indexOf( 'this.onResize()' ) )
+
+	assert.ok( numberOption( setup, 'maxPhi' ) < Math.PI / 2, 'a polar angle past 90° puts the camera below its target' )
+	assert.equal( numberOption( setup, 'minPhi' ), 0.22 )
+	assert.match( orbit, /Object\.assign\( this, options \)/ )
+	assert.match( orbit, /this\._phi = clamp\( this\._phi, this\.minPhi, this\.maxPhi \)/ )
 } )
 
 test( 'bridge dressing is rebuilt from the built road on every update and released on dispose', async () => {
-	const source = await readDemo()
-	const update = source.slice( source.indexOf( '\n\tupdateRoad() {' ), source.indexOf( '\n\tupdateDebug() {' ) )
-	const dispose = source.slice( source.indexOf( '\n\tdispose() {' ) )
+	const [source, bridge, scenery, stage3d] = await Promise.all( [
+		readDemo(),
+		readBridge(),
+		read( 'demo/src/utils/surfaceRoadScenery.js' ),
+		read( 'demo/src/makio/three/stage3d.js' ),
+	] )
 
-	assert.match( update, /this\.updateDeckFascia\(\)[\s\S]*this\.updatePiers\(\)/ )
-	assert.match( source, /isAboveRoad\( index, x, y, z, half \)/, 'piers must not be planted on a road that runs underneath' )
-	assert.match( dispose, /for \( const mesh of \[this\.deckFascia, this\.piers, this\.pierCaps\] \)/ )
-	assert.match( dispose, /shadowMap\.enabled = this\.previousShadowState\.enabled/ )
+	assert.match( updateRoad( source ), /this\.bridge\.update\( this\.road\.geometry, built, this\.ribbonWidth\(\) \* 0\.5 \)/ )
+	assert.match( bridge, /this\.updateDeckFascia\( ribbon \)\s+this\.updatePiers\( plan, half \)/ )
+	assert.match( bridge, /\|\| isAboveRoad\( points, index, x, y, z, half \) \) return false/, 'piers must not be planted on a road that runs underneath' )
+	// The scene owns the bridge meshes, so clearDemo() disposes them.
+	assert.match( bridge, /stage3d\.add\( this\.deckFascia, this\.piers, this\.pierCaps \)/ )
+	assert.match( stage3d, /object\.geometry\?\.dispose\(\)/ )
+	assert.match( stage3d, /for \( const material of \[object\.material\]\.flat\(\) \) material\?\.dispose\(\)/ )
+	assert.match( stage3d, /\n\t\t\tobject\.dispose\(\)/ )
+	// The road only ever turns shadows on, and the next demo starts from resetForDemo().
+	assert.match( scenery, /stage3d\.renderer\.shadowMap\.enabled = true/ )
+	assert.match( stage3d, /this\.resetForDemo\( options \)/ )
+	assert.match( stage3d, /this\.renderer\.shadowMap\.enabled = false/ )
+	assert.match( stage3d, /this\.renderer\.shadowMap\.type = PCFShadowMap/ )
 } )
 
 test( 'the road opens on the finished scene rather than the construction overlay', async () => {
-	const source = await readDemo()
+	const sources = await Promise.all( [
+		readDemo(),
+		read( 'demo/src/utils/surfaceRoadEditor.js' ),
+		read( 'demo/src/components/SurfaceRoad.vue' ),
+	] )
 
-	assert.match( source, /showConstruction: false/ )
-	assert.match( source, /debug: false/ )
+	for ( const source of sources ) {
+		assert.doesNotMatch( source, /showConstruction|createDebug|updateDebug/ )
+	}
 } )
 
 test( 'paint and piers are pinned to the authored controls after every road update', async () => {
-	const source = await readDemo()
-	const update = source.slice( source.indexOf( '\n\tupdateRoad() {' ), source.indexOf( '\n\tupdateDebug() {' ) )
-	const piers = source.slice( source.indexOf( '\n\tupdatePiers() {' ), source.indexOf( '\n\tisAboveRoad(' ) )
+	const [source, bridge] = await Promise.all( [readDemo(), readBridge()] )
+	const update = updateRoad( source )
+	const piers = bridge.slice( bridge.indexOf( '\n\tupdatePiers( plan, half ) {' ), bridge.indexOf( '\n\t/** Stand the piers of one span' ) )
 
-	assert.match( update, /pinRoadPaintToControls\( this\.road\.geometry, this\.roadPoints, this\.roadAnchors \)[\s\S]*this\.updatePiers\(\)/ )
-	assert.match( update, /this\.roadAnchors = this\.lastGoodAnchors/, 'the fallback road must keep the anchors of the points it shows' )
-	assert.match( piers, /const anchors = this\.roadAnchors/, 'pier spacing must restart at every control' )
+	assert.match( update, /pinRoadPaintToControls\( this\.road\.geometry, built\.points, built\.anchors \)[\s\S]*this\.bridge\.update\(/ )
+	assert.match( update, /const \{ built \} = this/, 'the fallback road must keep the anchors of the points it shows' )
+	assert.match( source, /this\.road\.setPositions\( this\.built\.points \)/, 'the fallback road must keep the anchors of the points it shows' )
+	assert.match( piers, /plan\.anchors\[span\], plan\.anchors\[span \+ 1\]/, 'pier spacing must restart at every control' )
 } )
 
 test( 'pier caps roll and pitch with the banked, sloping deck they carry', async () => {
-	const source = await readDemo()
-	const piers = source.slice( source.indexOf( '\n\tupdatePiers() {' ), source.indexOf( '\n\tisAboveRoad(' ) )
+	const source = await readBridge()
+	const piers = source.slice( source.indexOf( '\n\tplacePier( plan, index, t, half, count ) {' ) )
 	assert.match( source, /_pier\.rotation\.order = 'YXZ'/ )
 	assert.match( piers, /const yaw = Math\.atan2\( tangentX, tangentZ \)/ )
 	assert.match( piers, /const climb = -Math\.atan2\( tangentY, Math\.hypot\( tangentX, tangentZ \) \)/ )
@@ -91,8 +117,8 @@ test( 'pier caps roll and pitch with the banked, sloping deck they carry', async
 } )
 
 test( 'adaptive road spacing optimizes long straight spans without altering pinned paint UVs', async () => {
-	const source = await readDemo()
-	const spacing = numberConstant( source, 'SPACING' )
+	const route = await read( 'demo/src/utils/surfaceRoadRoute.js' )
+	const spacing = numberOption( route, 'spacing' )
 	assert.ok( spacing >= 20, 'straight road spans should allow long adaptive segments' )
 
 	const controls = [

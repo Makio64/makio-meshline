@@ -70,15 +70,20 @@ test( 'Laser Heist preserves the historical Bunker route', () => {
 } )
 
 test( 'Basic feature gallery exercises the public TSL styling hooks', async () => {
-	const source = await readFile( new URL( '../demo/src/demos/featureGallery.js', import.meta.url ), 'utf8' )
+	const [source, ui, labels] = await Promise.all( [
+		readFile( new URL( '../demo/src/demos/featureGallery.js', import.meta.url ), 'utf8' ),
+		readFile( new URL( '../demo/src/components/FeatureGallery.vue', import.meta.url ), 'utf8' ),
+		readFile( new URL( '../demo/src/utils/featureGalleryLabels.js', import.meta.url ), 'utf8' ),
+	] )
 
 	for ( const hook of ['widthFn', 'gradientFn', 'opacityFn', 'dashFn', 'uvFn', 'discardFn'] ) {
 		assert.match( source, new RegExp( `\\.${hook}\\(` ), `${hook} needs live gallery coverage` )
 	}
 	assert.match( source, /from 'three\/tsl'/ )
 	assert.match( source, /\btime\b/ )
-	assert.match( source, /element\.style\.top = '0'/ )
-	assert.match( source, /element\.style\.left = '0'/ )
+	// CSS2DRenderer only sets a transform: the label rule pins the origin of each button.
+	assert.match( labels, /element\.className = hook \? 'line-label is-hook' : 'line-label'/ )
+	assert.match( ui, /\n\.line-label\n(?:\t\/\/.*\n)*\ttop 0\n\tleft 0\n/ )
 } )
 
 test( 'merged demos keep their historical routes as aliases', () => {
@@ -115,14 +120,34 @@ test( 'every catalog entry points to a fresh disposable demo class', async () =>
 		const sourcePath = new URL( `../demo/src/demos/${demo.sourceFile}`, import.meta.url )
 		await access( sourcePath )
 		const source = await readFile( sourcePath, 'utf8' )
-		const defaultExport = source.match( /export default ([A-Za-z][A-Za-z0-9_]*)/ )
 
-		assert.ok( defaultExport, `${demo.sourceFile} needs a named default export` )
-		assert.match( source, new RegExp( `class ${defaultExport[1]}(?:\\s|\\{)` ) )
+		assert.match( source, /export default class [A-Za-z][A-Za-z0-9_]*/, `${demo.sourceFile} needs a named default class` )
 		assert.match( source, /\n\tasync init\(\)/, `${demo.sourceFile} needs async init()` )
-		assert.match( source, /\n\tdispose\(\)/, `${demo.sourceFile} needs dispose()` )
 		assert.doesNotMatch( source, /export default new /, `${demo.sourceFile} must create a fresh instance per visit` )
 		assert.doesNotMatch( source, /\n\tshow\(\) \{\s*\}\s*\n\t(?:hide\( cb \))?/, `${demo.sourceFile} has empty transition boilerplate` )
+	}
+} )
+
+test( 'demos stay free of lifecycle boilerplate', async () => {
+	const boilerplate = [
+		[/new OrbitControl\(/, 'use stage3d.orbit()'],
+		[/stage3d\.control =(?!=)/, 'use stage3d.orbit()'],
+		[/Math\.min\( dt, 100 \)/, 'stage already caps dt'],
+		[/addEventListener\( 'resize'/, 'ExampleView subscribes onResize'],
+		[/stage\.onUpdate\.add\( this\.update \)/, 'ExampleView subscribes update'],
+		[/^export default [A-Za-z_$][\w$]*\s*$/m, 'export the class where it is declared'],
+		[/createElement\( 'style' \)/, 'styles belong in a stylesheet or a Vue uiComponent'],
+	]
+
+	for ( const demo of demoCatalog ) {
+		const source = await readFile( new URL( `../demo/src/demos/${demo.sourceFile}`, import.meta.url ), 'utf8' )
+
+		for ( const [pattern, fix] of boilerplate ) {
+			assert.doesNotMatch( source, pattern, `${demo.sourceFile}: ${fix}` )
+		}
+		for ( const [body] of source.matchAll( /\n\tconstructor\([\s\S]*?\n\t\}/g ) ) {
+			assert.doesNotMatch( body, /\bthis\.[\w$]+ = null\b/, `${demo.sourceFile}: no null placeholders in a constructor` )
+		}
 	}
 } )
 

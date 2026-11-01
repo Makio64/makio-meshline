@@ -29,6 +29,7 @@
 import { markRaw } from 'vue'
 
 import { resolveDemoMeta } from '@/demoMeta'
+import stage from '@/makio/core/stage'
 import stage3d from '@/makio/three/stage3d'
 import { contentLoaded, menuOpen } from '@/store'
 import { describeDemoFailure } from '@/utils/demoFailure'
@@ -83,12 +84,15 @@ export default {
 			if ( typeof Demo !== 'function' ) throw new Error( `Demo "${demo.id}" must export a class` )
 			this.example = markRaw( new Demo() )
 			await this.example.init()
-			if ( this.isUnmounting ) {
+			if ( this.isUnmounting || this.hasDisposed ) {
 				this.disposeExample()
 				return
 			}
 			this.isInitialized = true
 			this.bindRendererFailureSignals()
+			const { update, onResize } = this.example
+			if ( update ) stage3d.listen( stage.onUpdate, update )
+			if ( onResize ) stage3d.listen( stage.onResize, onResize )
 		} catch ( error ) {
 			this.presentFailure( 'init', error )
 			return
@@ -187,6 +191,7 @@ export default {
 			if ( !this.example || this.hasDisposed ) return
 			try {
 				this.example.dispose?.()
+				stage3d.clearDemo()
 			} catch ( error ) {
 				console.error( '[meshline demo] Failed to clean up the demo after an error:', error )
 			}

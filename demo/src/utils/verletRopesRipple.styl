@@ -1,0 +1,19 @@
+.VerletRopesPulse
+	position fixed
+	z-index 18
+	width 22px
+	height 22px
+	border 1.5px solid rgba(125, 227, 255, .92)
+	border-radius 50%
+	box-shadow 0 0 14px rgba(125, 227, 255, .42), inset 0 0 8px rgba(255, 205, 105, .26)
+	pointer-events none
+	transform translate(-50%, -50%) scale(.35)
+	animation VerletRopesPulse .52s cubic-bezier(.15, .7, .25, 1) forwards
+
+@keyframes VerletRopesPulse
+	0%
+		opacity .95
+		transform translate(-50%, -50%) scale(.35)
+	100%
+		opacity 0
+		transform translate(-50%, -50%) scale(3.4)

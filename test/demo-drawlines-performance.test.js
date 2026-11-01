@@ -2,7 +2,8 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 
-const readDemo = () => readFile( new URL( '../demo/src/demos/drawlines.js', import.meta.url ), 'utf8' )
+const read = path => readFile( new URL( `../${path}`, import.meta.url ), 'utf8' )
+const readDemo = () => read( 'demo/src/demos/drawlines.js' )
 
 test( 'Draw Lines keeps inactive capacity out of its animation hot path', async () => {
 	const source = await readDemo()
@@ -11,7 +12,8 @@ test( 'Draw Lines keeps inactive capacity out of its animation hot path', async 
 	assert.ok( update, 'update loop should remain statically inspectable' )
 	assert.match( source, /const NUM_LINES = 1000/ )
 	assert.match( source, /createPreviewPath\(\)/ )
-	assert.match( source, /lineIndex < LINES_FOLLOWING_MOUSE && !this\.hasInteracted/ )
+	assert.match( source, /const isMouseFollower = lineIndex < LINES_FOLLOWING_MOUSE/ )
+	assert.match( source, /isMouseFollower && !this\.hasInteracted/ )
 	assert.match( source, /this\.seedPointerFollowers\(\)/ )
 	assert.match( source, /\.dynamic\( true \)/ )
 	assert.match( update, /i < this\.activeLineCount/ )
@@ -22,13 +24,20 @@ test( 'Draw Lines keeps inactive capacity out of its animation hot path', async 
 } )
 
 test( 'Draw Lines exposes a top-middle cleanup button and top-left hint that reset drawn strokes without starting a stroke', async () => {
-	const source = await readDemo()
+	const [source, controls, hud] = await Promise.all( [
+		readDemo(),
+		read( 'demo/src/utils/demoControls.js' ),
+		read( 'demo/src/utils/demoHud.styl' ),
+	] )
 
-	assert.match( source, /\.DrawLinesHud \{[\s\S]*?top: calc\(18px \+ var\(--sait, 0px\)\);[\s\S]*?left: 50%;[\s\S]*?transform: translateX\(-50%\);/ )
-	assert.match( source, /\.DrawLinesHint \{[\s\S]*?top: calc\(18px \+ var\(--sait, 0px\)\);[\s\S]*?left: calc\(18px \+ var\(--sail, 0px\)\);/ )
-	assert.match( source, /this\.clearButton\.className = 'DrawLinesClear'/ )
-	assert.match( source, /this\.clearButton\.textContent = 'Clean up'/ )
-	assert.match( source, /this\.clearButton\.addEventListener\( 'pointerdown', this\.stopPointerPropagation \)/ )
-	assert.match( source, /this\.clearButton\.addEventListener\( 'click', this\.onClearClick \)/ )
+	// The foundation places the pills: the button at the top middle, the hint at the top left.
+	assert.match( hud, /\.DemoControls\n\tposition fixed\n\ttop calc\(18px \+ var\(--sait, 0px\)\)\n\tleft 50%\n\ttransform translateX\(-50%\)/ )
+	assert.match( hud, /\.DemoHint\n\tposition fixed\n\tleft calc\(18px \+ var\(--sail, 0px\)\)\n\ttop calc\(18px \+ var\(--sait, 0px\)\)/ )
+	assert.match( source, /createDemoControls\( \[\{ id: 'clear', label: 'Clean up', ariaLabel: 'Clean up drawn lines', onClick: this\.clearLines \}\]/ )
+	assert.match( source, /createDemoHint\( 'Drag to add your own stroke', \{ accent: ACCENT, hideAfter: 0 \} \)/ )
+	// `mouse` listens on window, so a press stopped on the bar never starts a stroke.
+	assert.match( controls, /for \( const type of \['pointerdown', 'touchstart', 'wheel'\] \) bar\.addEventListener\( type, event => event\.stopPropagation\(\) \)/ )
+	assert.match( controls, /button\.addEventListener\( 'click', item\.onClick \)/ )
+	assert.match( controls, /if \( item\.ariaLabel \) button\.setAttribute\( 'aria-label', item\.ariaLabel \)/ )
 	assert.match( source, /clearLines = \(\) => \{[\s\S]*?this\.paths\.length = 0[\s\S]*?this\.activeLineCount = LINES_FOLLOWING_MOUSE/ )
 } )

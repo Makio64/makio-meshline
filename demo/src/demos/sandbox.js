@@ -5,12 +5,15 @@
  */
 import GUI from 'lil-gui'
 import { circlePositions, MeshLine, sineWavePositions, squarePositions, straightLine } from 'makio-meshline'
+import { MathUtils } from 'three/webgpu'
 import { markRaw, reactive, watch } from 'vue'
 
 import stage from '@/makio/core/stage'
-import OrbitControl from '@/makio/three/controls/OrbitControl'
 import stage3d from '@/makio/three/stage3d'
+import { noUI } from '@/makio/utils/detect'
+import { linePoints } from '@/utils/points'
 import { generateSandboxCode } from '@/utils/sandboxCode'
+import { highlightCode } from '@/utils/sandboxHighlight'
 import SandboxView from '@/views/SandboxView.vue'
 
 const STRONG_ANGLE_POINTS = [
@@ -22,175 +25,173 @@ const STRONG_ANGLE_POINTS = [
 	[0.8, 0.46, 0],
 ]
 
-const normalizePreset = ( value = '' ) => value.toLowerCase().replace( /[^a-z0-9]/g, '' )
+// Geometry and shader-graph options: changing one needs a new line.
+const REBUILD_KEYS = ['lineType', 'segments', 'closed', 'useGradient', 'useDashes', 'sizeAttenuation', 'joinType', 'joinFold', 'antialias', 'smoothSharpBends']
 
-const buildPolylinePositions = ( points, segments = 48, scale = 1 ) => {
-	const edgeCount = points.length - 1
-	const stepsPerEdge = Math.max( 1, Math.ceil( segments / edgeCount ) )
-	const positions = []
+// Options a built line applies in place.
+const LIVE_KEYS = ['color', 'lineWidth', 'opacity', 'gradientColor', 'dashCount', 'dashRatio', 'dashOffset', 'wireframe', 'miterLimit', 'smoothSharpBendsAlpha', 'smoothSharpBendsThreshold']
 
-	for ( let i = 0; i < edgeCount; i++ ) {
-		const start = points[i]
-		const end = points[i + 1]
-		const maxStep = i === edgeCount - 1 ? stepsPerEdge : stepsPerEdge - 1
-
-		for ( let step = 0; step <= maxStep; step++ ) {
-			const t = step / stepsPerEdge
-			positions.push(
-				( start[0] + ( end[0] - start[0] ) * t ) * scale,
-				( start[1] + ( end[1] - start[1] ) * t ) * scale,
-				( start[2] + ( end[2] - start[2] ) * t ) * scale,
-			)
-		}
-	}
-
-	return new Float32Array( positions )
+// Picked with `?preset=`, `?shape=` or `?lineType=`, ignoring case and punctuation.
+const URL_PRESETS = {
+	strongangle: {
+		lineType: 'strongAngle',
+		segments: 72,
+		color: '#ff5a36',
+		lineWidth: 18,
+		gradientColor: '#0ea5e9',
+		smoothSharpBends: true,
+	},
+	zigzag: { lineType: 'zigzag', smoothSharpBends: true },
+	helix: { lineType: 'helix' },
 }
 
-const strongAnglePositions = ( segments = 48, width = 18 ) => {
-	return buildPolylinePositions( STRONG_ANGLE_POINTS, segments, width )
+const urlPreset = () => {
+	const query = new URLSearchParams( window.location.search )
+	const name = query.get( 'preset' ) || query.get( 'shape' ) || query.get( 'lineType' ) || ''
+	return URL_PRESETS[name.toLowerCase().replace( /[^a-z0-9]/g, '' )]
 }
 
-// Irregular sawtooth — per-tooth amplitude variation produces a mix of gentle
-// and hairpin bends, so uniform thickness can be eyeballed across a wide range
-// of corner angles. Adjust the miter slider to watch the clamp kick in.
-const zigzagPositions = ( teeth = 14, width = 20, baseAmp = 5 ) => {
-	const positions = []
-	const step = width / teeth
-	const startX = -width / 2
-	for ( let i = 0; i <= teeth; i++ ) {
-		const x = startX + i * step
-		const ampMod = 0.35 + 0.9 * Math.abs( Math.sin( i * 1.37 ) )
-		const y = ( i % 2 === 0 ? -1 : 1 ) * baseAmp * ampMod
-		positions.push( x, y, 0 )
-	}
-	return new Float32Array( positions )
+// Subdivides every edge evenly, so each sharp corner stays an exact vertex.
+const strongAnglePositions = segments => {
+	const edges = STRONG_ANGLE_POINTS.length - 1
+	const steps = Math.ceil( segments / edges )
+	return linePoints( edges * steps + 1, ( _, i ) => {
+		const edge = Math.min( Math.floor( i / steps ), edges - 1 )
+		const t = ( i - edge * steps ) / steps
+		const end = STRONG_ANGLE_POINTS[edge + 1]
+		return STRONG_ANGLE_POINTS[edge].map( ( start, axis ) => MathUtils.lerp( start, end[axis], t ) * 18 )
+	} )
 }
 
-// Serpentine path with amplitude swelling toward the middle — smooth curves
-// with varied corner angles. Complements the angular zigzag by demonstrating
-// consistent thickness across gentle and moderate bends.
-const snakePositions = ( segments = 240, width = 22 ) => {
-	const positions = new Float32Array( ( segments + 1 ) * 3 )
-	for ( let i = 0; i <= segments; i++ ) {
-		const t = i / segments
-		const x = -width / 2 + width * t
-		const envelope = 0.3 + 0.7 * Math.sin( t * Math.PI )
-		const y = 5 * envelope * Math.sin( t * Math.PI * 5 )
-		positions[i * 3] = x
-		positions[i * 3 + 1] = y
-		positions[i * 3 + 2] = 0
-	}
-	return positions
+// Gentle and hairpin bends side by side. Move the miter slider to watch the clamp kick in.
+const zigzagPositions = () => linePoints( 15, ( t, i ) => {
+	const amplitude = 5 * ( 0.35 + 0.9 * Math.abs( Math.sin( i * 1.37 ) ) )
+	return [-10 + 20 * t, i % 2 === 0 ? -amplitude : amplitude, 0]
+} )
+
+// Checks consistent thickness across gentle and moderate bends, where zigzag is angular.
+const snakePositions = () => linePoints( 241, t => {
+	const envelope = 0.3 + 0.7 * Math.sin( t * Math.PI )
+	return [-11 + 22 * t, 5 * envelope * Math.sin( t * Math.PI * 5 ), 0]
+} )
+
+// Depth in Z, to test sizeAttenuation and 3D projected corner folding while orbiting.
+const helixPositions = segments => linePoints( segments + 1, t => {
+	const angle = t * Math.PI * 2 * 3.5
+	return [-9 + 18 * t, Math.cos( angle ) * 5.5, Math.sin( angle ) * 5.5]
+} )
+
+const LINE_POSITIONS = {
+	snake: snakePositions,
+	helix: helixPositions,
+	circle: segments => circlePositions( segments, 10 ),
+	sine: segments => sineWavePositions( 2, segments, 1, 20 ),
+	square: segments => squarePositions( 20, segments ),
+	straight: segments => straightLine( 20, segments ),
+	strongAngle: strongAnglePositions,
+	zigzag: zigzagPositions,
 }
 
-// 3D cylindrical helix spanning X with depth in Z — ideal for testing
-// sizeAttenuation and 3D projected corner folding while orbiting.
-const helixPositions = ( segments = 96, width = 18, radius = 5.5, turns = 3.5 ) => {
-	const positions = new Float32Array( ( segments + 1 ) * 3 )
-	for ( let i = 0; i <= segments; i++ ) {
-		const t = i / segments
-		const angle = t * Math.PI * 2 * turns
-		positions[i * 3] = -width / 2 + width * t
-		positions[i * 3 + 1] = Math.cos( angle ) * radius
-		positions[i * 3 + 2] = Math.sin( angle ) * radius
-	}
-	return positions
-}
+export default class SandboxExample {
+	uiComponent = markRaw( SandboxView )
+	hasNoMenu = noUI
+	uiState = reactive( { compact: false, activePanel: 'preview', copyState: 'idle' } )
+	config = reactive( {
+		// An open curve, so the default gradient has no seam.
+		lineType: 'snake',
+		segments: 64,
+		closed: false,
 
-class SandboxExample {
-	constructor() {
-		this.uiComponent = markRaw( SandboxView )
-		this.line = null
-		this.gui = null
-		this.highlighter = null
-		this.hasNoMenu = false
-		this.animatedDashOffset = 0
-		this.stopWatchers = []
-		this.copyFeedbackTimer = null
-		this.uiState = reactive( {
-			compact: false,
-			activePanel: 'preview',
-			copyState: 'idle',
-		} )
-		
-		// Reactive configuration
-		this.config = reactive( {
-			// Geometry: an open curve, so the default gradient has no seam.
-			lineType: 'snake',
-			segments: 64,
-			closed: false,
-			
-			// Appearance
-			color: '#ff4d6d',
-			lineWidth: 20,
-			opacity: 1.0,
-			
-			// Gradient
-			useGradient: true,
-			gradientColor: '#4cc9f0',
-			
-			// Dashes
-			useDashes: false,
-			dashCount: 8,
-			dashRatio: 0.5,
-			dashOffset: 0,
-			animateDashes: false,
-			
-			// Size
-			sizeAttenuation: false,
-			
-			// Advanced
-			wireframe: false,
-			joinType: 'miter',
-			joinFold: 'geometry',
-			antialias: false,
-			miterLimit: 4,
-			smoothSharpBends: false,
-			smoothSharpBendsAlpha: 0.001,
-			smoothSharpBendsThreshold: -0.5,
-			
-			// Generated code
-			generatedCode: '',
-			highlightedCode: ''
-		} )
-	}
+		color: '#ff4d6d',
+		lineWidth: 20,
+		opacity: 1,
+		useGradient: true,
+		gradientColor: '#4cc9f0',
+
+		useDashes: false,
+		dashCount: 8,
+		dashRatio: 0.5,
+		dashOffset: 0,
+		animateDashes: false,
+
+		sizeAttenuation: false,
+		wireframe: false,
+		joinType: 'miter',
+		joinFold: 'geometry',
+		antialias: false,
+		miterLimit: 4,
+		smoothSharpBends: false,
+		smoothSharpBendsAlpha: 0.001,
+		smoothSharpBendsThreshold: -0.5,
+
+		generatedCode: '',
+		highlightedCode: '',
+	} )
 
 	async init() {
-		// Check for noUI parameter
-		const urlParams = new URLSearchParams( window.location.search )
-		this.hasNoMenu = urlParams.has( 'noUI' )
-		this.applyUrlPreset( urlParams )
-		
-		// Initialize 3D scene
-		await stage3d.initRender()
-		stage3d.camera.position.set( 0, 0, 30 )
-		stage3d.control = new OrbitControl( stage3d.camera, 40 )
-		stage3d.control.maxRadius = 60
-		stage3d.control.minRadius = 20
-		
-		// Initialize GUI
-		this.initGUI()
-		
-		// Create initial line
-		this.createLine()
-		
-		// Set up reactive watchers
-		this.setupWatchers()
+		Object.assign( this.config, urlPreset() )
 
-		stage.onUpdate.add( this.updateDashes )
-		stage.onResize.add( this.onResize )
+		await stage3d.initRender()
+		stage3d.orbit( 40, { minRadius: 20, maxRadius: 60 } )
+
+		this.initGUI()
+		this.createLine()
+
+		stage3d.own( watch( () => REBUILD_KEYS.map( key => this.config[key] ), () => this.createLine() ) )
+		stage3d.own( watch( () => LIVE_KEYS.map( key => this.config[key] ), () => this.updateMaterial() ) )
+
+		stage3d.own( () => clearTimeout( this.copyFeedbackTimer ) )
 	}
-	
+
+	createLine() {
+		const { config } = this
+		this.line?.dispose()
+		this.line = new MeshLine()
+			.lines( LINE_POSITIONS[config.lineType]( config.segments ), config.closed )
+			.sizeAttenuation( config.sizeAttenuation )
+			.antialias( config.antialias )
+			.join( { type: config.joinType, limit: config.miterLimit, fold: config.joinFold } )
+			.smoothSharpBends( config.smoothSharpBends )
+			// The canvas ratio, which stage caps: exact folds and analytic AA measure in device pixels.
+			.dpr( stage.devicePixelRatio )
+			.autoResize()
+
+		this.updateMaterial()
+		stage3d.add( this.line.build() )
+	}
+
+	updateMaterial() {
+		const { config, line } = this
+		line
+			.color( config.color )
+			.lineWidth( config.lineWidth )
+			.opacity( config.opacity )
+			.wireframe( config.wireframe )
+			.miterLimit( config.miterLimit )
+			.smoothSharpBendsAlpha( config.smoothSharpBendsAlpha )
+			.smoothSharpBendsThreshold( config.smoothSharpBendsThreshold )
+
+		if ( config.useGradient ) line.gradientColor( config.gradientColor )
+		if ( config.useDashes ) line.dash( { count: config.dashCount, ratio: config.dashRatio, offset: config.dashOffset } )
+
+		config.generatedCode = generateSandboxCode( config )
+		highlightCode( config )
+	}
+
+	update = dt => {
+		if ( !this.config.animateDashes || !this.config.useDashes ) return
+		this.line.material.dashOffset.value -= ( dt / 8 ) * 0.02
+	}
+
 	initGUI() {
-		this.gui = new GUI( { title: 'Line controls', width: this.hasNoMenu ? 220 : 350 } )
+		const { config } = this
+		this.gui = stage3d.own( new GUI( { title: 'Line controls', width: this.hasNoMenu ? 220 : 350 } ) )
 		this.gui.domElement.id = 'sandbox-controls'
 		this.gui.domElement.classList.add( 'SandboxControls' )
 		this.gui.domElement.style.right = this.hasNoMenu ? '0' : '60px'
-		
-		// Line Shape folder
+
 		const geometryFolder = this.gui.addFolder( 'Line Shape' )
-		geometryFolder.add( this.config, 'lineType', {
+		geometryFolder.add( config, 'lineType', {
 			Snake: 'snake',
 			'Helix (3D)': 'helix',
 			Circle: 'circle',
@@ -199,53 +200,45 @@ class SandboxExample {
 			Straight: 'straight',
 			'Strong Angle': 'strongAngle',
 			Zigzag: 'zigzag',
-		} ).onChange( ( value ) => this.configureLineType( value ) )
-		geometryFolder.add( this.config, 'segments', 8, 256, 1 )
-		geometryFolder.add( this.config, 'closed' )
-		geometryFolder.open()
-		
-		// Appearance folder (merged with colors)
+		} ).onChange( value => this.configureLineType( value ) )
+		geometryFolder.add( config, 'segments', 8, 256, 1 )
+		geometryFolder.add( config, 'closed' )
+
 		const appearanceFolder = this.gui.addFolder( 'Appearance' )
-		appearanceFolder.addColor( this.config, 'color' )
-		appearanceFolder.add( this.config, 'opacity', 0, 1, 0.01 )
-		appearanceFolder.add( this.config, 'useGradient' ).name( 'Gradient Enabled' )
-		appearanceFolder.addColor( this.config, 'gradientColor' ).name( 'Gradient Color' )
-		appearanceFolder.add( this.config, 'lineWidth', 0.1, 25, 0.1 ).name( 'Line Width' )
-		appearanceFolder.add( this.config, 'sizeAttenuation' ).name( 'Size Attenuation' )
-		appearanceFolder.add( this.config, 'wireframe' )
-		appearanceFolder.open()
-		
-		// Dashes folder
+		appearanceFolder.addColor( config, 'color' )
+		appearanceFolder.add( config, 'opacity', 0, 1, 0.01 )
+		appearanceFolder.add( config, 'useGradient' ).name( 'Gradient Enabled' )
+		appearanceFolder.addColor( config, 'gradientColor' ).name( 'Gradient Color' )
+		appearanceFolder.add( config, 'lineWidth', 0.1, 25, 0.1 ).name( 'Line Width' )
+		appearanceFolder.add( config, 'sizeAttenuation' ).name( 'Size Attenuation' )
+		appearanceFolder.add( config, 'wireframe' )
+
 		const dashFolder = this.gui.addFolder( 'Dashes' )
-		dashFolder.add( this.config, 'useDashes' )
-		dashFolder.add( this.config, 'dashCount', 1, 32, 1 )
-		dashFolder.add( this.config, 'dashRatio', 0.1, 0.9, 0.01 )
-		dashFolder.add( this.config, 'dashOffset', 0, 1, 0.01 )
-		dashFolder.add( this.config, 'animateDashes' )
-		
-		// Advanced folder
+		dashFolder.add( config, 'useDashes' )
+		dashFolder.add( config, 'dashCount', 1, 32, 1 )
+		dashFolder.add( config, 'dashRatio', 0.1, 0.9, 0.01 )
+		dashFolder.add( config, 'dashOffset', 0, 1, 0.01 )
+		dashFolder.add( config, 'animateDashes' )
+
 		const advancedFolder = this.gui.addFolder( 'Advanced' )
-		advancedFolder.add( this.config, 'joinType', {
-			Miter: 'miter',
-			Bevel: 'bevel',
-			Round: 'round',
-		} ).name( 'Join Type' )
-		advancedFolder.add( this.config, 'joinFold', {
-			'Geometry (Fast)': 'geometry',
-			'Exact (2-Pass)': 'exact',
-			Off: 'false',
-		} ).name( '3D Fold' )
-		advancedFolder.add( this.config, 'miterLimit', 1, 10, 0.1 ).name( 'Miter Limit' )
-		advancedFolder.add( this.config, 'antialias' ).name( 'Analytic AA' )
-		advancedFolder.add( this.config, 'smoothSharpBends' ).name( 'Smooth Sharp Bends' )
-		advancedFolder.add( this.config, 'smoothSharpBendsAlpha', 0.001, 0.5, 0.001 ).name( 'Smooth Cutoff' )
-		advancedFolder.add( this.config, 'smoothSharpBendsThreshold', -1, 1, 0.05 ).name( 'Sharp Threshold' )
-		
+		advancedFolder.add( config, 'joinType', { Miter: 'miter', Bevel: 'bevel', Round: 'round' } ).name( 'Join Type' )
+		advancedFolder.add( config, 'joinFold', { 'Geometry (Fast)': 'geometry', 'Exact (2-Pass)': 'exact', Off: false } ).name( '3D Fold' )
+		advancedFolder.add( config, 'miterLimit', 1, 10, 0.1 ).name( 'Miter Limit' )
+		advancedFolder.add( config, 'antialias' ).name( 'Analytic AA' )
+		advancedFolder.add( config, 'smoothSharpBends' ).name( 'Smooth Sharp Bends' )
+		advancedFolder.add( config, 'smoothSharpBendsAlpha', 0.001, 0.5, 0.001 ).name( 'Smooth Cutoff' )
+		advancedFolder.add( config, 'smoothSharpBendsThreshold', -1, 1, 0.05 ).name( 'Sharp Threshold' )
+
 		this.syncUiLayout()
 	}
 
+	configureLineType( value ) {
+		this.config.closed = value === 'circle' || value === 'square'
+		if ( ['circle', 'square', 'strongAngle', 'helix'].includes( value ) ) this.config.useGradient = true
+		if ( value === 'zigzag' || value === 'strongAngle' ) this.config.smoothSharpBends = true
+	}
+
 	setMobilePanel( panel ) {
-		if ( !['preview', 'controls', 'code'].includes( panel ) ) return
 		this.uiState.activePanel = panel
 		this.syncUiLayout()
 	}
@@ -255,238 +248,12 @@ class SandboxExample {
 		if ( compact && !this.uiState.compact ) this.uiState.activePanel = 'preview'
 		this.uiState.compact = compact
 
-		if ( !this.gui ) return
 		if ( compact && this.uiState.activePanel !== 'controls' ) this.gui.hide()
 		else this.gui.show()
 	}
 
-	applyUrlPreset( urlParams ) {
-		const preset = normalizePreset( urlParams.get( 'preset' ) || urlParams.get( 'shape' ) || urlParams.get( 'lineType' ) || '' )
+	onResize = () => this.syncUiLayout()
 
-		if ( preset === 'strongangle' ) {
-			Object.assign( this.config, {
-				lineType: 'strongAngle',
-				segments: 72,
-				closed: false,
-				color: '#ff5a36',
-				lineWidth: 18,
-				useGradient: true,
-				gradientColor: '#0ea5e9',
-				useDashes: false,
-				animateDashes: false,
-				miterLimit: 4,
-				smoothSharpBends: true,
-			} )
-			return
-		}
-
-		if ( preset === 'zigzag' || preset === 'snake' || preset === 'helix' ) {
-			Object.assign( this.config, {
-				lineType: preset,
-				closed: false,
-				useDashes: false,
-				animateDashes: false,
-				smoothSharpBends: preset === 'zigzag',
-			} )
-		}
-	}
-
-	configureLineType( value ) {
-		if ( value === 'circle' || value === 'square' ) {
-			this.config.closed = true
-			this.config.useGradient = true
-		} else {
-			this.config.closed = false
-		}
-
-		if ( value === 'strongAngle' || value === 'helix' ) {
-			this.config.useGradient = true
-		}
-
-		if ( value === 'zigzag' || value === 'strongAngle' ) {
-			this.config.smoothSharpBends = true
-		}
-	}
-	
-	setupWatchers() {
-		// Watch for geometry or structural shader-graph changes that require recreation
-		this.stopWatchers.push( watch(
-			() => ( {
-				lineType: this.config.lineType,
-				segments: this.config.segments,
-				closed: this.config.closed,
-				useGradient: this.config.useGradient,
-				useDashes: this.config.useDashes,
-				sizeAttenuation: this.config.sizeAttenuation,
-				joinType: this.config.joinType,
-				joinFold: this.config.joinFold,
-				bevelJoins: this.config.bevelJoins,
-				antialias: this.config.antialias,
-				smoothSharpBends: this.config.smoothSharpBends,
-			} ),
-			() => this.createLine()
-		) )
-		
-		// Watch for uniform-only material changes (no geometry or shader rebuild needed)
-		this.stopWatchers.push( watch(
-			() => ( {
-				color: this.config.color,
-				lineWidth: this.config.lineWidth,
-				opacity: this.config.opacity,
-				gradientColor: this.config.gradientColor,
-				dashCount: this.config.dashCount,
-				dashRatio: this.config.dashRatio,
-				dashOffset: this.config.dashOffset,
-				wireframe: this.config.wireframe,
-				miterLimit: this.config.miterLimit,
-				smoothSharpBendsAlpha: this.config.smoothSharpBendsAlpha,
-				smoothSharpBendsThreshold: this.config.smoothSharpBendsThreshold,
-			} ),
-			() => this.updateMaterial()
-		) )
-	}
-	
-	getLinePositions() {
-		switch ( this.config.lineType ) {
-			case 'circle':
-				return circlePositions( this.config.segments, 10 )
-			case 'sine':
-				return sineWavePositions( 2, this.config.segments, 1, 20 )
-			case 'square':
-				return squarePositions( 20, this.config.segments )
-			case 'strongAngle':
-				return strongAnglePositions( this.config.segments, 18 )
-			case 'zigzag':
-				return zigzagPositions( 14, 20, 5 )
-			case 'snake':
-				return snakePositions( 240, 22 )
-			case 'helix':
-				return helixPositions( this.config.segments, 18, 5.5, 3.5 )
-			case 'straight':
-			default:
-				return straightLine( 20, this.config.segments )
-		}
-	}
-	
-	createLine() {
-		if ( this.line ) {
-			stage3d.remove( this.line )
-			this.line.dispose()
-		}
-		
-		const positions = this.getLinePositions()
-		this.animatedDashOffset = this.config.dashOffset
-		
-		this.line = new MeshLine()
-			.lines( positions )
-			.closed( this.config.closed )
-			.color( this.config.color )
-			.lineWidth( this.config.lineWidth )
-			.opacity( this.config.opacity )
-			.transparent( this.config.opacity < 1 )
-			.sizeAttenuation( this.config.sizeAttenuation )
-			.antialias( this.config.antialias )
-			.wireframe( this.config.wireframe )
-			.renderSize( stage.width, stage.height )
-			.dpr( stage.devicePixelRatio )
-		
-		if ( this.config.useGradient ) {
-			this.line.gradientColor( this.config.gradientColor )
-		}
-		
-		if ( this.config.useDashes ) {
-			this.line.dash( { count: this.config.dashCount, ratio: this.config.dashRatio, offset: this.config.dashOffset } )
-		}
-		
-		const joinType = this.config.joinType && this.config.joinType !== 'miter'
-			? this.config.joinType
-			: ( this.config.bevelJoins ? 'bevel' : 'miter' )
-		const joinFold = this.config.joinFold === 'false' || this.config.joinFold === false
-			? false
-			: ( this.config.joinFold || 'geometry' )
-		this.line.join( {
-			type: joinType,
-			limit: this.config.miterLimit,
-			fold: joinFold,
-		} )
-		this.line.smoothSharpBends( this.config.smoothSharpBends )
-		this.line.smoothSharpBendsAlpha( this.config.smoothSharpBendsAlpha )
-		this.line.smoothSharpBendsThreshold( this.config.smoothSharpBendsThreshold )
-
-		this.line.build()
-		stage3d.add( this.line )
-		
-		this.generateCode()
-	}
-	
-	updateMaterial() {
-		if ( !this.line ) {
-			this.createLine()
-			return
-		}
-		this.animatedDashOffset = this.config.dashOffset
-		this.line
-			.color( this.config.color )
-			.lineWidth( this.config.lineWidth )
-			.opacity( this.config.opacity )
-			.transparent( this.config.opacity < 1 )
-			.wireframe( this.config.wireframe )
-			.miterLimit( this.config.miterLimit )
-			.smoothSharpBendsAlpha( this.config.smoothSharpBendsAlpha )
-			.smoothSharpBendsThreshold( this.config.smoothSharpBendsThreshold )
-
-		if ( this.config.useGradient ) {
-			this.line.gradientColor( this.config.gradientColor )
-		}
-		if ( this.config.useDashes ) {
-			this.line.dash( { count: this.config.dashCount, ratio: this.config.dashRatio, offset: this.config.dashOffset } )
-		}
-
-		this.generateCode()
-	}
-	
-	generateCode() {
-		const code = generateSandboxCode( this.config )
-		this.config.generatedCode = code
-		
-		// Apply syntax highlighting
-		this.highlightCode( code )
-	}
-	
-	async loadHighlighter() {
-		if ( this.highlighter ) return
-		
-		try {
-			const { createCodeHighlighter } = await import( '@/utils/createHighlighter' )
-			this.highlighter = await createCodeHighlighter()
-		} catch ( error ) {
-			console.error( 'Failed to load syntax highlighter:', error )
-		}
-	}
-	
-	async highlightCode( code ) {
-		// Start with plain code
-		this.config.highlightedCode = code
-		
-		// Load highlighter if not already loaded
-		if ( !this.highlighter ) {
-			await this.loadHighlighter()
-		}
-		
-		// Apply highlighting if available
-		if ( this.highlighter ) {
-			try {
-				const html = this.highlighter.codeToHtml( code, {
-					lang: 'javascript',
-					theme: 'github-dark'
-				} )
-				this.config.highlightedCode = html
-			} catch ( error ) {
-				console.error( 'Failed to highlight code:', error )
-			}
-		}
-	}
-	
 	async copyCode() {
 		clearTimeout( this.copyFeedbackTimer )
 		try {
@@ -500,39 +267,4 @@ class SandboxExample {
 			this.uiState.copyState = 'idle'
 		}, 2000 )
 	}
-	
-	updateDashes = ( dt ) => {
-		if ( !this.config.animateDashes || !this.config.useDashes || !this.line ) return
-
-		this.animatedDashOffset -= ( dt / 8 ) * 0.02
-		if ( this.line.material?.dashOffset ) {
-			this.line.material.dashOffset.value = this.animatedDashOffset
-		}
-	}
-	
-	onResize = () => {
-		this.syncUiLayout()
-		this.line?.resize( stage.width, stage.height )
-	}
-
-	dispose() {
-		stage.onUpdate.remove( this.updateDashes )
-		stage.onResize.remove( this.onResize )
-		this.stopWatchers.forEach( stop => stop() )
-		this.stopWatchers = []
-		clearTimeout( this.copyFeedbackTimer )
-		this.copyFeedbackTimer = null
-
-		if ( this.line ) {
-			stage3d.remove( this.line )
-			this.line.dispose()
-		}
-
-		this.gui?.destroy()
-		stage3d.control?.dispose()
-		stage3d.control = null
-	}
-
 }
-
-export default SandboxExample

@@ -1,0 +1,51 @@
+.VariableTopologyControls
+	top calc(18px + var(--sait, 0px)) !important
+	left 50% !important
+	right auto !important
+	transform translateX(-50%)
+	z-index 24 !important
+	border-radius 14px !important
+	overflow hidden
+	@media (max-width 700px)
+		top auto !important
+		bottom calc(10px + var(--saib, 0px))
+		overflow-y auto
+
+.VariableTopologyLabel
+	// CSS2DRenderer only sets a transform; pin the origin so the page's
+	// centered text alignment cannot shift the labels.
+	top 0
+	left 0
+	display inline-flex
+	align-items center
+	gap 6px
+	padding 4px 8px
+	border-radius 999px
+	background rgba(2, 6, 23, .55)
+	color rgba(241, 245, 249, .88)
+	font 700 9px/1 system-ui, sans-serif
+	letter-spacing .08em
+	text-transform uppercase
+	white-space nowrap
+	font-variant-numeric tabular-nums
+	&::before
+		content ''
+		width 6px
+		height 6px
+		border-radius 50%
+		background var(--accent)
+		box-shadow 0 0 8px var(--accent)
+	@media (max-width 700px)
+		padding 3px 6px
+		font-size 7px
+
+.VariableTopologyLabel__meta
+	padding-left 6px
+	border-left 1px solid rgba(148, 163, 184, .25)
+	color rgba(226, 232, 240, .68)
+	font-weight 600
+	@media (max-width 700px)
+		display none
+
+.VariableTopologyLabel__meta--clipped
+	color #fde047

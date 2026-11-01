@@ -5,13 +5,14 @@
  */
 import { MeshLine } from 'makio-meshline'
 import MeshLineGPUPath from 'makio-meshline/gpu-path'
-import { markRaw, reactive } from 'vue'
 
-import GpuPathUI from '@/components/GpuPath.vue'
 import stage from '@/makio/core/stage'
-import OrbitControl from '@/makio/three/controls/OrbitControl'
 import stage3d from '@/makio/three/stage3d'
 import { createBloomPipeline } from '@/utils/bloomPipeline'
+import { createDemoControls } from '@/utils/demoControls'
+import { createDemoHint } from '@/utils/demoHint'
+import { pick, readQuery, writeMode, writeWireframe } from '@/utils/gpuPathQuery'
+import { linePoints } from '@/utils/points'
 
 const POINT_COUNT = 200_000
 const PATH_LENGTH = 100
@@ -21,242 +22,154 @@ const LOCAL_TOLERANCE = 0.012
 // avoids reading the selected count back from the GPU.
 const EXPECTED_RETAINED_SEGMENTS = 1_646
 
-const createLargeOpenPath = () => {
-	const points = new Float32Array( POINT_COUNT * 3 )
-
-	for ( let i = 0; i < POINT_COUNT; i++ ) {
-		const progress = i / ( POINT_COUNT - 1 )
-		const centered = progress * 2 - 1
-		const detailEnvelope = Math.exp( -centered * centered * 18 )
-		const offset = i * 3
-
-		points[offset] = centered * PATH_LENGTH * 0.5
-		points[offset + 1] = Math.sin( progress * Math.PI * 4 ) * 0.7
-		points[offset + 2] = Math.sin( progress * Math.PI * 24 ) * 2
-			+ Math.sin( progress * Math.PI * 180 ) * detailEnvelope * 4
-	}
-
-	return points
+const BACKENDS = {
+	'loading': { label: 'Loading', tone: '#778896' },
+	'gpu': { label: 'WebGPU', tone: '#48ecc4' },
+	'cpu-requested': { label: 'CPU', tone: '#ffb54c' },
+	'cpu-fallback': { label: 'CPU fallback', tone: '#ffb54c' },
 }
 
-const requestedMode = ( gpuRequested, simplifyRequested, topologyMode, capType ) => {
-	if ( !gpuRequested ) return 'cpu'
-	if ( topologyMode !== 'fixed' || capType !== 'butt' ) return 'gpu-topology'
-	return simplifyRequested ? 'gpu-simplified' : 'gpu-raw'
+const pathPoint = progress => {
+	const centered = progress * 2 - 1
+	const detailEnvelope = Math.exp( -centered * centered * 18 )
+	return [
+		centered * PATH_LENGTH * 0.5,
+		Math.sin( progress * Math.PI * 4 ) * 0.7,
+		Math.sin( progress * Math.PI * 24 ) * 2 + Math.sin( progress * Math.PI * 180 ) * detailEnvelope * 4,
+	]
 }
 
-class GpuPathExample {
-	constructor() {
-		this.uiComponent = markRaw( GpuPathUI )
-		this.ui = reactive( {
-			mode: 'gpu-simplified',
-			backend: 'loading',
-			reason: 'Preparing the requested path',
-			pointCount: POINT_COUNT,
-			sourceSegmentCount: SOURCE_SEGMENT_COUNT,
-			expectedRetainedSegments: EXPECTED_RETAINED_SEGMENTS,
-			localTolerance: LOCAL_TOLERANCE,
-			joinType: 'miter',
-			capType: 'butt',
-			wireframe: false,
-		} )
-		this.points = null
-		this.path = null
-		this.grid = null
-		this.bloom = null
-		this.control = null
-		this.status = null
-		this._buildToken = 0
-	}
+const formatCount = value => value.toLocaleString( 'en-US' )
+
+const statusText = ( backend, mode ) => {
+	const reduction = ( 100 - EXPECTED_RETAINED_SEGMENTS / SOURCE_SEGMENT_COUNT * 100 ).toFixed( 1 )
+	const segments = backend === 'gpu' && mode === 'gpu-simplified'
+		? `${formatCount( EXPECTED_RETAINED_SEGMENTS )} (−${reduction}%)`
+		: formatCount( SOURCE_SEGMENT_COUNT )
+	return `${formatCount( POINT_COUNT )} pts · ${segments} segs · ${BACKENDS[backend].label}`
+}
+
+export default class GpuPathExample {
+	points = linePoints( POINT_COUNT, pathPoint )
+	backend = 'loading'
+	buildToken = 0
 
 	async init() {
-		const query = new URLSearchParams( window.location.search )
-		const reportMetrics = query.get( 'metrics' ) === '1'
-		const gpuRequested = query.get( 'gpu' ) !== '0'
-		const simplifyRequested = query.get( 'simplify' ) !== '0'
-		const wireframe = query.get( 'wireframe' ) === '1' || query.get( 'wireframe' ) === 'true'
-		const topologyMode = ['fixed', 'variable', 'bevel', 'round'].includes( query.get( 'topology' ) )
-			? query.get( 'topology' )
-			: 'fixed'
-		const capType = ['butt', 'square', 'round'].includes( query.get( 'cap' ) )
-			? query.get( 'cap' )
-			: 'butt'
-		const joinType = topologyMode === 'bevel' || topologyMode === 'round' ? topologyMode : 'miter'
-		this.points = createLargeOpenPath()
-		Object.assign( this.ui, {
-			mode: requestedMode( gpuRequested, simplifyRequested, topologyMode, capType ),
-			joinType,
-			capType,
-			wireframe,
-		} )
-		await stage3d.initRender( { background: 0x02050C } )
+		const query = readQuery()
+		this.mode = query.mode
+		this.wireframe = query.wireframe
 
-		stage3d.camera.near = 0.1
-		stage3d.camera.far = 250
-		stage3d.camera.updateProjectionMatrix()
+		const token = this.buildToken
+		await stage3d.initRender( { background: 0x02050C, near: 0.1, far: 250 } )
+		// The visitor may have left while the first renderer was starting.
+		if ( token !== this.buildToken ) return
 
-		this.control = new OrbitControl( stage3d.camera, 56 )
-		this.control.minRadius = 2
-		this.control.maxRadius = 140
-		this.control.minPhi = 0.2
-		this.control._phi = 0.62
-		this.control._theta = Math.PI * 0.5
-		this.control.update()
-		stage3d.control = this.control
+		stage3d.orbit( 56, { phi: 0.62, minPhi: 0.2, minRadius: 2, maxRadius: 140 } )
 		this.createGrid()
+		this.createUI()
 
-		await this._rebuildPath( {
-			gpuRequested,
-			simplifyRequested,
-			topologyMode,
-			joinType,
-			capType,
-		} )
+		await this.buildPath( query )
 
-		this.bloom = createBloomPipeline( { strength: 0.65, radius: 0.35, threshold: 0.12 } )
-		stage.onResize.add( this.onResize )
-		stage.onUpdate.add( this.update )
-		window.addEventListener( 'keydown', this.onKeyDown )
-		if ( reportMetrics ) console.info( `[gpuPath] ${JSON.stringify( this.status )}` )
+		createBloomPipeline( { strength: 0.65, radius: 0.35, threshold: 0.12 } )
+		if ( query.metrics ) console.info( `[gpuPath] ${JSON.stringify( this.path?.status )}` )
 	}
 
-	async _rebuildPath( { gpuRequested, simplifyRequested, topologyMode = 'fixed', joinType = 'miter', capType = 'butt' } ) {
-		const token = ++this._buildToken
-		const previousPath = this.path
+	async buildPath( { gpu, simplify, topology = 'fixed', cap = 'butt' } ) {
+		const token = ++this.buildToken
 
-		const nextPath = new MeshLineGPUPath( {
+		const path = new MeshLineGPUPath( {
 			lines: this.points,
 			lineWidth: 0.24,
 			color: 0x22d3ee,
-			wireframe: this.ui.wireframe,
-			join: { type: joinType, limit: 3, segments: 8 },
-			cap: { type: capType, segments: 8 },
+			wireframe: this.wireframe,
+			join: { type: pick( topology, ['miter', 'bevel', 'round'] ), limit: 3 },
+			cap,
 		}, {
-			chunkSegments: 128,
-			simplify: simplifyRequested ? { localTolerance: LOCAL_TOLERANCE } : false,
-			variableTopology: topologyMode === 'variable',
+			simplify: simplify ? { localTolerance: LOCAL_TOLERANCE } : false,
+			variableTopology: topology === 'variable',
 		} )
 
 		// Add the wrapper before preparation so its complete CPU MeshLine remains
 		// visible throughout initialization and on every unsupported/failure path.
-		stage3d.add( nextPath )
-		nextPath.resize( stage.width, stage.height )
-		const prepared = gpuRequested ? await nextPath.prepare( stage3d.renderer, stage3d.camera ) : false
-		if ( token !== this._buildToken || !this.points ) {
-			nextPath.dispose()
+		stage3d.add( path )
+		path.resize( stage.width, stage.height )
+		const prepared = gpu && await path.prepare( stage3d.renderer, stage3d.camera )
+		if ( token !== this.buildToken ) {
+			path.dispose()
 			return
 		}
 
-		previousPath?.dispose()
-		this.path = nextPath
-		this.status = nextPath.status
-		window.__meshLineGPUPathMetrics = this.status
-		Object.assign( this.ui, {
-			backend: !gpuRequested ? 'cpu-requested' : prepared ? 'gpu' : 'cpu-fallback',
-			reason: !gpuRequested ? 'GPU preparation was deliberately skipped' : this.status.reason,
-			joinType: prepared ? this.status.join : joinType,
-			capType: prepared ? this.status.cap : capType,
-		} )
+		this.path?.dispose()
+		this.path = path
+		window.__meshLineGPUPathMetrics = path.status
+		this.setBackend( !gpu ? 'cpu-requested' : prepared ? 'gpu' : 'cpu-fallback' )
 	}
 
 	createGrid() {
 		const lines = []
 		for ( let z = -15; z <= 15; z += 5 ) lines.push( [-70, -3, z, 70, -3, z] )
 		for ( let x = -70; x <= 70; x += 5 ) lines.push( [x, -3, -15, x, -3, 15] )
-		this.grid = new MeshLine()
-			.lines( lines, false )
+
+		stage3d.add( new MeshLine()
+			.lines( lines )
 			.lineWidth( 0.05 )
 			.color( 0x1E3A5F )
-		stage3d.add( this.grid )
+			.autoResize() )
 	}
 
-	getModeHref = mode => {
-		const url = new URL( window.location.href )
-		url.searchParams.delete( 'gpu' )
-		url.searchParams.delete( 'simplify' )
-		url.searchParams.delete( 'topology' )
-		url.searchParams.delete( 'cap' )
+	createUI() {
+		const modeButton = ( id, label ) => ( { id, label, pressed: id === this.mode, onClick: () => this.setMode( id ) } )
 
-		if ( mode === 'gpu-raw' ) url.searchParams.set( 'simplify', '0' )
-		else if ( mode === 'cpu' ) url.searchParams.set( 'gpu', '0' )
+		this.controls = createDemoControls( [
+			modeButton( 'gpu-simplified', 'Simplify' ),
+			modeButton( 'gpu-raw', 'Raw GPU' ),
+			modeButton( 'cpu', 'CPU' ),
+			'divider',
+			{ id: 'wireframe', label: 'Wireframe', key: 'W', pressed: this.wireframe, onClick: this.toggleWireframe },
+		], { accent: '#43e9ff', label: 'GPU path controls' } )
 
-		return url.toString()
-	}
-
-	setMode = async mode => {
-		if ( mode === this.ui.mode || !this.points ) return
-		this.ui.mode = mode
-		this.ui.backend = 'loading'
-		const href = this.getModeHref( mode )
-		window.history?.replaceState?.( null, '', href )
-		await this._rebuildPath( {
-			gpuRequested: mode !== 'cpu',
-			simplifyRequested: mode === 'gpu-simplified',
-			topologyMode: 'fixed',
-			joinType: 'miter',
-			capType: 'butt',
+		// The backend can change without a click, so the status is announced.
+		this.hint = createDemoHint( statusText( this.backend, this.mode ), {
+			accent: BACKENDS[this.backend].tone,
+			hideAfter: 0,
+			attributes: { 'aria-live': 'polite' },
 		} )
 	}
 
-	setWireframe = enabled => {
-		const active = Boolean( enabled )
-		this.ui.wireframe = active
-		this.path?.wireframe( active )
-		const url = new URL( window.location.href )
-		if ( active ) url.searchParams.set( 'wireframe', '1' )
-		else url.searchParams.delete( 'wireframe' )
-		window.history?.replaceState?.( null, '', url.toString() )
+	setBackend( backend ) {
+		this.backend = backend
+		this.hint.setText( statusText( backend, this.mode ) )
+		this.hint.setAccent( BACKENDS[backend].tone )
+	}
+
+	setMode( mode ) {
+		if ( mode === this.mode ) return
+		this.mode = mode
+		this.setBackend( 'loading' )
+		for ( const id of ['gpu-simplified', 'gpu-raw', 'cpu'] ) this.controls.setPressed( id, id === mode )
+		writeMode( mode )
+		this.buildPath( { gpu: mode !== 'cpu', simplify: mode === 'gpu-simplified' } )
 	}
 
 	toggleWireframe = () => {
-		this.setWireframe( !this.ui.wireframe )
-	}
-
-	onKeyDown = event => {
-		if ( event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey ) return
-		const tag = event.target?.tagName
-		if ( tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' ) return
-		if ( event.key === 'w' || event.key === 'W' ) {
-			event.preventDefault()
-			this.toggleWireframe()
-		}
+		this.wireframe = !this.wireframe
+		this.path?.wireframe( this.wireframe )
+		this.controls.setPressed( 'wireframe', this.wireframe )
+		writeWireframe( this.wireframe )
 	}
 
 	onResize = () => {
 		this.path?.resize( stage.width, stage.height )
-		this.grid?.resize()
 	}
 
 	update = () => {
 		const active = this.path?.update( stage3d.camera )
-		if ( this.ui.backend === 'gpu' && active === false ) {
-			Object.assign( this.ui, {
-				backend: 'cpu-fallback',
-				reason: this.path.status.reason,
-			} )
-		}
+		if ( this.backend === 'gpu' && !active ) this.setBackend( 'cpu-fallback' )
 	}
 
 	dispose() {
-		this._buildToken++
-		stage.onResize.remove( this.onResize )
-		stage.onUpdate.remove( this.update )
-		window.removeEventListener( 'keydown', this.onKeyDown )
-		this.path?.dispose()
-		this.bloom?.dispose()
-		stage3d.remove( this.grid )
-		this.grid?.dispose()
-		this.control?.dispose()
-		if ( stage3d.control === this.control ) stage3d.control = null
-		if ( window.__meshLineGPUPathMetrics === this.status ) window.__meshLineGPUPathMetrics = null
-		this.points = null
-		this.path = null
-		this.grid = null
-		this.bloom = null
-		this.control = null
-		this.status = null
+		// An init() or prepare() still in flight stops when it resumes.
+		this.buildToken++
+		window.__meshLineGPUPathMetrics = null
 	}
-
 }
-
-export default GpuPathExample

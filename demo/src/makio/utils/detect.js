@@ -42,3 +42,9 @@ export const isLandscape = () => window.innerWidth > window.innerHeight
 export const isFullScreen = () => !!( document.fullScreen || document.mozFullScreen || document.webkitIsFullScreen || document.msFullscreenElement )
 
 export const isLocal = window.location.href.indexOf( 'localhost' ) >= 0 || window.location.href.indexOf( '192.168.' ) >= 0
+
+// Live preference: read `reducedMotion.matches`
+export const reducedMotion = window.matchMedia( '(prefers-reduced-motion: reduce)' )
+
+// Embedded demos hide every overlay with `?noUI`
+export const noUI = new URLSearchParams( window.location.search ).has( 'noUI' )

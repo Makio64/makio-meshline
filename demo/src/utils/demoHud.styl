@@ -1,0 +1,134 @@
+.DemoHint
+	position fixed
+	left calc(18px + var(--sail, 0px))
+	top calc(18px + var(--sait, 0px))
+	z-index 20
+	display inline-flex
+	align-items center
+	gap 8px
+	min-height 36px
+	max-width unquote('min(420px, calc(100vw - 96px))')
+	padding 6px 14px
+	border 1px solid rgba(255, 255, 255, .1)
+	border-radius 999px
+	background rgba(8, 9, 12, .7)
+	box-shadow 0 12px 30px rgba(0, 0, 0, .28)
+	backdrop-filter blur(14px)
+	-webkit-backdrop-filter blur(14px)
+	color rgba(244, 245, 247, .88)
+	font 600 10px/1.25 'Inter', system-ui, -apple-system, sans-serif
+	font-variant-numeric tabular-nums
+	letter-spacing .06em
+	text-transform uppercase
+	pointer-events none
+	user-select none
+	transition opacity .3s ease, transform .3s ease
+	&::before
+		content ''
+		flex 0 0 auto
+		width 6px
+		height 6px
+		border-radius 50%
+		background var(--demo-accent)
+		box-shadow 0 0 10px var(--demo-accent)
+	&.is-hidden
+		opacity 0
+		transform translateY(-4px)
+	@media (max-width 720px)
+		left calc(12px + var(--sail, 0px))
+		top calc(58px + var(--sait, 0px))
+		min-height 30px
+		padding 4px 11px
+		font-size 9px
+	@media (prefers-reduced-motion reduce)
+		transition none
+
+.DemoControls
+	position fixed
+	top calc(18px + var(--sait, 0px))
+	left 50%
+	transform translateX(-50%)
+	z-index 20
+	display inline-flex
+	align-items center
+	gap 3px
+	max-width calc(100vw - 24px)
+	padding 4px
+	border 1px solid rgba(255, 255, 255, .12)
+	border-radius 999px
+	background rgba(8, 9, 12, .72)
+	box-shadow 0 12px 30px rgba(0, 0, 0, .3)
+	backdrop-filter blur(14px)
+	-webkit-backdrop-filter blur(14px)
+	user-select none
+	hr
+		width 1px
+		height 16px
+		margin 0 2px
+		border 0
+		background rgba(255, 255, 255, .12)
+	button
+		appearance none
+		display inline-flex
+		align-items center
+		gap 6px
+		min-height 30px
+		padding 0 12px
+		border 1px solid transparent
+		border-radius 999px
+		background transparent
+		color rgba(244, 245, 247, .72)
+		font 650 11px/1 'Inter', system-ui, -apple-system, sans-serif
+		letter-spacing .06em
+		text-transform uppercase
+		cursor pointer
+		transition border-color .16s ease, background .16s ease, color .16s ease
+		&::before
+			content ''
+			width 6px
+			height 6px
+			border-radius 50%
+			background currentColor
+			opacity .55
+		&:hover
+			color #fff
+			background rgba(255, 255, 255, .07)
+		&:focus-visible
+			outline 2px solid var(--demo-accent)
+			outline-offset 2px
+		&[aria-pressed='true'], &:not([aria-pressed])
+			border-color unquote('color-mix(in srgb, var(--demo-accent) 50%, transparent)')
+			background unquote('color-mix(in srgb, var(--demo-accent) 20%, transparent)')
+			color #fff
+			&::before
+				background var(--demo-accent)
+				box-shadow 0 0 8px var(--demo-accent)
+				opacity 1
+		&[aria-pressed='false']
+			opacity .72
+	kbd
+		padding 2px 4px
+		border 1px solid rgba(255, 255, 255, .18)
+		border-radius 4px
+		font 700 9px/1 system-ui, sans-serif
+		color rgba(255, 255, 255, .66)
+	@media (max-width 720px)
+		top calc(12px + var(--sait, 0px))
+		padding 3px
+		button
+			min-height 27px
+			padding 0 10px
+			font-size 10px
+		kbd
+			display none
+	@media (prefers-reduced-motion reduce)
+		button
+			transition none
+
+.lil-gui.lil-auto-place.DemoGuiTop
+	top calc(18px + var(--sait, 0px))
+	left 50%
+	right auto
+	transform translateX(-50%)
+	border-radius 14px
+	overflow hidden

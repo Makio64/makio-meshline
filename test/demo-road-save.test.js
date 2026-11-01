@@ -157,29 +157,34 @@ test( 'filenames and ids stay filesystem-safe', () => {
 } )
 
 test( 'the Surface Road editor restores, autosaves, and exports the save format', async () => {
-	const [demo, hud] = await Promise.all( [
+	const [demo, route, saves, editor, hud, detect] = await Promise.all( [
 		readFile( new URL( '../demo/src/demos/surfaceRoad.js', import.meta.url ), 'utf8' ),
+		readFile( new URL( '../demo/src/utils/surfaceRoadRoute.js', import.meta.url ), 'utf8' ),
+		readFile( new URL( '../demo/src/utils/surfaceRoadSaves.js', import.meta.url ), 'utf8' ),
+		readFile( new URL( '../demo/src/utils/surfaceRoadEditor.js', import.meta.url ), 'utf8' ),
 		readFile( new URL( '../demo/src/components/SurfaceRoad.vue', import.meta.url ), 'utf8' ),
+		readFile( new URL( '../demo/src/makio/utils/detect.js', import.meta.url ), 'utf8' ),
 	] )
 
-	assert.match( demo, /const MAX_CONTROLS = 24/ )
-	assert.match( demo, /const MIN_CONTROLS = 2/ )
+	assert.match( route, /const MAX_CONTROLS = 24/ )
+	assert.match( route, /const MIN_CONTROLS = 2/ )
 	assert.equal( ROAD_SAVE_LIMITS.maxControls, 24 )
 	assert.equal( ROAD_SAVE_LIMITS.minControls, 2 )
 	assert.equal( ROAD_SAVE_LIMITS.defaultWidth, 6 )
-	assert.match( demo, /if \( !this\.restoreSavedRoad\(\) \) this\.updateRoad\(\)/ )
-	assert.match( demo, /const fromUrl = readRoadFromLocation\( window\.location\.href \)/ )
-	assert.match( demo, /const record = fromUrl \?\? this\.saveStore\.get\( AUTOSAVE_ID \)/ )
-	assert.match( demo, /this\.scheduleAutosave\(\)/ )
-	assert.match( demo, /this\.persistAutosave\(\)/ )
-	assert.match( demo, /Export JSON/ )
-	assert.match( demo, /Import JSON/ )
-	assert.match( demo, /Copy share link/ )
-	assert.match( demo, /SurfaceRoadSaves/ )
+	assert.match( demo, /if \( !this\.saves\.restoreSavedRoad\(\) \) this\.updateRoad\(\)/ )
+	assert.match( saves, /const fromUrl = readRoadFromLocation\( window\.location\.href \)/ )
+	assert.match( saves, /const record = fromUrl \?\? this\.saveStore\.get\( AUTOSAVE_ID \)/ )
+	assert.match( demo, /this\.saves\.scheduleAutosave\(\)/ )
+	assert.match( saves, /this\.persistAutosave\(\)/ )
+	assert.match( hud, /@click="api\.exportRoadFile\(\)">Export</ )
+	assert.match( hud, /@click="api\.importRoadFile\(\)">Import</ )
+	assert.match( hud, /@click="api\.copyShareLink\(\)">Copy link</ )
+	assert.match( editor, /const UI_SELECTOR = '[^']*\.SurfaceRoadSaves/ )
 	assert.match( hud, /class="SurfaceRoadSaves"/ )
-	assert.match( hud, /Copy link/ )
-	assert.match( hud, /window\.location\.search \)\.has\( 'noUI' \)/ )
-	assert.match( hud, /ctrlKey \|\| event\?\.metaKey/ )
+	assert.match( hud, /<template v-if="!hideSaves">/ )
+	assert.match( hud, /hideSaves: noUI/ )
+	assert.match( detect, /export const noUI = new URLSearchParams\( window\.location\.search \)\.has\( 'noUI' \)/ )
+	assert.match( hud, /\( event\.ctrlKey \|\| event\.metaKey \) && key\.toLowerCase\(\) === 's'/ )
 } )
 
 test( 'listed slots keep autosave first then newest named roads', () => {

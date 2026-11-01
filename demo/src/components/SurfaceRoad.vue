@@ -1,22 +1,9 @@
 <template>
 	<div class="SurfaceRoadHud" @pointerdown.stop>
 		<div class="SurfaceRoadHud__bar" role="toolbar" aria-label="Road controls">
-			<button
-				class="SurfaceRoadHud__btn"
-				type="button"
-				@click="resetRoad"
-			>Valley</button>
-			<button
-				class="SurfaceRoadHud__btn"
-				type="button"
-				@click="elevatedPreset"
-			>3D Overpass</button>
-			<button
-				class="SurfaceRoadHud__btn"
-				type="button"
-				title="Generate random road (R)"
-				@click="randomRoad"
-			>Random</button>
+			<button class="SurfaceRoadHud__btn" type="button" @click="api.resetRoad()">Valley</button>
+			<button class="SurfaceRoadHud__btn" type="button" @click="api.setElevatedPreset()">3D Overpass</button>
+			<button class="SurfaceRoadHud__btn" type="button" title="Generate random road (R)" @click="api.setRandomControls()">Random</button>
 			<span class="SurfaceRoadHud__divider" aria-hidden="true" />
 			<button
 				class="SurfaceRoadHud__btn"
@@ -24,14 +11,14 @@
 				type="button"
 				:aria-pressed="ui.wireframe"
 				title="Toggle wireframe (W)"
-				@click="toggleWireframe"
+				@click="api.toggleWireframe()"
 			>Wireframe</button>
 			<button
 				v-if="ui.controls > 2"
 				class="SurfaceRoadHud__btn SurfaceRoadHud__btn--danger"
 				type="button"
 				title="Delete selected point (Delete / Backspace)"
-				@click="removeSelected"
+				@click="api.removeSelectedControl()"
 			>Delete</button>
 			<template v-if="!hideSaves">
 				<span class="SurfaceRoadHud__divider" aria-hidden="true" />
@@ -51,7 +38,7 @@
 	</div>
 
 	<aside
-		v-if="!hideSaves && savesOpen"
+		v-if="savesOpen"
 		class="SurfaceRoadSaves"
 		aria-label="Saved roads"
 		@pointerdown.stop
@@ -75,7 +62,7 @@
 				>Close</button>
 			</header>
 
-			<form class="SurfaceRoadSaves__form" @submit.prevent="saveNamed">
+			<form class="SurfaceRoadSaves__form" @submit.prevent="api.saveNamedRoad( ui.saveName )">
 				<label class="SurfaceRoadSaves__field">
 					<span class="SurfaceRoadSaves__sr">Save name</span>
 					<input
@@ -96,7 +83,7 @@
 						class="SurfaceRoadSaves__slot"
 						type="button"
 						:class="{ 'is-active': save.id === ui.activeSaveId }"
-						@click="loadSave( save.id )"
+						@click="api.loadSavedRoad( save.id )"
 					>
 						<strong>{{ save.name }}</strong>
 						<span>{{ save.points }} pts · {{ formatSavedAt( save.savedAt ) }}</span>
@@ -106,110 +93,73 @@
 						class="SurfaceRoadSaves__delete"
 						type="button"
 						:aria-label="`Delete ${save.name}`"
-						@click.stop="deleteSave( save.id )"
+						@click.stop="api.deleteSavedRoad( save.id )"
 					>×</button>
 				</li>
 			</ul>
 			<p v-else class="SurfaceRoadSaves__empty">Edit the road to autosave, or save a named copy.</p>
 
 			<div class="SurfaceRoadSaves__actions">
-				<button class="SurfaceRoadSaves__actionBtn" type="button" @click="exportRoad">Export</button>
-				<button class="SurfaceRoadSaves__actionBtn" type="button" @click="importRoad">Import</button>
-				<button class="SurfaceRoadSaves__actionBtn" type="button" @click="copyLink">Copy link</button>
+				<button class="SurfaceRoadSaves__actionBtn" type="button" @click="api.exportRoadFile()">Export</button>
+				<button class="SurfaceRoadSaves__actionBtn" type="button" @click="api.importRoadFile()">Import</button>
+				<button class="SurfaceRoadSaves__actionBtn" type="button" @click="api.copyShareLink()">Copy link</button>
 			</div>
 		</div>
 	</aside>
 </template>
 
 <script>
+import stage3d from '@/makio/three/stage3d'
+import { noUI } from '@/makio/utils/detect'
 import keyboard from '@/makio/utils/input/keyboard'
 import { menuOpen } from '@/store'
+import { onShortcut } from '@/utils/demoControls'
 
 export default {
 	name: 'SurfaceRoadUI',
-	inheritAttrs: false,
 	props: {
 		api: { type: Object, required: true },
 	},
 	data() {
 		return {
 			savesOpen: false,
+			hideSaves: noUI,
 		}
 	},
 	computed: {
 		ui() {
 			return this.api.ui
 		},
-		hideSaves() {
-			return new URLSearchParams( window.location.search ).has( 'noUI' )
-		},
 	},
 	mounted() {
-		keyboard.onDown.add( this.onKey )
-	},
-	unmounted() {
-		keyboard.onDown.remove( this.onKey )
+		onShortcut( 'w', () => this.api.toggleWireframe() )
+		onShortcut( 'r', () => this.api.setRandomControls() )
+		stage3d.listen( keyboard.onDown, this.onKey )
 	},
 	methods: {
+		// These keys have a browser default to stop, which onShortcut leaves alone.
 		onKey( key, event ) {
-			const target = event?.target
-			const isEditable = target?.matches?.( 'input, textarea, select, [contenteditable="true"]' )
-			if ( event?.repeat || event?.defaultPrevented || menuOpen.value ) return
-			if ( ( event?.ctrlKey || event?.metaKey ) && ( key === 's' || key === 'S' ) ) {
+			if ( event.repeat || event.defaultPrevented || menuOpen.value ) return
+			if ( ( event.ctrlKey || event.metaKey ) && key.toLowerCase() === 's' ) {
 				event.preventDefault()
-				this.saveNamed()
+				this.api.saveNamedRoad( this.ui.saveName )
 				return
 			}
-			if ( event?.altKey || event?.ctrlKey || event?.metaKey || isEditable ) return
-			if ( key === 'w' || key === 'W' ) this.toggleWireframe()
-			else if ( key === 'r' || key === 'R' ) this.randomRoad()
-			else if ( key === 'Backspace' || key === 'Delete' ) {
-				event?.preventDefault?.()
-				this.removeSelected()
-			}
-		},
-		toggleWireframe() {
-			this.api.toggleWireframe()
-		},
-		removeSelected() {
+			if ( key !== 'Backspace' && key !== 'Delete' ) return
+			if ( event.altKey || event.ctrlKey || event.metaKey ) return
+			if ( event.target.matches?.( 'input, textarea, select, [contenteditable="true"]' ) ) return
+			event.preventDefault()
 			this.api.removeSelectedControl()
-		},
-		resetRoad() {
-			this.api.resetRoad()
-		},
-		elevatedPreset() {
-			this.api.setElevatedPreset()
-		},
-		randomRoad() {
-			this.api.setRandomControls()
-		},
-		saveNamed() {
-			this.api.saveNamedRoad( this.ui.saveName )
-		},
-		loadSave( id ) {
-			this.api.loadSavedRoad( id )
-		},
-		deleteSave( id ) {
-			this.api.deleteSavedRoad( id )
-		},
-		exportRoad() {
-			this.api.exportRoadFile()
-		},
-		importRoad() {
-			this.api.importRoadFile()
-		},
-		copyLink() {
-			this.api.copyShareLink()
 		},
 		formatSavedAt( value ) {
 			const time = Date.parse( value )
 			if ( !Number.isFinite( time ) ) return 'just now'
 			const elapsed = Date.now() - time
 			if ( elapsed < 15000 ) return 'just now'
-			if ( elapsed < 60000 ) return `${Math.max( 1, Math.round( elapsed / 1000 ) )}s ago`
-			if ( elapsed < 3600000 ) return `${Math.max( 1, Math.round( elapsed / 60000 ) )}m ago`
-			if ( elapsed < 86400000 ) return `${Math.max( 1, Math.round( elapsed / 3600000 ) )}h ago`
-			return `${Math.max( 1, Math.round( elapsed / 86400000 ) )}d ago`
+			if ( elapsed < 60000 ) return `${Math.round( elapsed / 1000 )}s ago`
+			if ( elapsed < 3600000 ) return `${Math.round( elapsed / 60000 )}m ago`
+			if ( elapsed < 86400000 ) return `${Math.round( elapsed / 3600000 )}h ago`
+			return `${Math.round( elapsed / 86400000 )}d ago`
 		},
 	},
 }
@@ -517,7 +467,6 @@ export default {
 
 @media (prefers-reduced-motion: reduce)
 	.SurfaceRoadHud__btn,
-	.SurfaceRoadSaves__trigger,
 	.SurfaceRoadSaves__close,
 	.SurfaceRoadSaves__pillBtn,
 	.SurfaceRoadSaves__actionBtn,

@@ -283,6 +283,7 @@ test( 'MeshLineCompute arcLengthNode binds distance storage as read-only and can
 	const readBindings = graph.vertexShader.match( /var<storage,\s*read>/g ) ?? []
 	assert.equal( readBindings.length, 2 )
 	assert.doesNotMatch( graph.vertexShader, /var<storage,\s*read_write>/ )
+	assert.match( graph.vertexShader, /instanceIndex\s*\*\s*8u\b/ )
 
 	compute.dispose()
 
@@ -535,6 +536,325 @@ test( 'surface round joins skip atan2 on shallow bends, fused setPositionRange m
 		line.dispose()
 	}
 } )
+
+test( 'direct unaliased variable surface topology matches batch topology, fused widthCallback rolls back cleanly, and multi-line raycast pre-checks aggregate AABB', () => {
+	// 1. Direct unaliased single-line variable surface topology matches multi-line batch emission bit-for-bit.
+	const gentle = createWave( 32, 0.08, 0 )
+	const sharp = new Float32Array( 16 * 3 )
+	const sharpTurn = 160 * Math.PI / 180
+	let heading = 0
+	for ( let i = 1; i < 16; i++ ) {
+		if ( i > 1 ) heading += i % 2 === 0 ? -sharpTurn : sharpTurn
+		sharp[i * 3] = sharp[( i - 1 ) * 3] + Math.cos( heading ) * 20
+		sharp[i * 3 + 2] = sharp[( i - 1 ) * 3 + 2] + Math.sin( heading ) * 20
+	}
+	const dummyLine = new Float32Array( [0, 10, 0, 1, 10, 0, 2, 10.5, 0] )
+
+	for ( const cfg of [
+		{ lines: gentle, lineWidth: 0.1, join: { type: 'bevel', limit: 4 }, cap: 'butt', closed: false },
+		{ lines: gentle, lineWidth: 0.1, join: { type: 'round', segments: 8 }, cap: 'butt', closed: false },
+		{ lines: sharp, lineWidth: 2, join: { type: 'miter', limit: 2 }, cap: 'butt', closed: false },
+	] ) {
+		const single = new MeshLineSurfaceGeometry( cfg )
+		assert.equal( single._surfaceLines[0].topology?.directUnaliased, true )
+		const batch = new MeshLineSurfaceGeometry( {
+			...cfg,
+			lines: [cfg.lines, dummyLine],
+			closed: [cfg.closed, false],
+		} )
+
+		const vCount = single.getAttribute( 'position' ).count
+		const iCount = single.getIndex().count
+		for ( const attrName of ['position', 'normal'] ) {
+			const sAttr = single.getAttribute( attrName )
+			const bAttr = batch.getAttribute( attrName )
+			assert.deepEqual(
+				Array.from( sAttr.array ),
+				Array.from( bAttr.array.subarray( 0, vCount * sAttr.itemSize ) ),
+				`direct surface attribute ${attrName} mismatch`
+			)
+		}
+		assert.deepEqual(
+			Array.from( single.getIndex().array ),
+			Array.from( batch.getIndex().array.subarray( 0, iCount ) ),
+			'direct surface index mismatch'
+		)
+
+		single.dispose()
+		batch.dispose()
+	}
+
+	// 2. Fused setPositionRange + widthCallback writes directly without _lineWidthScratch and rolls back cleanly on error.
+	const pts = createWave( 24, 1.0, 0 )
+	let rejectAtPoint = -1
+	const geo = new MeshLineGeometry( {
+		lines: pts.slice(),
+		dynamic: true,
+		needsProgress: true,
+		needsWidth: true,
+		widthCallback: ( p, i ) => {
+			if ( i === rejectAtPoint ) return Number.NaN
+			return 0.4 + p * 0.8 + ( i & 1 ) * 0.05
+		},
+	} )
+	// Prime the arc-length cache so the next call takes the fused streaming path.
+	geo.setPositionRange( pts.subarray( 4 * 3, 7 * 3 ), 4 )
+	geo._lineWidthScratch.length = 0
+
+	const validPatch = new Float32Array( [1.1, 0.5, -0.2, 1.5, -0.4, 0.3, 1.9, 0.2, 0.1] )
+	geo.setPositionRange( validPatch, 4 )
+	assert.equal( geo._lineWidthScratch[0], undefined )
+
+	const savedProgress = geo.getAttribute( 'progress' ).array.slice()
+	const savedWidth = geo.getAttribute( 'width' ).array.slice()
+	const savedLine = geo._lines[0].slice()
+
+	rejectAtPoint = 12
+	assert.throws(
+		() => geo.setPositionRange( new Float32Array( [1.2, -0.3, 0.4, 1.6, 0.7, -0.1, 2.0, -0.2, 0.2] ), 4 ),
+		/widthCallback returned a non-finite value/
+	)
+	assert.deepEqual( Array.from( geo._lines[0] ), Array.from( savedLine ) )
+	assert.deepEqual( Array.from( geo.getAttribute( 'progress' ).array ), Array.from( savedProgress ) )
+	assert.deepEqual( Array.from( geo.getAttribute( 'width' ).array ), Array.from( savedWidth ) )
+	geo.dispose()
+
+	// 3. Multi-line raycast rejects rays outside the aggregate local AABB in a single box check.
+	const batchLines = Array.from( { length: 16 }, ( _, row ) => {
+		const arr = new Float32Array( 16 * 3 )
+		for ( let i = 0; i < 16; i++ ) {
+			arr[i * 3] = i * 4
+			arr[i * 3 + 2] = ( row - 7.5 ) * 2
+		}
+		return arr
+	} )
+	const multiLine = new MeshLine( { lines: batchLines, lineWidth: 0.2 } ).build()
+	const raycaster = new Raycaster()
+	raycaster.set( new Vector3( 30, 15, 0 ), new Vector3( 0, 0, -1 ) )
+
+	const originalIntersectsBox = Ray.prototype.intersectsBox
+	let boxChecks = 0
+	Ray.prototype.intersectsBox = function ( ...args ) {
+		boxChecks++
+		return originalIntersectsBox.apply( this, args )
+	}
+	try {
+		const hits = raycaster.intersectObject( multiLine, false )
+		assert.equal( hits.length, 0 )
+		assert.equal( boxChecks, 1 )
+	} finally {
+		Ray.prototype.intersectsBox = originalIntersectsBox
+		multiLine.dispose()
+	}
+} )
+
+test( 'fused open setPositions, deferred progress normalization, and zero-copy surface paths preserve exact attributes and rollback safety', () => {
+	// 1. Fused open setPositions fast path (crossing 4096-point chunk boundary) matches fresh build
+	// and restores live buffers if a late point is non-finite.
+	const count = 4200
+	const ptsA = createWave( count, 1.0, 0 )
+	const ptsB = createWave( count, 1.5, 0.7 )
+	const fastGeo = new MeshLineGeometry( { lines: ptsA.slice(), dynamic: true, needsProgress: false } )
+	fastGeo.setPositions( ptsB, false )
+
+	const refFastGeo = new MeshLineGeometry( { lines: ptsB.slice(), dynamic: true, needsProgress: false } )
+	for ( const attrName of ['position', 'previous', 'next'] ) {
+		assert.deepEqual(
+			Array.from( fastGeo.getAttribute( attrName ).array ),
+			Array.from( refFastGeo.getAttribute( attrName ).array ),
+			`chunked fused setPositions ${attrName} mismatch`
+		)
+	}
+
+	// Late non-finite point (> 4096 chunk boundary) aborts the fused writer, rolls back partial
+	// chunk writes, and falls back to setLines() compaction identically to a fresh build.
+	const invalidPts = createWave( count, 2.0, 1.2 )
+	invalidPts[4150 * 3 + 1] = Number.NaN
+	fastGeo.setPositions( invalidPts, false )
+	const refInvalidGeo = new MeshLineGeometry( { lines: invalidPts.slice(), dynamic: true, needsProgress: false } )
+	assert.equal( fastGeo.getAttribute( 'position' ).count, ( count - 1 ) * 4 )
+	for ( const attrName of ['position', 'previous', 'next'] ) {
+		assert.deepEqual(
+			Array.from( fastGeo.getAttribute( attrName ).array ),
+			Array.from( refInvalidGeo.getAttribute( attrName ).array ),
+			`fallback after late non-finite point ${attrName} mismatch`
+		)
+	}
+	refInvalidGeo.dispose()
+
+	// Restore count via setLines() and verify consecutive duplicate fallback too.
+	fastGeo.setLines( ptsB.slice() )
+	const dupPts = ptsB.slice()
+	dupPts[10 * 3] = dupPts[9 * 3]
+	dupPts[10 * 3 + 1] = dupPts[9 * 3 + 1]
+	dupPts[10 * 3 + 2] = dupPts[9 * 3 + 2]
+	fastGeo.setPositions( dupPts, false )
+	assert.equal( fastGeo.getAttribute( 'position' ).count, ( count - 1 ) * 4 )
+	fastGeo.dispose()
+	refFastGeo.dispose()
+
+	// 2. Deferred progress normalization in setPositions and buildLine matches fresh builds across
+	// progress-only, progress+uv, and progress+endpointMetadata (open & closed).
+	for ( const closed of [false, true] ) {
+		for ( const extra of [
+			{ needsProgress: true, needsUV: false, needsEndpointMetadata: false },
+			{ needsProgress: true, needsUV: true, needsEndpointMetadata: false },
+			{ needsProgress: true, needsUV: false, needsEndpointMetadata: true },
+			{ needsProgress: true, needsUV: true, needsEndpointMetadata: true },
+		] ) {
+			const wave0 = createWave( 64, 1.0, 0 )
+			const wave1 = createWave( 64, 1.8, 0.9 )
+			const updated = new MeshLineGeometry( { lines: wave0.slice(), closed, dynamic: true, ...extra } )
+			updated.setPositions( wave1.slice(), false )
+
+			const rebuilt = new MeshLineGeometry( { lines: wave0.slice(), closed, dynamic: true, ...extra } )
+			rebuilt.buildLine( { lines: wave1.slice() } )
+
+			const fresh = new MeshLineGeometry( { lines: wave1.slice(), closed, dynamic: true, ...extra } )
+			for ( const attrName of ['position', 'previous', 'next', 'progress', 'uv', 'endpoint'] ) {
+				const uAttr = updated.getAttribute( attrName )
+				const rAttr = rebuilt.getAttribute( attrName )
+				const fAttr = fresh.getAttribute( attrName )
+				assert.equal( Boolean( uAttr ), Boolean( fAttr ) )
+				assert.equal( Boolean( rAttr ), Boolean( fAttr ) )
+				if ( fAttr ) {
+					for ( let i = 0; i < fAttr.array.length; i++ ) {
+						assert.ok(
+							Math.abs( uAttr.array[i] - fAttr.array[i] ) <= 1e-6,
+							`setPositions ${attrName}[${i}] mismatch (closed=${closed})`
+						)
+						assert.ok(
+							Math.abs( rAttr.array[i] - fAttr.array[i] ) <= 1e-6,
+							`buildLine ${attrName}[${i}] mismatch (closed=${closed})`
+						)
+					}
+				}
+			}
+			updated.dispose()
+			rebuilt.dispose()
+			fresh.dispose()
+		}
+	}
+
+	// 3. Zero-copy Float32Array surface input + bisector transport normals + orthonormal join basis.
+	const helix = new Float32Array( 48 * 3 )
+	for ( let i = 0; i < 48; i++ ) {
+		const t = ( i / 48 ) * Math.PI * 2
+		helix[i * 3] = Math.cos( t ) * 4
+		helix[i * 3 + 1] = Math.sin( t * 2 ) * 1.2
+		helix[i * 3 + 2] = Math.sin( t ) * 4
+	}
+	const surfOpen = new MeshLineSurfaceGeometry( {
+		lines: helix,
+		closed: false,
+		lineWidth: 0.4,
+		surface: { frame: 'transport' },
+		join: { type: 'round', segments: 6 },
+	} )
+	assert.equal( surfOpen._surfaceLines[0].points, helix )
+	const normals = surfOpen.getAttribute( 'normal' ).array
+	for ( let i = 0; i < normals.length; i += 3 ) {
+		const len = Math.hypot( normals[i], normals[i + 1], normals[i + 2] )
+		assert.ok( Math.abs( len - 1 ) < 1e-4, `unit surface normal expected, got ${len}` )
+	}
+	surfOpen.dispose()
+} )
+
+test( 'pooled compact caps reuse body quad indices on setPositions and open setPositions fast paths handle bounds, progress, and sub-micron steps', () => {
+	const waveA = createWave( 24, 1.0, 0 )
+	const waveB = createWave( 24, 1.6, 0.5 )
+
+	// 1. Pooled compact caps (round and square) match batch topology and skip rewriting
+	// canonical indices on in-place setPositions updates.
+	for ( const cap of [{ type: 'round', segments: 8 }, { type: 'square' }] ) {
+		const single = new MeshLineSurfaceGeometry( {
+			lines: waveA,
+			lineWidth: 0.25,
+			join: { type: 'miter', limit: 4 },
+			cap,
+			needsTangents: true,
+			needsUV: true,
+			needsProgress: true,
+			needsSide: true,
+		} )
+		const batch = new MeshLineSurfaceGeometry( {
+			lines: [waveA, waveB],
+			lineWidth: 0.25,
+			join: { type: 'miter', limit: 4 },
+			cap,
+			needsTangents: true,
+			needsUV: true,
+			needsProgress: true,
+			needsSide: true,
+		} )
+		const vCount = single.getAttribute( 'position' ).count
+		for ( const [name, itemSize] of [['position', 3], ['normal', 3], ['tangent', 4], ['uv', 2], ['progress', 1], ['side', 1]] ) {
+			assert.deepEqual(
+				Array.from( single.getAttribute( name ).array ),
+				Array.from( batch.getAttribute( name ).array.subarray( 0, vCount * itemSize ) ),
+				`pooled cap ${cap.type} ${name} mismatch`
+			)
+		}
+		const iCount = single.getIndex().count
+		assert.deepEqual(
+			Array.from( single.getIndex().array ),
+			Array.from( batch.getIndex().array.subarray( 0, iCount ) ),
+			`pooled cap ${cap.type} index mismatch`
+		)
+
+		const indexAttr = single.getIndex()
+		const initialVersion = indexAttr.version
+		single.setPositions( waveB )
+		assert.equal( single.getIndex(), indexAttr )
+		assert.equal( indexAttr.version, initialVersion )
+
+		single.dispose()
+		batch.dispose()
+	}
+
+	// 2. Single-line open Float32Array setPositions fast paths with updateBounding=true and needsProgress=true.
+	for ( const updateBounding of [false, true] ) {
+		for ( const extra of [
+			{ needsProgress: false, needsUV: false, needsEndpointMetadata: false },
+			{ needsProgress: true, needsUV: false, needsEndpointMetadata: false },
+			{ needsProgress: true, needsUV: true, needsEndpointMetadata: false },
+			{ needsProgress: true, needsUV: true, needsEndpointMetadata: true },
+		] ) {
+			const g = new MeshLineGeometry( { lines: waveA.slice(), dynamic: true, lineWidth: 0.4, ...extra } )
+			g.setPositions( waveB.slice(), updateBounding )
+			const ref = new MeshLineGeometry( { lines: waveB.slice(), dynamic: true, lineWidth: 0.4, ...extra } )
+			for ( const attrName of ['position', 'previous', 'next', 'progress', 'uv', 'endpoint'] ) {
+				const a = g.getAttribute( attrName )
+				const b = ref.getAttribute( attrName )
+				assert.equal( Boolean( a ), Boolean( b ) )
+				if ( b ) {
+					for ( let i = 0; i < b.array.length; i++ ) {
+						assert.ok( Math.abs( a.array[i] - b.array[i] ) <= 1e-6 )
+					}
+				}
+			}
+			if ( updateBounding ) {
+				assert.deepEqual( g.boundingBoxes.map( boxToArray ), ref.boundingBoxes.map( boxToArray ) )
+			}
+			g.dispose()
+			ref.dispose()
+		}
+	}
+
+	// 3. writeValidPositionsQuadRange accepts valid sub-micron steps (> 0) and rejects Infinity.
+	const microPtsA = new Float32Array( [0, 0, 0, 1e-7, 0, 0, 2e-7, 0, 0] )
+	const microPtsB = new Float32Array( [0, 0, 0, 1.5e-7, 0, 0, 3e-7, 0, 0] )
+	const microGeo = new MeshLineGeometry( { lines: microPtsA, dynamic: true, needsProgress: false } )
+	microGeo.setPositions( microPtsB, false )
+	assert.equal( microGeo.getAttribute( 'position' ).count, 12 )
+	assert.equal( microGeo._lines[0], microPtsB )
+
+	const infPts = new Float32Array( [0, 0, 0, Infinity, 0, 0, 1, 0, 0] )
+	microGeo.setPositions( infPts, false )
+	assert.equal( microGeo.getAttribute( 'position' ).count, 8 )
+	microGeo.dispose()
+} )
+
 
 
 
