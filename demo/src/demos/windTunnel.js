@@ -1,26 +1,26 @@
 /**
- * Wind Tunnel — 256 aerodynamic smoke streamlines deflected around a hover car
- * by a 3D signed-distance field in WebGPU compute shaders, stored in a GPU ring buffer.
- * Demonstrates: storagePositions( storageAttr, { pointsPerLine, head } ), .gpuPositionNode( fn ),
+ * Wind Tunnel — smoke filaments parted by a hover car. A WebGPU compute shader
+ * advects them through a flow field built on the car's 3D signed-distance
+ * volume, and each trail is a ring buffer the line reads straight from the GPU.
+ * Demonstrates: storagePositions( buffer, { pointsPerLine, head } ), .gpuPositionNode( fn ),
  * .instances( count ), and WebGPU compute integration.
  */
 import { MeshLine, storagePositions } from 'makio-meshline'
-import { abs, clamp, color, cos, dot, float, floor, Fn, If, instanceIndex, length, Loop, max, min, mix, normalize, sin, smoothstep, storage, uint, uniform, uv, vec2, vec3, vec4 } from 'three/tsl'
-import { AdditiveBlending, MathUtils, StorageBufferAttribute } from 'three/webgpu'
+import { abs, clamp, cos, dot, exp, float, floor, Fn, If, instanceIndex, length, max, min, mix, normalize, sin, smoothstep, sqrt, storage, uint, uniform, vec2, vec3, vec4 } from 'three/tsl'
+import { AdditiveBlending, Color, MathUtils, StorageBufferAttribute, Vector2 } from 'three/webgpu'
 
 import stage3d from '@/makio/three/stage3d'
 import { reducedMotion } from '@/makio/utils/detect'
 import { onMove } from '@/makio/utils/input/mouse'
-import { createBloomPipeline } from '@/utils/bloomPipeline'
 import { createDemoControls } from '@/utils/demoControls'
 import { WebGPURequiredError } from '@/utils/demoFailure'
 import { createDemoHint } from '@/utils/demoHint'
 import {
 	createNozzleBuffer,
-	createTunnelStage,
 	FLOW_SPEED,
 	INSTANCE_COUNT,
 	loadWindTunnelCar,
+	NOZZLE_COUNT,
 	SDF_CELL_COUNT,
 	SDF_MAX_X,
 	SDF_MAX_Y,
@@ -31,7 +31,6 @@ import {
 	SDF_NX,
 	SDF_NY,
 	SDF_NZ,
-	seedStreamlines,
 	SURFACE_CLEARANCE,
 	TOTAL_POINTS,
 	TRAIL_LENGTH,
@@ -40,6 +39,8 @@ import {
 	Z_RESET,
 	Z_SPAWN,
 } from '@/utils/windTunnelCar'
+import { createLinesPanel } from '@/utils/windTunnelPanel'
+import { createTunnelStage, REFLECTED } from '@/utils/windTunnelStage'
 
 const MODES = [
 	{ id: 'tunnel', label: 'Full Tunnel', key: '1', mode: 0 },
@@ -47,67 +48,91 @@ const MODES = [
 	{ id: 'ground', label: 'Ground Effect', key: '3', mode: 2 },
 ]
 
-const backdropNode = Fn( () => {
-	const centered = uv().sub( vec2( 0.5 ) )
-	const radial = smoothstep( 0.05, 0.85, length( centered.mul( vec2( 0.95, 1.2 ) ) ) )
-	const vertical = smoothstep( 0, 1, uv().y )
-	const horizon = mix( color( 0x050d1e ), color( 0x02040a ), vertical )
-	const glow = mix( color( 0x0b1f3f ), horizon, radial )
-	return vec4( glow, 1 )
-} )
+// Milliseconds between two samples of a trail.
+const SAMPLE_MS = 16
+// Flow seconds a filament takes from the nozzle to the collector.
+const TRANSIT = ( Z_SPAWN - Z_RESET ) / FLOW_SPEED
+
+// Height of the rake while the pointer rests mid-screen.
+const RAKE_Y = 0.62
+
+// The car as the flow sees it from afar: an ellipsoid, and where its tail ends.
+const BODY_CENTER = vec3( 0, 0.72, -0.07 )
+const BODY_RADII = vec3( 1, 0.56, 2.4 )
+const TAIL_Z = -2.35
 
 export default class WindTunnelExample {
-	// Each trail is a ring buffer: `head` is the newest slot, so each frame writes
-	// only 1 new sample per streamline instead of shifting all 64 points down the trail.
-	head = uniform( TRAIL_LENGTH - 1, 'uint' )
-	uStepDt = uniform( 0.011 )
+	// Each trail is a ring buffer: `head` is its newest slot, so a frame writes
+	// one sample per filament instead of shifting the 128 points down the trail.
+	head = uniform( 0, 'uint' )
+	uTurn = uniform( 0, 'uint' )
+	uStepDt = uniform( 0.012 )
 	uTime = uniform( 0 )
 	uMode = uniform( 0, 'uint' )
 	uRakeX = uniform( 0 )
-	uRakeY = uniform( 0.72 )
+	uRakeY = uniform( RAKE_Y )
 	uCrosswind = uniform( 0 )
+	uWind = uniform( 1 )
+
+	// What the Lines panel tunes. Ranges are ( min, max ): each filament draws its
+	// own width, length and speed between the two.
+	look = {
+		density: uniform( 1 ),
+		width: uniform( new Vector2( 0.012, 0.03 ) ),
+		length: uniform( new Vector2( 0.5, 1 ) ),
+		speed: uniform( new Vector2( 0.85, 1.15 ) ),
+		halo: uniform( 1 ),
+		glow: uniform( 1 ),
+		cling: uniform( 1 ),
+		turbulence: uniform( 1 ),
+		// Colour by the speed of the air: stalled → free stream → sliding over the body → fastest.
+		stalled: uniform( new Color( 0x6a3cff ) ),
+		stream: uniform( new Color( 0x35a4ff ) ),
+		sliding: uniform( new Color( 0xdcf4ff ) ),
+		peak: uniform( new Color( 0xffd9a3 ) ),
+	}
 
 	targetRakeX = 0
-	targetRakeY = 0.72
+	targetRakeY = RAKE_Y
+	targetWind = 1
 	crosswindEnabled = false
+	sinceSample = 0
 
 	async init() {
-		await stage3d.initRender( { background: 0x02040a, fov: 44, near: 0.1, far: 120 } )
+		await stage3d.initRender( { background: 0x010204, fov: 32, near: 0.1, far: 160 } )
 		if ( !stage3d.isWebGPU ) {
 			throw new WebGPURequiredError( 'Wind Tunnel advects its streamlines against a 3D SDF in WebGPU compute shaders, and this browser is running the WebGL2 fallback.' )
 		}
 
-		stage3d.orbit( 6.9, {
-			target: [0, 0.62, -0.25],
-			cameraOffset: [0, 0.62, -0.25],
-			theta: 0.88,
-			phi: 1.24,
-			minRadius: 3.6,
-			maxRadius: 15,
+		stage3d.orbit( 8.2, {
+			target: [0, 0.6, -0.4],
+			cameraOffset: [0, 0.6, -0.4],
+			theta: 0.95,
+			phi: 1.41,
+			minRadius: 4.5,
+			maxRadius: 18,
 			minPhi: 0.35,
-			maxPhi: 1.52,
+			maxPhi: 1.5,
 			autoRotate: 0.000018,
 		} )
-		stage3d.scene.backgroundNode = backdropNode()
 
-		const { carRoot, sdfBuffer, sdfData } = await loadWindTunnelCar()
+		const { carRoot, sdfBuffer } = await loadWindTunnelCar()
 		this.sdfBuffer = stage3d.own( sdfBuffer )
-		this.sdfData = sdfData
 		stage3d.add( carRoot )
 
-		const { group, rakeBar } = createTunnelStage()
+		const { group, rakeBar } = createTunnelStage( carRoot )
 		this.rakeBar = rakeBar
 		stage3d.add( group )
 
 		this.initStreamlines()
-		createBloomPipeline( { strength: 0.28, radius: 0.18, threshold: 0.45 } )
 		this.initUi()
 	}
 
 	initStreamlines() {
 		this.nozzleBuffer = stage3d.own( createNozzleBuffer() )
 		this.positionBuffer = stage3d.own( new StorageBufferAttribute( TOTAL_POINTS, 4 ) )
-		seedStreamlines( this.positionBuffer, this.nozzleBuffer, this.sdfData, { mode: 0 } )
+		// Every point waits upstream of the nozzle, where smoke is invisible.
+		for ( let i = 0; i < TOTAL_POINTS; i++ ) this.positionBuffer.array[i * 4 + 2] = Z_SPAWN + 1
 
 		const sdfVolume = storage( this.sdfBuffer, 'vec4', SDF_CELL_COUNT ).toReadOnly()
 		const nozzles = storage( this.nozzleBuffer, 'vec4', INSTANCE_COUNT ).toReadOnly()
@@ -116,6 +141,9 @@ export default class WindTunnelExample {
 
 		const trailLen = uint( TRAIL_LENGTH )
 		const trailMask = uint( TRAIL_LENGTH - 1 )
+		const { look } = this
+		// A number in 0..1 that each filament keeps, one per `seed`.
+		const draw = seed => float( instanceIndex ).mul( seed ).fract()
 
 		// Trilinearly sample vec4( nx, ny, nz, signedDistance ) from the baked 3D SDF volume.
 		const sampleSdf = Fn( ( [p] ) => {
@@ -157,180 +185,190 @@ export default class WindTunnelExample {
 			return res
 		} )
 
-		// Compute upstream emitter position for the active tunnel preset.
-		const nozzleSpawn = Fn( ( [nozzle] ) => {
+		// Where a filament leaves the rake in the active preset.
+		const nozzleSpawn = Fn( ( [nozzle, line] ) => {
 			const u = nozzle.x
 			const v = nozzle.y
-			const jitter = nozzle.z
-			const ribbon = nozzle.w
 
-			// Full Tunnel (mode 0, default): arched cross-section sculpted around the car's silhouette.
-			const archTop = float( 1.28 ).sub( u.mul( u ).mul( 0.38 ) )
-			const x = u.mul( float( 0.94 ).sub( v.mul( v ).mul( 0.14 ) ) ).add( this.uRakeX.mul( 0.22 ) ).add( jitter.sub( 0.5 ).mul( 0.03 ) ).toVar()
-			const y = clamp( float( 0.14 ).add( v.mul( archTop ) ).add( this.uRakeY.sub( 0.72 ).mul( 0.22 ) ), 0.1, 1.52 ).toVar()
+			// Full Tunnel (mode 0): an arch of nozzles the shape of the car seen from the front,
+			// so every filament meets the body.
+			const x = u.mul( float( 1.08 ).sub( v.mul( v ).mul( 0.2 ) ) ).add( this.uRakeX.mul( 0.25 ) ).toVar()
+			const y = float( 0.16 ).add( v.mul( float( 1.1 ).sub( u.mul( u ).mul( 0.3 ) ) ) ).add( this.uRakeY.sub( RAKE_Y ).mul( 0.22 ) ).toVar()
 
 			If( this.uMode.equal( uint( 1 ) ), () => {
-				// Smoke Rake (mode 1): concentrated multi-ribbon sheet steered by pointer.
-				x.assign( u.mul( 0.92 ).add( this.uRakeX.mul( 0.38 ) ) )
-				y.assign( clamp( this.uRakeY.add( ribbon.mul( 0.16 ) ).add( jitter.sub( 0.5 ).mul( 0.02 ) ), 0.12, 1.58 ) )
+				// Smoke Rake (mode 1): one comb of thick streams the pointer moves.
+				x.assign( u.mul( 1.15 ).add( this.uRakeX.mul( 0.4 ) ) )
+				y.assign( this.uRakeY.add( v.sub( 0.5 ).mul( 0.14 ) ) )
 			} ).ElseIf( this.uMode.equal( uint( 2 ) ), () => {
-				// Ground Effect (mode 2): underbody Venturi channels and low front splitter sheet.
-				x.assign( u.mul( 0.96 ).add( this.uRakeX.mul( 0.18 ) ).add( jitter.sub( 0.5 ).mul( 0.03 ) ) )
-				y.assign( float( 0.09 ).add( v.mul( 0.46 ) ) )
+				// Ground Effect (mode 2): a low sheet into the splitter and the underbody.
+				x.assign( u.mul( 1.15 ).add( this.uRakeX.mul( 0.2 ) ) )
+				y.assign( float( 0.08 ).add( v.mul( 0.42 ) ) )
 			} )
 
-			return vec3( x, y, float( Z_SPAWN ).sub( jitter.mul( 0.42 ) ) )
+			// The strands of a bundle sit on a small spiral around its core.
+			const angle = float( line ).mul( 2.39996 )
+			const strand = vec2( cos( angle ), sin( angle ) ).mul( sqrt( nozzle.w ).mul( 0.02 ) )
+			// Lean into the crosswind, so the yawed stream still meets the car.
+			const lean = this.uCrosswind.mul( Z_SPAWN / FLOW_SPEED * 0.85 )
+
+			return vec3( x.add( strand.x ).sub( lean ), max( y.add( strand.y ), 0.06 ), Z_SPAWN )
 		} )
 
-		// One thread per streamline integrates 1 step from `head` and writes `(head + 1) & mask`.
+		// Potential flow around the body ellipsoid: the far field that parts the
+		// smoke long before it reaches the car, and speeds it up over the roof.
+		const bodyWash = Fn( ( [p, wind, centerY] ) => {
+			const q = p.sub( vec3( BODY_CENTER.x, centerY, BODY_CENTER.z ) ).div( BODY_RADII ).toVar()
+			const r = max( length( q ), 1 ).toVar()
+			const dir = normalize( q.add( vec3( 0, 0, 1e-4 ) ) ).toVar()
+			const w = wind.div( BODY_RADII ).toVar()
+			const dipole = dir.mul( dot( w, dir ).mul( 3 ) ).sub( w ).div( r.mul( r ).mul( r ).mul( 2 ) )
+			return dipole.mul( BODY_RADII ).negate()
+		} )
+
+		// vec4( velocity, speed ) of the air at `p`, for a filament that rides `lift`
+		// above the bodywork: the smoke slides over the car as a thin layered sheet.
+		const airflow = Fn( ( [p, lift] ) => {
+			const wind = vec3( this.uCrosswind, 0, -FLOW_SPEED ).mul( this.uWind ).toVar()
+			const vel = wind.toVar()
+
+			// The ellipsoid and its mirror under the floor, which keeps the ground a
+			// streamline. It only nudges the smoke apart: the bodywork does the rest.
+			const wash = bodyWash( p, wind, BODY_CENTER.y ).add( bodyWash( p, wind, BODY_CENTER.y.negate() ) )
+			vel.addAssign( wash.mul( mix( 0.12, 0.4, smoothstep( -2.6, -0.4, p.z ) ) ) )
+
+			const sdf = sampleSdf( p ).toVar()
+			const gap = max( sdf.w.sub( lift ), 0 ).toVar()
+			const alongside = smoothstep( TAIL_Z - 0.1, TAIL_Z + 0.5, p.z ).mul( smoothstep( 0.3, 0.5, p.y ) ).toVar()
+
+			// Air passing within reach of the body is drawn onto it…
+			const reach = smoothstep( 0.05, 0.14, gap ).mul( smoothstep( 0.45, 0.14, gap ) ).mul( alongside )
+			vel.subAssign( sdf.xyz.mul( reach ).mul( this.uWind.mul( look.cling ).mul( FLOW_SPEED * 0.2 ) ) )
+			// …cannot go into it, so it slides along…
+			const near = smoothstep( 0.2, 0.015, gap ).toVar()
+			vel.subAssign( sdf.xyz.mul( min( dot( vel, sdf.xyz ), 0 ) ).mul( near ) )
+			// …and clings to it instead of lifting off, until the tail lets it go.
+			vel.subAssign( sdf.xyz.mul( max( dot( vel, sdf.xyz ), 0 ) ).mul( smoothstep( 0.3, 0.03, gap ) ).mul( alongside ).mul( look.cling.min( 1 ) ).mul( 0.9 ) )
+			// Squeezed against the bodywork, it speeds up.
+			vel.mulAssign( near.mul( 0.3 ).add( 1 ) )
+
+			// Behind the tail: slower air in the car's shadow, the pair of
+			// counter-rotating vortices it sheds, and gusts that grow downstream.
+			// The harder the wind, the rougher the wake.
+			const behind = float( TAIL_Z ).sub( p.z ).toVar()
+			If( behind.greaterThan( 0 ), () => {
+				const drift = this.uCrosswind.mul( behind ).div( FLOW_SPEED ).toVar()
+				const x = p.x.sub( drift ).toVar()
+				const onset = smoothstep( 0, 1.4, behind ).toVar()
+				const shadow = smoothstep( 1.6, 0.7, abs( x ) ).mul( smoothstep( 1.7, 1, p.y ) ).mul( onset ).toVar()
+				const force = this.uWind.mul( this.uWind ).mul( look.turbulence ).toVar()
+
+				vel.z.mulAssign( shadow.mul( exp( behind.mul( -0.16 ) ) ).mul( 0.42 ).oneMinus() )
+
+				const dy = p.y.sub( 0.7 ).toVar()
+				const spin = onset.mul( exp( behind.mul( -0.08 ) ) ).mul( force ).mul( 1.4 ).toVar()
+				for ( const side of [-1, 1] ) {
+					const dx = x.sub( side * 0.62 ).toVar()
+					const turn = spin.div( dx.mul( dx ).add( dy.mul( dy ) ).add( 0.07 ) ).mul( side )
+					vel.x.subAssign( dy.mul( turn ) )
+					vel.y.addAssign( dx.mul( turn ) )
+				}
+
+				const gust = shadow.mul( smoothstep( 0.2, 3.5, behind ) ).mul( force ).mul( 0.7 ).toVar()
+				const phase = p.z.mul( 1.7 ).add( this.uTime.mul( 5.2 ) ).toVar()
+				vel.x.addAssign( sin( phase.add( p.y.mul( 2.9 ) ) ).add( sin( phase.mul( 2.3 ).sub( p.y.mul( 4.1 ) ) ).mul( 0.45 ) ).mul( gust ) )
+				vel.y.addAssign( cos( phase.mul( 0.85 ).sub( x.mul( 2.6 ) ) ).add( cos( phase.mul( 2.1 ).add( x.mul( 3.7 ) ) ).mul( 0.45 ) ).mul( gust ).mul( 0.8 ) )
+			} )
+
+			// Speed against the tunnel's own, eased so a gale still shows where the car quickens it.
+			return vec4( vel, length( vel ).div( this.uWind.pow( 0.6 ).mul( FLOW_SPEED ) ) )
+		} )
+
+		// One thread per filament: move its newest point one step down the flow.
 		this.integrateNode = stage3d.own( Fn( () => {
 			const base = instanceIndex.mul( trailLen ).toVar()
-			const currentSlot = base.add( this.head ).toVar()
-			const nextSlot = base.add( this.head.add( uint( 1 ) ).bitAnd( trailMask ) ).toVar()
-
 			const nozzle = nozzles.element( instanceIndex ).toVar()
-			const layerClearance = nozzle.y.mul( 0.18 ).toVar()
-			If( this.uMode.equal( uint( 1 ) ), () => {
-				layerClearance.assign( nozzle.w.add( 0.5 ).mul( 0.06 ) )
-			} ).ElseIf( this.uMode.equal( uint( 2 ) ), () => {
-				layerClearance.assign( nozzle.y.mul( 0.05 ) )
-			} )
 
-			const p = positions.element( currentSlot ).xyz.toVar()
-			const sdf = sampleSdf( p ).toVar()
-			const n = sdf.xyz.toVar()
-			const d = sdf.w.toVar()
-			const dEff = max( float( 0.001 ), d.sub( layerClearance ) ).toVar()
-			const windwardGate = smoothstep( -1.6, -0.35, p.z ).toVar()
+			const p = positions.element( base.add( this.head ) ).xyz.toVar()
+			// Each filament keeps its own height over the body, up to a hand's width.
+			const air = airflow( p, float( instanceIndex ).mul( 0.618034 ).fract().mul( 0.07 ) ).toVar()
+			const pace = mix( look.speed.x, look.speed.y, draw( 0.754877 ) )
+			const next = vec4( p.add( air.xyz.mul( this.uStepDt ).mul( pace ) ), air.w ).toVar()
 
-			const vel = vec3( this.uCrosswind, 0, -FLOW_SPEED ).toVar()
-
-			// Windward boundary-layer slip: deflects oncoming flow around the nose, windshield, and fenders,
-			// then separates cleanly past the canopy crest instead of staying attached to the rear slope.
-			If( dEff.lessThan( 0.42 ).and( windwardGate.greaterThan( 0 ) ), () => {
-				const prox = smoothstep( 0.015, 0.42, dEff ).oneMinus().mul( windwardGate ).toVar()
-				const vn = min( dot( vel, n ), 0 ).toVar()
-				vel.subAssign( n.mul( vn ).mul( prox.mul( 0.96 ) ) )
-
-				const skim = smoothstep( 0.005, 0.08, dEff ).oneMinus().mul( vn.negate() ).mul( 0.08 ).mul( windwardGate )
-				vel.addAssign( vec3( n.x.mul( skim ), n.y.mul( 1.1 ).add( 0.06 ).mul( skim ), 0 ) )
-
-				const venturi = smoothstep( 0.02, 0.28, d ).oneMinus().mul( 0.36 ).mul( windwardGate ).add( 1 )
-				vel.mulAssign( venturi )
-			} )
-
-			// Smooth aerodynamic carry-over arch as the separated shear layer crests the roof peak.
-			const crestArch = smoothstep( -0.45, 0.1, p.z ).oneMinus().mul( smoothstep( -2.1, -0.55, p.z ) ).mul( smoothstep( 1.15, 1.65, p.y ) )
-			vel.y.addAssign( crestArch.mul( 0.65 ) )
-
-			// Downstream wake behind the tail (after flow has cleared the car).
-			If( p.z.lessThan( -2.0 ), () => {
-				const wake = smoothstep( -3.2, -2.0, p.z ).oneMinus().mul( smoothstep( -8.0, -3.0, p.z ) ).toVar()
-				const wakeHeightMask = smoothstep( 0.22, 0.55, p.y ).toVar()
-				const lx = p.x.add( 0.58 ).sub( this.uCrosswind.mul( 0.16 ) ).toVar()
-				const rx = p.x.sub( 0.58 ).sub( this.uCrosswind.mul( 0.16 ) ).toVar()
-				const vyOff = p.y.sub( 0.78 ).toVar()
-				const rLeft = lx.mul( lx ).add( vyOff.mul( vyOff ) ).add( 0.45 )
-				const rRight = rx.mul( rx ).add( vyOff.mul( vyOff ) ).add( 0.45 )
-				const swirl = wake.mul( wakeHeightMask ).mul( 0.38 )
-
-				vel.x.addAssign( vyOff.div( rLeft ).sub( vyOff.div( rRight ) ).mul( swirl ) )
-				vel.y.addAssign( rx.div( rRight ).sub( lx.div( rLeft ) ).mul( swirl ) )
-
-				const coreEnv = smoothstep( 0.12, 1.05, abs( p.x ) ).oneMinus().mul( smoothstep( 0.25, 1.55, p.y ).oneMinus() ).mul( wake ).mul( wakeHeightMask )
-				const phase = p.z.mul( 2.3 ).add( this.uTime.mul( 4.6 ) )
-				vel.x.addAssign( sin( phase.add( p.y.mul( 3.1 ) ) ).mul( 0.34 ).mul( coreEnv ) )
-				vel.y.addAssign( cos( phase.mul( 0.85 ).sub( p.x.mul( 2.7 ) ) ).mul( 0.24 ).mul( coreEnv ) )
-			} )
-
-			const pNext = p.add( vel.mul( this.uStepDt ) ).toVar()
-			const sdfNext = sampleSdf( pNext ).toVar()
+			// Never inside the bodywork or under the floor.
+			const sdfNext = sampleSdf( next.xyz ).toVar()
 			If( sdfNext.w.lessThan( SURFACE_CLEARANCE ), () => {
-				pNext.addAssign( sdfNext.xyz.mul( float( SURFACE_CLEARANCE ).sub( sdfNext.w ) ) )
+				next.xyz.addAssign( sdfNext.xyz.mul( float( SURFACE_CLEARANCE ).sub( sdfNext.w ) ) )
 			} )
-			pNext.y.assign( max( pNext.y, 0.04 ) )
+			next.y.assign( max( next.y, 0.04 ) )
 
-			const speedRatio = length( vel ).div( FLOW_SPEED )
-			const surfaceBoost = smoothstep( 0.02, 0.26, sdfNext.w ).oneMinus().mul( 0.48 ).mul( windwardGate )
-			const metric = clamp( speedRatio.sub( 0.82 ).mul( 1.15 ).add( surfaceBoost ), 0, 1 )
-
-			// Once the entire trail has faded past the downstream outlet, reset all 64 slots
-			// to the upstream smoke nozzle so no wrap-around line ever crosses the tunnel.
-			If( pNext.z.lessThan( Z_RESET ), () => {
-				const spawn = nozzleSpawn( nozzle ).toVar()
-				Loop( { start: uint( 0 ), end: trailLen, type: 'uint' }, ( { i } ) => {
-					positions.element( base.add( i ) ).assign( vec4( spawn, 0.2 ) )
-				} )
-			} ).Else( () => {
-				positions.element( nextSlot ).assign( vec4( pNext, metric ) )
+			// Past the collector, go back to the rake. Smoke is invisible at both
+			// ends, so the jump never shows and the rest of the trail flows on out.
+			// Filaments also wait there for their turn at the start, which staggers them.
+			If( next.z.lessThan( Z_RESET ).or( this.uTime.lessThan( nozzle.z.mul( TRANSIT ) ) ), () => {
+				next.assign( vec4( nozzleSpawn( nozzle, instanceIndex ), 1 ) )
 			} )
+
+			// `uTurn` is 1 on the steps that add a sample; on the others the newest
+			// sample is rewritten in place, so the head glides at any refresh rate.
+			positions.element( base.add( this.head.add( this.uTurn ).bitAnd( trailMask ) ) ).assign( next )
 		} )().compute( INSTANCE_COUNT ) )
 
-		// Sample the ring buffer in colorFn for velocity coloring and tunnel entry/exit fade.
-		const sampleTrailState = Fn( ( [progress] ) => {
-			const lastPoint = float( TRAIL_LENGTH - 1 )
-			const p = progress.mul( lastPoint ).toVar()
-			const pivot = clamp( floor( p ), 0, lastPoint.sub( 1 ) ).toVar()
-			const t = p.sub( pivot )
-			const base = instanceIndex.mul( trailLen )
-			const headOffset = this.head.add( trailLen ).sub( pivot.toUint() ).toVar()
-			const first = base.add( headOffset.bitAnd( trailMask ) )
-			const second = base.add( headOffset.sub( uint( 1 ) ).bitAnd( trailMask ) )
-			return mix( readPositions.element( first ), readPositions.element( second ), t )
+		// vec4( position, speed ) stored at `progress` of this instance's trail.
+		const trailSample = Fn( ( [progress] ) => {
+			const age = progress.mul( TRAIL_LENGTH - 1 ).round().toUint()
+			return readPositions.element( instanceIndex.mul( trailLen ).add( this.head.add( trailLen ).sub( age ).bitAnd( trailMask ) ) )
 		} )
 
-		this.line = new MeshLine()
-			.instances( INSTANCE_COUNT )
-			.segments( TRAIL_LENGTH - 1 )
-			// progress 0 → head (newest), progress 1 → tail (oldest).
-			.gpuPositionNode( storagePositions( this.positionBuffer, { pointsPerLine: TRAIL_LENGTH, head: this.head } ) )
-			.needsUV( false )
-			.transparent( true )
-			.colorFn( Fn( ( [, progress] ) => {
-				const state = sampleTrailState( progress ).toVar()
-				const metric = state.w.toVar()
+		// Colour of the smoke at `progress` of this instance's trail, from the speed
+		// of the air that carried it: stalled → free stream → white where it slides
+		// over the body → gold at the fastest.
+		const smokeColor = Fn( ( [progress] ) => {
+			const state = trailSample( progress ).toVar()
+			const stream = mix( look.stalled, look.stream, smoothstep( 0.5, 0.9, state.w ) )
+			const sliding = mix( stream, look.sliding, smoothstep( 1, 1.2, state.w ) )
+			const tint = mix( sliding, look.peak, smoothstep( 1.3, 1.55, state.w ) )
 
-				// Sleek aerodynamic palette: deep glacier blue → electric cyan → pearl white → champagne/rose Venturi peak.
-				const laminarCol = mix( color( 0x2563eb ), color( 0x38bdf8 ), smoothstep( 0, 0.35, metric ) )
-				const slipCol = mix( laminarCol, color( 0xa5f3fc ), smoothstep( 0.3, 0.62, metric ) )
-				const venturiCol = mix( slipCol, color( 0xfde68a ), smoothstep( 0.58, 0.84, metric ) )
-				const peakCol = mix( venturiCol, color( 0xf472b6 ), smoothstep( 0.78, 1, metric ) ).toVar()
+			// A bright head and a fading tail over this filament's share of the trail,
+			// and nothing at either end of the tunnel.
+			const age = progress.div( mix( look.length.x, look.length.y, draw( 0.56984 ) ) ).toVar()
+			const tail = age.oneMinus().max( 0 ).pow( 1.3 )
+			const head = smoothstep( 0.04, 0, age )
+			const ends = smoothstep( Z_SPAWN, Z_FADE_IN, state.z ).mul( smoothstep( Z_RESET + 0.8, Z_FADE_OUT, state.z ) )
+			const energy = mix( 0.55, 1.15, smoothstep( 0.95, 1.25, state.w ) )
+			const shown = draw( 0.438579 ).lessThanEqual( look.density ).select( look.glow, 0 )
 
-				// Subtle traveling flow pulse along each filament + luminous tip.
-				const phase = progress.mul( 9 ).sub( this.uTime.mul( 3.5 ) ).add( float( instanceIndex ).mul( 0.37 ) )
-				const pulse = sin( phase ).mul( 0.12 ).add( 0.92 )
-				const tipGlow = smoothstep( 0, 0.08, progress ).oneMinus()
-				const finalRgb = mix( peakCol.mul( pulse ), color( 0xf0f9ff ), tipGlow.mul( 0.55 ) )
+			return tint.mul( tail.mul( 0.7 ).add( head.mul( 0.8 ) ) ).mul( ends ).mul( energy ).mul( shown )
+		} )
 
-				// Smooth entry at the nozzle, exit in the wake, and tail decay.
-				const fadeIn = smoothstep( Z_FADE_IN, Z_SPAWN, state.z ).oneMinus()
-				const fadeOut = smoothstep( Z_RESET + 0.8, Z_FADE_OUT, state.z )
-				const tailFade = progress.oneMinus().pow( 1.2 ).mul( 0.88 ).add( 0.06 )
-				const intensity = fadeIn.mul( fadeOut ).mul( tailFade )
+		// Two lines read the same trails: a fine wire for every filament, then a
+		// wide soft halo on the bundle cores alone, which gives the smoke its body.
+		const smoke = ( count, width, gain, profile ) => {
+			const line = new MeshLine()
+				.instances( count )
+				.segments( TRAIL_LENGTH - 1 )
+				// progress 0 → head (newest), progress 1 → tail (oldest).
+				.gpuPositionNode( storagePositions( this.positionBuffer, { pointsPerLine: TRAIL_LENGTH, head: this.head, snap: true } ) )
+				.needsUV( false )
+				.transparent( true )
+				.colorFn( Fn( ( [, progress] ) => vec4( smokeColor( progress ).mul( gain ), 1 ) ) )
+				.fragmentAlphaFn( Fn( ( [alpha, , , side] ) => alpha.mul( profile( abs( side ) ) ) ) )
+				.widthFn( Fn( ( [unit, progress] ) => unit.mul( width ).mul( progress.oneMinus().pow( 0.7 ).mul( 0.8 ).add( 0.2 ) ) ) )
+				.lineWidth( 1 )
+				.setFrustumCulled( false )
+				.autoResize()
+				.build()
 
-				return vec4( finalRgb.mul( intensity ), 1 )
-			} ) )
-			.fragmentAlphaFn( Fn( ( [alpha, , progress, side] ) => {
-				// Crisp bright core with soft silk-feathered edges across each filament.
-				const core = smoothstep( 1, 0.1, abs( side ) )
-				const tail = progress.oneMinus().pow( 0.9 ).mul( 0.85 ).add( 0.15 )
-				return alpha.mul( core ).mul( tail )
-			} ) )
-			.widthFn( Fn( ( [width, progress] ) => {
-				const tip = smoothstep( 0, 0.05, progress )
-				const tail = progress.oneMinus().pow( 0.82 )
-				return width.mul( tip.mul( tail ).mul( 0.82 ).add( 0.18 ) )
-			} ) )
-			.lineWidth( 0.018 )
-			.setFrustumCulled( false )
-			.autoResize()
-			.build()
+			line.material.blending = AdditiveBlending
+			line.material.depthWrite = false
+			stage3d.add( line )
+			return line
+		}
 
-		this.line.material.blending = AdditiveBlending
-		this.line.material.depthWrite = false
-		this.line.material.depthTest = true
-		this.line.renderOrder = 2
-		stage3d.add( this.line )
+		const isCore = nozzles.element( instanceIndex ).w.equal( 0 )
+		const wire = smoke( INSTANCE_COUNT, mix( look.width.x, look.width.y, draw( 0.329127 ) ), isCore.select( 0.5, 0.18 ), edge => smoothstep( 1, 0.15, edge ) )
+		smoke( NOZZLE_COUNT, look.halo.mul( 0.15 ), 0.035, edge => exp( edge.mul( edge ).mul( -4.5 ) ) )
+		// The car's lacquer mirrors the wire; the wide halo would only smear over it.
+		wire.layers.enable( REFLECTED )
 	}
 
 	initUi() {
@@ -350,29 +388,36 @@ export default class WindTunnelExample {
 				pressed: false,
 				onClick: () => this.toggleCrosswind(),
 			},
+			'divider',
+			{
+				id: 'wind',
+				label: 'Wind',
+				min: 80,
+				max: 320,
+				step: 10,
+				value: 200,
+				format: speed => `${speed} km/h`,
+				onInput: speed => { this.targetWind = speed / 200 },
+			},
 		], { accent: '#38bdf8', label: 'Wind tunnel controls' } )
 
+		createLinesPanel( this.look )
 		createDemoHint( 'Move to steer airflow · drag to orbit', { accent: '#38bdf8', hideAfter: 8000 } )
 
 		stage3d.listen( onMove, mouse => {
-			this.targetRakeX = clampNumber( mouse.normalizedX * 0.85, -0.75, 0.75 )
-			this.targetRakeY = clampNumber( 0.78 - mouse.normalizedY * 0.65, 0.16, 1.55 )
+			this.targetRakeX = MathUtils.clamp( mouse.normalizedX * 0.85, -0.75, 0.75 )
+			this.targetRakeY = MathUtils.clamp( RAKE_Y - mouse.normalizedY * 0.6, 0.16, 1.3 )
 		} )
 	}
 
+	// Filaments take the new preset as they next leave the rake, so the smoke
+	// already in the tunnel flows out while the new pattern flows in behind it.
 	setMode( item ) {
 		this.uMode.value = item.mode
 		for ( const entry of MODES ) {
 			this.controls.setPressed( entry.id, entry.id === item.id )
 		}
 		this.rakeBar.visible = item.mode === 1
-		seedStreamlines( this.positionBuffer, this.nozzleBuffer, this.sdfData, {
-			mode: item.mode,
-			rakeX: this.uRakeX.value,
-			rakeY: this.uRakeY.value,
-			crosswind: this.uCrosswind.value,
-		} )
-		this.head.value = TRAIL_LENGTH - 1
 	}
 
 	toggleCrosswind() {
@@ -381,24 +426,30 @@ export default class WindTunnelExample {
 	}
 
 	update = dt => {
-		const delta = Math.min( dt * 0.001, 0.033 )
-		const simDt = reducedMotion.matches ? delta * 0.45 : delta * 0.72
-
-		this.uRakeX.value = MathUtils.damp( this.uRakeX.value, this.targetRakeX, 6, delta )
-		this.uRakeY.value = MathUtils.damp( this.uRakeY.value, this.targetRakeY, 6, delta )
-		this.uCrosswind.value = MathUtils.damp( this.uCrosswind.value, this.crosswindEnabled ? 1.35 : 0, 4, delta )
-
-		this.rakeBar.position.x = this.uRakeX.value * 0.38
+		const seconds = dt * 0.001
+		this.uRakeX.value = MathUtils.damp( this.uRakeX.value, this.targetRakeX, 6, seconds )
+		this.uRakeY.value = MathUtils.damp( this.uRakeY.value, this.targetRakeY, 6, seconds )
+		this.uCrosswind.value = MathUtils.damp( this.uCrosswind.value, this.crosswindEnabled ? 1.35 : 0, 4, seconds )
+		this.uWind.value = MathUtils.damp( this.uWind.value, this.targetWind, 3, seconds )
+		this.rakeBar.position.x = this.uRakeX.value * 0.4
 		this.rakeBar.position.y = this.uRakeY.value
 
-		this.uStepDt.value = MathUtils.clamp( simDt, 0.004, 0.018 )
-		this.uTime.value += simDt
+		// A sample joins every trail each SAMPLE_MS, so the trails are as long at
+		// any refresh rate: a fast display rewrites the newest sample in place until
+		// the next one is due, and a slow frame is cut into the steps it spans.
+		this.sinceSample += dt
+		const steps = Math.max( 1, Math.floor( this.sinceSample / SAMPLE_MS ) )
+		this.uStepDt.value = seconds * ( reducedMotion.matches ? 0.45 : 0.72 ) / steps
 
-		stage3d.renderer.compute( this.integrateNode )
-		this.head.value = ( this.head.value + 1 ) % TRAIL_LENGTH
+		for ( let step = 0; step < steps; step++ ) {
+			const turn = this.sinceSample >= SAMPLE_MS
+			this.uTurn.value = turn ? 1 : 0
+			this.uTime.value += this.uStepDt.value
+			stage3d.renderer.compute( this.integrateNode )
+			if ( turn ) {
+				this.sinceSample -= SAMPLE_MS
+				this.head.value = ( this.head.value + 1 ) % TRAIL_LENGTH
+			}
+		}
 	}
-}
-
-function clampNumber( value, minVal, maxVal ) {
-	return Math.max( minVal, Math.min( maxVal, value ) )
 }
