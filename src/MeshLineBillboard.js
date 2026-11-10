@@ -597,7 +597,8 @@ export class MeshLineBillboard extends Mesh {
 			// Antialiasing changes transparency and varyings, so the material is
 			// rebuilt; carry the live resolution over instead of resetting it.
 			const resolution = this.material.resolution?.value.clone()
-			this.material.buildLine( { ...this._getBuildOptions(), ...( resolution ? { resolution } : {} ) } )
+			const buildOptions = this._applyStoredPositions( this._getBuildOptions() )
+			this.material.buildLine( { ...buildOptions, ...( resolution ? { resolution } : {} ) } )
 		} else {
 			this._syncMaterialTransparency()
 		}
@@ -1355,23 +1356,7 @@ export class MeshLineBillboard extends Mesh {
 
 			const buildOptions = this._getBuildOptions()
 			const stored = surfaceProfile ? this._releasePositionStorage() : this._preparePositionStorage( buildOptions )
-			if ( stored ) {
-				// The geometry is a template of one line; the shader reads each point
-				// of each line from the storage buffer.
-				Object.assign( buildOptions, {
-					lines: stored.template,
-					closed: false,
-					segments: stored.pointsPerLine - 1,
-					gpuPositionNode: stored.node,
-					instanceCount: stored.lineCount,
-					needsPrevious: false,
-					needsNext: false,
-					needsEndpointMetadata: true,
-					needsProgress: true,
-					usage: StaticDrawUsage,
-					frustumCulled: false,
-				} )
-			}
+			this._applyStoredPositions( buildOptions )
 
 			this.geometry.buildLine( buildOptions )
 			this.validateVertexBufferBudget()
@@ -1530,6 +1515,28 @@ export class MeshLineBillboard extends Mesh {
 		}
 		this._writePositionStorage( this._options.lines )
 		return stored
+	}
+
+	// Turn build options into those of a storage-backed line: its geometry is a
+	// template of one line, and its shader reads each point of each line from
+	// the storage buffer. Anything that rebuilds the geometry or the material of
+	// a stored line has to build from these, not from the facade's own options.
+	_applyStoredPositions( buildOptions ) {
+		const stored = this._positionStorage
+		if ( !stored ) return buildOptions
+		return Object.assign( buildOptions, {
+			lines: stored.template,
+			closed: false,
+			segments: stored.pointsPerLine - 1,
+			gpuPositionNode: stored.node,
+			instanceCount: stored.lineCount,
+			needsPrevious: false,
+			needsNext: false,
+			needsEndpointMetadata: true,
+			needsProgress: true,
+			usage: StaticDrawUsage,
+			frustumCulled: false,
+		} )
 	}
 
 	_releasePositionStorage() {

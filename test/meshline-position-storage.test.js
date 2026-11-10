@@ -207,6 +207,47 @@ test( 'options and shapes move a built line between storage and attributes', () 
 	line.dispose()
 } )
 
+test( 'antialias() rebuilds the material of a stored line from its storage options', () => {
+	// antialias() rebuilds only the material. Built from the facade's own options
+	// it would read `previous` and `next` attributes the template geometry lacks.
+	const warnings = []
+	const warn = console.warn
+	console.warn = ( ...args ) => warnings.push( args.join( ' ' ) )
+	try {
+		const points = createPath( 30 )
+		const line = new MeshLine().lines( points ).dynamic( 'storage' )
+		draw( line, createBackend( true ) )
+		const storage = line.positionStorage
+		const positionNode = line.material.gpuPositionNode
+		assert.ok( positionNode )
+		line.material.resolution.value.set( 640, 480 )
+
+		for ( const enabled of [true, false, true] ) {
+			line.antialias( enabled )
+			assert.equal( line.positionStorage, storage )
+			assert.equal( line.material.gpuPositionNode, positionNode, `antialias( ${enabled} ) keeps the position node` )
+			assert.equal( line.material.antialias, enabled )
+			assert.equal( line.material.transparent, enabled )
+			assert.deepEqual( line.material.resolution.value.toArray(), [640, 480] )
+			const { vertexShader } = buildShaderGraph( createRenderer(), line )
+			assert.match( vertexShader, /round/ )
+			assert.doesNotMatch( vertexShader, /\bprevious\b/ )
+		}
+		assert.deepEqual( warnings.filter( warning => /not found on geometry/.test( warning ) ), [] )
+		assert.deepEqual( storedPoints( line ), Array.from( points ) )
+
+		// The attribute path is rebuilt from the facade's options, as before.
+		const plain = new MeshLine().lines( createPath( 30 ) ).dynamic( true ).build()
+		plain.antialias( true )
+		assert.equal( plain.material.gpuPositionNode, null )
+		assert.match( buildShaderGraph( createRenderer(), plain ).vertexShader, /\bprevious\b/ )
+		plain.dispose()
+		line.dispose()
+	} finally {
+		console.warn = warn
+	}
+} )
+
 test( 'range edits upload only their points and survive a rebuild', () => {
 	const source = [createPath( 10 ), createPath( 10, 20 )]
 	const untouched = source.map( points => points.slice() )
