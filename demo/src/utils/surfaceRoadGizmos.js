@@ -1,4 +1,5 @@
-import { ConeGeometry, CylinderGeometry, Group, MathUtils, Mesh, MeshBasicNodeMaterial, TorusGeometry, Vector3 } from 'three/webgpu'
+import { color, fwidth, materialColor, mix, normalView, positionViewDirection, uniform } from 'three/tsl'
+import { Color, ConeGeometry, CylinderGeometry, Group, MathUtils, Mesh, MeshBasicNodeMaterial, TorusGeometry, Vector3 } from 'three/webgpu'
 
 import stage3d from '@/makio/three/stage3d'
 
@@ -26,12 +27,43 @@ const HEIGHT_GIZMO_COLOR = 0x62E88A
 const BANK_GIZMO_COLOR = 0x53C6FF
 export const HANDLE_HOVER_COLOR = 0xFFFFFF
 export const HANDLE_ACTIVE_COLOR = 0x7CFFB2
+export const HANDLE_OUTLINE_COLOR = 0x12151A
+
+// Where the white ring and the outline start, as a share of the handle's radius.
+const HANDLE_RING = 0.58
+const HANDLE_OUTLINE = 0.87
 
 const _bankPointA = new Vector3()
 const _bankPointB = new Vector3()
 
 /** Editing overlays draw over the road they edit. */
 export const overlayMaterial = color => new MeshBasicNodeMaterial( { color, depthTest: false, depthWrite: false } )
+
+/**
+ * A handle is a sphere drawn as the flat disc it shows from any side: its
+ * `color` in the middle, a white ring, then an outline whose colour is kept in
+ * `userData.outline`. The fill tells how the road takes the point, the outline
+ * who is holding it.
+ */
+export function handleMaterial( fill ) {
+	const material = overlayMaterial( fill )
+	const outline = uniform( new Color( HANDLE_OUTLINE_COLOR ) )
+	// 0 in the middle of the disc, 1 on its silhouette.
+	const facing = normalView.dot( positionViewDirection )
+	const radius = facing.mul( facing ).oneMinus().max( 0 ).sqrt()
+	const edge = fwidth( radius )
+	const beyond = start => radius.sub( start ).div( edge ).add( 0.5 ).clamp()
+	material.colorNode = mix( mix( materialColor, color( 0xFFFFFF ), beyond( HANDLE_RING ) ), outline, beyond( HANDLE_OUTLINE ) )
+	material.userData.outline = outline.value
+	return material
+}
+
+/** Scale that keeps an overlay at `position` about the same size on screen, within limits. */
+export const screenScale = position => MathUtils.clamp(
+	stage3d.camera.position.distanceTo( position ) * HEIGHT_GIZMO_DISTANCE_SCALE,
+	HEIGHT_GIZMO_MIN_SCALE,
+	HEIGHT_GIZMO_MAX_SCALE,
+)
 
 /** A compact, double-ended world-Y transform and roll ring shown on the selected control. */
 export class RoadGizmos {
@@ -118,12 +150,7 @@ export class RoadGizmos {
 	}
 
 	updateHeightGizmoScale() {
-		const distance = stage3d.camera.position.distanceTo( this.heightGizmo.position )
-		this.heightGizmo.scale.setScalar( MathUtils.clamp(
-			distance * HEIGHT_GIZMO_DISTANCE_SCALE,
-			HEIGHT_GIZMO_MIN_SCALE,
-			HEIGHT_GIZMO_MAX_SCALE,
-		) )
+		this.heightGizmo.scale.setScalar( screenScale( this.heightGizmo.position ) )
 	}
 
 	/** `dragMode` is the mode of the drag running on the selected control, if any. */

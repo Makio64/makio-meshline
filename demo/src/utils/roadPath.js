@@ -471,13 +471,15 @@ const createSpanCurve = ( shape, index ) => {
 /**
  * Turning radius a level road actually feels. Crest and sag curvature bend the
  * ribbon along its length and cannot fold it, so the part of the curvature
- * vector that points along `up` is dropped while the tangent is mostly level.
- * Near-vertical tangents fade back to the full 3D curvature.
+ * vector that points along `up` is dropped while the tangent is mostly level
+ * and the deck is not rolled onto its side. Near-vertical tangents or steeply
+ * banked walls fade back to the full 3D curvature.
  */
-const lateralRadius = ( curvatureX, curvatureY, curvatureZ, tangentRise, up ) => {
+const lateralRadius = ( curvatureX, curvatureY, curvatureZ, tangentRise, up, bank = 0 ) => {
 	const total = curvatureX * curvatureX + curvatureY * curvatureY + curvatureZ * curvatureZ
 	const level = 1 - tangentRise * tangentRise
-	const weight = smoothstep( PROFILE_RUN_MIN, PROFILE_RUN_FULL, Math.sqrt( Math.max( 0, level ) ) )
+	const bankWeight = 1 - smoothstep( 0.65, 1.0, Math.abs( Math.sin( bank ) ) )
+	const weight = smoothstep( PROFILE_RUN_MIN, PROFILE_RUN_FULL, Math.sqrt( Math.max( 0, level ) ) ) * bankWeight
 	const vertical = curvatureX * up[0] + curvatureY * up[1] + curvatureZ * up[2]
 	const lateral = weight > 0 ? Math.max( 0, total - weight * vertical * vertical / level ) : total
 	return lateral > EPSILON * EPSILON ? 1 / Math.sqrt( lateral ) : Infinity
@@ -489,6 +491,8 @@ const probeSpan = ( shape, index ) => {
 	const first = [0, 0, 0]
 	const second = [0, 0, 0]
 	const up = shape.up
+	const startBank = shape.banks ? shape.banks[index] : 0
+	const bankDelta = shape.banks ? shape.banks[index + 1] - startBank : 0
 	const report = { worst: Infinity, nearStart: Infinity, nearEnd: Infinity }
 
 	for ( let step = 0; step <= SPAN_PROBES; step++ ) {
@@ -506,7 +510,8 @@ const probeSpan = ( shape, index ) => {
 				( second[1] - first[1] * along ) * inverse,
 				( second[2] - first[2] * along ) * inverse,
 				dot( first, up ) / Math.sqrt( speedSquared ),
-				up
+				up,
+				startBank + bankDelta * t
 			)
 		}
 		report.worst = Math.min( report.worst, radius )
@@ -677,6 +682,32 @@ const emitStraightSpanInterior = ( segment, settings, points, sampling ) => {
 	return true
 }
 
+/** Radius of a cubic where it ends, read from its last three control points. */
+const bezierEndRadius = segment => {
+	const ax = segment.p3[0] - segment.p2[0]
+	const ay = segment.p3[1] - segment.p2[1]
+	const az = segment.p3[2] - segment.p2[2]
+	const bx = segment.p2[0] - segment.p1[0]
+	const by = segment.p2[1] - segment.p1[1]
+	const bz = segment.p2[2] - segment.p1[2]
+	const turn = Math.hypot( ay * bz - az * by, az * bx - ax * bz, ax * by - ay * bx )
+	const leg = Math.hypot( ax, ay, az )
+	return turn > EPSILON ? 1.5 * leg * leg * leg / turn : Infinity
+}
+
+/**
+ * How many subdivision levels two neighbouring samples may differ by on a bend of `radius`.
+ *
+ * A sample next to a segment twice as long as its own turns half as much again
+ * as its other neighbour. Under a ribbon nearly as wide as the bend, the inside
+ * of that join then has no room: the surface has to trim it, which leaves a
+ * sliver standing on edge across the road. A segment `r` times its neighbour is
+ * safe while `r < 2 * radius / halfWidth - 1`, with `foldRadius` standing in for
+ * the half width: no jump below one and a half fold radii, one level up to two
+ * and a half, and so on.
+ */
+const spacingJump = ( radius, settings ) => Math.floor( Math.log2( Math.max( 1, 2 * radius / settings.foldRadius - 1 ) ) )
+
 /** Iteratively emit only the interior points of one cubic span. */
 const emitSpanInterior = ( shape, index, settings, points, sampling ) => {
 	const curve = createSpanCurve( shape, index )
@@ -695,24 +726,51 @@ const emitSpanInterior = ( shape, index, settings, points, sampling ) => {
 		p3: curve.end,
 	}
 	if ( emitStraightSpanInterior( root, settings, points, sampling ) ) return
-	const stack = [{ segment: root, depth: 0, emitEnd: false }]
+	const spanBankDelta = shape.banks ? Math.abs( shape.banks[index + 1] - shape.banks[index] ) : 0
+	const stack = [{ segment: root, depth: 0, bankDelta: spanBankDelta }]
+	const split = ( item, halves ) => {
+		if ( item.depth >= settings.maxDepth ) {
+			throw new RangeError( `[roadPath] Adaptive tessellation reached maxDepth (${settings.maxDepth}) on span ${index}` )
+		}
+		sampling.splits++
+		sampling.maxDepth = Math.max( sampling.maxDepth, item.depth + 1 )
+		const bankDelta = item.bankDelta * 0.5
+		return [
+			{ segment: halves.left, depth: item.depth + 1, bankDelta },
+			{ segment: halves.right, depth: item.depth + 1, bankDelta },
+		]
+	}
 
+	// The pieces of the span the budgets are content with, in order.
+	const leaves = []
 	while ( stack.length > 0 ) {
 		const item = stack.pop()
 		const halves = splitBezier( item.segment )
-		if ( bezierNeedsSplit( item.segment, halves, settings ) ) {
-			if ( item.depth >= settings.maxDepth ) {
-				throw new RangeError( `[roadPath] Adaptive tessellation reached maxDepth (${settings.maxDepth}) on span ${index}` )
-			}
-			sampling.splits++
-			sampling.maxDepth = Math.max( sampling.maxDepth, item.depth + 1 )
-			stack.push(
-				{ segment: halves.right, depth: item.depth + 1, emitEnd: item.emitEnd },
-				{ segment: halves.left, depth: item.depth + 1, emitEnd: true },
-			)
+		if ( bezierNeedsSplit( item.segment, halves, settings ) || item.bankDelta > settings.maxBankAngle * 0.9 ) {
+			const [left, right] = split( item, halves )
+			stack.push( right, left )
 			continue
 		}
-		if ( item.emitEnd ) appendPoint( points, item.segment.p3[0], item.segment.p3[1], item.segment.p3[2], settings )
+		leaves.push( item )
+	}
+
+	// Even out the spacing wherever the bend is too tight for a jump in it.
+	for ( let before = 0; before < leaves.length - 1; ) {
+		const jump = spacingJump( bezierEndRadius( leaves[before].segment ), settings )
+		const gap = leaves[before + 1].depth - leaves[before].depth
+		if ( Math.abs( gap ) <= jump ) {
+			before++
+			continue
+		}
+		const coarse = gap > 0 ? before : before + 1
+		leaves.splice( coarse, 1, ...split( leaves[coarse], splitBezier( leaves[coarse].segment ) ) )
+		// The piece before it may now be the coarse one.
+		before = Math.max( 0, coarse - 1 )
+	}
+
+	for ( let leaf = 0; leaf < leaves.length - 1; leaf++ ) {
+		const end = leaves[leaf].segment.p3
+		appendPoint( points, end[0], end[1], end[2], settings )
 	}
 }
 
@@ -797,7 +855,7 @@ const refineBankSteps = ( rawPoints, rawBanks, rawAnchors, settings ) => {
 }
 
 /** Lateral radius of the circle through three consecutive samples. */
-const sampleLateralRadius = ( points, previous, current, next, up ) => {
+const sampleLateralRadius = ( points, previous, current, next, up, bank = 0 ) => {
 	const pX = points[previous] - points[current]
 	const pY = points[previous + 1] - points[current + 1]
 	const pZ = points[previous + 2] - points[current + 2]
@@ -830,7 +888,8 @@ const sampleLateralRadius = ( points, previous, current, next, up ) => {
 		offsetY / offset2,
 		offsetZ / offset2,
 		( chordX * up[0] + chordY * up[1] + chordZ * up[2] ) / chord,
-		up
+		up,
+		bank
 	)
 }
 
@@ -876,7 +935,7 @@ const analyzeSamples = ( points, bank, up ) => {
 				1
 			) ) )
 		}
-		minRadius = Math.min( minRadius, sampleLateralRadius( points, previous, current, next, up ) )
+		minRadius = Math.min( minRadius, sampleLateralRadius( points, previous, current, next, up, bank[index] ) )
 	}
 
 	return { pointCount, minRadius, maxTurn, maxSegmentLength, maxBankStep, length, minY, maxY }
@@ -903,6 +962,7 @@ export function planRoadPath( controls, options = {} ) {
 	const turns = measureTurns( knots, legDirections )
 	const shape = {
 		knots,
+		banks: unwrapBanks( knots ),
 		up: settings.up,
 		corners: new Array( count ).fill( null ),
 		scales: new Float64Array( count ).fill( 1 ),

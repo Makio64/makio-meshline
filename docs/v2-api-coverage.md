@@ -13,6 +13,7 @@ The regular `MeshLine` façade and surface profile support the WebGPU and WebGL2
 | Export | Canonical reference | Runnable coverage | Coverage note |
 | --- | --- | --- | --- |
 | `MeshLine` (named and default) | [MeshLine](./meshline.md) | [Style Gallery](https://meshline-demo.makio.io/examples/basic), [Playground](https://meshline-demo.makio.io/examples/sandbox) | Preferred entry point for screen lines and surfaces. |
+| `MeshLineBillboard` | [Billboard-only facade](./meshline.md#billboard-only-facade) | [Style Gallery](https://meshline-demo.makio.io/examples/basic), [Waves](https://meshline-demo.makio.io/examples/waves) | The `MeshLine` facade without the surface profile, for smaller bundles. Every billboard call the demos make on `MeshLine` applies unchanged. |
 | `MeshLineCompute` | [MeshLineCompute](./meshline-compute.md) | [Compute Curves](https://meshline-demo.makio.io/examples/compute-curves) | Experimental WebGPU-only storage-buffer simulation façade; regular `MeshLine` remains the cross-backend path. |
 | `MeshLineGeometry` | [MeshLineGeometry](./meshline-geometry.md) | [Waves](https://meshline-demo.makio.io/examples/waves), [Draw & Trail](https://meshline-demo.makio.io/examples/drawlines) | Facade exercised; use the class directly only for low-level composition. |
 | `MeshLineNodeMaterial` | [MeshLineNodeMaterial](./meshline-material.md) | [Style Gallery](https://meshline-demo.makio.io/examples/basic), [Metallic Tube](https://meshline-demo.makio.io/examples/metallic-tube), [Shadows](https://meshline-demo.makio.io/examples/shadow) | Facade exercised across color, gradient, dash, maps, opacity, analytic `antialias`, 3D tube shadow receiving, and TSL hooks (`widthFn`, `gradientFn`, `opacityFn`, `dashFn`, `uvFn`, `discardFn`, `normalFn`, `fragmentColorFn`). |
@@ -26,7 +27,7 @@ The regular `MeshLine` façade and surface profile support the WebGPU and WebGL2
 | `rectanglePositions` | [Position helpers](./helpers.md) | [Rice Field](https://meshline-demo.makio.io/examples/ricefield) | Used for the water-border paths. |
 | `sineWavePositions` | [Position helpers](./helpers.md) | [Playground](https://meshline-demo.makio.io/examples/sandbox) | Select the sine-wave shape. |
 | `straightLine` | [Position helpers](./helpers.md) | [Playground](https://meshline-demo.makio.io/examples/sandbox) | Select the straight-line shape. |
-| `storagePositions` | [Position helpers](./helpers.md) | [Lorenz Attractor](https://meshline-demo.makio.io/examples/lorenz-trails), [Isobars](https://meshline-demo.makio.io/examples/isobars), [Verlet Ropes](https://meshline-demo.makio.io/examples/verlet-ropes) | WebGPU storage-buffer `gpuPositionNode`, with optional ring-buffer trails, closed loops, and dual-buffer morphing. |
+| `storagePositions` | [Position helpers](./helpers.md) | [Wind Tunnel](https://meshline-demo.makio.io/examples/wind-tunnel), [Isobars](https://meshline-demo.makio.io/examples/isobars), [Verlet Ropes](https://meshline-demo.makio.io/examples/verlet-ropes) | WebGPU storage-buffer `gpuPositionNode`, with optional ring-buffer trails, closed loops, and dual-buffer morphing. |
 | `straightLineBetween` | [Position helpers](./helpers.md) | [V2 Benchmarks](./benchmarks.md) | Used for grid rails and benchmark bars; copy-paste examples cover tuples and Three.js vectors. |
 
 ## Stable-layout update & styling APIs
@@ -66,7 +67,7 @@ The experimental path demo uses query parameters so the compared workloads remai
 
 | Query | Effect |
 | --- | --- |
-| `?gpu=0` | Force the complete CPU `MeshLine` fallback. |
+| `?simplify=99` or `?simplify=90` | Select the 99% (`localTolerance: 0.012`) or 90% (`localTolerance: 0.000023`) GPU simplification preset. |
 | `?simplify=0` | Keep the native GPU path but disable local-space simplification. |
 | `?topology=variable` | Enable true over-limit miter bevel topology. |
 | `?topology=bevel` or `?topology=round` | Select the requested true outer join. |

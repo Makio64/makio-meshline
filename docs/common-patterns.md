@@ -111,6 +111,14 @@ function animate() {
   requestAnimationFrame(animate)
 }
 ```
+Large lines whose every point moves spend most of that update uploading it. `.dynamic( 'storage' )` keeps the points in one GPU storage buffer on WebGPU and uploads nine times less; see [Storage-backed positions](./meshline.md#storage-backed-positions) for what qualifies.
+
+```js
+const line = new MeshLine({ lines: positions }).dynamic('storage')
+```
+
+A line whose point count changes takes its new points through `line.lines(points)`. With `.dynamic(true)` its buffers are reused instead of recreated.
+
 **Note:** check advanced examples for more performant full-GPU techniques: instancing and GPU positioning.
 
 ## 10. Window Resize Handling

@@ -96,15 +96,15 @@ The idea, and the name, come from [rreusser/webgpu-instanced-lines](https://gith
 
 #### Building a tube normal from it
 
-The [Metallic Tube demo](https://meshline-demo.makio.io/examples/metallic-tube) treats `lineCoord.y` as the tube's across-axis and reconstructs the bulge analytically:
+`lineCoord.y` can serve as a tube's across-axis to reconstruct a cylindrical cross-section normal analytically:
 
 ```js
-const across = lineCoord.y
-const arch = float( 1 ).sub( across.mul( across ) ).max( 0 ).sqrt()
-material.normalNode = vec3( perpendicular.mul( across ), arch ).normalize()
+const across = lineCoord.y.clamp( -1, 1 )
+const arch = across.mul( across ).oneMinus().max( 0 ).sqrt()
+material.normalNode = vec3( perpendicular.normalize().mul( across ), arch )
 ```
 
-`lineCoord` carries no direction, so the screen-space `perpendicular` still has to come across from a `normalFn` hook.
+`lineCoord` carries no direction, so the screen-space `perpendicular` still has to come across from a `normalFn` hook (and is re-normalized in the fragment stage before scaling by `across` so linear interpolation across curved segments does not flatten the cylinder profile). The [Metallic Tube demo](https://meshline-demo.makio.io/examples/metallic-tube) takes this one step further by also tilting the arch axis by the 3D tangent's view-ray projection $\mathbf{T}\cdot\mathbf{V}$ for perspective-exact foreshortened turns.
 
 ### Antialiasing
 

@@ -1,7 +1,7 @@
 /**
  * GPU Path & Simplification — 200,000-point path with multi-stride GPU simplification.
- * Demonstrates: MeshLineGPUPath, .prepare( renderer, camera ), .wireframe( enabled ),
- * and automatic CPU fallback.
+ * Demonstrates: MeshLineGPUPath, .prepare( renderer, camera ), .setSimplificationTolerance( tolerance ),
+ * .wireframe( enabled ), and automatic CPU fallback.
  */
 import { MeshLine } from 'makio-meshline'
 import MeshLineGPUPath from 'makio-meshline/gpu-path'
@@ -11,21 +11,16 @@ import stage3d from '@/makio/three/stage3d'
 import { createBloomPipeline } from '@/utils/bloomPipeline'
 import { createDemoControls } from '@/utils/demoControls'
 import { createDemoHint } from '@/utils/demoHint'
-import { pick, readQuery, writeMode, writeWireframe } from '@/utils/gpuPathQuery'
+import { clampSimplify, MAX_SIMPLIFY, pick, readQuery, resolveSimplify, writeSimplify, writeWireframe } from '@/utils/gpuPathQuery'
 import { linePoints } from '@/utils/points'
 
 const POINT_COUNT = 200_000
 const PATH_LENGTH = 100
 const SOURCE_SEGMENT_COUNT = POINT_COUNT - 1
-const LOCAL_TOLERANCE = 0.012
-// Fixed-data diagnostic from the matching CPU oracle. The runtime deliberately
-// avoids reading the selected count back from the GPU.
-const EXPECTED_RETAINED_SEGMENTS = 1_646
 
 const BACKENDS = {
 	'loading': { label: 'Loading', tone: '#778896' },
 	'gpu': { label: 'WebGPU', tone: '#48ecc4' },
-	'cpu-requested': { label: 'CPU', tone: '#ffb54c' },
 	'cpu-fallback': { label: 'CPU fallback', tone: '#ffb54c' },
 }
 
@@ -41,22 +36,25 @@ const pathPoint = progress => {
 
 const formatCount = value => value.toLocaleString( 'en-US' )
 
-const statusText = ( backend, mode ) => {
-	const reduction = ( 100 - EXPECTED_RETAINED_SEGMENTS / SOURCE_SEGMENT_COUNT * 100 ).toFixed( 1 )
-	const segments = backend === 'gpu' && mode === 'gpu-simplified'
-		? `${formatCount( EXPECTED_RETAINED_SEGMENTS )} (−${reduction}%)`
+const statusText = ( backend, simplify ) => {
+	const { segments } = resolveSimplify( simplify )
+	const reduction = ( 100 - segments / SOURCE_SEGMENT_COUNT * 100 ).toFixed( 1 )
+	const segmentLabel = backend === 'gpu' && simplify > 0
+		? `${formatCount( segments )} (−${reduction}%)`
 		: formatCount( SOURCE_SEGMENT_COUNT )
-	return `${formatCount( POINT_COUNT )} pts · ${segments} segs · ${BACKENDS[backend].label}`
+	return `${formatCount( POINT_COUNT )} pts · ${segmentLabel} segs · ${BACKENDS[backend].label}`
 }
 
 export default class GpuPathExample {
 	points = linePoints( POINT_COUNT, pathPoint )
 	backend = 'loading'
 	buildToken = 0
+	updatingTolerance = false
+	pendingTolerance = null
 
 	async init() {
 		const query = readQuery()
-		this.mode = query.mode
+		this.simplify = query.simplify
 		this.wireframe = query.wireframe
 
 		const token = this.buildToken
@@ -74,7 +72,7 @@ export default class GpuPathExample {
 		if ( query.metrics ) console.info( `[gpuPath] ${JSON.stringify( this.path?.status )}` )
 	}
 
-	async buildPath( { gpu, simplify, topology = 'fixed', cap = 'butt' } ) {
+	async buildPath( { tolerance = 0, topology = 'fixed', cap = 'butt', enableSimplify = tolerance > 0 } ) {
 		const token = ++this.buildToken
 
 		const path = new MeshLineGPUPath( {
@@ -85,7 +83,7 @@ export default class GpuPathExample {
 			join: { type: pick( topology, ['miter', 'bevel', 'round'] ), limit: 3 },
 			cap,
 		}, {
-			simplify: simplify ? { localTolerance: LOCAL_TOLERANCE } : false,
+			simplify: enableSimplify ? { localTolerance: tolerance } : false,
 			variableTopology: topology === 'variable',
 		} )
 
@@ -93,7 +91,7 @@ export default class GpuPathExample {
 		// visible throughout initialization and on every unsupported/failure path.
 		stage3d.add( path )
 		path.resize( stage.width, stage.height )
-		const prepared = gpu && await path.prepare( stage3d.renderer, stage3d.camera )
+		const prepared = await path.prepare( stage3d.renderer, stage3d.camera )
 		if ( token !== this.buildToken ) {
 			path.dispose()
 			return
@@ -102,7 +100,7 @@ export default class GpuPathExample {
 		this.path?.dispose()
 		this.path = path
 		window.__meshLineGPUPathMetrics = path.status
-		this.setBackend( !gpu ? 'cpu-requested' : prepared ? 'gpu' : 'cpu-fallback' )
+		this.setBackend( prepared ? 'gpu' : 'cpu-fallback' )
 	}
 
 	createGrid() {
@@ -118,18 +116,25 @@ export default class GpuPathExample {
 	}
 
 	createUI() {
-		const modeButton = ( id, label ) => ( { id, label, pressed: id === this.mode, onClick: () => this.setMode( id ) } )
-
 		this.controls = createDemoControls( [
-			modeButton( 'gpu-simplified', 'Simplify' ),
-			modeButton( 'gpu-raw', 'Raw GPU' ),
-			modeButton( 'cpu', 'CPU' ),
+			{
+				id: 'simplify',
+				label: 'Simplify',
+				min: 0,
+				max: MAX_SIMPLIFY,
+				step: 1,
+				value: this.simplify,
+				format: value => `${value}%`,
+				ariaValueText: value => `Simplification ${value} percent`,
+				onInput: value => this.setSimplify( value ),
+				onChange: value => writeSimplify( clampSimplify( value ) ),
+			},
 			'divider',
 			{ id: 'wireframe', label: 'Wireframe', key: 'W', pressed: this.wireframe, onClick: this.toggleWireframe },
 		], { accent: '#43e9ff', label: 'GPU path controls' } )
 
 		// The backend can change without a click, so the status is announced.
-		this.hint = createDemoHint( statusText( this.backend, this.mode ), {
+		this.hint = createDemoHint( statusText( this.backend, this.simplify ), {
 			accent: BACKENDS[this.backend].tone,
 			hideAfter: 0,
 			attributes: { 'aria-live': 'polite' },
@@ -138,17 +143,37 @@ export default class GpuPathExample {
 
 	setBackend( backend ) {
 		this.backend = backend
-		this.hint.setText( statusText( backend, this.mode ) )
+		this.hint.setText( statusText( backend, this.simplify ) )
 		this.hint.setAccent( BACKENDS[backend].tone )
 	}
 
-	setMode( mode ) {
-		if ( mode === this.mode ) return
-		this.mode = mode
-		this.setBackend( 'loading' )
-		for ( const id of ['gpu-simplified', 'gpu-raw', 'cpu'] ) this.controls.setPressed( id, id === mode )
-		writeMode( mode )
-		this.buildPath( { gpu: mode !== 'cpu', simplify: mode === 'gpu-simplified' } )
+	async setSimplify( value, commit = false ) {
+		const simplify = clampSimplify( value )
+		if ( simplify === this.simplify ) return
+		this.simplify = simplify
+		this.controls.setValue( 'simplify', simplify )
+		if ( commit ) writeSimplify( simplify )
+
+		const { tolerance } = resolveSimplify( simplify )
+		this.hint.setText( statusText( this.backend, this.simplify ) )
+		this.pendingTolerance = tolerance
+		if ( this.updatingTolerance ) return
+
+		this.updatingTolerance = true
+		const token = this.buildToken
+		if ( !this.path?.gpuOptions.simplify ) {
+			this.pendingTolerance = null
+			await this.buildPath( { tolerance, enableSimplify: true } )
+		}
+		while ( this.pendingTolerance !== null && token === this.buildToken && this.path?.gpuOptions.simplify ) {
+			const nextTolerance = this.pendingTolerance
+			this.pendingTolerance = null
+			await this.path.setSimplificationTolerance( nextTolerance )
+		}
+		this.updatingTolerance = false
+		if ( token !== this.buildToken || !this.path ) return
+		window.__meshLineGPUPathMetrics = this.path.status
+		this.setBackend( this.path.status.active ? 'gpu' : 'cpu-fallback' )
 	}
 
 	toggleWireframe = () => {
@@ -170,6 +195,7 @@ export default class GpuPathExample {
 	dispose() {
 		// An init() or prepare() still in flight stops when it resumes.
 		this.buildToken++
+		this.pendingTolerance = null
 		window.__meshLineGPUPathMetrics = null
 	}
 }

@@ -12,7 +12,6 @@ import Isobars from '@/components/Isobars.vue'
 import stage3d from '@/makio/three/stage3d'
 import { noUI, reducedMotion } from '@/makio/utils/detect'
 import { createBloomPipeline } from '@/utils/bloomPipeline'
-import { createDemoHint } from '@/utils/demoHint'
 import { createChartFloor, createPairLookup, LINE_SEGMENTS, SYNOPTIC_STATES } from '@/utils/isobarsChart'
 
 const POINTS_PER_LINE = LINE_SEGMENTS + 1
@@ -105,7 +104,6 @@ export default class IsobarsExample {
 		stage3d.add( this.primary.line, this.secondary.line, createChartFloor() )
 
 		createBloomPipeline( { strength: 0.45, radius: 0.3, threshold: 0.2 } )
-		this.hint = createDemoHint( 'Isobars', { accent: '#7dd3fc', hideAfter: 0 } )
 		this.setPair( 0, 1 )
 		this.ui.visible = !noUI
 	}
@@ -131,7 +129,6 @@ export default class IsobarsExample {
 			this.secondary.blendOnCPU( value )
 		}
 		this.ui.percent = Math.round( value * 100 )
-		this.hint.setText( `Isobars · ${SYNOPTIC_STATES[this.fromIndex].id} → ${SYNOPTIC_STATES[this.toIndex].id} (${this.ui.percent}%)` )
 	}
 
 	jumpToState( index ) {

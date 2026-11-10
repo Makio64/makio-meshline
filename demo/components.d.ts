@@ -19,9 +19,11 @@ declare module 'vue' {
     Heist: typeof import('./src/components/Heist.vue')['default']
     Isobars: typeof import('./src/components/Isobars.vue')['default']
     MenuFullscreen: typeof import('./src/components/ui/MenuFullscreen.vue')['default']
+    MeshlineCompute: typeof import('./src/components/MeshlineCompute.vue')['default']
     Spinner: typeof import('./src/components/ui/Spinner.vue')['default']
     SurfaceRoad: typeof import('./src/components/SurfaceRoad.vue')['default']
     SVGCircle: typeof import('./src/components/ui/SVGCircle.vue')['default']
+    VariableTopology: typeof import('./src/components/VariableTopology.vue')['default']
     Venus: typeof import('./src/components/Venus.vue')['default']
   }
 }

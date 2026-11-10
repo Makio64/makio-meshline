@@ -5,12 +5,11 @@
  * projected folds, .normalFn( fn ), and a MeshLineNodeMaterial subclass.
  */
 import { lineCoord, MeshLine, MeshLineNodeMaterial } from 'makio-meshline'
-import { Fn, uniform, varyingProperty, vec2, vec3 } from 'three/tsl'
+import { attribute, Fn, mix, modelViewMatrix, positionViewDirection, uniform, varyingProperty, vec2, vec3, vec4 } from 'three/tsl'
 import { HemisphereLight, Mesh, MeshBasicNodeMaterial, MeshStandardNodeMaterial, NodeMaterial, PointLight, SphereGeometry } from 'three/webgpu'
 
 import stage3d from '@/makio/three/stage3d'
 import { createDemoControls } from '@/utils/demoControls'
-import { createDemoHint } from '@/utils/demoHint'
 import { createFloor, createStudioEnvironment } from '@/utils/metallicTubeStudio'
 import { linePoints } from '@/utils/points'
 
@@ -23,16 +22,18 @@ const LIGHTS = [
 	{ hex: 0xffc857, radius: 5.2, speed: 0.43, phase: 4.2, height: 2.4, bob: 0.8, bobSpeed: 0.67, bobPhase: 3.4 },
 ]
 
-const tubePerpendicular = varyingProperty( 'vec2', 'vTubePerpendicular' )
+const tubeFrame = varyingProperty( 'vec3', 'vTubeFrame' )
 
-// Compute the cross-section perpendicular from the unsplit screen-space bisector
-// (dir1 + dir2) whenever available so both sides of a round/bevel join share a
-// C0-continuous normal frame without a specular crease at foreshortened turns.
+// Capture the 2D cross-section perpendicular (from the unsplit screen-space bisector
+// dir1 + dir2 with smooth fallback to direction) and the 3D axial tilt dot(T, V) so
+// foreshortened turns tilt the tube crest normal smoothly in depth without creases.
 const captureTubeFrame = Fn( ( [normal, direction, dir1, dir2] ) => {
 	const bisector = dir1.add( dir2 )
 	const bisectorLength = bisector.length()
-	const smoothDirection = bisectorLength.greaterThan( 0.001 ).select( bisector.div( bisectorLength ), direction )
-	tubePerpendicular.assign( vec2( smoothDirection.y.negate(), smoothDirection.x ) )
+	const smoothDirection = mix( direction, bisector.div( bisectorLength.max( 1e-4 ) ), bisectorLength.smoothstep( 0.05, 0.2 ) )
+	const perp = vec2( smoothDirection.y.negate(), smoothDirection.x )
+	const viewTangent = modelViewMatrix.mul( vec4( attribute( 'next', 'vec3' ).sub( attribute( 'previous', 'vec3' ) ), 0 ) ).xyz.normalize()
+	tubeFrame.assign( vec3( perp, viewTangent.dot( positionViewDirection ) ) )
 	return normal
 } )
 
@@ -60,16 +61,21 @@ class MetallicTubeNodeMaterial extends MeshLineNodeMaterial {
 		this.envMap = envMap
 		this.envMapIntensity = 1
 
-		// `lineCoord.y` runs -1..+1 across the ribbon without allocating UVs, so it is
-		// the tube's own across-axis. It carries no direction, so the screen-space
-		// perpendicular still has to come across from the normalFn hook.
-		const across = lineCoord.y
+		// `lineCoord.y` runs -1..+1 across the ribbon without allocating UVs. Lift the
+		// 2D perpendicular into the plane orthogonal to the view ray and tilt the arch
+		// axis by sin(gamma) = dot(T, V) to form an orthonormal 3D cylinder frame.
+		const across = lineCoord.y.clamp( -1, 1 )
 		const arch = across.mul( across ).oneMinus().max( 0 ).sqrt()
-		this.normalNode = vec3( tubePerpendicular.mul( across ), arch ).normalize()
+		const viewDir = positionViewDirection
+		const perp = tubeFrame.xy.normalize()
+		const acrossAxis = vec3( perp.mul( viewDir.z ), perp.dot( viewDir.xy ).negate() ).normalize()
+		const sinGamma = tubeFrame.z.clamp( -1, 1 )
+		const cosGamma = sinGamma.mul( sinGamma ).oneMinus().max( 0 ).sqrt()
+		const archAxis = viewDir.cross( acrossAxis ).mul( sinGamma ).add( viewDir.mul( cosGamma ) )
+		this.normalNode = acrossAxis.mul( across ).add( archAxis.mul( arch ) )
 	}
 
 	// MeshLineNodeMaterial is unlit: take back the stages MeshBasicNodeMaterial replaces...
-	setupNormal( builder ) { return NodeMaterial.prototype.setupNormal.call( this, builder ) }
 	setupOutgoingLight( builder ) { return NodeMaterial.prototype.setupOutgoingLight.call( this, builder ) }
 	setupLightMap( builder ) { return NodeMaterial.prototype.setupLightMap.call( this, builder ) }
 
@@ -91,7 +97,6 @@ export default class MetallicTubeExample {
 		this.createLights()
 		createFloor()
 
-		createDemoHint( 'Analytic cylinder normal · round join', { accent: ACCENT, hideAfter: 0 } )
 		this.controls = createDemoControls(
 			[{ id: 'wireframe', label: 'Wireframe', key: 'W', pressed: false, onClick: this.toggleWireframe }],
 			{ accent: ACCENT },

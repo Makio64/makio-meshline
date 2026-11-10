@@ -90,6 +90,7 @@ export class MeshLineGPUPath extends Group {
 	readonly status: MeshLineGPUPathStatus
 	readonly gpuMesh: import('three/webgpu').Mesh | null
 	prepare( renderer: WebGPURenderer, camera?: Camera | null ): Promise<boolean>
+	warmupAsync( renderer: WebGPURenderer, camera?: Camera | null, scene?: import('three/webgpu').Scene | null ): Promise<boolean>
 	/** Validate that the prepared backend and primary mono camera remain usable. */
 	update( camera?: Camera | null ): boolean
 	resize( width: number, height: number ): this

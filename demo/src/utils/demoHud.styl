@@ -3,12 +3,13 @@
 	left calc(18px + var(--sail, 0px))
 	top calc(18px + var(--sait, 0px))
 	z-index 20
+	box-sizing border-box
 	display inline-flex
 	align-items center
 	gap 8px
-	min-height 36px
+	min-height 40px
 	max-width unquote('min(420px, calc(100vw - 96px))')
-	padding 6px 14px
+	padding 4px 14px
 	border 1px solid rgba(255, 255, 255, .1)
 	border-radius 999px
 	background rgba(8, 9, 12, .7)
@@ -37,7 +38,7 @@
 	@media (max-width 720px)
 		left calc(12px + var(--sail, 0px))
 		top calc(58px + var(--sait, 0px))
-		min-height 30px
+		min-height 35px
 		padding 4px 11px
 		font-size 9px
 	@media (prefers-reduced-motion reduce)
@@ -49,9 +50,11 @@
 	left 50%
 	transform translateX(-50%)
 	z-index 20
+	box-sizing border-box
 	display inline-flex
 	align-items center
 	gap 3px
+	min-height 40px
 	max-width calc(100vw - 24px)
 	padding 4px
 	border 1px solid rgba(255, 255, 255, .12)
@@ -107,6 +110,85 @@
 				opacity 1
 		&[aria-pressed='false']
 			opacity .72
+	&__slider
+		display inline-flex
+		align-items center
+		gap 8px
+		min-height 30px
+		padding 0 10px
+		font 650 10px/1 'Inter', system-ui, -apple-system, sans-serif
+		font-variant-numeric tabular-nums
+		letter-spacing .05em
+		text-transform uppercase
+		label
+			color rgba(203, 213, 225, .78)
+			font-size 10px
+			font-weight 600
+			letter-spacing .02em
+			white-space nowrap
+			cursor pointer
+		strong
+			min-width 30px
+			text-align right
+			color #f8fafc
+			font-size 10.5px
+			font-weight 700
+		input[type='range']
+			--slider-track-size 4px
+			--slider-thumb-size 13px
+			--slider-track-radius 999px
+			--slider-thumb-radius 50%
+			--slider-track-color rgba(255, 255, 255, .14)
+			--slider-fill-color var(--demo-accent)
+			--slider-thumb-color #f8fafc
+			appearance none
+			touch-action pan-x
+			-webkit-user-drag none
+			inline-size 104px
+			block-size 18px
+			margin 0
+			padding 0
+			border 0
+			border-radius 0
+			background transparent
+			cursor pointer
+		input[type='range']::-webkit-slider-runnable-track
+			block-size var(--slider-track-size)
+			border 0
+			border-radius var(--slider-track-radius)
+			background linear-gradient(to right, var(--slider-fill-color) 0 var(--slider-progress), var(--slider-track-color) var(--slider-progress) 100%)
+		input[type='range']::-webkit-slider-thumb
+			-webkit-appearance none
+			appearance none
+			inline-size var(--slider-thumb-size)
+			block-size var(--slider-thumb-size)
+			margin-block-start calc((var(--slider-track-size) - var(--slider-thumb-size)) / 2)
+			border 2px solid var(--slider-fill-color)
+			border-radius var(--slider-thumb-radius)
+			background var(--slider-thumb-color)
+			box-shadow 0 2px 6px rgba(0, 0, 0, .4)
+			transition transform .12s ease
+		input[type='range']:hover::-webkit-slider-thumb
+			transform scale(1.12)
+		input[type='range']::-moz-range-track
+			block-size var(--slider-track-size)
+			border 0
+			border-radius var(--slider-track-radius)
+			background var(--slider-track-color)
+		input[type='range']::-moz-range-progress
+			block-size var(--slider-track-size)
+			border-radius var(--slider-track-radius)
+			background var(--slider-fill-color)
+		input[type='range']::-moz-range-thumb
+			inline-size var(--slider-thumb-size)
+			block-size var(--slider-thumb-size)
+			border 2px solid var(--slider-fill-color)
+			border-radius var(--slider-thumb-radius)
+			background var(--slider-thumb-color)
+			box-shadow 0 2px 6px rgba(0, 0, 0, .4)
+		input[type='range']:focus-visible
+			outline 2px solid var(--slider-fill-color)
+			outline-offset 3px
 	kbd
 		padding 2px 4px
 		border 1px solid rgba(255, 255, 255, .18)
@@ -115,6 +197,7 @@
 		color rgba(255, 255, 255, .66)
 	@media (max-width 720px)
 		top calc(12px + var(--sait, 0px))
+		min-height 35px
 		max-width calc(100vw - 116px)
 		padding 3px
 		overflow-x auto
@@ -123,16 +206,14 @@
 			min-height 27px
 			padding 0 10px
 			font-size 10px
+		&__slider
+			min-height 27px
+			padding 0 8px
+			gap 6px
+			input[type='range']
+				inline-size 76px
 		kbd
 			display none
 	@media (prefers-reduced-motion reduce)
-		button
+		button, &__slider input[type='range']::-webkit-slider-thumb
 			transition none
-
-.lil-gui.lil-auto-place.DemoGuiTop
-	top calc(18px + var(--sait, 0px))
-	left 50%
-	right auto
-	transform translateX(-50%)
-	border-radius 14px
-	overflow hidden

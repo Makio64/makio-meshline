@@ -58,7 +58,9 @@
    - Call `line.build()` explicitly **before** calling `line.addVertexAttribute()`, `line.addVertexAttributes()`, `line.addInstanceAttribute()`, or `line.addInstanceAttributes()` if the line is not yet in the scene.
 4. **Updating Points Without Rebuilding**:
    - Same point count per frame: set `.dynamic( true )` once, then call `line.setPositions( points )` or `line.setPositionRange( slice, startPoint, { lineIndex } )` each frame.
-   - Changing point count or open/closed topology: call `line.lines( newPoints, closed )` or alias `line.points( newPoints, closed )` (and `options.points` or `options.lines` in `new MeshLine( options )`).
+   - Changing point count or open/closed topology: call `line.lines( newPoints, closed )` or alias `line.points( newPoints, closed )` (and `options.points` or `options.lines` in `new MeshLine( options )`). With `.dynamic( true )` the buffers are reused, for surfaces too; `geometry.vertexCount` and `geometry.indexCount` then give the counts in use, since `attribute.count` is a capacity.
+   - Large plain lines moved every frame: `.dynamic( 'storage' )` keeps the points in one WebGPU storage buffer and uploads nine times less. It needs `Float32Array` points of equal length per line and no gradient, dashes, map, vertex colors or progress hooks; otherwise, and on WebGL2, it behaves as `.dynamic( true )`.
+   - Billboard lines only: import `MeshLineBillboard` instead of `MeshLine` to leave the surface builders out of the bundle.
 5. **WebGPU 8-Vertex-Buffer Limit**:
    - Pack multiple custom instance or vertex attributes into a single interleaved buffer via `line.addInstanceAttributes( { offset: 3, phase: 1 } )` instead of separate `addInstanceAttribute()` calls.
 6. **Viewport Resize & Cleanup**:

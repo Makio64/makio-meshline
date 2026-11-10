@@ -205,9 +205,10 @@ The tables list the surface-specific contract. Both classes retain their inherit
 | `new MeshLineSurfaceGeometry(options?)` | `MeshLineSurfaceGeometry` | Optionally builds one or more centerlines immediately. `isMeshLineSurfaceGeometry` is always `true`. |
 | `geometry.buildLine(options?)` | `void` | Merges configuration and rebuilds when `lines` are present. |
 | `geometry.setLines(points, closed?)` | `void` | Replaces centerlines (and optional open/closed state) and rebuilds all derived frames, joins, attributes, indices, and bounds. |
-| `geometry.setPositions(points)` | `void` | Surface alias for `setLines(points)`; reuses same-capacity buffers in place when topology is unchanged. Range updates are intentionally unavailable. |
+| `geometry.setPositions(points)` | `void` | Surface alias for `setLines(points)`; reuses the buffers in place when topology is unchanged. A dynamic surface (`dynamic: true`) also keeps them when its vertex count changes, growing them with headroom only when needed. Range updates are intentionally unavailable. |
+| `geometry.vertexCount` / `geometry.indexCount` | `number` | Vertices and indices in use. While a dynamic surface holds spare capacity they are below `attributes.position.count` and `index.count`; the indices past `indexCount` are zero (degenerate triangles). |
 | `geometry.setUsage(usage, name?)` | `void` | Replaces all generated attributes, or one named attribute, with the requested usage. |
-| `geometry.copyToGeometry(targetGeometry)` | `targetGeometry` | Copies `position`, `uv`, `normal`, and `index` into a Three.js `BufferGeometry` or a `@makio/mini3` `Geometry` (in canonical `position`, `uv`, `normal` attribute order). |
+| `geometry.copyToGeometry(targetGeometry)` | `targetGeometry` | Copies the `position`, `uv`, `normal`, and `index` data in use into a Three.js `BufferGeometry` or a `@makio/mini3` `Geometry` (in canonical `position`, `uv`, `normal` attribute order). |
 | `geometry.dispose()` | `void` | Releases geometry buffers. |
 | `new MeshLineSurfaceNodeMaterial(options?)` | `MeshLineSurfaceNodeMaterial` | Optionally configures the PBR material immediately. `isMeshLineSurfaceNodeMaterial` is always `true`. |
 | `material.buildLine(options?)` | `void` | Reconfigures the supported base, alpha, depth, wireframe, and surface PBR fields. |

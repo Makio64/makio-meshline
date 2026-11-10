@@ -52,7 +52,7 @@ export const DECLARED_GPU_BYTES =
 	OUTPUT_CAPACITY * Uint32Array.BYTES_PER_ELEMENT +
 	BLOCK_COUNT * 2 * Uint32Array.BYTES_PER_ELEMENT +
 	CHUNK_CAPACITY * 2 * Uint32Array.BYTES_PER_ELEMENT +
-	( 4 + DRAW_COMMAND_UINTS * 6 ) * Uint32Array.BYTES_PER_ELEMENT
+	( 4 + DRAW_COMMAND_UINTS * 3 ) * Uint32Array.BYTES_PER_ELEMENT
 
 const uintStorage = count => storage( new StorageBufferAttribute( count, 1, Uint32Array ), 'uint', count )
 const vec4Storage = count => storage( new StorageBufferAttribute( count, 4 ), 'vec4', count )

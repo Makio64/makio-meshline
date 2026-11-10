@@ -3,7 +3,6 @@
  * Demonstrates: shape presets, gradients, dashes, sizeAttenuation, join({ type, limit, fold }),
  * antialias, smoothSharpBends, and live copy-paste code output.
  */
-import GUI from 'lil-gui'
 import { circlePositions, MeshLine, sineWavePositions, squarePositions, straightLine } from 'makio-meshline'
 import { MathUtils } from 'three/webgpu'
 import { markRaw, reactive, watch } from 'vue'
@@ -13,7 +12,6 @@ import stage3d from '@/makio/three/stage3d'
 import { noUI } from '@/makio/utils/detect'
 import { linePoints } from '@/utils/points'
 import { generateSandboxCode } from '@/utils/sandboxCode'
-import { highlightCode } from '@/utils/sandboxHighlight'
 import SandboxView from '@/views/SandboxView.vue'
 
 const STRONG_ANGLE_POINTS = [
@@ -95,7 +93,7 @@ const LINE_POSITIONS = {
 export default class SandboxExample {
 	uiComponent = markRaw( SandboxView )
 	hasNoMenu = noUI
-	uiState = reactive( { compact: false, activePanel: 'preview', copyState: 'idle' } )
+	uiState = reactive( { compact: false, activePanel: 'preview', controlsOpen: true, controlsHidden: false, copyState: 'idle' } )
 	config = reactive( {
 		// An open curve, so the default gradient has no seam.
 		lineType: 'snake',
@@ -125,7 +123,6 @@ export default class SandboxExample {
 		smoothSharpBendsThreshold: -0.5,
 
 		generatedCode: '',
-		highlightedCode: '',
 	} )
 
 	async init() {
@@ -134,7 +131,7 @@ export default class SandboxExample {
 		await stage3d.initRender()
 		stage3d.orbit( 40, { minRadius: 20, maxRadius: 60 } )
 
-		this.initGUI()
+		this.syncUiLayout()
 		this.createLine()
 
 		stage3d.own( watch( () => REBUILD_KEYS.map( key => this.config[key] ), () => this.createLine() ) )
@@ -175,7 +172,6 @@ export default class SandboxExample {
 		if ( config.useDashes ) line.dash( { count: config.dashCount, ratio: config.dashRatio, offset: config.dashOffset } )
 
 		config.generatedCode = generateSandboxCode( config )
-		highlightCode( config )
 	}
 
 	update = dt => {
@@ -183,56 +179,8 @@ export default class SandboxExample {
 		this.line.material.dashOffset.value -= ( dt / 8 ) * 0.02
 	}
 
-	initGUI() {
-		const { config } = this
-		this.gui = stage3d.own( new GUI( { title: 'Line controls', width: this.hasNoMenu ? 220 : 350 } ) )
-		this.gui.domElement.id = 'sandbox-controls'
-		this.gui.domElement.classList.add( 'SandboxControls' )
-		this.gui.domElement.style.right = this.hasNoMenu ? '0' : '60px'
-
-		const geometryFolder = this.gui.addFolder( 'Line Shape' )
-		geometryFolder.add( config, 'lineType', {
-			Snake: 'snake',
-			'Helix (3D)': 'helix',
-			Circle: 'circle',
-			Sine: 'sine',
-			Square: 'square',
-			Straight: 'straight',
-			'Strong Angle': 'strongAngle',
-			Zigzag: 'zigzag',
-		} ).onChange( value => this.configureLineType( value ) )
-		geometryFolder.add( config, 'segments', 8, 256, 1 )
-		geometryFolder.add( config, 'closed' )
-
-		const appearanceFolder = this.gui.addFolder( 'Appearance' )
-		appearanceFolder.addColor( config, 'color' )
-		appearanceFolder.add( config, 'opacity', 0, 1, 0.01 )
-		appearanceFolder.add( config, 'useGradient' ).name( 'Gradient Enabled' )
-		appearanceFolder.addColor( config, 'gradientColor' ).name( 'Gradient Color' )
-		appearanceFolder.add( config, 'lineWidth', 0.1, 25, 0.1 ).name( 'Line Width' )
-		appearanceFolder.add( config, 'sizeAttenuation' ).name( 'Size Attenuation' )
-		appearanceFolder.add( config, 'wireframe' )
-
-		const dashFolder = this.gui.addFolder( 'Dashes' )
-		dashFolder.add( config, 'useDashes' )
-		dashFolder.add( config, 'dashCount', 1, 32, 1 )
-		dashFolder.add( config, 'dashRatio', 0.1, 0.9, 0.01 )
-		dashFolder.add( config, 'dashOffset', 0, 1, 0.01 )
-		dashFolder.add( config, 'animateDashes' )
-
-		const advancedFolder = this.gui.addFolder( 'Advanced' )
-		advancedFolder.add( config, 'joinType', { Miter: 'miter', Bevel: 'bevel', Round: 'round' } ).name( 'Join Type' )
-		advancedFolder.add( config, 'joinFold', { 'Geometry (Fast)': 'geometry', 'Exact (2-Pass)': 'exact', Off: false } ).name( '3D Fold' )
-		advancedFolder.add( config, 'miterLimit', 1, 10, 0.1 ).name( 'Miter Limit' )
-		advancedFolder.add( config, 'antialias' ).name( 'Analytic AA' )
-		advancedFolder.add( config, 'smoothSharpBends' ).name( 'Smooth Sharp Bends' )
-		advancedFolder.add( config, 'smoothSharpBendsAlpha', 0.001, 0.5, 0.001 ).name( 'Smooth Cutoff' )
-		advancedFolder.add( config, 'smoothSharpBendsThreshold', -1, 1, 0.05 ).name( 'Sharp Threshold' )
-
-		this.syncUiLayout()
-	}
-
 	configureLineType( value ) {
+		this.config.lineType = value
 		this.config.closed = value === 'circle' || value === 'square'
 		if ( ['circle', 'square', 'strongAngle', 'helix'].includes( value ) ) this.config.useGradient = true
 		if ( value === 'zigzag' || value === 'strongAngle' ) this.config.smoothSharpBends = true
@@ -247,9 +195,7 @@ export default class SandboxExample {
 		const compact = stage.width <= 768
 		if ( compact && !this.uiState.compact ) this.uiState.activePanel = 'preview'
 		this.uiState.compact = compact
-
-		if ( compact && this.uiState.activePanel !== 'controls' ) this.gui.hide()
-		else this.gui.show()
+		this.uiState.controlsHidden = compact && this.uiState.activePanel !== 'controls'
 	}
 
 	onResize = () => this.syncUiLayout()

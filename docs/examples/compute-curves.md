@@ -37,7 +37,7 @@ function frame( deltaSeconds ) {
 
 `renderer` must be a `WebGPURenderer` backed by native WebGPU. Without `renderer.compute()`, `step()` warns once, returns `false`, and does not advance the simulation.
 
-The live example colors each curve by its place on the seeded spiral with a `colorFn` hook (a warm core cooling to a violet rim), adds additive blending and bloom, width and fragment-alpha hooks, a mouse attractor, and live controls for curve count, mouse and curl strengths, pulse spacing, and simulation mode. Its dash modulation uses `arcLengthNode( progress )`, so spacing follows the current animated curve distance instead of normalized point progress.
+The live example seeds a 3D phyllotaxis crown of bioluminescent tentacles with `colorFn` and `widthFn` hooks (an electric cyan-mint inner crown shifting to violet-magenta outer rings with glowing nematocyst tip bulbs), adds additive blending and bloom, parts and swirls around a 3D camera-aligned cursor plane, and exposes mode presets (`Anemone`, `Swarm`, and `Vortex`) plus a click-triggered synaptic surge. Its pulse modulation uses `arcLengthNode( progress )`, so traveling light pulses keep constant world-space spacing even as tentacles bend and stretch.
 
 ## Why Compute
 

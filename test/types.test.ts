@@ -7,6 +7,7 @@ import { circlePositions as circlePositionsSubpath, straightLineBetween as strai
 
 import {
 	MeshLine,
+	MeshLineBillboard,
 	MeshLineCompute,
 	MeshLineGeometry,
 	MeshLineNodeMaterial,
@@ -34,6 +35,9 @@ const road = new MeshLine( {
 	.surface( false )
 
 const geometry = new MeshLineGeometry( { lines: points } )
+const doubles = new Float64Array( points )
+new MeshLine( { lines: doubles } ).lines( [doubles, points] ).build().setPositions( doubles )
+geometry.setLines( doubles )
 geometry.setUsage( DynamicDrawUsage )
 geometry.setPositionRange( new Float32Array( [1, 0.25, 0] ), 1, { updateBounding: true } )
 road.setPositionRange( new Float32Array( [1, 0.25, 0] ), 1 )
@@ -93,6 +97,17 @@ void gpuPath.setSimplificationTolerance( 0.1 )
 gpuPath.resize( 1280, 720 )
 
 const trailBuffer = new StorageBufferAttribute( 8 * 64, 3 )
+// Storage-backed dynamic positions and the billboard-only facade.
+const storedLine = new MeshLineBillboard( { lines: points, dynamic: 'storage' } ).dynamic( 'storage' ).build()
+const storedPoints: number | undefined = storedLine.positionStorage?.count
+void storedPoints
+storedLine.setPositionRange( points.subarray( 0, 3 ), 1 ).dynamic( true ).dynamic( false )
+const billboard: MeshLineBillboard = new MeshLine()
+void billboard
+// @ts-expect-error dynamic() takes a boolean or 'storage'
+storedLine.dynamic( 'gpu' )
+storagePositions( new StorageBufferAttribute( 64, 4 ), { pointsPerLine: 64, snap: true } )
+
 const trails = new MeshLine()
 	.instances( 8 )
 	.segments( 63 )

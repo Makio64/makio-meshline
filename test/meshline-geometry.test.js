@@ -385,3 +385,120 @@ test( 'miter limits are finite and never below one', () => {
 	assert.equal( material.miterLimit, 1e6 )
 	assert.equal( Number.isFinite( material._miterThreshold.value ), true )
 } )
+
+test( 'setLines() input that fails to convert keeps the source and loop flags', () => {
+	const lines = [
+		new Float32Array( [0, 0, 0, 1, 0, 0, 1, 1, 0] ),
+		new Float32Array( [3, 0, 0, 4, 0, 0] ),
+	]
+	const geometry = new MeshLineGeometry( { lines } )
+	assert.throws( () => geometry.setLines( [lines[0], new MeshLineGeometry()], true ), /position attribute/ )
+	assert.equal( geometry.options.lines, lines )
+	assert.equal( geometry.options.closed, false )
+
+	// A partial rebuild draws the kept lines, still open.
+	geometry.buildLine( { lineWidth: 2 } )
+	assert.deepEqual( geometry._lineLoops, [false, false] )
+	assert.deepEqual( Array.from( geometry._lines[0] ), Array.from( lines[0] ) )
+} )
+
+test( 'a rejected build keeps the options of the last accepted one', () => {
+	// A NaN width fails once the input converted, and clears the geometry.
+	let rejecting = false
+	const widthCallback = progress => rejecting ? Number.NaN : 1 + progress
+	const lines = new Float32Array( [0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0] )
+	const geometry = new MeshLineGeometry( { lines, needsWidth: true, widthCallback } )
+	assert.throws( () => geometry.buildLine( { widthCallback: () => Number.NaN } ), /non-finite/ )
+	assert.equal( geometry.options.widthCallback, widthCallback )
+	assert.equal( geometry.widthCallback, widthCallback )
+	rejecting = true
+	assert.throws( () => geometry.setLines( lines.slice(), true ), /non-finite/ )
+	rejecting = false
+	assert.equal( geometry.options.lines, lines )
+	assert.equal( geometry.options.closed, false )
+
+	// The next update draws an open line with the accepted callback.
+	geometry.setPositions( lines )
+	const fresh = new MeshLineGeometry( { lines, needsWidth: true, widthCallback } )
+	assert.equal( geometry.getIndex().count, fresh.getIndex().count )
+	assert.deepEqual( geometry.getAttribute( 'width' ).array, fresh.getAttribute( 'width' ).array )
+} )
+
+test( 'buildLine() input that fails to convert leaves the lines drawn and editable', () => {
+	const lines = [
+		new Float32Array( [0, 0, 0, 1, 0, 0, 1, 1, 0] ),
+		new Float32Array( [3, 0, 0, 4, 0, 0] ),
+	]
+	const geometry = new MeshLineGeometry( { lines, lineWidth: 1, needsWidth: true, widthCallback: progress => 1 + progress } )
+	const padding = geometry.getBoundingPadding()
+	assert.throws( () => geometry.buildLine( { lines: [lines[0], new MeshLineGeometry()] } ), /position attribute/ )
+	assert.equal( geometry._lineCount, 2 )
+	assert.equal( geometry.getBoundingPadding(), padding )
+	geometry.setPositionRange( new Float32Array( [4, 1, 0] ), 1, { lineIndex: 1 } )
+	assert.deepEqual( Array.from( geometry._lines[1] ), [3, 0, 0, 4, 1, 0] )
+	assert.equal( geometry.options.lines, lines )
+} )
+
+test( 'a Float64Array is one line, drawn like the Float32Array it converts to', () => {
+	const values = [0, 0, 0, 1, 0, 0, 2, 1, 0, 3, 1, 2]
+	const moved = values.map( ( value, index ) => index % 3 === 1 ? value + 0.5 : value )
+	const drawn = geometry => ( {
+		lines: geometry._lines.map( line => Array.from( line ) ),
+		loops: Array.from( geometry._lineLoops ),
+		position: Array.from( geometry.getAttribute( 'position' ).array ),
+		index: Array.from( geometry.getIndex().array ),
+		drawRange: geometry.drawRange.count,
+	} )
+	const expect = ( geometry, lines, closed = false ) => {
+		assert.deepEqual( drawn( geometry ), drawn( new MeshLineGeometry( { lines, closed } ) ) )
+		assertFiniteAndIndexValid( geometry )
+	}
+
+	// Built, then replaced by a line of another length.
+	const geometry = new MeshLineGeometry( { lines: new Float64Array( values ) } )
+	expect( geometry, new Float32Array( values ) )
+	geometry.setLines( new Float64Array( values.slice( 0, 9 ) ) )
+	expect( geometry, new Float32Array( values.slice( 0, 9 ) ) )
+
+	// Moved in place, then grown, through setPositions().
+	const position = geometry.getAttribute( 'position' )
+	geometry.setPositions( new Float64Array( moved.slice( 0, 9 ) ) )
+	assert.equal( geometry.getAttribute( 'position' ), position, 'the same point count keeps its buffers' )
+	expect( geometry, new Float32Array( moved.slice( 0, 9 ) ) )
+	geometry.setPositions( new Float64Array( moved ) )
+	expect( geometry, new Float32Array( moved ) )
+
+	// The source stays editable point by point.
+	geometry.setPositionRange( new Float32Array( [1, 4, 0] ), 1 )
+	assert.deepEqual( Array.from( geometry._lines[0].subarray( 3, 6 ) ), [1, 4, 0] )
+	geometry.buildLine( { lineWidth: 2 } )
+	assert.deepEqual( Array.from( geometry._lines[0].subarray( 3, 6 ) ), [1, 4, 0], 'a rebuild reads the edited source back' )
+
+	// Closed, and as members of a batch.
+	expect( new MeshLineGeometry( { lines: new Float64Array( values ), closed: true } ), new Float32Array( values ), true )
+	expect(
+		new MeshLineGeometry( { lines: [new Float64Array( values ), new Float64Array( moved )] } ),
+		[new Float32Array( values ), new Float32Array( moved )],
+	)
+
+	// The facade takes it before and after the build.
+	const line = new MeshLine().lines( new Float64Array( values ) ).build()
+	expect( line.geometry, new Float32Array( values ) )
+	line.lines( new Float64Array( moved.slice( 0, 6 ) ) )
+	expect( line.geometry, new Float32Array( moved.slice( 0, 6 ) ) )
+} )
+
+test( 'typed arrays that cannot hold points are refused rather than drawn as nothing', () => {
+	const geometry = new MeshLineGeometry( { lines: new Float32Array( [0, 0, 0, 1, 0, 0] ) } )
+	const position = Array.from( geometry.getAttribute( 'position' ).array )
+
+	// Any numeric typed array is a flat line.
+	geometry.setLines( new Int16Array( [0, 0, 0, 2, 0, 0, 2, 3, 0] ) )
+	assert.deepEqual( Array.from( geometry._lines[0] ), [0, 0, 0, 2, 0, 0, 2, 3, 0] )
+
+	// A BigInt array has no numbers to read, so the lines drawn stay as they were.
+	geometry.setLines( new Float32Array( [0, 0, 0, 1, 0, 0] ) )
+	assert.throws( () => geometry.setLines( new BigInt64Array( 6 ) ), TypeError )
+	assert.equal( geometry._lineCount, 1 )
+	assert.deepEqual( Array.from( geometry.getAttribute( 'position' ).array ), position )
+} )

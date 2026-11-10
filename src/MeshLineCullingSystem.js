@@ -268,7 +268,7 @@ const hasBundleAncestor = object => {
 }
 
 const getWorldPadding = ( object, hasExplicitBounds, explicitWorldPadding ) => {
-	if ( hasExplicitBounds ) {
+	if ( hasExplicitBounds || explicitWorldPadding != null ) {
 		const padding = Number( explicitWorldPadding ?? 0 )
 		return Number.isFinite( padding ) && padding >= 0 ? padding : null
 	}
@@ -322,11 +322,15 @@ const writeChunkBounds = ( target, chunks, indexArray, position, object, boundsO
 		} else if ( directArray ) {
 			let prevVertex0 = -1
 			let prevVertex1 = -1
+			let prevVertex2 = -1
+			let prevVertex3 = -1
 			const end = indexStart + indexCount
 			for ( let i = indexStart; i < end; i++ ) {
 				const vertex = indexArray[i]
-				if ( vertex === prevVertex0 || vertex === prevVertex1 ) continue
+				if ( vertex === prevVertex0 || vertex === prevVertex1 || vertex === prevVertex2 || vertex === prevVertex3 ) continue
 				if ( vertex >= posCount ) return false
+				prevVertex3 = prevVertex2
+				prevVertex2 = prevVertex1
 				prevVertex1 = prevVertex0
 				prevVertex0 = vertex
 				const vOffset = vertex * stride
@@ -344,11 +348,15 @@ const writeChunkBounds = ( target, chunks, indexArray, position, object, boundsO
 		} else {
 			let prevVertex0 = -1
 			let prevVertex1 = -1
+			let prevVertex2 = -1
+			let prevVertex3 = -1
 			const end = indexStart + indexCount
 			for ( let i = indexStart; i < end; i++ ) {
 				const vertex = indexArray[i]
-				if ( vertex === prevVertex0 || vertex === prevVertex1 ) continue
+				if ( vertex === prevVertex0 || vertex === prevVertex1 || vertex === prevVertex2 || vertex === prevVertex3 ) continue
 				if ( vertex >= posCount ) return false
+				prevVertex3 = prevVertex2
+				prevVertex2 = prevVertex1
 				prevVertex1 = prevVertex0
 				prevVertex0 = vertex
 				const x = position.getX( vertex )
@@ -381,7 +389,7 @@ const writeChunkBounds = ( target, chunks, indexArray, position, object, boundsO
 		target[offset] = ( minX + maxX ) * 0.5
 		target[offset + 1] = ( minY + maxY ) * 0.5
 		target[offset + 2] = ( minZ + maxZ ) * 0.5
-		target[offset + 3] = 0
+		target[offset + 3] = 1
 		target[offset + 4] = ( maxX - minX ) * 0.5
 		target[offset + 5] = ( maxY - minY ) * 0.5
 		target[offset + 6] = ( maxZ - minZ ) * 0.5
@@ -403,7 +411,15 @@ const createChunkInfo = chunks => {
 }
 
 const matrixEquals = ( left, right ) => !!left?.equals && left.equals( right )
-const matrixIsFinite = matrix => !!matrix?.elements && matrix.elements.every( Number.isFinite )
+const matrixIsFinite = matrix => {
+	const elements = matrix?.elements
+	if ( !elements || elements.length < 16 ) return false
+	for ( let i = 0; i < 16; i++ ) {
+		const v = elements[i]
+		if ( !( typeof v === 'number' && v - v === 0 ) ) return false
+	}
+	return true
+}
 const planeIsFinite = plane => !!plane &&
 	Number.isFinite( plane.normal.x ) &&
 	Number.isFinite( plane.normal.y ) &&
@@ -537,7 +553,7 @@ class MeshLineCullingHandle {
 				worldPadding
 			) ) return this._fail( 'chunk bounds are invalid' )
 
-			const sourceAttribute = new StorageBufferAttribute( source.slice(), 1, Uint32Array )
+			const sourceAttribute = new StorageBufferAttribute( source, 1, Uint32Array )
 			const outputAttribute = new StorageBufferAttribute( source.slice(), 1, Uint32Array )
 			const chunkAttribute = new StorageBufferAttribute( createChunkInfo( chunks ), 4, Uint32Array )
 			const boundsAttribute = new StorageBufferAttribute( bounds, 4 )
@@ -617,7 +633,6 @@ class MeshLineCullingHandle {
 		// coalesces instead of each thread walking its own far-off range.
 		resources.cullNode = Fn( () => {
 			If( instanceIndex.lessThan( uint( this.chunkCount ) ), () => {
-				const chunk = chunkBuffer.element( instanceIndex )
 				const boundsIndex = instanceIndex.shiftLeft( uint( 1 ) ).toVar()
 				const center = boundsBuffer.element( boundsIndex )
 				const extent = boundsBuffer.element( boundsIndex.add( uint( 1 ) ) )
@@ -625,7 +640,7 @@ class MeshLineCullingHandle {
 
 				for ( let planeIndex = 0; planeIndex < 6; planeIndex++ ) {
 					const plane = planeBuffer.element( uint( planeIndex ) )
-					const distance = dot( plane.xyz, center.xyz ).add( plane.w )
+					const distance = dot( plane, center )
 					const radius = dot( abs( plane.xyz ), extent.xyz ).add( extent.w )
 					visible.assign( visible.and( distance.add( radius ).greaterThanEqual( 0 ) ) )
 				}
@@ -634,6 +649,7 @@ class MeshLineCullingHandle {
 				if ( cooperativeCopy ) offsetBuffer.element( instanceIndex ).assign( uint( UINT32_MAX ) )
 
 				If( visible, () => {
+					const chunk = chunkBuffer.element( instanceIndex )
 					const count = chunkIndexCount( chunk )
 					const outputStart = atomicAdd( indirectBuffer.element( uint( 0 ) ), count )
 					if ( cooperativeCopy ) {
@@ -831,6 +847,16 @@ class MeshLineCullingHandle {
 				// The source attribute may have been edited in place after refresh().
 				// Synchronize its CPU copy before the first INDEX|STORAGE warm-up draw.
 				if ( !this._syncDynamicData() ) return
+				const compilingAsync = Array.isArray( renderer?._compilationPromises )
+				if ( compilingAsync ) {
+					if ( typeof renderer?._attributes?.update === 'function' ) {
+						// AttributeType.INDEX = 2, AttributeType.INDIRECT = 4
+						renderer._attributes.update( this._resources.outputAttribute, 2 )
+						renderer._attributes.update( this._resources.indirectAttribute, 4 )
+						snapshot.warming = true
+					}
+					return
+				}
 				setIndex( geometry, this._resources.outputAttribute )
 				setIndirect( geometry, null, 0 )
 				snapshot.warming = true
@@ -958,15 +984,21 @@ class MeshLineCullingHandle {
 
 	_updateLocalPlanes( worldPlanes ) {
 		const elements = this.line.matrixWorld.elements
+		const e0 = elements[0], e1 = elements[1], e2 = elements[2], e3 = elements[3]
+		const e4 = elements[4], e5 = elements[5], e6 = elements[6], e7 = elements[7]
+		const e8 = elements[8], e9 = elements[9], e10 = elements[10], e11 = elements[11]
+		const e12 = elements[12], e13 = elements[13], e14 = elements[14], e15 = elements[15]
+		const planes = this._resources.planes
 		for ( let i = 0; i < 6; i++ ) {
 			const plane = worldPlanes[i]
-			const x = plane.normal.x, y = plane.normal.y, z = plane.normal.z, w = plane.constant
-			const localX = elements[0] * x + elements[1] * y + elements[2] * z + elements[3] * w
-			const localY = elements[4] * x + elements[5] * y + elements[6] * z + elements[7] * w
-			const localZ = elements[8] * x + elements[9] * y + elements[10] * z + elements[11] * w
-			const localW = elements[12] * x + elements[13] * y + elements[14] * z + elements[15] * w
-			if ( ![localX, localY, localZ, localW].every( Number.isFinite ) ) return false
-			this._resources.planes[i].set( localX, localY, localZ, localW )
+			const normal = plane.normal
+			const x = normal.x, y = normal.y, z = normal.z, w = plane.constant
+			const localX = e0 * x + e1 * y + e2 * z + e3 * w
+			const localY = e4 * x + e5 * y + e6 * z + e7 * w
+			const localZ = e8 * x + e9 * y + e10 * z + e11 * w
+			const localW = e12 * x + e13 * y + e14 * z + e15 * w
+			if ( !( localX - localX === 0 && localY - localY === 0 && localZ - localZ === 0 && localW - localW === 0 ) ) return false
+			planes[i].set( localX, localY, localZ, localW )
 		}
 		this._preparedMatrixWorld.copy( this.line.matrixWorld )
 		return true
@@ -1192,7 +1224,36 @@ export class MeshLineCullingSystem {
 		if ( handle?.system === this ) handle.remove()
 	}
 
-	async update( camera ) {
+	async warmupAsync( camera = this.cullCamera ) {
+		if ( this.disposed ) return false
+		try {
+			if ( typeof this.renderer?.init === 'function' && this.renderer?._initialized === false ) {
+				await this.renderer.init()
+			}
+			if ( typeof this.renderer?.compileAsync === 'function' && this.scene && camera?.isCamera ) {
+				await this.renderer.compileAsync( this.scene, camera )
+			}
+			for ( const handle of this._handles ) {
+				if ( typeof handle.line?.ensureBuilt === 'function' ) handle.line.ensureBuilt()
+				if ( !handle.enabled || handle.warmedUp ) continue
+				if ( !handle._syncDynamicData() ) continue
+				if ( typeof this.renderer?._attributes?.update === 'function' ) {
+					this.renderer._attributes.update( handle._resources.outputAttribute, 2 )
+					this.renderer._attributes.update( handle._resources.indirectAttribute, 4 )
+					handle.warmedUp = true
+					handle._warmBackend = this.renderer?.backend ?? null
+					handle._warmDevice = this.renderer?.backend?.device ?? null
+					handle.reason = 'ready for compute update'
+				}
+			}
+			return true
+		} catch ( error ) {
+			this._failOpen( 'renderer warm-up failed', error )
+			return false
+		}
+	}
+
+	async update( camera = this.cullCamera ) {
 		if ( this.disposed ) return false
 		try {
 			if ( typeof this.renderer?.init === 'function' ) await this.renderer.init()
@@ -1203,7 +1264,26 @@ export class MeshLineCullingSystem {
 		}
 	}
 
-	_updateSync( camera ) {
+	async updateAsync( camera = this.cullCamera ) {
+		if ( this.disposed ) return false
+		try {
+			if ( typeof this.renderer?.init === 'function' && this.renderer?._initialized === false ) {
+				await this.renderer.init()
+			}
+			if ( typeof this.renderer?.computeAsync !== 'function' ) {
+				return this._updateSync( camera )
+			}
+			const pass = this._prepareUpdatePass( camera )
+			if ( typeof pass === 'boolean' ) return pass
+			await this.renderer.computeAsync( pass.computeNodes )
+			return this._commitPreparedPass( camera, pass.preparedHandles )
+		} catch ( error ) {
+			this._failOpen( 'compute dispatch failed', error )
+			return false
+		}
+	}
+
+	_prepareUpdatePass( camera ) {
 		if ( this.disposed ) return false
 		this._enforceFallbackPolicies()
 		if ( !this.isNativeWebGPU ) {
@@ -1216,53 +1296,64 @@ export class MeshLineCullingSystem {
 			return false
 		}
 
+		camera.updateWorldMatrix?.( true, false )
+		if ( camera.far !== undefined && !Number.isFinite( camera.far ) ) return this._failOpen( 'camera far plane is not finite' )
+		if ( !matrixIsFinite( camera.projectionMatrix ) || !matrixIsFinite( camera.matrixWorldInverse ) ) return this._failOpen( 'camera matrices are not finite' )
+		this._projectionView.multiplyMatrices( camera.projectionMatrix, camera.matrixWorldInverse )
+		this._frustum.setFromProjectionMatrix( this._projectionView, camera.coordinateSystem, camera.reversedDepth )
+		if ( !this._frustum.planes.every( planeIsFinite ) ) return this._failOpen( 'frustum planes are not finite' )
+		const computeNodes = this._computeNodes
+		const preparedHandles = this._preparedHandles
+		computeNodes.length = 0
+		preparedHandles.length = 0
+		let retainedPrepared = false
+
+		for ( const handle of this._handles ) {
+			if ( !handle.enabled || !handle.warmedUp || !handle._hasCurrentDevice() ) continue
+			if ( !handle._syncDynamicData() ) continue
+			if ( handle._isPreparedFor( camera ) ) {
+				retainedPrepared = true
+				continue
+			}
+			if ( !handle._updateLocalPlanes( this._frustum.planes ) ) {
+				handle._transient( 'local frustum planes are not finite; drawing all' )
+				continue
+			}
+			computeNodes.push( handle._resources.resetNode, handle._resources.cullNode )
+			if ( handle._resources.copyNode ) computeNodes.push( handle._resources.copyNode )
+			preparedHandles.push( handle )
+		}
+
+		if ( computeNodes.length === 0 ) {
+			return retainedPrepared
+		}
+
+		return { computeNodes, preparedHandles }
+	}
+
+	_commitPreparedPass( camera, preparedHandles ) {
+		this._preparedCamera = camera
+		this._preparedProjection.copy( camera.projectionMatrix )
+		this._preparedView.copy( camera.matrixWorldInverse )
+		this._preparedCoordinateSystem = camera.coordinateSystem
+		this._preparedReversedDepth = camera.reversedDepth
+		for ( const handle of preparedHandles ) handle._markPrepared()
+		this.lastError = null
+		return true
+	}
+
+	_updateSync( camera ) {
 		try {
-			camera.updateWorldMatrix?.( true, false )
-			if ( camera.far !== undefined && !Number.isFinite( camera.far ) ) return this._failOpen( 'camera far plane is not finite' )
-			if ( !matrixIsFinite( camera.projectionMatrix ) || !matrixIsFinite( camera.matrixWorldInverse ) ) return this._failOpen( 'camera matrices are not finite' )
-			this._projectionView.multiplyMatrices( camera.projectionMatrix, camera.matrixWorldInverse )
-			this._frustum.setFromProjectionMatrix( this._projectionView, camera.coordinateSystem, camera.reversedDepth )
-			if ( !this._frustum.planes.every( planeIsFinite ) ) return this._failOpen( 'frustum planes are not finite' )
-			const computeNodes = this._computeNodes
-			const preparedHandles = this._preparedHandles
-			computeNodes.length = 0
-			preparedHandles.length = 0
-			let retainedPrepared = false
+			const pass = this._prepareUpdatePass( camera )
+			if ( typeof pass === 'boolean' ) return pass
 
-			for ( const handle of this._handles ) {
-				if ( !handle.enabled || !handle.warmedUp || !handle._hasCurrentDevice() ) continue
-				if ( !handle._syncDynamicData() ) continue
-				if ( handle._isPreparedFor( camera ) ) {
-					retainedPrepared = true
-					continue
-				}
-				if ( !handle._updateLocalPlanes( this._frustum.planes ) ) {
-					handle._transient( 'local frustum planes are not finite; drawing all' )
-					continue
-				}
-				computeNodes.push( handle._resources.resetNode, handle._resources.cullNode )
-				if ( handle._resources.copyNode ) computeNodes.push( handle._resources.copyNode )
-				preparedHandles.push( handle )
-			}
-
-			if ( computeNodes.length === 0 ) {
-				return retainedPrepared
-			}
-
-			const result = this.renderer.compute( computeNodes )
+			const result = this.renderer.compute( pass.computeNodes )
 			if ( result?.catch ) {
 				result.catch( error => this._failOpen( 'asynchronous compute dispatch failed', error ) )
 				this._preparedCamera = null
 				return false
 			}
-			this._preparedCamera = camera
-			this._preparedProjection.copy( camera.projectionMatrix )
-			this._preparedView.copy( camera.matrixWorldInverse )
-			this._preparedCoordinateSystem = camera.coordinateSystem
-			this._preparedReversedDepth = camera.reversedDepth
-			for ( const handle of preparedHandles ) handle._markPrepared()
-			this.lastError = null
-			return true
+			return this._commitPreparedPass( camera, pass.preparedHandles )
 		} catch ( error ) {
 			this._failOpen( 'compute dispatch failed', error )
 			return false

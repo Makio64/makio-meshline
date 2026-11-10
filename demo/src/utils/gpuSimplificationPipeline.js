@@ -13,11 +13,8 @@ import {
 	createSimplificationPasses,
 	DECLARED_GPU_BYTES,
 	LINE_CAPACITY,
-	LINE_VERTICES_PER_SEGMENT,
 	OUTPUT_CAPACITY,
 	POINT_CAPACITY,
-	RIBBON_VERTICES_PER_SEGMENT,
-	WIREFRAME_VERTICES_PER_SEGMENT,
 } from '@/utils/gpuSimplificationCompute'
 import { createRenderSet } from '@/utils/gpuSimplificationRibbon'
 import { times } from '@/utils/points'
@@ -101,15 +98,13 @@ export class SimplificationPipeline {
 			neighbours: uintBuffer( POINT_CAPACITY, 2 ),
 			output: new StorageBufferAttribute( OUTPUT_CAPACITY, 4 ),
 			outputGaps: uintBuffer( OUTPUT_CAPACITY ),
-			outputRuns: uintBuffer( LINE_CAPACITY * 2 ),
-			simplifiedDraw: new IndirectStorageBufferAttribute( 12, 1 ),
-			source: new StorageBufferAttribute( POINT_CAPACITY, 4 ),
-			sourceDraw: new IndirectStorageBufferAttribute( 12, 1 ),
 			// Two scalar slots per line rather than one uvec2. Writing a single
 			// component of a vector in storage compiles to a read-modify-write of the
 			// whole vector, so the invocation that owns a line's end would clobber the
 			// one that owns its start. Separate slots are independent 4-byte stores.
-			sourceRuns: uintBuffer( LINE_CAPACITY * 2 ),
+			outputRuns: uintBuffer( LINE_CAPACITY * 2 ),
+			simplifiedDraw: new IndirectStorageBufferAttribute( 12, 1 ),
+			source: new StorageBufferAttribute( POINT_CAPACITY, 4 ),
 			state: uintBuffer( 4 ),
 		}
 
@@ -132,51 +127,33 @@ export class SimplificationPipeline {
 
 		// Vertex stages may only bind storage buffers read-only, so the render
 		// graph gets its own read-only views of the same GPU buffers.
-		const { lineClosed, output, outputGaps, outputRuns, simplifiedDraw, source, sourceDraw, sourceRuns, state } = this.buffers
-		const shared = {
+		const { lineClosed, output, outputGaps, outputRuns, simplifiedDraw, state } = this.buffers
+		this.renderSet = createRenderSet( {
+			count: storage( state, 'uint', 4 ).toReadOnly().element( uint( 1 ) ),
+			gaps: storage( outputGaps, 'uint', OUTPUT_CAPACITY ).toReadOnly(),
 			halfWidth: uniform( lineWidth * 0.5 ),
+			indirect: simplifiedDraw,
 			lineClosed: storage( lineClosed, 'uint', LINE_CAPACITY ).toReadOnly(),
+			points: storage( output, 'vec4', OUTPUT_CAPACITY ).toReadOnly(),
 			projectionView: this.uniforms.projectionView,
-		}
-		this.renderSets = {
-			before: createRenderSet( {
-				...shared,
-				count: this.uniforms.pointCount,
-				indirect: sourceDraw,
-				points: storage( source, 'vec4', POINT_CAPACITY ).toReadOnly(),
-				runs: storage( sourceRuns, 'uint', LINE_CAPACITY * 2 ).toReadOnly(),
-			} ),
-			after: createRenderSet( {
-				...shared,
-				count: storage( state, 'uint', 4 ).toReadOnly().element( uint( 1 ) ),
-				gaps: storage( outputGaps, 'uint', OUTPUT_CAPACITY ).toReadOnly(),
-				indirect: simplifiedDraw,
-				points: storage( output, 'vec4', OUTPUT_CAPACITY ).toReadOnly(),
-				runs: storage( outputRuns, 'uint', LINE_CAPACITY * 2 ).toReadOnly(),
-			} ),
-		}
-		this.renderObjects = Object.values( this.renderSets ).flatMap( set => Object.values( set ) )
+			runs: storage( outputRuns, 'uint', LINE_CAPACITY * 2 ).toReadOnly(),
+		} )
+		this.renderObjects = Object.values( this.renderSet )
 	}
 
 	uploadDataset( { pointCount, positions, ranges }, chunkPlan ) {
-		const { lineClosed, neighbours, source, sourceDraw, sourceRuns } = this.buffers
+		const { lineClosed, neighbours, source } = this.buffers
 		this.needsWarmup = true
 		write( source, positions )
 		write( neighbours, buildNeighbourPlan( ranges, pointCount, positions ) )
 
 		lineClosed.array.fill( 0 )
-		sourceRuns.array.fill( 0 )
-		for ( const [line, { closed, end, start }] of ranges.slice( 0, LINE_CAPACITY ).entries() ) {
+		for ( const [line, { closed }] of ranges.slice( 0, LINE_CAPACITY ).entries() ) {
 			lineClosed.array[line] = closed ? 1 : 0
-			sourceRuns.array.set( [start, end], line * 2 )
 		}
 		lineClosed.needsUpdate = true
-		sourceRuns.needsUpdate = true
 
 		this.uploadChunkPlan( chunkPlan )
-
-		const verticesPerSegment = [RIBBON_VERTICES_PER_SEGMENT, LINE_VERTICES_PER_SEGMENT, WIREFRAME_VERTICES_PER_SEGMENT]
-		write( sourceDraw, verticesPerSegment.flatMap( vertices => [( pointCount - 1 ) * vertices, 1, 0, 0] ) )
 
 		this.uniforms.pointCount.value = pointCount
 		this.metrics.sourceUploads++
@@ -292,9 +269,9 @@ export class SimplificationPipeline {
 		return { emittedSegments, retained }
 	}
 
-	show( detail, renderMode ) {
+	show( renderMode ) {
 		for ( const object of this.renderObjects ) object.visible = false
-		this.renderSets[detail][renderMode].visible = true
+		this.renderSet[renderMode].visible = true
 	}
 
 	/** A readback can still be mapping a GPU buffer: detach now, free once `pending` settles. */

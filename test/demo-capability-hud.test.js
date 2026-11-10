@@ -42,3 +42,21 @@ test( 'GPU Culling reads its snapshot for the culled camera before moving it', a
 	assert.match( source, /handle\.readCullingSnapshot\(\)/ )
 	assert.match( source, /this\.culling\.remove\( this\.handle \)/, 'the baseline toggle detaches the line instead of rebuilding the scene' )
 } )
+
+test( 'GPU Culling defaults to Split View with a 3D camera rig and topographic terrain lattice', async () => {
+	const [source, ui, pass] = await Promise.all( [
+		readDemo( 'gpuCulling' ),
+		read( 'demo/src/components/GpuCulling.vue' ),
+		read( 'demo/src/utils/gpuCullingPass.js' ),
+	] )
+
+	assert.match( source, /return 'split'/ )
+	assert.match( source, /this\.cameraRig = new Group\(\)/ )
+	assert.match( source, /this\.passCamera\.add\( this\.frustumGroup, this\.cameraRig \)/ )
+	assert.match( source, /renderer\.render\( scene, camera \)/ )
+	assert.match( source, /renderer\.render\( scene, this\.passCamera \)/ )
+	assert.match( ui, /Scene 1 · God View/ )
+	assert.match( ui, /Scene 2 · Camera POV/ )
+	assert.match( pass, /export const ARCH_COUNT = 250/ )
+	assert.match( pass, /const OUTER_CONTOURS = 12/ )
+} )

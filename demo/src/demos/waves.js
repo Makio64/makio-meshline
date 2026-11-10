@@ -10,7 +10,6 @@ import { Color, MathUtils } from 'three/webgpu'
 import stage3d from '@/makio/three/stage3d'
 import { reducedMotion } from '@/makio/utils/detect'
 import { createBloomPipeline } from '@/utils/bloomPipeline'
-import { createDemoHint } from '@/utils/demoHint'
 import { linePoints, times } from '@/utils/points'
 
 const LINE_COUNT = 56
@@ -74,7 +73,6 @@ export default class WavesExample {
 		this.createSea()
 		this.createSun()
 		createBloomPipeline( { strength: 0.45, radius: 0.5, threshold: 0.3 } )
-		createDemoHint( `${LINE_COUNT} dynamic wave lines · ${SUN_STRIPES} retro sun stripes`, { accent: '#ff3d8b' } )
 	}
 
 	createSea() {

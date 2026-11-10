@@ -12,7 +12,6 @@ import { reducedMotion } from '@/makio/utils/detect'
 import { createGround } from '@/utils/bambooGroveGround'
 import { growBamboo } from '@/utils/bambooGroveGrowth'
 import { createDemoControls } from '@/utils/demoControls'
-import { createDemoHint } from '@/utils/demoHint'
 import { linePoints } from '@/utils/points'
 
 // A misty grove: deep greens fading into a sage haze, a bright canopy overhead.
@@ -112,7 +111,6 @@ export default class BambooGroveExample {
 		}
 		stage3d.add( ...Object.values( this.parts ) )
 
-		createDemoHint( `${stalks.length} culms · ${leaves.length} leaves · 4 instanced draws`, { accent: '#a3e635' } )
 		this.controls = createDemoControls( [
 			...BAMBOO_PARTS.map( part => ( { ...part, pressed: true, onClick: () => this.togglePart( part.id ) } ) ),
 			'divider',

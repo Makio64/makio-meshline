@@ -81,13 +81,15 @@ When editing code, maintain these style conventions exactly as they appear in ex
 - `pnpm lint` - Lint `src/`, `demo/src/`, `examples/`, and `scripts/`
 - `pnpm build` - Build demo application
 - `pnpm docs:build` - Build VitePress documentation
+- `pnpm bench:browser` - End-to-end headless Chrome benchmark (`benchmarks/browser/`): first render, moving points, growing lines
 - `pnpm release:check` - Full release gate (lint, tests, types, demo build, docs build, standalone example builds, package & compatibility checks)
 
 ## Key Files & V2 Architecture
 
 ### Package Entry Points (`src/`)
 - `src/index.js` (`makio-meshline`):
-  - `MeshLine.js` — Main fluent facade extending `THREE.Mesh`
+  - `MeshLine.js` — Main fluent facade extending `THREE.Mesh`: `MeshLineBillboard` plus the surface profile
+  - `MeshLineBillboard.js` — The facade itself, without surface imports (tree-shakeable billboard-only entry). New facade code goes here
   - `MeshLineGeometry.js` / `MeshLineNodeMaterial.js` — Screen-space billboard line profile (arc-length progress, miter/bevel/round joins, 3D fold handling, analytic AA)
   - `MeshLineSurfaceGeometry.js` / `MeshLineSurfaceNodeMaterial.js` — World-space lit ribbon/road surface profile (`transport` / `fixed-up` frames, banking, miter/bevel/round joins, butt/square/round caps)
   - `MeshLineCompute.js` — WebGPU compute-driven curve simulation engine
@@ -111,9 +113,11 @@ Demos teach the MeshLine API, so everything else stays out of them:
 1. **TSL `Fn()` Array Destructuring**: Always destructure the array parameter inside `Fn( ( [param1, param2] ) => ... )`.
 2. **In-Place Updates**:
    - Fixed point count: `.dynamic( true )` + `line.setPositions( points )` or `line.setPositionRange( slice, startPoint, { lineIndex } )`.
-   - Variable point count / open-closed topology change: `line.lines( points, closed )` (or alias `line.points( points, closed )`).
+   - Variable point count / open-closed topology change: `line.lines( points, closed )` (or alias `line.points( points, closed )`). With `.dynamic( true )` the buffers are reused (surfaces too), so `attribute.count` and `index.count` are then capacities: read `geometry.vertexCount` / `geometry.indexCount`.
+   - Large plain lines moved every frame: `.dynamic( 'storage' )` (WebGPU storage buffer, falls back to attributes).
 3. **Packed Attributes**: Use `line.addInstanceAttributes( { a: 3, b: 1 } )` or `line.addVertexAttributes( ... )` to stay within the portable 8-vertex-buffer WebGPU limit.
-4. **Random Helper in Demo**: Use `random( min, max )` from `@/makio/utils/random` inside `demo/src/`.
+4. **Shared Shader Graphs**: anything `MeshLineNodeMaterial.setupShaders()` reads to decide which nodes to build must be part of `_graphKey()`, and value uniforms must be read through `_drawnValues()`. `test/meshline-shared-shader-graph.test.js` fails when a key misses a structural input.
+5. **Random Helper in Demo**: Use `random( min, max )` from `@/makio/utils/random` inside `demo/src/`.
 
 ## Dependencies
 

@@ -298,3 +298,100 @@ test( 'range edits keep each batch line at its caller index in the source', () =
 	assert.deepEqual( dropped._lineLoops, [true] )
 	assert.deepEqual( Array.from( dropped._lines[0].subarray( 0, 3 ) ), [0, -1, 0] )
 } )
+
+test( 'a throwing width callback rolls back like a non-finite width', () => {
+	let rejectAt = -1
+	const widthCallback = ( progress, pointIndex ) => {
+		if ( pointIndex === rejectAt ) throw new Error( 'rejected' )
+		return 1 + progress
+	}
+	const snapshot = geometry => Object.fromEntries(
+		Object.entries( geometry.attributes ).map( ( [name, attribute] ) => [name, Array.from( attribute.array )] )
+	)
+	// Power-of-two segment lengths keep every progress and width exact.
+	const geometry = new MeshLineGeometry( { lines: createStraightLine( 0, 5 ), needsWidth: true, widthCallback } )
+	// Prime the arc-length cache, so the range edit below takes the fused writer.
+	geometry.setPositionRange( new Float32Array( [1, 0, 0] ), 1 )
+	const before = snapshot( geometry )
+	const moved = createStraightLine( 0, 5 )
+	moved[12] = 8
+
+	// Both fused writers have written points 1 and 2 when point 3 throws, and
+	// every point but the last when the last one throws.
+	for ( const point of [3, 4] ) {
+		rejectAt = point
+		assert.throws( () => geometry.setPositions( moved ), /rejected/ )
+		assert.deepEqual( snapshot( geometry ), before, `setPositions, point ${point}` )
+		assert.throws( () => geometry.setPositionRange( new Float32Array( [8, 0, 0] ), 4 ), /rejected/ )
+		assert.deepEqual( snapshot( geometry ), before, `setPositionRange, point ${point}` )
+	}
+} )
+
+test( 'a rejected setPositions keeps the width maxima that pad the bounds', () => {
+	let rejecting = false
+	const widthCallback = ( progress, pointIndex, lineIndex ) => {
+		if ( !rejecting ) return lineIndex + 1
+		if ( lineIndex === 1 ) throw new Error( 'rejected' )
+		return 5
+	}
+	const lines = () => [createStraightLine( 0, 3 ), createStraightLine( 10, 3 )]
+	const geometry = new MeshLineGeometry( { lines: lines(), needsWidth: true, lineWidth: 1, widthCallback } )
+	const padding = geometry.getBoundingPadding()
+
+	// Line 0 widens to 5 before line 1 rejects the update.
+	rejecting = true
+	assert.throws( () => geometry.setPositions( lines() ), /rejected/ )
+	rejecting = false
+	assert.equal( geometry.getBoundingPadding(), padding )
+
+	// A range edit pads by the widest line again, so line 0 must still be 1 wide.
+	geometry.setPositionRange( new Float32Array( [11, 1, 0] ), 1, { lineIndex: 1 } )
+	assert.equal( geometry.getBoundingPadding(), padding )
+} )
+
+test( 'range edits move only the edited line to its stored points', () => {
+	// The other lines keep the closing point they were given, which still
+	// draws once the loops open.
+	const square = new Float32Array( [0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 0, 0, 0] )
+	const triangle = new Float32Array( [3, 0, 0, 4, 0, 0, 4, 1, 0] )
+	const geometry = new MeshLineGeometry( { lines: [square, triangle], closed: true } )
+	geometry.setPositionRange( new Float32Array( [4, -1, 0] ), 1, { lineIndex: 1 } )
+	assert.equal( geometry.options.lines[0], square )
+	geometry.buildLine( { closed: false } )
+	assert.deepEqual( Array.from( geometry._lines[0] ), Array.from( square ) )
+
+	// A loop of two distinct points is drawn open from a view of the caller's
+	// array without its closing point, which the edit leaves behind as a third.
+	const pair = new Float32Array( [0, 0, 0, 1, 0, 0, 0, 0, 0] )
+	const open = new MeshLineGeometry( { lines: pair, closed: true } )
+	open.setPositionRange( new Float32Array( [-1, 0, 0] ), 0 )
+	open.buildLine( { lineWidth: 2 } )
+	assert.deepEqual( open._lineLoops, [false] )
+	assert.deepEqual( Array.from( open._lines[0] ), [-1, 0, 0, 1, 0, 0] )
+} )
+
+test( 'range edits after point 0 keep a batch of loops given with their closing point', () => {
+	// A gpuPositionNode loop draws a shorter view of the caller's array, whose
+	// closing point still copies point 0 until an edit starts there. The batch
+	// stays the source instead of becoming a copy on every edit.
+	const ring = radius => {
+		const points = new Float32Array( 9 * 3 )
+		for ( let i = 0; i < 8; i++ ) {
+			points[i * 3] = Math.cos( i / 4 * Math.PI ) * radius
+			points[i * 3 + 1] = Math.sin( i / 4 * Math.PI ) * radius
+		}
+		return points.copyWithin( 24, 0, 3 )
+	}
+	const batch = [ring( 1 ), ring( 2 )]
+	const geometry = new MeshLineGeometry( { lines: batch, closed: true, gpuPositionNode: {} } )
+	geometry.setPositionRange( new Float32Array( [5, 5, 0] ), 3, { lineIndex: 1 } )
+	assert.equal( geometry.options.lines, batch )
+
+	// An edit at point 0 moves the line to its stored points.
+	geometry.setPositionRange( new Float32Array( [6, 6, 0] ), 0, { lineIndex: 1 } )
+	geometry.buildLine( { lineWidth: 2 } )
+	assert.deepEqual( geometry._lineLoops, [true, true] )
+	assert.equal( geometry._lines[1].length, 8 * 3 )
+	assert.deepEqual( Array.from( geometry._lines[1].subarray( 0, 3 ) ), [6, 6, 0] )
+	assert.deepEqual( Array.from( geometry._lines[1].subarray( 9, 12 ) ), [5, 5, 0] )
+} )

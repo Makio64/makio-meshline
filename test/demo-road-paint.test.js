@@ -4,6 +4,7 @@ import test from 'node:test'
 import { createRoadPaintNode, createRoadPaintUniforms, DASH_PERIOD, pinRoadPaintToControls } from '../demo/src/utils/roadPaint.js'
 import { planRoadPath } from '../demo/src/utils/roadPath.js'
 import MeshLine from '../src/MeshLine.js'
+import MeshLineSurfaceGeometry from '../src/MeshLineSurfaceGeometry.js'
 import { buildShaderGraph, createRenderer } from './helpers/shaderBuilder.js'
 
 const ROAD_WIDTH = 6
@@ -171,6 +172,58 @@ test( 'pinned paint keeps its dash phase on every span an edit does not reshape'
 		}
 	}
 	road.dispose()
+} )
+
+test( 'a trimmed inner join keeps the markings where they are across the road', () => {
+	// A bend tighter than the ribbon is wide: `inner: 'clip'` has to pull the inside of its joins in.
+	const radius = 3.5
+	const rows = 30
+	const points = new Float64Array( rows * 3 )
+	for ( let row = 0; row < rows; row++ ) {
+		const angle = row * 0.4 / radius
+		points.set( [Math.sin( angle ) * radius, 2 + row * 0.05, Math.cos( angle ) * radius], row * 3 )
+	}
+	const options = {
+		lines: points,
+		lineWidth: RIBBON_WIDTH,
+		needsUV: true,
+		needsProgress: true,
+		surface: { frame: 'fixed-up', up: [0, 1, 0], bank: 0.2, uvMode: 'distance', uvScale: 1 },
+		join: { type: 'miter', limit: 1.25, inner: 'clip' },
+		cap: { type: 'butt' },
+	}
+	const raw = new MeshLineSurfaceGeometry( options )
+	const geometry = new MeshLineSurfaceGeometry( options )
+	assert.equal( pinRoadPaintToControls( geometry, points, new Int32Array( [0, 14, rows - 1] ) ), true )
+
+	const position = geometry.getAttribute( 'position' )
+	const progress = geometry.getAttribute( 'progress' )
+	const pinned = geometry.getAttribute( 'uv' )
+	const half = RIBBON_WIDTH * 0.5
+	let trimmed = 0
+	for ( let vertex = 0; vertex < geometry.vertexCount; vertex++ ) {
+		// The row a vertex belongs to, read from its progress rather than from the distance the paint uses.
+		const row = Math.round( progress.getX( vertex ) * ( rows - 1 ) )
+		const reach = Math.hypot(
+			position.getX( vertex ) - points[row * 3],
+			position.getY( vertex ) - points[row * 3 + 1],
+			position.getZ( vertex ) - points[row * 3 + 2]
+		)
+		const edge = raw.getAttribute( 'uv' ).getY( vertex )
+		assert.ok( edge === 0 || edge === 1, `vertex ${vertex} is not an edge vertex` )
+		const metres = ( pinned.getY( vertex ) - 0.5 ) * RIBBON_WIDTH
+		if ( reach < half * 0.999 ) {
+			trimmed++
+			assert.ok( Math.abs( Math.abs( metres ) - reach ) < 1e-4, `vertex ${vertex} sits ${reach}m from the centreline and is painted as ${metres}m` )
+			assert.equal( Math.sign( metres ), Math.sign( edge - 0.5 ), `vertex ${vertex} changed sides` )
+		} else {
+			assert.ok( Math.abs( pinned.getY( vertex ) - edge ) < 1e-6, `vertex ${vertex} reaches the edge and lost it` )
+		}
+	}
+	assert.ok( trimmed >= 8, `only ${trimmed} vertices were trimmed: the bend is not tight enough to test anything` )
+
+	raw.dispose()
+	geometry.dispose()
 } )
 
 test( 'the level banked road paint compiles on both renderer backends', async t => {

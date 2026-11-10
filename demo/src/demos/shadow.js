@@ -11,7 +11,6 @@ import { circlePositions, MeshLine } from 'makio-meshline'
 import { AmbientLight, BackSide, MathUtils, Mesh, MeshStandardNodeMaterial, SphereGeometry, SpotLight } from 'three/webgpu'
 
 import stage3d from '@/makio/three/stage3d'
-import { createDemoHint } from '@/utils/demoHint'
 
 // Pure red, green and blue lights on white surfaces: where one ring blocks a
 // light, the other two mix, so every shadow comes out cyan, magenta or yellow.
@@ -49,7 +48,6 @@ export default class ShadowExample {
 		addWhiteSphere( 1.4, { roughness: 0.45 } )
 		this.createLights()
 		this.createRings()
-		createDemoHint( 'Live cast + receive · 3 moving spotlights', { accent: '#7ee7ff', hideAfter: 0 } )
 	}
 
 	createLights() {

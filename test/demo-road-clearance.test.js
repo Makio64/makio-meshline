@@ -6,6 +6,8 @@ import {
 	measureRoadSurfaceClearance,
 	spreadRoadClearanceToControls,
 } from '../demo/src/utils/roadClearance.js'
+import { BufferAttribute, BufferGeometry } from 'three/webgpu'
+
 import { planRoadPath } from '../demo/src/utils/roadPath.js'
 import MeshLineSurfaceGeometry from '../src/MeshLineSurfaceGeometry.js'
 
@@ -235,6 +237,41 @@ test( 'tight variable-topology vertices map their clearance lift to the adjacent
 	} finally {
 		geometry.dispose()
 	}
+} )
+
+test( 'spare buffer capacity is not measured as road', () => {
+	const points = new Float64Array( [20, 4, 20, 26, 4, 20, 32, 4, 23, 38, 4, 29] )
+	const exact = new MeshLineSurfaceGeometry( {
+		lines: points,
+		lineWidth: RIBBON_WIDTH,
+		needsProgress: true,
+		surface: { frame: 'fixed-up', up: [0, 1, 0], bank: 0.3 },
+		join: { type: 'miter', limit: 1.25, inner: 'clip' },
+		cap: { type: 'butt' },
+	} )
+
+	// What a dynamic surface holds once its vertex count has changed: buffers with
+	// room to grow, zero past the vertices and indices it draws.
+	const padded = new BufferGeometry()
+	const grow = ( attribute, spare ) => {
+		const array = new attribute.array.constructor( attribute.array.length + spare * attribute.itemSize )
+		array.set( attribute.array )
+		return new BufferAttribute( array, attribute.itemSize )
+	}
+	padded.setAttribute( 'position', grow( exact.getAttribute( 'position' ), 32 ) )
+	padded.setAttribute( 'progress', grow( exact.getAttribute( 'progress' ), 32 ) )
+	padded.setIndex( grow( exact.getIndex(), 96 ) )
+	padded.vertexCount = exact.getAttribute( 'position' ).count
+	padded.indexCount = exact.getIndex().count
+
+	// The road clears this ground everywhere, but a vertex left at the origin would not.
+	const ground = ( x, z ) => Math.hypot( x, z ) < 5 ? 1 : 0
+	const measured = measureRoadSurfaceClearance( points, padded, ground, ROAD_LIFT )
+	assert.equal( measured.maxLift, 0, 'a spare vertex at the origin was lifted off the ground' )
+	assert.deepEqual( measured, measureRoadSurfaceClearance( points, exact, ground, ROAD_LIFT ) )
+
+	exact.dispose()
+	padded.dispose()
 } )
 
 test( 'terrain fitting reports explicit nonconvergence when its pass budget is exhausted', () => {

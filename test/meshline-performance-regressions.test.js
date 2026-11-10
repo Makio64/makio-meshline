@@ -2,14 +2,16 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import { Fn, uint, uniform, vec3 } from 'three/tsl'
-import { Box3, NodeMaterial, PerspectiveCamera, Ray, Raycaster, Scene, StorageBufferAttribute, Vector3 } from 'three/webgpu'
+import { Box3, Frustum, Matrix4, NodeMaterial, PerspectiveCamera, Ray, Raycaster, Scene, StorageBufferAttribute, Vector3 } from 'three/webgpu'
 
 import MeshLine from '../src/MeshLine.js'
 import MeshLineCompute from '../src/MeshLineCompute.js'
+import MeshLineCullingSystem from '../src/MeshLineCullingSystem.js'
 import MeshLineGeometry from '../src/MeshLineGeometry.js'
 import MeshLineGPUPath, { _gpuPathInternals } from '../src/MeshLineGPUPath.js'
-import { lineCoord } from '../src/MeshLineNodeMaterial.js'
+import MeshLineNodeMaterial, { lineCoord } from '../src/MeshLineNodeMaterial.js'
 import MeshLinePicker from '../src/MeshLinePicker.js'
+import MeshLinePickerHelper from '../src/MeshLinePickerHelper.js'
 import MeshLineSurfaceGeometry from '../src/MeshLineSurfaceGeometry.js'
 import { storagePositions } from '../src/positions/storagePositions.js'
 import { buildShaderGraph, createRenderer } from './helpers/shaderBuilder.js'
@@ -26,6 +28,14 @@ const createWave = ( pointCount, amplitude = 1, offset = 0 ) => {
 }
 
 const boxToArray = box => [...box.min.toArray(), ...box.max.toArray()]
+
+// A dynamic geometry keeps its buffers when the point count changes, so a
+// fallback rebuild is compared by the vertices it draws, not by its capacity.
+const drawnVertexCount = geometry => geometry._lines.reduce( ( count, line ) => count + line.length / 3 * 4, 0 )
+const drawnArray = ( geometry, name ) => {
+	const attribute = geometry.getAttribute( name )
+	return Array.from( attribute.array.subarray( 0, drawnVertexCount( geometry ) * attribute.itemSize ) )
+}
 
 const expectedBoxes = ( lines, options ) => {
 	const reference = new MeshLineGeometry( { lines, ...options } )
@@ -399,6 +409,21 @@ test( 'storagePositions uses bitwise masking for power-of-two ring trails and cl
 	closedGeo.dispose()
 } )
 
+test( 'range edits between closed setPositions() updates keep reusing seam buffers', () => {
+	const pointsA = createWave( 32, 1, 0 )
+	const pointsB = createWave( 32, 2, 1 )
+	const geometry = new MeshLineGeometry( { lines: [pointsA, pointsB], closed: true } )
+	const edit = new Float32Array( [0.5, 0.5, 0.5] )
+	const seams = new Set()
+	for ( let frame = 0; frame < 8; frame++ ) {
+		geometry.setPositionRange( edit, 1 )
+		geometry.setPositions( frame % 2 ? [pointsA, pointsB] : [pointsB, pointsA] )
+		seams.add( geometry._lines[0] )
+	}
+	assert.equal( seams.size, 2 )
+	geometry.dispose()
+} )
+
 test( 'dashed fragment shaders use fract without step, shadow vertex shader avoids 4x4 inverse offset transforms, and instanced picker uses bitwise ID encoding', () => {
 	const renderer = createRenderer( false )
 	const points = new Float32Array( [0, 0, 0, 1, 0, 0, 1, 1, 0] )
@@ -425,7 +450,9 @@ test( 'dashed fragment shaders use fract without step, shadow vertex shader avoi
 	assert.equal( ( shadowGraph.vertexShader.match( /\blength\s*\(/g ) || [] ).length, 6 )
 	assert.doesNotMatch( shadowGraph.vertexShader, /cameraWorldMatrix \* vec4|modelWorldMatrixInverse \* vec4/ )
 	assert.match( shadowGraph.vertexShader, /cameraWorldMatrix\[\s*0u?\s*\]\.xyz/ )
-	assert.match( shadowGraph.vertexShader, /\[\s*0u?\s*\]\.xyz \* vec3<f32>\( nodeVar9\.x \)/ )
+	// The world offset is computed once and scales the three columns of the inverse
+	// model matrix. Its temp is a `var<private> nodeVarN` before r187, a `let nodeConstN` after.
+	assert.match( shadowGraph.vertexShader, /([\w.]+)\[\s*0u?\s*\]\.xyz \* vec3<f32>\( (\w+)\.x \)[\s()+]*\1\[\s*1u?\s*\]\.xyz \* vec3<f32>\( \2\.y \)[\s()+]*\1\[\s*2u?\s*\]\.xyz \* vec3<f32>\( \2\.z \)/ )
 	shadowPassMaterial.dispose()
 
 	const scene = new Scene()
@@ -672,10 +699,10 @@ test( 'fused open setPositions, deferred progress normalization, and zero-copy s
 	invalidPts[4150 * 3 + 1] = Number.NaN
 	fastGeo.setPositions( invalidPts, false )
 	const refInvalidGeo = new MeshLineGeometry( { lines: invalidPts.slice(), dynamic: true, needsProgress: false } )
-	assert.equal( fastGeo.getAttribute( 'position' ).count, ( count - 1 ) * 4 )
+	assert.equal( drawnVertexCount( fastGeo ), ( count - 1 ) * 4 )
 	for ( const attrName of ['position', 'previous', 'next'] ) {
 		assert.deepEqual(
-			Array.from( fastGeo.getAttribute( attrName ).array ),
+			drawnArray( fastGeo, attrName ),
 			Array.from( refInvalidGeo.getAttribute( attrName ).array ),
 			`fallback after late non-finite point ${attrName} mismatch`
 		)
@@ -689,7 +716,7 @@ test( 'fused open setPositions, deferred progress normalization, and zero-copy s
 	dupPts[10 * 3 + 1] = dupPts[9 * 3 + 1]
 	dupPts[10 * 3 + 2] = dupPts[9 * 3 + 2]
 	fastGeo.setPositions( dupPts, false )
-	assert.equal( fastGeo.getAttribute( 'position' ).count, ( count - 1 ) * 4 )
+	assert.equal( drawnVertexCount( fastGeo ), ( count - 1 ) * 4 )
 	fastGeo.dispose()
 	refFastGeo.dispose()
 
@@ -851,10 +878,752 @@ test( 'pooled compact caps reuse body quad indices on setPositions and open setP
 
 	const infPts = new Float32Array( [0, 0, 0, Infinity, 0, 0, 1, 0, 0] )
 	microGeo.setPositions( infPts, false )
-	assert.equal( microGeo.getAttribute( 'position' ).count, 8 )
+	assert.equal( drawnVertexCount( microGeo ), 8 )
 	microGeo.dispose()
 } )
 
+test( 'direct stream variable surface topology and aliased fallback match batch topology', () => {
+	// 1. Open bevel path that starts with a turn at pointIndex=1 (entering emitDirectStreamVariableLine)
+	// and then has a collinear interior join at pointIndex=2 (triggering materializeDirectStreamFallback
+	// and emitDirectAliasedVariableLine).
+	const mixedBevelPts = new Float32Array( [
+		0, 0, 0,
+		2, 0, 0,
+		4, 0, 1,
+		6, 0, 2,
+		8, 0, 1,
+	] )
+	const fillerPts = new Float32Array( [0, 0, 0, 1, 0, 0, 2, 0, 0.5] )
+	const singleMixedBevel = new MeshLineSurfaceGeometry( {
+		lines: mixedBevelPts,
+		lineWidth: 0.2,
+		join: { type: 'bevel' },
+		cap: { type: 'butt' },
+	} )
+	const batchMixedBevel = new MeshLineSurfaceGeometry( {
+		lines: [mixedBevelPts, fillerPts],
+		lineWidth: 0.2,
+		join: { type: 'bevel' },
+		cap: { type: 'butt' },
+	} )
+	assert.equal( singleMixedBevel._surfaceLines[0].topology.directUnaliased, true )
+	assert.equal( singleMixedBevel._surfaceLines[0].topology.hasAliases, true )
+	const vCount1 = singleMixedBevel.getAttribute( 'position' ).count
+	const iCount1 = singleMixedBevel.getIndex().count
+	assert.deepEqual(
+		Array.from( singleMixedBevel.getAttribute( 'position' ).array ),
+		Array.from( batchMixedBevel.getAttribute( 'position' ).array.subarray( 0, vCount1 * 3 ) )
+	)
+	assert.deepEqual(
+		Array.from( singleMixedBevel.getAttribute( 'normal' ).array ),
+		Array.from( batchMixedBevel.getAttribute( 'normal' ).array.subarray( 0, vCount1 * 3 ) )
+	)
+	assert.deepEqual(
+		Array.from( singleMixedBevel.getIndex().array ),
+		Array.from( batchMixedBevel.getIndex().array.subarray( 0, iCount1 ) )
+	)
+	singleMixedBevel.dispose()
+	batchMixedBevel.dispose()
 
+	// 2. Open miter path mixing within-limit aliased miters and over-limit bevels.
+	const mixedMiterPts = new Float32Array( [
+		0, 0, 0,
+		4, 0, 0,
+		8, 0, 0.5,
+		4, 0, 0.8,
+		8, 0, 1.5,
+	] )
+	const singleMixedMiter = new MeshLineSurfaceGeometry( {
+		lines: mixedMiterPts,
+		lineWidth: 0.2,
+		join: { type: 'miter', limit: 2 },
+		cap: { type: 'butt' },
+	} )
+	const batchMixedMiter = new MeshLineSurfaceGeometry( {
+		lines: [mixedMiterPts, fillerPts],
+		lineWidth: 0.2,
+		join: { type: 'miter', limit: 2 },
+		cap: { type: 'butt' },
+	} )
+	assert.equal( singleMixedMiter._surfaceLines[0].topology.directUnaliased, true )
+	assert.equal( singleMixedMiter._surfaceLines[0].topology.hasAliases, true )
+	const vCount2 = singleMixedMiter.getAttribute( 'position' ).count
+	const iCount2 = singleMixedMiter.getIndex().count
+	assert.deepEqual(
+		Array.from( singleMixedMiter.getAttribute( 'position' ).array ),
+		Array.from( batchMixedMiter.getAttribute( 'position' ).array.subarray( 0, vCount2 * 3 ) )
+	)
+	assert.deepEqual(
+		Array.from( singleMixedMiter.getAttribute( 'normal' ).array ),
+		Array.from( batchMixedMiter.getAttribute( 'normal' ).array.subarray( 0, vCount2 * 3 ) )
+	)
+	assert.deepEqual(
+		Array.from( singleMixedMiter.getIndex().array ),
+		Array.from( batchMixedMiter.getIndex().array.subarray( 0, iCount2 ) )
+	)
+	singleMixedMiter.dispose()
+	batchMixedMiter.dispose()
 
+	// 3. Closed loop with mixed aliased/unaliased joins exercises Uint8Array topoAliases + remapBaseAndExtraIndices.
+	const closedMixedPts = new Float32Array( [
+		0, 0, 0,
+		2, 0, 0,
+		4, 0, 0,
+		4, 0, 2,
+		0, 0, 2,
+	] )
+	const singleClosed = new MeshLineSurfaceGeometry( {
+		lines: closedMixedPts,
+		closed: true,
+		lineWidth: 0.2,
+		join: { type: 'bevel' },
+		needsUV: true,
+	} )
+	const batchClosed = new MeshLineSurfaceGeometry( {
+		lines: [closedMixedPts, fillerPts],
+		closed: [true, false],
+		lineWidth: 0.2,
+		join: { type: 'bevel' },
+		needsUV: true,
+	} )
+	const vCount3 = singleClosed.getAttribute( 'position' ).count
+	const iCount3 = singleClosed.getIndex().count
+	assert.deepEqual(
+		Array.from( singleClosed.getAttribute( 'position' ).array ),
+		Array.from( batchClosed.getAttribute( 'position' ).array.subarray( 0, vCount3 * 3 ) )
+	)
+	assert.deepEqual(
+		Array.from( singleClosed.getIndex().array ),
+		Array.from( batchClosed.getIndex().array.subarray( 0, iCount3 ) )
+	)
+	singleClosed.dispose()
+	batchClosed.dispose()
+} )
+
+test( 'cold-start surface construction, unbuilt frustum intersection, and async warmup/stepAsync paths', async () => {
+	// 1. Constructing a surface line directly allocates MeshLineSurfaceGeometry + MeshLineSurfaceNodeMaterial
+	// and syncs transparency/instances before build().
+	const offOriginPoints = new Float32Array( [
+		50, 0, -10,
+		52, 1, -10,
+		54, 0, -10,
+	] )
+	const unbuiltSurface = new MeshLine( {
+		surface: true,
+		lines: offOriginPoints,
+		opacity: 0.5,
+	} )
+	assert.equal( unbuiltSurface._built, false )
+	assert.equal( unbuiltSurface.geometry.isMeshLineSurfaceGeometry, true )
+	assert.equal( unbuiltSurface.material.isMeshLineSurfaceNodeMaterial, true )
+	assert.equal( unbuiltSurface.material.transparent, true )
+	assert.equal( unbuiltSurface.material.depthWrite, false )
+
+	const unbuiltBillboard = new MeshLine( { lines: offOriginPoints } )
+		.antialias( true )
+		.instances( 8 )
+	assert.equal( unbuiltBillboard._built, false )
+	assert.equal( unbuiltBillboard.material.transparent, true )
+	assert.equal( unbuiltBillboard.material.depthWrite, false )
+	assert.equal( unbuiltBillboard.count, 8 )
+
+	// 2. Three.js Frustum.intersectsObject() queries geometry.computeBoundingSphere() before onBeforeRender;
+	// an unbuilt off-origin MeshLine must auto-build so compileAsync() and render() do not falsely cull it.
+	const camera = new PerspectiveCamera( 60, 1, 0.1, 200 )
+	camera.position.set( 52, 0, 0 )
+	camera.lookAt( 52, 0, -10 )
+	camera.updateMatrixWorld( true )
+	camera.projectionMatrixInverse.copy( camera.projectionMatrix ).invert()
+	const projScreenMatrix = new Matrix4().multiplyMatrices( camera.projectionMatrix, camera.matrixWorldInverse )
+	const frustum = new Frustum().setFromProjectionMatrix( projScreenMatrix )
+
+	assert.equal( frustum.intersectsObject( unbuiltSurface ), true )
+	assert.equal( unbuiltSurface._built, true )
+	assert.equal( frustum.intersectsObject( unbuiltBillboard ), true )
+	assert.equal( unbuiltBillboard._built, true )
+
+	// 3. MeshLine.warmupAsync, MeshLineCompute.stepAsync, MeshLinePicker.warmupAsync, and
+	// MeshLineCullingSystem compileAsync/warmupAsync warm up pipelines and INDEX|STORAGE buffers.
+	const compiledTargets = []
+	const computedBatches = []
+	const updatedAttributes = []
+	const mockRenderer = {
+		isWebGPURenderer: true,
+		_initialized: false,
+		backend: { isWebGPUBackend: true, device: {} },
+		_compilationPromises: null,
+		_attributes: {
+			update( attr, type ) {
+				updatedAttributes.push( { attr, type } )
+			},
+		},
+		async init() {
+			this._initialized = true
+		},
+		async compileAsync( target, cam, targetScene = null ) {
+			if ( !this._initialized ) await this.init()
+			this._compilationPromises = []
+			try {
+				target.traverse?.( obj => {
+					if ( typeof obj.onBeforeRender === 'function' ) {
+						obj.onBeforeRender( this, targetScene ?? target, cam, obj.geometry, obj.material, null )
+					}
+					if ( typeof obj.onAfterRender === 'function' ) {
+						obj.onAfterRender( this, targetScene ?? target, cam, obj.geometry, obj.material, null )
+					}
+				} )
+				compiledTargets.push( { target, cam, targetScene } )
+			} finally {
+				this._compilationPromises = null
+			}
+		},
+		async computeAsync( nodes ) {
+			computedBatches.push( nodes )
+		},
+		compute( nodes ) {
+			computedBatches.push( nodes )
+		},
+	}
+
+	const scene = new Scene()
+	scene.add( unbuiltBillboard )
+	await unbuiltBillboard.warmupAsync( mockRenderer, camera )
+	assert.equal( mockRenderer._initialized, true )
+	assert.equal( compiledTargets.length, 1 )
+	assert.equal( compiledTargets[0].target, unbuiltBillboard )
+	assert.equal( compiledTargets[0].targetScene, scene )
+
+	const computeLine = new MeshLineCompute( { curveCount: 8, pointsPerCurve: 16 } )
+	const stepped = await computeLine.stepAsync( mockRenderer, 1 / 60 )
+	assert.equal( stepped, true )
+	assert.equal( computedBatches.length, 1 )
+	assert.equal( Array.isArray( computedBatches[0] ), true )
+	assert.equal( computedBatches[0].length, 2 )
+
+	const picker = new MeshLinePicker( mockRenderer, scene, camera )
+	picker.add( unbuiltBillboard )
+	await picker.warmupAsync()
+	assert.equal( compiledTargets.length, 2 )
+	assert.equal( compiledTargets[1].target, picker.debugScene )
+
+	const cullWave = createWave( 300, 1.0, 40 )
+	const cullLine = new MeshLine( { lines: cullWave, lineWidth: 0.2 } ).build()
+	scene.add( cullLine )
+	const culling = new MeshLineCullingSystem( mockRenderer, scene, {
+		minIndices: 0,
+		minChunks: 0,
+		autoUpdate: false,
+	} )
+	const handle = culling.add( cullLine, { chunkSize: 16 } )
+	assert.equal( handle.warmedUp, false )
+
+	// Simulated compileAsync runs _beforeRender and _afterRender while _compilationPromises is active;
+	// the handle must warm up outputAttribute (type 2 = INDEX) and indirectAttribute (type 4 = INDIRECT).
+	await culling.warmupAsync( camera )
+	assert.equal( handle.warmedUp, true )
+	assert.equal( updatedAttributes.some( u => u.attr === handle._resources.outputAttribute && u.type === 2 ), true )
+	assert.equal( updatedAttributes.some( u => u.attr === handle._resources.indirectAttribute && u.type === 4 ), true )
+
+	// Frame 1 update can now immediately dispatch compute culling without an unculled warm-up draw frame.
+	const cullUpdated = await culling.update( camera )
+	assert.equal( cullUpdated, true )
+	assert.equal( handle.active, true )
+
+	// Async compute update dispatches via renderer.computeAsync when camera changes.
+	camera.position.set( 1, 2, 10 )
+	camera.updateMatrixWorld()
+	const batchesBeforeAsyncUpdate = computedBatches.length
+	const asyncCullUpdated = await culling.updateAsync( camera )
+	assert.equal( asyncCullUpdated, true )
+	assert.equal( computedBatches.length, batchesBeforeAsyncUpdate + 1 )
+
+	// MeshLineCompute.warmupAsync warms up render pipeline and optionally steps compute pipeline.
+	const computeWarmTargets = compiledTargets.length
+	const computeWarmBatches = computedBatches.length
+	await computeLine.warmupAsync( mockRenderer, camera, scene, { step: true } )
+	assert.equal( compiledTargets.length, computeWarmTargets + 1 )
+	assert.equal( computedBatches.length, computeWarmBatches + 1 )
+
+	// MeshLinePickerHelper strips visual fragment options, avoids redundant setJoin on cold rebuild,
+	// shares helper colorNodes, and supports warmupAsync().
+	const decoratedLine = new MeshLine( {
+		lines: createWave( 16, 1.0, 0 ),
+		lineWidth: 0.25,
+		gradientColor: 0xff00ff,
+		dashCount: 8,
+		dashRatio: 0.5,
+		antialias: true,
+		join: { type: 'round', limit: 3 },
+	} ).build()
+	picker.add( decoratedLine )
+
+	let setJoinCalls = 0
+	const origSetJoin = MeshLineNodeMaterial.prototype.setJoin
+	MeshLineNodeMaterial.prototype.setJoin = function ( ...args ) {
+		setJoinCalls++
+		return origSetJoin.apply( this, args )
+	}
+	let helper
+	try {
+		helper = new MeshLinePickerHelper( picker, { opacity: 0.5 } )
+	} finally {
+		MeshLineNodeMaterial.prototype.setJoin = origSetJoin
+	}
+	assert.equal( setJoinCalls, 0, 'MeshLinePickerHelper cold-start rebuild must not call setJoin redundantly' )
+	assert.equal( helper._proxies.length, 2 )
+	const helperMat = helper._proxies[1].material
+	assert.equal( helperMat.gradient, null )
+	assert.equal( helperMat.dashCount, null )
+	assert.equal( helperMat.antialias, false )
+	assert.equal( helperMat._needsProgress, false )
+
+	const helperWarmTargets = compiledTargets.length
+	await helper.warmupAsync( mockRenderer, camera, scene )
+	assert.equal( compiledTargets.length, helperWarmTargets + 1 )
+	assert.equal( compiledTargets[compiledTargets.length - 1].target, helper )
+
+	// MeshLineNodeMaterial reuses core uniform nodes across in-place rebuilds.
+	const mat = new MeshLineNodeMaterial( { lineWidth: 0.5, color: 0xff0000, renderWidth: 800, renderHeight: 600 } )
+	const resUniform = mat.resolution
+	const widthUniform = mat.lineWidth
+	const colorUniform = mat.color
+	const dprUniform = mat.dpr
+	const miterUniform = mat._miterThreshold
+	assert.equal( resUniform.value.x, 800 )
+	assert.equal( resUniform.value.y, 600 )
+	mat.buildLine( { lineWidth: 1.25, color: 0x00ff00, renderWidth: 1920, renderHeight: 1080, miterLimit: 6 } )
+	assert.equal( mat.resolution, resUniform )
+	assert.equal( mat.lineWidth, widthUniform )
+	assert.equal( mat.color, colorUniform )
+	assert.equal( mat.dpr, dprUniform )
+	assert.equal( mat._miterThreshold, miterUniform )
+	assert.equal( mat.resolution.value.x, 1920 )
+	assert.equal( mat.resolution.value.y, 1080 )
+	assert.equal( mat.lineWidth.value, 1.25 )
+	mat.dispose()
+
+	helper.dispose()
+	decoratedLine.dispose()
+	culling.dispose()
+	picker.dispose()
+	computeLine.dispose()
+	cullLine.dispose()
+	unbuiltSurface.dispose()
+	unbuiltBillboard.dispose()
+} )
+
+test( 'single-pass fused setPositions() matches fresh builds across all derived-attribute profiles and rolls back cleanly on mid-line widthCallback or NaN failure', () => {
+	const initial = createWave( 5000, 1.0, 1 )
+	const updated = createWave( 5000, 1.25, 2 )
+
+	const profiles = [
+		{ name: 'default', opts: { needsProgress: false, needsUV: false, needsWidth: false, needsEndPoint: false } },
+		{ name: 'progressUv', opts: { needsProgress: true, needsUV: true, needsWidth: false, needsEndPoint: false } },
+		{ name: 'endpointMetadata', opts: { needsProgress: true, needsUV: false, needsWidth: false, needsEndPoint: true, endpointMetadata: true } },
+		{ name: 'widthCallback', opts: { needsProgress: true, needsUV: false, needsWidth: true, needsEndPoint: false, widthCallback: ( p, i ) => 0.4 + p * 0.9 + ( i & 1 ) * 0.1 } },
+	]
+
+	for ( const { name, opts } of profiles ) {
+		for ( const updateBounding of [false, true] ) {
+			const live = new MeshLineGeometry( { lines: initial.slice(), dynamic: true, ...opts } )
+			live.setPositions( updated.slice(), updateBounding )
+
+			const fresh = new MeshLineGeometry( { lines: updated.slice(), dynamic: true, ...opts } )
+			if ( updateBounding ) {
+				fresh.computeBoundingBoxes()
+				fresh.computeBoundingSphere( true )
+			}
+
+			for ( const attrName of ['position', 'previous', 'next', 'progress', 'uv', 'width', 'endpoint'] ) {
+				const a = live.getAttribute( attrName )
+				const b = fresh.getAttribute( attrName )
+				assert.equal( Boolean( a ), Boolean( b ), `${name} (${updateBounding}) attribute ${attrName} presence` )
+				if ( a && b ) {
+					assert.deepEqual( Array.from( a.array ), Array.from( b.array ), `${name} (${updateBounding}) attribute ${attrName} mismatch` )
+				}
+			}
+
+			if ( updateBounding ) {
+				assert.deepEqual( live.boundingBox.min.toArray(), fresh.boundingBox.min.toArray(), `${name} bbox min` )
+				assert.deepEqual( live.boundingBox.max.toArray(), fresh.boundingBox.max.toArray(), `${name} bbox max` )
+				assert.equal( live.boundingSphere.radius, fresh.boundingSphere.radius, `${name} bsphere radius` )
+			}
+
+			live.dispose()
+			fresh.dispose()
+		}
+	}
+
+	// Verify mid-line widthCallback exception rolls back position, previous, next, progress, and width attributes
+	let failAt = -1
+	const rollbackGeo = new MeshLineGeometry( {
+		lines: initial.slice( 0, 96 ),
+		dynamic: true,
+		needsProgress: true,
+		needsWidth: true,
+		widthCallback: ( p, i ) => {
+			if ( i === failAt ) return Number.NaN
+			return 0.5 + p * 1.5 + ( i & 1 ) * 0.2
+		},
+	} )
+	const savedPos = rollbackGeo.getAttribute( 'position' ).array.slice()
+	const savedPrev = rollbackGeo.getAttribute( 'previous' ).array.slice()
+	const savedNext = rollbackGeo.getAttribute( 'next' ).array.slice()
+	const savedProg = rollbackGeo.getAttribute( 'progress' ).array.slice()
+	const savedWidth = rollbackGeo.getAttribute( 'width' ).array.slice()
+
+	failAt = 15
+	assert.throws(
+		() => rollbackGeo.setPositions( updated.slice( 0, 96 ), true ),
+		/widthCallback returned a non-finite value/
+	)
+	assert.deepEqual( Array.from( rollbackGeo.getAttribute( 'position' ).array ), Array.from( savedPos ) )
+	assert.deepEqual( Array.from( rollbackGeo.getAttribute( 'previous' ).array ), Array.from( savedPrev ) )
+	assert.deepEqual( Array.from( rollbackGeo.getAttribute( 'next' ).array ), Array.from( savedNext ) )
+	assert.deepEqual( Array.from( rollbackGeo.getAttribute( 'progress' ).array ), Array.from( savedProg ) )
+	assert.deepEqual( Array.from( rollbackGeo.getAttribute( 'width' ).array ), Array.from( savedWidth ) )
+
+	// Verify late NaN point in setPositions() rolls back in-place write and falls back to compacted rebuild
+	failAt = -1
+	const nanPts = updated.slice( 0, 96 )
+	nanPts[20 * 3 + 1] = Number.NaN
+	rollbackGeo.setPositions( nanPts, true )
+	assert.equal( drawnVertexCount( rollbackGeo ), 31 * 4 )
+	rollbackGeo.dispose()
+} )
+
+test( 'single-pass register-streaming surface builders and multi-line open Float32Array setPositions fast path match reference builds and fall back cleanly', () => {
+	// 1. Single-pass open surface builders (miter-butt, miter-round8, miter-square, bevel-butt, round8-butt, sharp160-miter2)
+	// across transport and fixed-up frames and distance UVs match 2-line batch builds on both initial build and setPositions().
+	const waveA = createWave( 32, 0.08, 0 )
+	const waveB = createWave( 32, 0.11, 0.7 )
+	const sharpA = new Float32Array( 16 * 3 )
+	const sharpB = new Float32Array( 16 * 3 )
+	const sharpTurn = 160 * Math.PI / 180
+	let headingA = 0
+	let headingB = 0.15
+	for ( let i = 1; i < 16; i++ ) {
+		if ( i > 1 ) {
+			headingA += i % 2 === 0 ? -sharpTurn : sharpTurn
+			headingB += i % 2 === 0 ? -sharpTurn : sharpTurn
+		}
+		sharpA[i * 3] = sharpA[( i - 1 ) * 3] + Math.cos( headingA ) * 20
+		sharpA[i * 3 + 2] = sharpA[( i - 1 ) * 3 + 2] + Math.sin( headingA ) * 20
+		sharpB[i * 3] = sharpB[( i - 1 ) * 3] + Math.cos( headingB ) * 20
+		sharpB[i * 3 + 2] = sharpB[( i - 1 ) * 3 + 2] + Math.sin( headingB ) * 20
+	}
+	const dummyLine = new Float32Array( [0, 25, 0, 2, 25, 0, 4, 25.5, 0] )
+
+	const surfaceCases = [
+		{ name: 'miter-butt-transport', pts0: waveA, pts1: waveB, opts: { lineWidth: 0.1, surface: { frame: 'transport' }, join: { type: 'miter', limit: 4 }, cap: { type: 'butt' } } },
+		{ name: 'miter-butt-fixed-up-uv', pts0: waveA, pts1: waveB, opts: { lineWidth: 0.1, needsUV: true, surface: { frame: 'fixed-up', up: [0, 1, 0], uvMode: 'distance', uvScale: 2 }, join: { type: 'miter', limit: 4 }, cap: { type: 'butt' } } },
+		{ name: 'miter-round8-uv', pts0: waveA, pts1: waveB, opts: { lineWidth: 0.1, needsUV: true, surface: { frame: 'transport', uvMode: 'distance', uvScale: 1.5 }, join: { type: 'miter', limit: 4 }, cap: { type: 'round', segments: 8 } } },
+		{ name: 'miter-square-fixed-up', pts0: waveA, pts1: waveB, opts: { lineWidth: 0.1, surface: { frame: 'fixed-up', up: [0, 1, 0] }, join: { type: 'miter', limit: 4 }, cap: { type: 'square' } } },
+		{ name: 'bevel-butt-transport', pts0: waveA, pts1: waveB, opts: { lineWidth: 0.1, surface: { frame: 'transport' }, join: { type: 'bevel', limit: 4 }, cap: { type: 'butt' } } },
+		{ name: 'round8-butt-fixed-up', pts0: waveA, pts1: waveB, opts: { lineWidth: 0.1, surface: { frame: 'fixed-up', up: [0, 1, 0] }, join: { type: 'round', limit: 4, segments: 8 }, cap: { type: 'butt' } } },
+		{ name: 'sharp160-miter2', pts0: sharpA, pts1: sharpB, opts: { lineWidth: 2, surface: { frame: 'transport' }, join: { type: 'miter', limit: 2 }, cap: { type: 'butt' } } },
+	]
+
+	for ( const { name, pts0, pts1, opts } of surfaceCases ) {
+		const single = new MeshLineSurfaceGeometry( { lines: pts0.slice(), dynamic: true, ...opts } )
+		const batch0 = new MeshLineSurfaceGeometry( { lines: [pts0.slice(), dummyLine], dynamic: true, ...opts } )
+		const vCount = single.getAttribute( 'position' ).count
+		const iCount = single.getIndex().count
+
+		for ( const attrName of ['position', 'normal', 'uv'] ) {
+			const sAttr = single.getAttribute( attrName )
+			const bAttr = batch0.getAttribute( attrName )
+			assert.equal( Boolean( sAttr ), Boolean( bAttr ), `${name} initial ${attrName} presence` )
+			if ( sAttr && bAttr ) {
+				assert.deepEqual(
+					Array.from( sAttr.array ),
+					Array.from( bAttr.array.subarray( 0, vCount * sAttr.itemSize ) ),
+					`${name} initial ${attrName} mismatch`
+				)
+			}
+		}
+		assert.deepEqual(
+			Array.from( single.getIndex().array ),
+			Array.from( batch0.getIndex().array.subarray( 0, iCount ) ),
+			`${name} initial index mismatch`
+		)
+
+		single.setPositions( pts1.slice() )
+		const batch1 = new MeshLineSurfaceGeometry( { lines: [pts1.slice(), dummyLine], dynamic: true, ...opts } )
+		for ( const attrName of ['position', 'normal', 'uv'] ) {
+			const sAttr = single.getAttribute( attrName )
+			const bAttr = batch1.getAttribute( attrName )
+			if ( sAttr && bAttr ) {
+				assert.deepEqual(
+					Array.from( sAttr.array ),
+					Array.from( bAttr.array.subarray( 0, vCount * sAttr.itemSize ) ),
+					`${name} updated ${attrName} mismatch`
+				)
+			}
+		}
+		assert.deepEqual(
+			Array.from( single.getIndex().array ),
+			Array.from( batch1.getIndex().array.subarray( 0, iCount ) ),
+			`${name} updated index mismatch`
+		)
+
+		single.dispose()
+		batch0.dispose()
+		batch1.dispose()
+	}
+
+	// Verify single-pass builder falls back cleanly on a path with a sharp turn / clipped inner footprint
+	const cuspPts = new Float32Array( [0, 0, 0, 2, 0, 0, 4, 0, 0.2, 2, 0, 0.2, 0, 0, 0.2] )
+	const singleCusp = new MeshLineSurfaceGeometry( { lines: cuspPts, lineWidth: 0.4, join: { type: 'bevel', inner: 'clip' } } )
+	const batchCusp = new MeshLineSurfaceGeometry( { lines: [cuspPts, dummyLine], lineWidth: 0.4, join: { type: 'bevel', inner: 'clip' } } )
+	const cuspVCount = singleCusp.getAttribute( 'position' ).count
+	assert.deepEqual(
+		Array.from( singleCusp.getAttribute( 'position' ).array ),
+		Array.from( batchCusp.getAttribute( 'position' ).array.subarray( 0, cuspVCount * 3 ) )
+	)
+	singleCusp.dispose()
+	batchCusp.dispose()
+
+	// 2. Multi-line open Float32Array setPositions( batch, updateBounding ) fast path matches setLines( batch )
+	// and rolls back cleanly if a later line has duplicate consecutive points or non-finite values.
+	const batchA = Array.from( { length: 8 }, ( _, idx ) => createWave( 24, 1.0, idx * 0.4 ) )
+	const batchB = Array.from( { length: 8 }, ( _, idx ) => createWave( 24, 1.35, idx * 0.4 + 0.9 ) )
+
+	for ( const updateBounding of [false, true] ) {
+		const multiFast = new MeshLineGeometry( {
+			lines: batchA.map( a => a.slice() ),
+			dynamic: true,
+			needsProgress: false,
+			lineWidth: 0.35,
+			miterLimit: 3,
+		} )
+		multiFast.setPositions( batchB.map( a => a.slice() ), updateBounding )
+
+		const multiRef = new MeshLineGeometry( {
+			lines: batchB.map( a => a.slice() ),
+			dynamic: true,
+			needsProgress: false,
+			lineWidth: 0.35,
+			miterLimit: 3,
+		} )
+		if ( updateBounding ) {
+			multiRef.computeBoundingBoxes()
+			multiRef.computeBoundingSphere( true )
+		}
+
+		for ( const attrName of ['position', 'previous', 'next'] ) {
+			assert.deepEqual(
+				Array.from( multiFast.getAttribute( attrName ).array ),
+				Array.from( multiRef.getAttribute( attrName ).array ),
+				`multi-line setPositions (${updateBounding}) ${attrName} mismatch`
+			)
+		}
+		if ( updateBounding ) {
+			assert.deepEqual( multiFast.boundingBoxes.map( boxToArray ), multiRef.boundingBoxes.map( boxToArray ) )
+			assert.deepEqual( boxToArray( multiFast.boundingBox ), boxToArray( multiRef.boundingBox ) )
+			assert.equal( multiFast.boundingSphere.radius, multiRef.boundingSphere.radius )
+		}
+
+		// Verify padding-only refresh after lineWidth / miterLimit changes matches fresh computeBoundingBoxes()
+		multiFast.options.lineWidth = 0.8
+		multiFast.options.miterLimit = 5
+		multiFast.computeBoundingBoxes()
+		multiRef.options.lineWidth = 0.8
+		multiRef.options.miterLimit = 5
+		multiRef._lineBoundsValid = false
+		multiRef.computeBoundingBoxes()
+		assert.deepEqual( multiFast.boundingBoxes.map( boxToArray ), multiRef.boundingBoxes.map( boxToArray ) )
+		assert.deepEqual( boxToArray( multiFast.boundingBox ), boxToArray( multiRef.boundingBox ) )
+
+		multiFast.dispose()
+		multiRef.dispose()
+	}
+
+	// Verify mid-batch invalid line (duplicate consecutive point in line 5) rolls back lines 0..4 and compacts via setLines()
+	const multiRollback = new MeshLineGeometry( {
+		lines: batchA.map( a => a.slice() ),
+		dynamic: true,
+		needsProgress: false,
+	} )
+	const batchWithDup = batchB.map( a => a.slice() )
+	batchWithDup[5][6] = batchWithDup[5][3]
+	batchWithDup[5][7] = batchWithDup[5][4]
+	batchWithDup[5][8] = batchWithDup[5][5]
+	multiRollback.setPositions( batchWithDup, true )
+
+	const multiDupRef = new MeshLineGeometry( {
+		lines: batchWithDup.map( a => a.slice() ),
+		dynamic: true,
+		needsProgress: false,
+	} )
+	multiDupRef.computeBoundingBoxes()
+	for ( const attrName of ['position', 'previous', 'next'] ) {
+		assert.deepEqual(
+			drawnArray( multiRollback, attrName ),
+			Array.from( multiDupRef.getAttribute( attrName ).array ),
+			`multi-line fallback ${attrName} mismatch`
+		)
+	}
+	assert.deepEqual( multiRollback.boundingBoxes.map( boxToArray ), multiDupRef.boundingBoxes.map( boxToArray ) )
+	multiRollback.dispose()
+	multiDupRef.dispose()
+} )
+
+test( 'Round 5 shader and math optimizations eliminate redundant sqrts, normalizations, and trig calls', async () => {
+	for ( const forceWebGL of [false, true] ) {
+		const renderer = createRenderer( forceWebGL )
+		const points = new Float32Array( [0, 0, 0, 1, 0, 0, 1, 1, 0, 2, 1, 0] )
+
+		// 1. Default geometry fold mode reuses `sinHalfTurn` in `foldBlend` (only 2 explicit `sqrt(` calls:
+		// `sinHalfTurn` and `splitWeight.sqrt()`).
+		const defaultLine = new MeshLine( { lines: points } ).build()
+		const defaultGraph = buildShaderGraph( renderer, defaultLine )
+		assert.match( defaultGraph.vertexShader, /\bsinHalfTurn\b/ )
+		assert.doesNotMatch( defaultGraph.vertexShader, /\btanHalfTurn\b/ )
+		assert.equal( ( defaultGraph.vertexShader.match( /\bsqrt\(/g ) || [] ).length, 2 )
+		defaultLine.dispose()
+
+		// 2. Round joins (`authored = 0`) omit the 3D `turnCos3` calculation and its two `inverseSqrt` calls.
+		const roundLine = new MeshLine( { lines: points, join: { type: 'round' } } ).build()
+		const roundGraph = buildShaderGraph( renderer, roundLine )
+		assert.equal( ( roundGraph.vertexShader.match( /\binverse[Ss]qrt\(/g ) || [] ).length, 0 )
+		roundLine.dispose()
+
+		// 3. Shadow-receiving lines construct unit tube normals directly without `.normalize()` or `length(`,
+		// and `castShadowPositionNode` blends directions in 2D (`vec2`).
+		renderer.shadowMap.enabled = true
+		const shadowLine = new MeshLine( {
+			lines: points,
+			fragmentColorFn: Fn( ( [color] ) => shadowLine.material.setupNormal().add( color.xyz ) ),
+		} ).shadow( true, true ).build()
+		const shadowGraph = buildShaderGraph( renderer, shadowLine )
+		assert.match( shadowGraph.fragmentShader, /\binverse[Ss]qrt\(/ )
+		assert.doesNotMatch( shadowGraph.fragmentShader, /\bnormalize\s*\(/ )
+		assert.doesNotMatch( shadowGraph.fragmentShader, /\blength\s*\(\s*vShadowTube/ )
+		assert.match( shadowGraph.vertexShader, /\bvShadowTube\b/ )
+		shadowLine.dispose()
+	}
+
+	// 4. MeshLineGPUPath round join and round cap branches evaluate `meshLineGPUPathRotate2D` once per branch
+	// (1 function definition + 4 call sites: join-reversal round cap, round join, start round cap, end round cap,
+	// down from 1 definition + 8 call sites).
+	const wgslRenderer = createRenderer( false )
+	const stubRenderer = {
+		isWebGPURenderer: true,
+		backend: { isWebGPUBackend: true, device: {} },
+		async init() {},
+		async computeAsync() {},
+		getSize( target ) {
+			return target.set( 800, 600 )
+		},
+	}
+	const gpuRoundPath = new MeshLineGPUPath( {
+		lines: new Float32Array( [0, 0, 0, 1, 0, 0, 1, 1, 0, 2, 1, 0] ),
+		lineWidth: 0.4,
+		join: { type: 'round', segments: 6 },
+		cap: { type: 'round', segments: 6 },
+	} )
+	assert.equal( await gpuRoundPath.prepare( stubRenderer, new PerspectiveCamera() ), true )
+	const gpuRoundGraph = buildShaderGraph( wgslRenderer, gpuRoundPath.gpuMesh )
+	assert.equal( ( gpuRoundGraph.vertexShader.match( /\bmeshLineGPUPathRotate2D\s*\(/g ) || [] ).length, 5 )
+	gpuRoundPath.dispose()
+
+	// 5. CPU dyadic chunk error and importance oracles defer `Math.sqrt` out of the inner point loop.
+	const wave = createWave( 65, 1.5, 0 )
+	const chunks = _gpuPathInternals.createChunkPlan( 65, 32 )
+	const originalSqrt = Math.sqrt
+	let sqrtCalls = 0
+	Math.sqrt = value => {
+		sqrtCalls++
+		return originalSqrt( value )
+	}
+	try {
+		const { errors, levelCount } = _gpuPathInternals.computeDyadicChunkErrors( wave, chunks )
+		assert.equal( levelCount, 6 )
+		assert.equal( errors.length, chunks.length * levelCount )
+		// Exactly 1 `Math.sqrt` per `(chunk, level > 0)` instead of per `(chunk, level, point)`.
+		assert.equal( sqrtCalls, chunks.length * ( levelCount - 1 ) )
+
+		sqrtCalls = 0
+		const importance = _gpuPathInternals.computeDyadicImportance( wave, chunks )
+		assert.equal( importance.length, 65 )
+		// Exactly 1 `Math.sqrt` per interior chunk point (`31 * 2 = 62`).
+		assert.equal( sqrtCalls, 62 )
+	} finally {
+		Math.sqrt = originalSqrt
+	}
+} )
+
+test( 'Round 6 shader and math optimizations eliminate redundant fragment divisions and cap/join trig calls', () => {
+	for ( const forceWebGL of [false, true] ) {
+		const renderer = createRenderer( forceWebGL )
+		const points = new Float32Array( [0, 0, 0, 1, 0, 0, 1, 1, 0, 2, 1, 0] )
+
+		// 1. `exactFoldCoverageFn` performs zero divisions for `beyondStart`/`beyondEnd` tests and only
+		// 2 divisions in the entire fragment shader (`1.0 / vFoldFrame.z` and the single active-end
+		// `vFoldEnds / weight` inside `If( beyondStart.or( beyondEnd ) )`, down from 3 divisions).
+		const exactLine = new MeshLine( { lines: points, join: { type: 'miter', fold: 'exact' } } ).build()
+		const exactGraph = buildShaderGraph( renderer, exactLine )
+		assert.equal( ( exactGraph.fragmentShader.match( /\s\/\s/g ) || [] ).length, 2 )
+		exactLine.dispose()
+
+		// 2. Default geometry fold mode scales `this._miterThreshold` by `FOLD_SMOOTH_LIMIT * 0.5` (`0.625`)
+		// inside the single-division `threshold` formula.
+		const geomLine = new MeshLine( { lines: points } ).build()
+		const geomGraph = buildShaderGraph( renderer, geomLine )
+		assert.match( geomGraph.vertexShader, /0\.625/ )
+		geomLine.dispose()
+	}
+
+	// 3. `MeshLineSurfaceGeometry` round joins use a 2D rotation recurrence (1 `Math.cos`/`Math.sin` per join
+	// instead of per fan segment) and round caps reuse cached half-turn trig tables (0 `Math.cos`/`Math.sin`
+	// after table warm-up).
+	const capWarmup = new MeshLineSurfaceGeometry( {
+		lines: new Float32Array( [0, 0, 0, 2, 0, 0] ),
+		lineWidth: 1,
+		cap: { type: 'round', segments: 12 },
+	} )
+	capWarmup.dispose()
+
+	const originalCos = Math.cos
+	const originalSin = Math.sin
+	let cosCalls = 0
+	let sinCalls = 0
+	Math.cos = value => {
+		cosCalls++
+		return originalCos( value )
+	}
+	Math.sin = value => {
+		sinCalls++
+		return originalSin( value )
+	}
+	try {
+		const cappedSurface = new MeshLineSurfaceGeometry( {
+			lines: new Float32Array( [0, 0, 0, 2, 0, 0, 4, 0, 0] ),
+			lineWidth: 1,
+			cap: { type: 'round', segments: 12 },
+			needsUV: true,
+			needsSide: true,
+		} )
+		// Zero trig calls for cached 12-segment round caps on both ends.
+		assert.equal( cosCalls, 0 )
+		assert.equal( sinCalls, 0 )
+		cappedSurface.dispose()
+
+		const roundSurface = new MeshLineSurfaceGeometry( {
+			lines: new Float32Array( [0, 0, 0, 2, 0, 0, 2, 0, 2, 4, 0, 2] ),
+			lineWidth: 1,
+			join: { type: 'round', segments: 12 },
+			cap: { type: 'round', segments: 12 },
+		} )
+		// 1 `Math.cos(PI / 12)` in `computeJoinInfos` + 1 `(cos, sin)` step pair per round join (2 joins),
+		// and 0 trig calls for the two 12-segment round caps.
+		assert.equal( cosCalls, 3 )
+		assert.equal( sinCalls, 2 )
+		roundSurface.dispose()
+	} finally {
+		Math.cos = originalCos
+		Math.sin = originalSin
+	}
+} )
 

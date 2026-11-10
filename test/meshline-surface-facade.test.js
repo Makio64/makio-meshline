@@ -263,3 +263,64 @@ test( 'facade keeps automatic transparency and depth writes aligned during live 
 
 	alphaMap.dispose()
 } )
+
+test( 'surface() replaces the previous surface options instead of merging them', () => {
+	const options = { lines: roadPoints, lineWidth: 2, needsUV: true }
+	const road = new MeshLine( { ...options, surface: { frame: 'fixed-up', bank: 0.3, uvMode: 'stretch' } } ).build()
+	const fresh = new MeshLine( { ...options, surface: true } ).build()
+	const assertMatchesFresh = () => {
+		for ( const name of ['position', 'normal', 'uv'] ) {
+			assert.deepEqual( road.geometry.getAttribute( name ).array, fresh.geometry.getAttribute( name ).array, name )
+		}
+	}
+
+	road.surface( true )
+	assertMatchesFresh()
+
+	// A hook change leaves the line unbuilt: surface() still drops the old surface.
+	road.surface( { bank: 0.3 } ).positionFn( null )
+	road.surface( true ).build()
+	assertMatchesFresh()
+
+	road.dispose()
+	fresh.dispose()
+} )
+
+test( 'a rejected surface() keeps drawing the previous surface', () => {
+	const options = { lines: roadPoints, lineWidth: 2, surface: { bank: 0.3 } }
+	const road = new MeshLine( options ).build()
+	assert.throws( () => road.surface( { uvScale: 0 } ), /uvScale must be greater than zero/ )
+
+	// The next update rebuilds the banked surface instead of the rejected one.
+	road.setPositions( roadPoints )
+	const fresh = new MeshLine( options ).build()
+	for ( const name of ['position', 'normal'] ) {
+		assert.deepEqual( road.geometry.getAttribute( name ).array, fresh.geometry.getAttribute( name ).array, name )
+	}
+	road.dispose()
+	fresh.dispose()
+} )
+
+test( 'surface updates keep a draw range set by the caller', () => {
+	// The Draw Lines pattern: every frame updates twenty lines and draws five.
+	const line = ( offset, k = 0 ) => roadPoints.map( ( value, i ) => value + ( i % 3 ? offset : k * 2 ) )
+	const batch = offset => Array.from( { length: 20 }, ( _, k ) => line( offset, k ) )
+	for ( const [route, lines] of [['single line', line], ['batch', batch]] ) {
+		const road = new MeshLine( { surface: true } ).lines( lines( 0 ) ).build()
+		const count = road.geometry.getIndex().count / ( route === 'batch' ? 4 : 2 )
+		road.geometry.setDrawRange( 0, count )
+		road.setPositions( lines( 1 ) )
+		assert.equal( road.geometry.drawRange.count, count, route )
+		// A rejected setter clears the surface, and its restore draws the range again.
+		assert.throws( () => road.widthCallback( () => Number.NaN ), /non-finite/ )
+		assert.equal( road.geometry.drawRange.count, count, `${route} rejection` )
+		road.dispose()
+	}
+
+	// A range set before the lazy first build, as a progressive reveal starts.
+	const road = new MeshLine( { surface: true } ).lines( line( 0 ) )
+	road.geometry.setDrawRange( 0, 12 )
+	road.build()
+	assert.equal( road.geometry.drawRange.count, 12, 'first build' )
+	road.dispose()
+} )

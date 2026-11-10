@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
+import { BufferAttribute, Texture } from 'three/webgpu'
+
 import MeshLine from '../src/MeshLine.js'
 
 const points = new Float32Array( [
@@ -46,6 +48,74 @@ test( 'rejects a separate custom buffer before exceeding the portable limit', ()
 	)
 	assert.equal( line.geometry.getAttribute( 'secondCustom' ), undefined )
 	line.dispose()
+} )
+
+test( 'a setter whose rebuild exceeds the budget leaves the built line intact', t => {
+	// Custom buffers fill the line's budget, so the buffers these setters add
+	// exceed it. The rejected rebuild used to keep the extra buffers and the
+	// option, and left the line unbuilt. Setters that rebuild only the geometry,
+	// which takes a pending needsUV() too, skipped the check.
+	t.mock.method( console, 'warn', () => {} )
+	const texture = new Texture()
+	const needsUV = line => line.needsUV( true )
+	for ( const [name, update, pending, lineOptions] of [
+		['gradientColor', line => line.gradientColor( 0xff0000 )],
+		['map', line => line.map( texture )],
+		['alphaMap', line => line.alphaMap( texture )],
+		['dash', line => line.dash( { count: 4 } )],
+		['widthCallback toggle', line => line.widthCallback( () => 2 )],
+		['vertexColors toggle', line => line.vertexColors( [0, 1, 0] )],
+		// opacity() adds no buffer, but its rebuild applies a pending needsUV().
+		['opacity', line => line.opacity( 0.5 ), needsUV],
+		['widthCallback swap', line => line.widthCallback( () => 2 ), needsUV, { widthCallback: () => 1 }],
+		['vertexColors swap', line => line.vertexColors( [0, 1, 0] ), needsUV, { vertexColors: [1, 0, 0] }],
+		// Bevel joins would drop the custom buffers with the old topology.
+		['join', line => line.join( { fold: false } ), needsUV, { join: 'miter' }],
+		['surface lineWidth', line => line.lineWidth( 0.5 ), needsUV, { surface: true }],
+		['surface join', line => line.join( 'round' ), needsUV, { surface: true, join: 'miter' }],
+		['surface cap', line => line.cap( 'round' ), needsUV, { surface: true }],
+		['surface map', line => line.map( texture ), null, { surface: true }],
+		['surface alphaMap', line => line.alphaMap( texture ), null, { surface: true }],
+		['surface normalMap', line => line.surface( { normalMap: texture } ), null, { surface: true }],
+	] ) {
+		const line = new MeshLine( lineOptions ).lines( points ).build()
+		for ( let i = 0; line.getVertexBufferUsage().remaining > 0; i++ ) line.addVertexAttribute( `custom${i}` )
+		pending?.( line )
+		const names = Object.keys( line.geometry.attributes ).sort()
+		const options = { ...line._options }
+		const { map, alphaMap } = line.material
+		assert.throws( () => update( line ), /portable vertex-buffer budget exceeded/, name )
+		assert.deepEqual( Object.keys( line.geometry.attributes ).sort(), names, name )
+		assert.deepEqual( line._options, options, name )
+		assert.equal( line.material.map, map, name )
+		assert.equal( line.material.alphaMap, alphaMap, name )
+		assert.equal( line._built, true, name )
+		line.dispose()
+	}
+	texture.dispose()
+} )
+
+test( 'a rejection that clears the geometry keeps its custom attributes', () => {
+	// A width callback that throws part way clears the geometry, custom
+	// attributes included, sized per vertex or not. The restored line used to
+	// draw without them.
+	const reject = ( progress, pointIndex ) => {
+		if ( pointIndex === 1 ) throw new Error( 'rejected' )
+		return 1
+	}
+	for ( const options of [{}, { widthCallback: () => 1 }] ) {
+		const line = new MeshLine( options ).lines( points ).instances( 2 ).build()
+		const custom = line.addVertexAttribute( 'custom', 2 )
+		const packed = line.addInstanceAttributes( { offset: 3, scale: 1 } )
+		const perPoint = new BufferAttribute( new Float32Array( points.length / 3 ), 1 )
+		line.geometry.setAttribute( 'perPoint', perPoint )
+		assert.throws( () => line.widthCallback( reject ), /rejected/ )
+		assert.equal( line.geometry.getAttribute( 'custom' ), custom )
+		assert.equal( line.geometry.getAttribute( 'perPoint' ), perPoint )
+		assert.equal( line.geometry.getAttribute( 'offset' ), packed.offset )
+		assert.equal( line.geometry.getAttribute( 'scale' ), packed.scale )
+		line.dispose()
+	}
 } )
 
 test( 'packs multiple instance attributes into one buffer and writes by component layout', () => {

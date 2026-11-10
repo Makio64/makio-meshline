@@ -6,6 +6,7 @@ import { SpotLight } from 'three'
 
 import Signal from '../demo/src/makio/core/Signal.js'
 import { describeDemoFailure, WebGPURequiredError } from '../demo/src/utils/demoFailure.js'
+import { clampSimplify, MAX_SIMPLIFY, resolveSimplify } from '../demo/src/utils/gpuPathQuery.js'
 
 const read = path => readFile( new URL( `../${path}`, import.meta.url ), 'utf8' )
 
@@ -76,31 +77,44 @@ test( 'demo rendering caps pixel density and keeps the inspector opt-in', async 
 } )
 
 test( 'compact demos preserve the canvas until a panel is requested', async () => {
-	const [sandbox, sandboxView, topology] = await Promise.all( [
+	const [sandbox, sandboxView, topology, compute, computeUi] = await Promise.all( [
 		read( 'demo/src/demos/sandbox.js' ),
 		read( 'demo/src/views/SandboxView.vue' ),
 		read( 'demo/src/demos/variableTopology.js' ),
+		read( 'demo/src/demos/meshlineCompute.js' ),
+		read( 'demo/src/components/MeshlineCompute.vue' ),
 	] )
 
+	assert.doesNotMatch( sandbox, /lil-gui/ )
+	assert.doesNotMatch( compute, /lil-gui/ )
 	assert.match( sandbox, /activePanel: 'preview'/ )
 	assert.match( sandbox, /compact && this\.uiState\.activePanel !== 'controls'/ )
 	assert.match( sandboxView, /id: 'preview', label: 'Preview'/ )
 	assert.match( sandboxView, /id: 'controls', label: 'Controls'/ )
 	assert.match( sandboxView, /id: 'code', label: 'Code'/ )
-	assert.match( topology, /compact && !this\.isCompactGui \) this\.gui\.close\(\)/ )
+	assert.match( sandboxView, /class="SandboxControls"/ )
+	assert.match( topology, /compact && !this\.isCompactGui \) this\.params\.open = false/ )
+	assert.match( compute, /uiComponent = markRaw\( MeshlineCompute \)/ )
+	assert.match( compute, /compact && !this\.isCompactGui \) this\.params\.open = false/ )
+	assert.match( computeUi, /class="MeshlineComputeGui"/ )
 } )
 
 test( 'Variable Topology sweeps the full join angle range with live telemetry and static orientation', async () => {
-	const [source, surfaceMaterial] = await Promise.all( [
+	const [source, ui, surfaceMaterial] = await Promise.all( [
 		read( 'demo/src/demos/variableTopology.js' ),
+		read( 'demo/src/components/VariableTopology.vue' ),
 		read( 'src/MeshLineSurfaceNodeMaterial.js' ),
 	] )
 
+	assert.doesNotMatch( source, /lil-gui/ )
+	assert.match( source, /uiComponent = markRaw\( VariableTopology \)/ )
 	assert.match( source, /const JOIN_ANGLE_MIN = 20/ )
 	assert.match( source, /const JOIN_ANGLE_MAX = 165/ )
-	assert.match( source, /\.name\( 'Opening \(°\)' \)/ )
-	assert.match( source, /\.name\( 'Turn \(°\)' \)/ )
-	assert.match( source, /\.name\( 'Miter limit' \)/ )
+	assert.match( ui, /\.VariableTopologyGui[\s\S]*?position fixed\n\ttop calc\(18px \+ var\(--sait, 0px\)\)\n\tleft calc\(18px \+ var\(--sail, 0px\)\)/ )
+	assert.match( ui, /label: 'Opening \(°\)'/ )
+	assert.match( ui, /label: 'Turn \(°\)'/ )
+	assert.match( ui, /label: 'Miter limit'/ )
+	assert.doesNotMatch( ui, /Orientation|Motion speed/ )
 	assert.match( source, /Opening \$\{opening\}° · Turn \$\{turn\}° · Miter ×\$\{miterScale\.toFixed\( 2 \)\}/ )
 	// The mirror sees the ribbon's underside; the wire stays on the single-sided surface default.
 	assert.match( source, /surfaceLine\( points, config, \{ side: DoubleSide, roughness: 0\.68, metalness: 0\.08 \} \)/ )
@@ -120,8 +134,7 @@ test( 'the shadow showcase keeps debug helpers out of the composition', async ()
 	// Three lights at 512: the demo leaves the map size at three's default.
 	assert.doesNotMatch( source, /shadow\.mapSize/ )
 	assert.deepEqual( new SpotLight().shadow.mapSize.toArray(), [512, 512] )
-	// stage3d owns the pill and removes it in clearDemo().
-	assert.match( source, /createDemoHint\( 'Live cast \+ receive · 3 moving spotlights'/ )
+	assert.doesNotMatch( source, /createDemoHint/ )
 	assert.match( hint, /const element = stage3d\.own\( document\.createElement\( 'div' \) \)/ )
 	assert.match( source, /SCULPTURE_RADIUS \/ \( Math\.tan\( halfFov \) \* stage3d\.camera\.aspect \)/ )
 } )
@@ -134,6 +147,38 @@ test( 'Rice Field keeps per-instance storage mappable to WebGL2 instanced attrib
 	assert.doesNotMatch( source, /new StorageBufferAttribute\(/ )
 	assert.match( source, /new StorageInstancedBufferAttribute\( stalks\.length, 2 \)/ )
 	assert.match( source, /new StorageInstancedBufferAttribute\( stalks\.length, 4 \)/ )
+} )
+
+test( 'GPU Path exposes a continuous 0..99% simplification slider with strictly decreasing segment counts', async () => {
+	const [source, query, controls, hud] = await Promise.all( [
+		read( 'demo/src/demos/gpuPath.js' ),
+		read( 'demo/src/utils/gpuPathQuery.js' ),
+		read( 'demo/src/utils/demoControls.js' ),
+		read( 'demo/src/utils/demoHud.styl' ),
+	] )
+
+	assert.match( source, /id: 'simplify'/ )
+	assert.match( source, /min: 0,\s+max: MAX_SIMPLIFY,\s+step: 1/ )
+	assert.match( source, /onInput: value => this\.setSimplify\( value \)/ )
+	assert.match( source, /onChange: value => writeSimplify\( clampSimplify\( value \) \)/ )
+	assert.match( query, /stopImmediatePropagation/ )
+	assert.match( controls, /wrap\.className = 'DemoControls__slider'/ )
+	assert.match( controls, /dragstart/ )
+	assert.match( hud, /touch-action pan-x/ )
+	assert.match( hud, /&__slider[\s\S]*?input\[type='range'\]::-webkit-slider-runnable-track/ )
+	assert.equal( clampSimplify( null ), 99 )
+	assert.equal( clampSimplify( '90' ), 90 )
+	assert.equal( clampSimplify( '0' ), 0 )
+	assert.deepEqual( resolveSimplify( 0 ), { simplify: 0, tolerance: 0, segments: 199_999 } )
+	assert.deepEqual( resolveSimplify( 90 ), { simplify: 90, tolerance: 0.000023, segments: 19_983 } )
+	assert.deepEqual( resolveSimplify( 99 ), { simplify: 99, tolerance: 0.012, segments: 1_646 } )
+
+	for ( let pct = 1; pct <= MAX_SIMPLIFY; pct++ ) {
+		const prev = resolveSimplify( pct - 1 )
+		const curr = resolveSimplify( pct )
+		assert.ok( curr.tolerance > prev.tolerance, `tolerance at ${pct}% must exceed ${pct - 1}%` )
+		assert.ok( curr.segments < prev.segments, `segments at ${pct}% must be fewer than at ${pct - 1}%` )
+	}
 } )
 
 test( 'Signal isolates pooled listener nodes across signals and during dispatch removal', () => {

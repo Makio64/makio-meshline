@@ -1,4 +1,4 @@
-/** The lab's URL options: dataset, level, lineWidth, radius, relax, render, view, cameraLod and validate. */
+/** The lab's URL options: dataset, level, lineWidth, radius, relax, render, cameraLod and validate. */
 import { MathUtils } from 'three/webgpu'
 
 import { VECTOR_DATASETS } from '@/data/vectorDatasets'
@@ -21,7 +21,6 @@ export const readOptions = () => {
 	return {
 		cameraLod: query.get( 'cameraLod' ) === '1',
 		datasetId: VECTOR_DATASETS.some( ( { id } ) => id === dataset ) ? dataset : DEFAULT_DATASET,
-		detail: query.get( 'view' ) === 'original' ? 'before' : 'after',
 		level: queryNumber( query, 'level', 58, 0, SIMPLIFICATION_LEVEL_MAX ),
 		lineWidth: Math.round( queryNumber( query, 'lineWidth', 0.44, 0.05, 2 ) * 100 ) / 100,
 		radius: queryNumber( query, 'radius', DEFAULT_RADIUS, 20, 320 ),

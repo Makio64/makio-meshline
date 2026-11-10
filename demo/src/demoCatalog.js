@@ -24,16 +24,15 @@ export const demoCatalog = [
 	{ id: 'laser-heist', section: 'lines', title: 'Laser Heist', subtitle: 'raycast vs picker', blurb: 'Aim at the lasers to compare raycasting with GPU picking.', apis: ['MeshLinePicker', 'raycast()'], sourceFile: 'heist.js', aliases: ['bunker'] },
 
 	{ id: 'surface', section: 'ribbons', title: 'Surface Studio', subtitle: 'frames, banking + mapped PBR', blurb: 'One path as a lit ribbon: fixed-up or transport frames, banking and PBR maps.', apis: ['surface()', 'frame', 'uvMode'], sourceFile: 'surface.js' },
-	{ id: 'surface-road', section: 'ribbons', title: 'Road Editor', subtitle: 'adaptive 3D road editor', blurb: 'Drag control points to build a banked 3D road with painted lanes.', apis: ['surface()', 'setPositions()'], sourceFile: 'surfaceRoad.js' },
+	{ id: 'surface-road', section: 'ribbons', title: 'Road Editor', subtitle: 'adaptive 3D road editor', blurb: 'Drag control points to build a banked 3D road, then follow its cars or drive one.', apis: ['surface()', 'setPositions()'], sourceFile: 'surfaceRoad.js' },
 
 	{ id: 'gpu-path', section: 'gpu', title: '200K-Point Line', subtitle: '200k points, one GPU draw', blurb: 'One line with 200,000 points. The GPU trims it to the 1,646 segments that keep its shape.', apis: ['MeshLineGPUPath'], sourceFile: 'gpuPath.js', status: 'experimental' },
 	{ id: 'gpu-culling', section: 'gpu', title: 'Alpine Pass Culling', subtitle: '400K-point frustum culling', blurb: 'A 400,000-point alpine pass and contours. Watch the 3D frustum cone cull offscreen chunks live.', apis: ['MeshLineCullingSystem'], sourceFile: 'gpuCulling.js' },
 	{ id: 'gpu-simplification', section: 'gpu', title: 'GPU Simplification', subtitle: 'Douglas-Peucker on GPU', blurb: 'Research prototype: Douglas-Peucker simplification running in compute shaders.', apis: ['compute shaders'], sourceFile: 'gpuSimplificationPrototype.js', status: 'experimental' },
-	{ id: 'compute-curves', section: 'gpu', title: 'Compute Curves', subtitle: 'WebGPU curve engine', blurb: 'Thousands of curves simulated in a compute shader. Move to stir them.', apis: ['MeshLineCompute'], sourceFile: 'meshlineCompute.js', status: 'experimental', requires: 'webgpu' },
-	{ id: 'lorenz-trails', section: 'gpu', title: 'Lorenz Attractor', subtitle: 'ring-buffer compute trails', blurb: '64 trails orbiting a chaotic attractor. The GPU writes only the newest points of each trail.', apis: ['storagePositions({ head })'], sourceFile: 'lorenzTrails.js', status: 'experimental', requires: 'webgpu' },
+	{ id: 'compute-curves', section: 'gpu', title: 'Compute Curves', subtitle: 'WebGPU curve engine', blurb: 'Bioluminescent tentacles simulated in WebGPU compute shaders. Move to part, click to pulse.', apis: ['MeshLineCompute'], sourceFile: 'meshlineCompute.js', status: 'experimental', requires: 'webgpu' },
+	{ id: 'wind-tunnel', section: 'gpu', title: 'Wind Tunnel', subtitle: 'SDF streamlines + ring buffer', blurb: '256 smoke streamlines deflected around a hover car by a 3D signed distance field.', apis: ['storagePositions({ head })'], sourceFile: 'windTunnel.js', aliases: ['lorenz-trails'], status: 'experimental', requires: 'webgpu' },
 	{ id: 'verlet-ropes', section: 'gpu', title: 'Verlet Ropes', subtitle: 'interactive GPU rope playground', blurb: 'Grab, swing and throw ropes simulated on the GPU.', apis: ['gpuPositionNode()', 'instances()'], sourceFile: 'verletRopes.js', status: 'experimental' },
 
-	{ id: 'isobars', section: 'scenes', title: 'Isobars', subtitle: 'synoptic contour morphing', blurb: 'Weather-map contours morphing between pressure systems.', apis: ['storagePositions()', 'morph'], sourceFile: 'isobars.js', aliases: ['isobar'] },
 	{ id: 'ricefield', section: 'scenes', title: 'Rice Field', subtitle: 'storage buffers', blurb: 'Wind through thousands of instanced blades. Click for a shockwave.', apis: ['instances()', 'positionFn()'], sourceFile: 'ricefield.js' },
 	{ id: 'bamboooo', section: 'scenes', title: 'Bamboooo', subtitle: 'instancing + shadows', blurb: 'An instanced bamboo grove casting and receiving soft shadows.', apis: ['instances()', 'castShadow', 'receiveShadow'], sourceFile: 'bambooGrove.js' },
 	{ id: 'venus-and-david', section: 'scenes', title: 'Venus & David', subtitle: 'mesh paths', blurb: 'Two statues traced as stacks of glowing contour lines.', apis: ['instances()', 'gpuPositionNode()'], sourceFile: 'venus.js' },
@@ -41,4 +40,5 @@ export const demoCatalog = [
 
 	// Draw & Trail covers the same cursor trails, so Follow leaves the menu; its route still works.
 	{ id: 'follow', section: 'lines', title: 'Follow', subtitle: 'trail physics', blurb: 'A bundle of aurora trails chasing the cursor with spring physics.', apis: ['setPositions()'], sourceFile: 'follow.js', hidden: true },
+	{ id: 'isobars', section: 'scenes', title: 'Isobars', subtitle: 'synoptic contour morphing', blurb: 'Weather-map contours morphing between pressure systems.', apis: ['storagePositions()', 'morph'], sourceFile: 'isobars.js', aliases: ['isobar'], hidden: true },
 ]

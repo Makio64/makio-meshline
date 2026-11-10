@@ -9,7 +9,8 @@
 3. **Auto-build**: `scene.add( line )` calls `line.build()` automatically. Only call `line.build()` explicitly if you need to call `addInstanceAttributes()` / `addVertexAttributes()` before adding to the scene.
 4. **Fast updates**:
    - Same point count per frame: set `.dynamic( true )` once, then call `line.setPositions( float32Array )` or `line.setPositionRange( slice, startPoint, { lineIndex } )`.
-   - Changing point count or open/closed state: call `line.lines( newPoints, closed )` (or alias `line.points( newPoints, closed )`).
+   - Changing point count or open/closed state: call `line.lines( newPoints, closed )` (or alias `line.points( newPoints, closed )`). With `.dynamic( true )` the buffers are reused, for surfaces too; `geometry.vertexCount` and `geometry.indexCount` then give the counts in use, since `attribute.count` is a capacity.
+   - Large plain lines moved every frame: `.dynamic( 'storage' )` (WebGPU storage buffer, falls back to `.dynamic( true )`).
    - Contour / isobar morphing between states: resample to a fixed `pointsPerLine` and use `storagePositions( fromBuffer, { pointsPerLine, toBuffer, morph, closed } )`.
 5. **WebGPU 8-vertex-buffer budget**: Pack multiple custom attributes into one interleaved buffer with `line.addInstanceAttributes( { offset: 3, scale: 1 } )`.
 6. **Resize & cleanup**: Call `line.autoResize()` (or `line.resize( width, height )` on resize) and `line.dispose()` on teardown.

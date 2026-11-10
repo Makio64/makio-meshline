@@ -60,7 +60,8 @@ export default {
 		},
 		redirects() {
 			return {
-				'/': '/examples/basic'
+				'/': '/examples/basic',
+				'/sandbox': '/examples/sandbox',
 			}
 		},
 		contentLoaded() {

@@ -1,7 +1,8 @@
 import { Group, MathUtils, Mesh, Plane, Raycaster, SphereGeometry, Vector2, Vector3 } from 'three/webgpu'
 
 import stage3d from '@/makio/three/stage3d'
-import { HANDLE_ACTIVE_COLOR, HANDLE_HOVER_COLOR, overlayMaterial, RoadGizmos } from '@/utils/surfaceRoadGizmos'
+import { reducedMotion } from '@/makio/utils/detect'
+import { HANDLE_ACTIVE_COLOR, HANDLE_HOVER_COLOR, HANDLE_OUTLINE_COLOR, handleMaterial, RoadGizmos, screenScale } from '@/utils/surfaceRoadGizmos'
 import {
 	clearanceOf,
 	createControl,
@@ -15,15 +16,15 @@ import {
 	terrainHeight,
 } from '@/utils/surfaceRoadRoute'
 
-const HANDLE_RADIUS = 1.1
+const HANDLE_RADIUS = 1
 const HANDLE_LIFT = 0.9
 const BANK_DRAG_SCALE = 0.012
-const HANDLE_COLOR = 0xFF9F43
-const HANDLE_ARC_COLOR = 0x53C6FF
-const HANDLE_TIGHT_COLOR = 0xFF5D6C
+// The fill of a handle tells how the road takes its point, the outline who is holding it.
+const STATUS_COLORS = { smooth: 0xFF9F43, corner: 0x53C6FF, tight: 0xFF4D5E }
 const HANDLE_SELECTED_COLOR = 0xFFE27A
+const CLICK_SLOP = 6
 const DRAG_CURSORS = { height: 'ns-resize', bank: 'ew-resize', position: 'grabbing' }
-const UI_SELECTOR = '.SurfaceRoadHud, .SurfaceRoadSaves, .BurgerButton, .CodeButton, .MenuFullscreen, .lil-gui, a, button, input, textarea, select, label'
+const UI_SELECTOR = '.SurfaceRoadHud, .SurfaceRoadSaves, .SurfaceRoadPoint, .SurfaceRoadRide, .BurgerButton, .CodeButton, .MenuFullscreen, .lil-gui, a, button, input, textarea, select, label'
 
 const _pointer = new Vector2()
 const _dragPoint = new Vector3()
@@ -39,20 +40,21 @@ const consume = event => {
 
 const isOverUI = target => target.closest?.( UI_SELECTOR )
 
-const setHandleLook = ( handle, color, scale ) => {
-	handle.material.color.setHex( color )
-	handle.scale.setScalar( scale )
+const setHandleLook = ( handle, outline, scale ) => {
+	handle.material.userData.outline.setHex( outline )
+	handle.userData.scale = scale
 }
 
 /**
- * Editing on top of the road: one draggable sphere per control, the gizmos on the
+ * Editing on top of the road: one draggable handle per control, the gizmos on the
  * selected one, and every pointer gesture that reshapes the route. The capture
  * listeners stop an event that starts an edit before OrbitControl can see it.
  */
 export class RoadEditor {
+	enabled = true
 	handles = []
 	handleGroup = new Group()
-	handleGeometry = new SphereGeometry( HANDLE_RADIUS, 18, 12 )
+	handleGeometry = new SphereGeometry( HANDLE_RADIUS, 32, 16 )
 	raycaster = new Raycaster()
 	dragPlane = new Plane( new Vector3( 0, 1, 0 ), 0 )
 	bankDragTangent = new Vector2( 1, 0 )
@@ -60,6 +62,8 @@ export class RoadEditor {
 	activeIndex = -1
 	selectedIndex = 0
 	hoveredIndex = -1
+	hoveredCar = -1
+	pressedCar = -1
 	heightGizmoHovered = false
 	bankGizmoHovered = false
 	dragMode = 'position'
@@ -90,6 +94,23 @@ export class RoadEditor {
 		return this.activePointerId !== -1
 	}
 
+	/** Away from the editor's own view the handles hide and stop answering, and cars are still picked. */
+	setEnabled( enabled ) {
+		if ( !enabled ) this.finishDrag()
+		this.enabled = enabled
+		this.handleGroup.visible = enabled
+		this.setHovered( -1 )
+	}
+
+	/** Handles and gizmos keep their size on screen, and a point the road cannot take beats. */
+	update() {
+		this.gizmos.updateHeightGizmoScale()
+		const beat = reducedMotion.matches ? 1 : 1 + Math.sin( performance.now() * 0.008 ) * 0.14
+		for ( const handle of this.handles ) {
+			handle.scale.setScalar( screenScale( handle.position ) * handle.userData.scale * ( handle.userData.tight ? beat : 1 ) )
+		}
+	}
+
 	//---------------------------------------------------------- HANDLES
 
 	/** One draggable sphere per control point, created and destroyed on demand. */
@@ -102,8 +123,9 @@ export class RoadEditor {
 			handle.material.dispose()
 		}
 		while ( this.handles.length < controls.length ) {
-			const handle = new Mesh( this.handleGeometry, overlayMaterial( HANDLE_COLOR ) )
+			const handle = new Mesh( this.handleGeometry, handleMaterial( STATUS_COLORS.smooth ) )
 			handle.renderOrder = 30
+			handle.userData.scale = 1
 			this.handleGroup.add( handle )
 			this.handles.push( handle )
 		}
@@ -118,6 +140,12 @@ export class RoadEditor {
 	syncHeightGizmo() {
 		const handle = this.handles[this.selectedIndex]
 		this.gizmos.place( handle.position, this.selectedTangent(), this.demo.controls[this.selectedIndex].bank )
+		// The inspector shows the point the gizmo sits on.
+		const { point } = this.demo.ui
+		const control = this.demo.controls[this.selectedIndex]
+		point.index = this.selectedIndex
+		point.height = clearanceOf( control )
+		point.bank = control.bank
 	}
 
 	/** Along the built road at the selected control, or towards its neighbours where it has no row yet. */
@@ -145,10 +173,15 @@ export class RoadEditor {
 		const corners = plan?.stats.knotCount === controls.length ? plan.corners : []
 		this.handles.forEach( ( handle, index ) => {
 			const corner = corners.find( entry => entry.knotIndex === index )
+			const status = corner?.tight ? 'tight' : corner?.arc ? 'corner' : 'smooth'
+			handle.material.color.setHex( STATUS_COLORS[status] )
+			handle.userData.tight = status === 'tight'
+			if ( index === this.selectedIndex ) this.demo.ui.point.status = status
+
 			if ( index === this.activeIndex ) setHandleLook( handle, HANDLE_ACTIVE_COLOR, 1.25 )
 			else if ( index === this.hoveredIndex ) setHandleLook( handle, HANDLE_HOVER_COLOR, 1.14 )
-			else if ( index === this.selectedIndex ) setHandleLook( handle, HANDLE_SELECTED_COLOR, 1.07 )
-			else setHandleLook( handle, corner?.tight ? HANDLE_TIGHT_COLOR : corner?.arc ? HANDLE_ARC_COLOR : HANDLE_COLOR, 1 )
+			else if ( index === this.selectedIndex ) setHandleLook( handle, HANDLE_SELECTED_COLOR, 1.1 )
+			else setHandleLook( handle, HANDLE_OUTLINE_COLOR, 1 )
 		} )
 	}
 
@@ -224,16 +257,16 @@ export class RoadEditor {
 	}
 
 	pickHandle() {
-		const hits = this.raycaster.intersectObjects( this.handles, false )
+		const hits = this.enabled ? this.raycaster.intersectObjects( this.handles, false ) : []
 		return hits.length > 0 ? hits[0].object.userData.controlIndex : -1
 	}
 
 	pickHeightGizmo() {
-		return this.raycaster.intersectObjects( this.gizmos.heightGizmoPickers, false ).length > 0
+		return this.enabled && this.raycaster.intersectObjects( this.gizmos.heightGizmoPickers, false ).length > 0
 	}
 
 	pickBankGizmo() {
-		const hits = this.raycaster.intersectObjects( this.gizmos.bankGizmoPickers, false )
+		const hits = this.enabled ? this.raycaster.intersectObjects( this.gizmos.bankGizmoPickers, false ) : []
 		return hits.length > 0 ? hits[0].object.userData : null
 	}
 
@@ -263,7 +296,8 @@ export class RoadEditor {
 		this.heightGizmoHovered = heightGizmoHovered
 		this.bankGizmoHovered = bankGizmoHovered
 		if ( gizmoChanged || this.isDragging ) this.updateHeightGizmoAppearance()
-		const hoverCursor = heightGizmoHovered ? 'ns-resize' : bankGizmoHovered ? 'ew-resize' : index !== -1 ? 'grab' : this.previousCursor
+		const idleCursor = this.hoveredCar !== -1 ? 'pointer' : this.previousCursor
+		const hoverCursor = heightGizmoHovered ? 'ns-resize' : bankGizmoHovered ? 'ew-resize' : index !== -1 ? 'grab' : idleCursor
 		document.documentElement.style.cursor = this.isDragging ? DRAG_CURSORS[this.dragMode] : hoverCursor
 	}
 
@@ -272,7 +306,9 @@ export class RoadEditor {
 		const heightGizmoHovered = onCanvas && this.pickHeightGizmo()
 		const bankGizmoHovered = onCanvas && !heightGizmoHovered && !!this.pickBankGizmo()
 		const overGizmo = heightGizmoHovered || bankGizmoHovered
-		this.setHovered( onCanvas && !overGizmo ? this.pickHandle() : -1, heightGizmoHovered, bankGizmoHovered )
+		const index = onCanvas && !overGizmo ? this.pickHandle() : -1
+		this.hoveredCar = onCanvas && !overGizmo && index === -1 ? this.demo.traffic.pick( this.raycaster.ray ) : -1
+		this.setHovered( index, heightGizmoHovered, bankGizmoHovered )
 	}
 
 	//---------------------------------------------------------- GESTURES
@@ -310,7 +346,13 @@ export class RoadEditor {
 		const bankGizmoHit = heightGizmoHit ? null : this.pickBankGizmo()
 		const index = heightGizmoHit ? this.selectedIndex : this.pickHandle()
 		const controlIndex = bankGizmoHit ? this.selectedIndex : index
-		if ( controlIndex === -1 ) return
+		if ( controlIndex === -1 ) {
+			// Not an edit: the orbit takes the gesture, unless it turns out to be a click on a car.
+			this.pressedCar = this.demo.traffic.pick( this.raycaster.ray )
+			this.pressX = event.clientX
+			this.pressY = event.clientY
+			return
+		}
 
 		consume( event )
 		this.activePointerId = event.pointerId
@@ -360,6 +402,9 @@ export class RoadEditor {
 	}
 
 	onPointerUp = event => {
+		const car = this.pressedCar
+		this.pressedCar = -1
+		if ( car !== -1 && Math.hypot( event.clientX - this.pressX, event.clientY - this.pressY ) < CLICK_SLOP ) this.demo.rideCar( car )
 		if ( event.pointerId !== this.activePointerId ) return
 		consume( event )
 		const onCanvas = this.setPointerFromEvent( event )
@@ -382,7 +427,7 @@ export class RoadEditor {
 	}
 
 	onDoubleClick = event => {
-		if ( isOverUI( event.target ) || !this.setPointerFromEvent( event ) ) return
+		if ( !this.enabled || isOverUI( event.target ) || !this.setPointerFromEvent( event ) ) return
 		if ( this.pickHeightGizmo() || this.pickBankGizmo() ) {
 			consume( event )
 			return
@@ -402,7 +447,7 @@ export class RoadEditor {
 	}
 
 	onContextMenu = event => {
-		if ( isOverUI( event.target ) || !this.setPointerFromEvent( event ) ) return
+		if ( !this.enabled || isOverUI( event.target ) || !this.setPointerFromEvent( event ) ) return
 		if ( this.pickHeightGizmo() || this.pickBankGizmo() ) {
 			consume( event )
 			return

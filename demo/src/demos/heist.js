@@ -19,7 +19,6 @@ import { isMobile } from '@/makio/utils/detect'
 import mouse, { onLeave, onMove, onUp } from '@/makio/utils/input/mouse'
 import { TWO_PI } from '@/makio/utils/math'
 import { createBloomPipeline } from '@/utils/bloomPipeline'
-import { createDemoHint } from '@/utils/demoHint'
 import { createEmitters, createHeistRoom, generateBeams, ROOM_SIZE } from '@/utils/heistRoom'
 
 const LOW_POWER = isMobile || window.matchMedia( '(pointer: coarse)' ).matches
@@ -82,7 +81,6 @@ export default class HeistExample {
 		this.initLasers()
 		this.initScanBeams()
 		this.initRenderPipeline()
-		createDemoHint( 'Hover lasers to trigger alarm · drag to orbit', { accent: '#ff3366' } )
 		this.initPicking()
 
 		stage3d.listen( onMove, this.onPointerMove )

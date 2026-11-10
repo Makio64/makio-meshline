@@ -37,7 +37,7 @@ See [Common Patterns](./common-patterns.md) for more examples.
 - `lines(lines: LinePoints | LinePoints[], closed?: boolean | boolean[])` (or alias `points(points, closed?)`) - Set one or more lines and optional close flag
 - `segments(segments: number)` - Set number of segments for auto-generated lines
 - `closed(closed: boolean | boolean[])` - Set whether to close the line loop
-- `surface(options?: MeshLineSurfaceOptions | boolean)` - Select the camera-independent surface profile for roads and ribbons; `true` uses defaults and `false` returns to the screen profile
+- `surface(options?: MeshLineSurfaceOptions | boolean)` - Select the camera-independent surface profile for roads and ribbons; `true` uses defaults and `false` returns to the screen profile. Each call replaces the previous surface options, so keys left out return to their defaults
 
 **Appearance:**
 - `color(color: number | THREE.Color)` - Set line color
@@ -85,7 +85,7 @@ See [Common Patterns](./common-patterns.md) for more examples.
 - `gpuPositionNode(node: Fn)` - Set GPU position calculation node
 - `usage(usage: THREE.Usage)` - Set buffer usage hint for position/next/prev (if they exist)
 - `instances(count: number)` - Enable instancing with specified count
-- `dynamic(enable: boolean)` - Toggle dynamic geometry updates (usage hints)
+- `dynamic(enable: boolean | 'storage')` - Mark the buffers for frequent updates and keep them when the point count changes. `'storage'` also keeps the points in one GPU storage buffer on WebGPU (see [Updating geometry efficiently](#updating-geometry-efficiently))
 - `autoResize(target?: Window)` - Automatically update resolution on resize
 
 **Hook Functions:**
@@ -158,7 +158,7 @@ Alternatively, you can use the traditional options object approach:
 
 ```ts
 type LinePoint = [x: number, y: number, z?: number] | THREE.Vector2 | THREE.Vector3 | { x: number, y: number, z?: number }
-type LinePoints = Float32Array | number[] | THREE.BufferGeometry | LinePoint[]
+type LinePoints = Float32Array | Float64Array | number[] | THREE.BufferGeometry | LinePoint[]
 
 interface MeshLineConfigureOptions {
   // ***Geometry***
@@ -256,7 +256,7 @@ interface MeshLineConfigureOptions {
   fragmentAlphaFn?: Fn | null
   discardFn?: Fn | null
 
-  dynamic?: boolean
+  dynamic?: boolean | 'storage'
   autoResize?: Window
 
   // Debugging
@@ -282,7 +282,7 @@ interface MeshLineSurfaceOptions {
 
 ### Geometry
 
-- **`lines`** (`LinePoints | LinePoints[]`) — The line point data. A single line can be a flat `Float32Array`, a flat numeric XYZ array, an array of `[x, y, z]` tuples, `Vector2`/`Vector3` points, plain `{ x, y, z? }` points, or a `BufferGeometry` with a `position` attribute. Pass an array of those values for multiple lines. Default: `new Float32Array([0,0,0,1,0,0])`.
+- **`lines`** (`LinePoints | LinePoints[]`) — The line point data. A single line can be a flat `Float32Array`, a flat `Float64Array` (converted on a billboard line, read as is by a surface), a flat numeric XYZ array, an array of `[x, y, z]` tuples, `Vector2`/`Vector3` points, plain `{ x, y, z? }` points, or a `BufferGeometry` with a `position` attribute. Pass an array of those values for multiple lines. Default: `new Float32Array([0,0,0,1,0,0])`.
 
 > **Procedural alternative:** instead of supplying a `lines` array you can provide a **`gpuPositionNode`** function (TSL `Fn`).  The node receives the per-vertex `progress` (0→1) and must return a `vec3` position.  When set, the geometry sent to the GPU can be minimal – only its length matters so that the `progress` attribute is generated.
 
@@ -416,7 +416,51 @@ Use `line.setPositions(positions, true)` or `geometry.setPositions(positions, tr
 
 When only a fixed span changes, `line.setPositionRange(patch, startPoint, { lineIndex, updateBounding })` avoids rewriting and uploading the whole position/neighbor buffers. The range cannot introduce duplicate points or change topology. Arc-length-dependent progress, UV, endpoint metadata, and callback widths still refresh for the affected line. Surface transport frames and `smoothSharpBends` use `setPositions()` because a local edit can affect derived topology or frames beyond the edited span.
 
+#### Changing the point count
+
+A line that grows, shrinks or is replaced takes its new points through **`line.lines( points )`**. With `.dynamic( true )` the buffers are kept: the first change allocates them with room to grow, later counts that fit reuse them, and `geometry.drawRange` hides the unused tail. One open line that only changes at its end, such as a trail gaining a point, uploads just that end.
+
+A dynamic surface does the same when its vertex count changes, which round joins do whenever the path bends.
+
+While a dynamic line or surface holds spare capacity, `attribute.count` and `index.count` are capacities: read **`geometry.vertexCount`** and **`geometry.indexCount`** for what is in use. Indices past `indexCount` are zero, so they form degenerate triangles and code that walks the whole index still sees only the real surface. A static line or surface always stays exact.
+
+#### Storage-backed positions
+
+`setPositions()` uploads the `position`, `previous` and `next` attributes: 144 bytes per point. **`.dynamic( 'storage' )`** keeps the points once in a GPU storage buffer instead, which the vertex shader reads, so the same call uploads 16 bytes per point. On an Apple M3 Max, moving every point of a 50,000-point line each frame took about 6.4 ms through attributes and 1.5 ms through storage (see [benchmarks](./benchmarks.md#browser-benchmarks)).
+
+```js
+const line = new MeshLine().lines( points ).dynamic( 'storage' )
+
+function animate() {
+	movePoints( points )          // your Float32Array, same length each frame
+	line.setPositions( points )
+}
+```
+
+It applies when all of this holds, and otherwise behaves exactly as `.dynamic( true )`:
+
+- the renderer uses the WebGPU backend (WebGL2 keeps the attribute path),
+- the points are one `Float32Array`, or an array of `Float32Array`s of equal length,
+- the line is open and not smoothed, instanced or placed by its own `gpuPositionNode`,
+- nothing reads arc-length progress or per-point data: no gradient, dashes, map, `widthCallback`, vertex colors or custom attributes. A hook that ignores `progress` qualifies once you call `.needsProgress( false )`.
+
+The line picks its path when a renderer first draws it, and moves between the two when an option above changes. `setPositionRange()`, `lines()`, raycasting and `MeshLinePicker` work on both. `line.positionStorage` is the `StorageBufferAttribute` while storage is active and `null` otherwise. A stored line is not frustum culled.
+
 Position and viewport updates are persistent facade state: data written through `setPositions()` or `setPositionRange()`, and CSS viewport dimensions written through `resize()`, remain the source for a later `rebuild()`. A rebuild does not silently restore the constructor's original points or viewport.
+
+## Billboard-only facade
+
+`MeshLine` carries two profiles: screen-space billboards and world-space surfaces. The surface geometry builders are a large share of the library, and a bundler cannot drop them from `MeshLine`, which may switch profile at any time through `surface()`.
+
+`MeshLineBillboard` is the same facade without the surface profile. Every other method, option and hook is identical, and `MeshLine` extends it, so a `MeshLine` is also a `MeshLineBillboard`. Calling `surface()` with anything but `false` throws.
+
+```js
+import { MeshLineBillboard } from 'makio-meshline'
+
+const line = new MeshLineBillboard().lines( points ).color( 0xff6600 ).lineWidth( 0.4 )
+```
+
+Minified, `MeshLineBillboard` bundles to about 121 KB (31 KB brotli) against 210 KB (56 KB brotli) for `MeshLine`.
 
 ## Methods
 

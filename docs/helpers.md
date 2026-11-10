@@ -209,6 +209,7 @@ storagePositions(
 		toBuffer?: StorageBufferAttribute | null
 		morph?: Node<'float'> | number | null
 		closed?: Node<'float'> | boolean | null
+		snap?: boolean
 	}
 ): TSL function
 ```
@@ -226,6 +227,7 @@ Pass `toBuffer` and `morph` to interpolate on the GPU between two `StorageBuffer
 - `options.head` (uniform, optional) — newest slot for ring-buffer trails.
 - `options.toBuffer` (`StorageBufferAttribute`, optional) — target point storage for GPU morph transitions (`vec3` or `vec4`, matching `buffer.count`).
 - `options.morph` (float node or number, optional) — `0..1` blend factor between `buffer` and `toBuffer` when `toBuffer` is provided.
+- `options.snap` (boolean, optional) — read the stored point nearest to each sample instead of interpolating two. Use it when the line has exactly `pointsPerLine - 1` segments, so every sample lands on a stored point: one storage read per sample instead of two, and exact however long the line is.
 - `options.closed` (boolean or float node, optional) — when `true` (or `0..1` per instance), wraps neighbor samples across the loop seam (`point[pointsPerLine - 1]` repeats `point[0]`, and `previous`/`next` wrap modulo `pointsPerLine - 1`).
 
 #### Returns
@@ -293,4 +295,4 @@ const isobars = new MeshLine()
 	.build()
 ```
 
-Storage buffers require the native WebGPU backend. The [Lorenz Attractor demo](https://meshline-demo.makio.io/examples/lorenz-trails) uses the ring-buffer pattern, and the [Isobars demo](https://meshline-demo.makio.io/examples/isobars) uses dual-buffer morphing with closed-loop wrapping.
+Storage buffers require the native WebGPU backend. The [Wind Tunnel demo](https://meshline-demo.makio.io/examples/wind-tunnel) uses the ring-buffer pattern, and the [Isobars demo](https://meshline-demo.makio.io/examples/isobars) uses dual-buffer morphing with closed-loop wrapping.

@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<title>makio-meshline browser benchmark</title>
+	<script type="importmap">
+		{
+			"imports": {
+				"three": "/node_modules/three/build/three.webgpu.js",
+				"three/webgpu": "/node_modules/three/build/three.webgpu.js",
+				"three/tsl": "/node_modules/three/build/three.tsl.js",
+				"makio-meshline": "/src/index.js"
+			}
+		}
+	</script>
+</head>
+<body style="margin:0;background:#111;color:#eee;font:13px/1.4 ui-monospace,monospace">
+	<pre id="out" style="margin:8px;white-space:pre-wrap"></pre>
+	<script type="module" src="./suites.js"></script>
+</body>
+</html>

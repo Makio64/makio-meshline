@@ -1,7 +1,43 @@
 import { assign, attribute, cameraNear, cameraProjectionMatrix, cameraWorldMatrix, dFdx, dFdy, Discard, dot, float, Fn, fract, If, inverseSqrt, max, min, mix, modelViewMatrix, modelWorldMatrixInverse, nodeObject, normalView, normalWorld, positionGeometry, positionLocal, positionPrevious, positionWorld, smoothstep, step, texture, uint, uniform, uv, varying, varyingProperty, vec2, vec3, vec4, vertexIndex } from 'three/tsl'
-import { Color, DoubleSide, MeshBasicNodeMaterial, Node, NormalBlending, Vector2 } from 'three/webgpu'
+import { Color, DoubleSide, MeshBasicNodeMaterial, Node, NodeUpdateType, NormalBlending, Vector2 } from 'three/webgpu'
 
 const DEFAULT_MITER_LIMIT = 4
+
+// Shared shader graphs. Three builds one node graph per program cache key and
+// reuses it for every object whose key matches. A line's key describes the
+// structure of its shader only, so lines that differ in color, width, opacity,
+// dash numbers or resolution share one build instead of repeating it per line.
+//
+// Value uniforms the material owns, read through `drawnValue()` so the shared
+// graph draws each line with its own values.
+const VALUE_SLOTS = ['resolution', 'lineWidth', 'color', 'dpr', 'gradient', 'opacity', 'mapOffset', 'repeat', 'dashCount', 'dashRatio', 'dashOffset', '_miterThreshold']
+// Hooks are part of the structure: lines share a graph when they pass the same function.
+const GRAPH_HOOKS = ['gpuPositionNode', 'positionFn', 'previousFn', 'nextFn', 'widthFn', 'normalFn', 'colorFn', 'gradientFn', 'opacityFn', 'dashFn', 'uvFn', 'vertexFn', 'fragmentColorFn', 'fragmentAlphaFn', 'discardFn']
+// Node properties the key describes itself, or that only a build writes.
+const KEYED_NODE_PROPERTIES = new Set( [...VALUE_SLOTS, 'map', 'alphaMap', 'vertexNode', 'colorNode', 'opacityNode', 'castShadowPositionNode', 'maskShadowNode'] )
+
+const identities = new WeakMap()
+let identityCount = 0
+const identityOf = value => {
+	if ( value == null ) return 0
+	if ( typeof value !== 'object' && typeof value !== 'function' ) return `=${value}`
+	if ( !identities.has( value ) ) identities.set( value, ++identityCount )
+	return identities.get( value )
+}
+
+// A plain value holder can be read per drawn line. A node with its own update,
+// or any other node assigned in its place, has to stay in the graph itself.
+const isValueUniform = node => node?.isUniformNode === true && node.isTextureNode !== true && node.updateType === NodeUpdateType.NONE && node.value != null
+
+// Shadow passes draw with three's override material, so fall back to the object's own.
+const drawnMaterial = frame => frame.material?.isMeshLineNodeMaterial ? frame.material : frame.object.material
+
+const drawnValue = ( name, source ) => uniform( source.value, source.nodeType ?? undefined )
+	.onObjectUpdate( frame => drawnMaterial( frame )?.[name]?.value )
+
+// The uniform's shader type, without a builder to ask.
+const valueTypeOf = ( { nodeType, value } ) => nodeType
+	?? ( value.isColor ? 'color' : value.isVector2 ? 'vec2' : value.isVector3 ? 'vec3' : value.isVector4 ? 'vec4' : typeof value )
 const MAX_MITER_LIMIT = 1e6
 // Aspect-corrected NDC is already post-projection. A 1e-4 cutoff is roughly
 // 0.04 CSS pixels on a 720px viewport and incorrectly classifies valid dense
@@ -20,45 +56,30 @@ const sanitizeMiterLimit = value => {
 // Map a clip-space vec4 into aspect-corrected NDC (xy/w with the X axis
 // stretched by aspect). Directions measured in this space correspond 1:1 to
 // screen-pixel directions — they're what the miter math consumes.
-const fix = Fn( ( [i_immutable, aspect_immutable] ) => {
-	const aspect = float( aspect_immutable )
-	const i = vec4( i_immutable )
-	// A centerline point can touch/cross the camera plane before raster clipping.
-	// Keep the shader finite there; exact segment trimming needs variable segment
-	// topology, but a signed epsilon prevents NaN/Inf from contaminating the join.
-	const signedEpsilon = mix( float( -1e-6 ), float( 1e-6 ), step( float( 0 ), i.w ) )
-	const safeW = mix( signedEpsilon, i.w, step( float( 1e-6 ), i.w.abs() ) ).toVar( 'safeW' )
-	return vec2( i.x.mul( aspect ), i.y ).div( safeW )
-} ).setLayout( {
-	name: 'fix', type: 'vec2', inputs: [
-		{ name: 'i', type: 'vec4' },
-		{ name: 'aspect', type: 'float' }
-	]
-} )
-
-// build these nodes once for all instances
-const aSide = attribute( 'side', 'float' )
-const aJoinRole = attribute( 'joinRole', 'float' )
-const aProgress = attribute( 'progress', 'float' )
-const aColor = attribute( 'vertexColor', 'vec3' )
-const aWidth = attribute( 'width', 'float' )
-const vColor = varyingProperty( 'vec4', 'vColor' )
+let fix = null
+let aSide = null
+let aProgress = null
+let aColor = null
+let aWidth = null
+let aEndpoint = null
+let vColor = null
 // View-space depth of the emitted vertex, read by scene fog (see setupShaders).
-const vViewZ = varyingProperty( 'float', 'vViewZ' )
+let vViewZ = null
 // View-space perpendicular direction (xy) and world/view half-width (z) for
 // reconstructing a 3D tube normal and surface position on shadow-receiving lines.
-const vShadowTube = varyingProperty( 'vec3', 'vShadowTube' )
+let vShadowTube = null
+let indexedOutgoingVertex = null
+let outgoingVertex = null
+let vAaCoord = null
+let vAaCoverage = null
+let vFoldFrame = null
+let vFoldEnds = null
+let vFoldSplit = null
+let exactFoldCoverageFn = null
+
+const aJoinRole = attribute( 'joinRole', 'float' )
 const vertexSide = float( 1 ).sub( float( vertexIndex.bitAnd( uint( 1 ) ) ).mul( 2 ) )
-// Billboard geometry stores [incoming+, incoming-, outgoing+, outgoing-] for
-// every logical point. The sign owns the incident body and the magnitude owns
-// the side, so both survive BufferGeometry.toNonIndexed(). A missing attribute
-// reads as zero, retaining the old indexed-geometry fallback.
-const indexedOutgoingVertex = vertexIndex.bitAnd( uint( 2 ) ).notEqual( uint( 0 ) )
 const hasJoinRole = aJoinRole.abs().greaterThan( float( 0.5 ) )
-const outgoingVertex = hasJoinRole.select(
-	aJoinRole.greaterThan( float( 0 ) ),
-	indexedOutgoingVertex
-)
 const encodedSide = hasJoinRole.select(
 	float( 3 ).sub( aJoinRole.abs().mul( 2 ) ),
 	vertexSide
@@ -85,8 +106,6 @@ const AA_EDGE_PADDING_PX = 0.5
 // most pixel centers and drops out in bands. Below that width the fade is
 // carried by `vAaCoverage` instead of by the geometry.
 const AA_MINIMUM_HALF_PX = 0.5
-const vAaCoord = varyingProperty( 'float', 'vAaCoord' )
-const vAaCoverage = varyingProperty( 'float', 'vAaCoverage' )
 
 // Folded joins. A smooth 3D curve seen along its tangent projects to a sharp
 // screen turn, where a miter would spike far past the stroke. Those joins are
@@ -100,16 +119,85 @@ const vAaCoverage = varyingProperty( 'float', 'vAaCoverage' )
 // it is affine in clip coordinates, so xy / z in the fragment is the exact
 // screen-linear position whatever the viewport, scissor, pixel ratio, render
 // target or `vertexFn`.
-const vFoldFrame = varyingProperty( 'vec4', 'vFoldFrame' )
-// x: 1 on the outgoing row, 0 on the incoming row. y, z: the clip factor of
-// end A and end B premultiplied by x and 1 - x. A row only knows its own
-// joint, but both products interpolate with the same weights as x, so the
+//
+// vFoldEnds — x: 1 on the outgoing row, 0 on the incoming row. y, z: the clip
+// factor of end A and end B premultiplied by x and 1 - x. A row only knows its
+// own joint, but both products interpolate with the same weights as x, so the
 // fragment recovers each row's own factor exactly by division. 0 means that end
 // is not clipped. w: this vertex's stroke radius in device pixels.
-const vFoldEnds = varyingProperty( 'vec4', 'vFoldEnds' )
-// Where both rows of a joint split apart, each keeps its side of the bisector
-// (normal in the segment frame; xy at A, zw at B, zero from the other row).
-const vFoldSplit = varyingProperty( 'vec4', 'vFoldSplit' )
+//
+// vFoldSplit — Where both rows of a joint split apart, each keeps its side of
+// the bisector (normal in the segment frame; xy at A, zw at B, zero from the
+// other row).
+const ensureMaterialNodes = () => {
+	if ( fix !== null ) return
+	fix = Fn( ( [i_immutable, aspect_immutable] ) => {
+		const aspect = float( aspect_immutable )
+		const i = vec4( i_immutable )
+		// A centerline point can touch/cross the camera plane before raster clipping.
+		// Keep the shader finite there; exact segment trimming needs variable segment
+		// topology, but a signed epsilon prevents NaN/Inf from contaminating the join.
+		const signedEpsilon = mix( float( -1e-6 ), float( 1e-6 ), step( float( 0 ), i.w ) )
+		const safeW = mix( signedEpsilon, i.w, step( float( 1e-6 ), i.w.abs() ) ).toVar( 'safeW' )
+		return vec2( i.x.mul( aspect ), i.y ).div( safeW )
+	} ).setLayout( {
+		name: 'fix', type: 'vec2', inputs: [
+			{ name: 'i', type: 'vec4' },
+			{ name: 'aspect', type: 'float' }
+		]
+	} )
+	aSide = attribute( 'side', 'float' )
+	aProgress = attribute( 'progress', 'float' )
+	aColor = attribute( 'vertexColor', 'vec3' )
+	aWidth = attribute( 'width', 'float' )
+	aEndpoint ||= attribute( 'endpoint', 'vec4' )
+	vColor = varyingProperty( 'vec4', 'vColor' )
+	vViewZ = varyingProperty( 'float', 'vViewZ' )
+	vShadowTube = varyingProperty( 'vec3', 'vShadowTube' )
+	// Billboard geometry stores [incoming+, incoming-, outgoing+, outgoing-] for
+	// every logical point. The sign owns the incident body and the magnitude owns
+	// the side, so both survive BufferGeometry.toNonIndexed(). A missing attribute
+	// reads as zero, retaining the old indexed-geometry fallback.
+	indexedOutgoingVertex = vertexIndex.bitAnd( uint( 2 ) ).notEqual( uint( 0 ) )
+	outgoingVertex = hasJoinRole.select(
+		aJoinRole.greaterThan( float( 0 ) ),
+		indexedOutgoingVertex
+	)
+	vAaCoord = varyingProperty( 'float', 'vAaCoord' )
+	vAaCoverage = varyingProperty( 'float', 'vAaCoverage' )
+	vFoldFrame = varyingProperty( 'vec4', 'vFoldFrame' )
+	vFoldEnds = varyingProperty( 'vec4', 'vFoldEnds' )
+	vFoldSplit = varyingProperty( 'vec4', 'vFoldSplit' )
+	exactFoldCoverageFn = Fn( () => {
+		const coverage = float( 1 ).toVar( 'foldCoverage' )
+		// Quads whose two ends are both unclipped skip the rest as a whole.
+		If( max( vFoldEnds.y, vFoldEnds.z ).greaterThan( 0 ), () => {
+			const inverseW = float( 1 ).div( vFoldFrame.z )
+			const along = vFoldFrame.x.mul( inverseW ).toVar( 'foldAlongPx' )
+			const across = vFoldFrame.y.mul( inverseW ).toVar( 'foldAcrossPx' )
+			const segmentLength = vFoldFrame.w
+			const startWeight = vFoldEnds.x
+			const endWeight = float( 1 ).sub( startWeight )
+			const beyondStart = along.lessThan( 0 )
+				.and( startWeight.greaterThan( 1e-6 ) )
+				.and( vFoldEnds.y.greaterThan( startWeight.mul( 0.5 ) ) )
+				.toVar( 'foldBeyondStart' )
+			const beyondEnd = along.greaterThan( segmentLength )
+				.and( endWeight.greaterThan( 1e-6 ) )
+				.and( vFoldEnds.z.greaterThan( endWeight.mul( 0.5 ) ) )
+			If( beyondStart.or( beyondEnd ), () => {
+				const offset = vec2( beyondStart.select( along, along.sub( segmentLength ) ), across )
+				const activeFactor = beyondStart.select( vFoldEnds.y, vFoldEnds.z ).div( beyondStart.select( startWeight, endWeight ) )
+				const radius = vFoldEnds.w.mul( activeFactor )
+				// The pixel centre sits half a pixel inside a pixel the edge touches.
+				const disc = radius.sub( offset.length() ).add( 0.5 ).clamp( 0, 1 )
+				const ownSide = dot( offset, beyondStart.select( vFoldSplit.xy, vFoldSplit.zw ) ).greaterThanEqual( 0 )
+				coverage.assign( ownSide.select( disc, float( 0 ) ) )
+			} )
+		} )
+		return coverage
+	} )
+}
 // A mitered tip that pokes out less than this is left alone.
 const FOLD_TOLERANCE_PX = 0.5
 // Screen folds are rounded where the curve itself turns gently in 3D (under
@@ -202,8 +290,8 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 		if ( !Number.isFinite( lineWidth ) || !Number.isFinite( Math.fround( lineWidth ) ) || lineWidth < 0 ) {
 			throw new Error( '[MeshLineNodeMaterial] lineWidth must be a Float32-representable non-negative number' )
 		}
-		const resolution = options.resolution ?? new Vector2( 1, 1 )
-		if ( !Number.isFinite( resolution.x ) || !Number.isFinite( resolution.y ) || resolution.x <= 0 || resolution.y <= 0 ) {
+		const resolution = options.resolution
+		if ( resolution !== undefined && ( !resolution || !Number.isFinite( resolution.x ) || !Number.isFinite( resolution.y ) || resolution.x <= 0 || resolution.y <= 0 ) ) {
 			throw new Error( '[MeshLineNodeMaterial] resolution must contain finite dimensions greater than zero' )
 		}
 		if ( typeof options.opacity === 'number' && ( !Number.isFinite( options.opacity ) || options.opacity < 0 || options.opacity > 1 ) ) {
@@ -234,7 +322,7 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 			options.previousFn ||
 			options.nextFn
 		)
-		this._endpointAttribute = this._needsEndpointMetadata ? attribute( 'endpoint', 'vec4' ) : null
+		this._endpointAttribute = this._needsEndpointMetadata ? ( aEndpoint ||= attribute( 'endpoint', 'vec4' ) ) : null
 		this.gradient = null
 		this.opacity = null
 		this.map = null
@@ -253,11 +341,31 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 		this.alphaTest = options.alphaTest ?? 0
 		this.sizeAttenuation = options.sizeAttenuation ?? true
 
-		// Can be changed dynamically
-		this.resolution = uniform( resolution )
-		this.lineWidth = uniform( lineWidth )
-		this.color = uniform( new Color( options.color ?? 0xffffff ) )
-		this.dpr = uniform( options.dpr ?? ( ( typeof window !== 'undefined' ) ? window.devicePixelRatio || 1 : 1 ) )
+		// Can be changed dynamically; reuse uniform nodes across in-place rebuilds.
+		const initialWidth = Number.isFinite( options.renderWidth ) && options.renderWidth > 0 ? options.renderWidth : 1
+		const initialHeight = Number.isFinite( options.renderHeight ) && options.renderHeight > 0 ? options.renderHeight : 1
+		if ( this.resolution?.isNode ) {
+			if ( resolution ) this.resolution.value = resolution
+			else this.resolution.value.set( initialWidth, initialHeight )
+		} else {
+			this.resolution = uniform( resolution ?? new Vector2( initialWidth, initialHeight ) )
+		}
+		if ( this.lineWidth?.isNode ) {
+			this.lineWidth.value = lineWidth
+		} else {
+			this.lineWidth = uniform( lineWidth )
+		}
+		if ( this.color?.isNode ) {
+			this.color.value.set( options.color ?? 0xffffff )
+		} else {
+			this.color = uniform( new Color( options.color ?? 0xffffff ) )
+		}
+		const dprValue = options.dpr ?? ( ( typeof window !== 'undefined' ) ? window.devicePixelRatio || 1 : 1 )
+		if ( this.dpr?.isNode ) {
+			this.dpr.value = dprValue
+		} else {
+			this.dpr = uniform( dprValue )
+		}
 
 		// Conditional uniforms - only create what is needed
 		if ( options.gradientColor != null ) {
@@ -297,7 +405,11 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 		// Miter is always on. The shader reads `_miterThreshold` (= 2/miterLimit),
 		// the lower bound on |dir1+dir2| below which the offset magnitude plateaus.
 		this._miterLimit = sanitizeMiterLimit( options.miterLimit )
-		this._miterThreshold = uniform( 2 / this._miterLimit )
+		if ( this._miterThreshold?.isNode ) {
+			this._miterThreshold.value = 2 / this._miterLimit
+		} else {
+			this._miterThreshold = uniform( 2 / this._miterLimit )
+		}
 		// `miter` keeps crisp corners where the path really turns but rounds joins
 		// that only look sharp because the tangent points at the camera; `round`
 		// rounds every join; `bevel` keeps its fill topology unclipped.
@@ -416,13 +528,15 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 			const needsPrevProgress = !!( this.gpuPositionNode || this.positionFn || this.previousFn )
 			const needsNextProgress = !!( this.gpuPositionNode || this.positionFn || this.nextFn )
 			if ( needsPrevProgress ) {
-				const previousProgressOpen = progress.sub( endpoint.z ).clamp( 0, 1 )
-				const previousProgressClosed = fract( progress.sub( endpoint.z ) )
+				const rawPrevProgress = progress.sub( endpoint.z )
+				const previousProgressOpen = rawPrevProgress.clamp( 0, 1 )
+				const previousProgressClosed = fract( rawPrevProgress )
 				previousProgress = mix( previousProgressOpen, previousProgressClosed, endpoint.y ).toVar( 'previousProgress' )
 			}
 			if ( needsNextProgress ) {
-				const nextProgressOpen = progress.add( endpoint.w ).clamp( 0, 1 )
-				const nextProgressClosed = fract( progress.add( endpoint.w ) )
+				const rawNextProgress = progress.add( endpoint.w )
+				const nextProgressOpen = rawNextProgress.clamp( 0, 1 )
+				const nextProgressClosed = fract( rawNextProgress )
 				nextProgress = mix( nextProgressOpen, nextProgressClosed, endpoint.y ).toVar( 'nextProgress' )
 			}
 		}
@@ -455,6 +569,7 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 	}
 
 	buildShadowPositionNode() {
+		ensureMaterialNodes()
 		const shadowSide = this.options?.needsSide ? aSide : encodedSide
 
 		this.castShadowPositionNode = Fn( () => {
@@ -516,15 +631,13 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 			const dir2 = mix( dir1, dir2Raw, step( minimumLength, delta2Length ) ).toVar( 'shadowDir2' )
 			const directionSum = dir1.add( dir2 ).toVar( 'shadowDirectionSum' )
 			const directionSumLength = directionSum.length().toVar( 'shadowDirectionSumLength' )
-			const bodyDirection = outgoingVertex.select( dir2, dir1 ).toVar( 'shadowBodyDirection' )
+			const bodyDirection = outgoingVertex.select( dir2.xy, dir1.xy ).toVar( 'shadowBodyDirection' )
 			const directionBlend = directionSumLength.smoothstep(
 				this._miterThreshold.mul( 0.75 ),
 				this._miterThreshold
 			).toVar( 'shadowDirectionBlend' )
-			const blendedDirection = mix(
-				bodyDirection,
-				directionSum.div( max( directionSumLength, minimumLength ) ),
-				directionBlend
+			const blendedDirection = bodyDirection.mul( float( 1 ).sub( directionBlend ) ).add(
+				directionSum.xy.mul( directionBlend.div( max( directionSumLength, minimumLength ) ) )
 			).toVar( 'shadowBlendedDirection' )
 
 			// Calculate perpendicular in VIEW space (billboard to camera).
@@ -569,6 +682,62 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 		}
 	}
 
+	/**
+	 * Lines with equal keys share one shader graph. A subclass builds nodes this
+	 * key knows nothing about, so it keeps three's per-material key.
+	 * @returns {string}
+	 */
+	customProgramCacheKey() {
+		if ( this.constructor !== MeshLineNodeMaterial ) return super.customProgramCacheKey()
+		return `${this.type}:${this._graphKey()}`
+	}
+
+	// Everything setupShaders() reads to decide which nodes to build. A value
+	// uniform contributes its kind only; hooks, textures and nodes assigned by
+	// the user contribute their identity.
+	_graphKey() {
+		const options = this.options ?? {}
+		const key = [
+			this.wireframe ? 'off' : ( this._foldModeRequested ?? 'off' ),
+			this._joinType,
+			+!!this._needsProgress,
+			+!!this._needsWidth,
+			+!!this._needsVaryingColor,
+			+!!this._needsEndpointMetadata,
+			+!!options.needsSide,
+			+!!options.needsVertexColor,
+			+!!this.sizeAttenuation,
+			+!!this.antialias,
+			+this._isBlended(),
+			identityOf( this.map ),
+			identityOf( this.map?.value ),
+			identityOf( this.alphaMap ),
+			identityOf( this.alphaMap?.value ),
+		]
+		for ( const name of VALUE_SLOTS ) {
+			const node = this[name]
+			key.push( !node ? '-' : isValueUniform( node ) ? valueTypeOf( node ) : `n${identityOf( node )}` )
+		}
+		for ( const name of GRAPH_HOOKS ) key.push( identityOf( this[name] ) )
+		for ( const property of Object.getOwnPropertyNames( this ) ) {
+			if ( property.startsWith( '_' ) || KEYED_NODE_PROPERTIES.has( property ) ) continue
+			const node = this[property]
+			if ( node?.isNode === true ) key.push( `${property}=${node.getCacheKey( true )}` )
+		}
+		return key.join( ',' )
+	}
+
+	// The value nodes of one shader build: a reference to the drawn line's own
+	// uniform where the material owns a plain one, else the node assigned there.
+	_drawnValues() {
+		const values = {}
+		for ( const name of VALUE_SLOTS ) {
+			const node = this[name] ?? null
+			values[name] = isValueUniform( node ) ? drawnValue( name, node ) : node
+		}
+		return values
+	}
+
 	setup( builder ) {
 		this.setupShaders( builder )
 		super.setup( builder )
@@ -583,11 +752,15 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 	setupNormal() {
 		if ( this.normalNode ) return vec3( this.normalNode )
 		if ( this._receivingShadows ) {
+			ensureMaterialNodes()
 			const across = ( this._fragmentSide ?? lineCoord.y ).clamp( -1, 1 )
 			const arch = float( 1 ).sub( across.mul( across ) ).max( 0 ).sqrt()
-			const perpLen = vShadowTube.xy.length()
-			const perp = perpLen.greaterThan( float( 1e-4 ) ).select( vShadowTube.xy.div( perpLen ), vec2( 1, 0 ) )
-			return vec3( perp.mul( across ), arch ).normalize()
+			const perpLenSq = dot( vShadowTube.xy, vShadowTube.xy )
+			const perp = perpLenSq.greaterThan( float( 1e-8 ) ).select(
+				vShadowTube.xy.mul( inverseSqrt( perpLenSq ) ),
+				vec2( 1, 0 )
+			)
+			return vec3( perp.mul( across ), arch )
 		}
 		return vec3( 0, 0, 1 )
 	}
@@ -634,6 +807,9 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 	}
 
 	setupShaders( builder ) {
+		ensureMaterialNodes()
+		// Read per drawn line, so one build can serve every line that shares it.
+		const values = this._drawnValues()
 
 		// Resolved per build: wireframe draws the raw triangles, which a fold
 		// clip would only cut holes into.
@@ -651,12 +827,31 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 
 		// Cache frequently-used attributes to prevent duplicate GPU computation
 		const progress = this._needsProgress ? aProgress : float( 0 )
-		const vProgress = varying( progress, 'vProgress' )
+		const needsFragmentProgress = Boolean(
+			this.uvFn ||
+			values.gradient ||
+			this.fragmentColorFn ||
+			this.opacityFn ||
+			values.dashCount ||
+			this.discardFn ||
+			this.fragmentAlphaFn
+		)
+		const vProgress = needsFragmentProgress ? varying( progress, 'vProgress' ) : null
 		const lineSide = this.options.needsSide ? aSide : encodedSide
 		const side = lineSide.toVar( 'varSide' )
 		// Fragment hooks need an interpolated float. Reusing the IndexNode there
 		// would expose the provoking vertex's integer index for the whole triangle.
-		const fragmentSide = varying( lineSide, 'vSide' )
+		const needsFragmentSide = Boolean(
+			receivingShadows ||
+			this.uvFn ||
+			( values.gradient && this.gradientFn ) ||
+			this.fragmentColorFn ||
+			this.opacityFn ||
+			( values.dashCount && this.dashFn ) ||
+			this.discardFn ||
+			this.fragmentAlphaFn
+		)
+		const fragmentSide = needsFragmentSide ? varying( lineSide, 'vSide' ) : null
 		this._fragmentSide = fragmentSide
 		const endpoint = this._endpointAttribute ? this._endpointAttribute.toVar( 'varEndpoint' ) : float( 0 )
 		const endpointMarker = this._needsEndpointMetadata ? endpoint.x : float( 0 )
@@ -675,7 +870,7 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 		this.vertexNode = Fn( () => {
 
 			if ( this._needsVaryingColor ) {
-				const color = vec4( this.color, 1 ).toVar( 'color' )
+				const color = vec4( values.color, 1 ).toVar( 'color' )
 
 				if ( this.options.needsVertexColor ) {
 					color.rgb.mulAssign( aColor )
@@ -688,7 +883,7 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 				vColor.assign( color )
 			}
 
-			const aspect = this.resolution.x.div( this.resolution.y ).toVar( 'aspect' )
+			const aspect = values.resolution.x.div( values.resolution.y ).toVar( 'aspect' )
 			// View space first, then projection: three's own positionView -> clip
 			// order. A per-vertex P * MV matrix product costs more than the extra
 			// matrix-vector products it would save across three points.
@@ -735,7 +930,7 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 				? endpointMarker.greaterThan( float( 0.5 ) ).or( reversalEnd )
 				: reversalEnd ).toVar( 'atEnd' )
 
-			const w = this.getLineWidth( this.lineWidth, progress, side ).toVar( 'w' )
+			const w = this.getLineWidth( values.lineWidth, progress, side ).toVar( 'w' )
 
 			// Miter offset. |dir1+dir2| = 2·cos(α/2) for interior bend α.
 			// Once a miter would exceed the configured limit, the duplicated join rows
@@ -759,10 +954,13 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 			const bodyDirection = outgoingVertex.select( dir2, dir1 ).toVar( 'bodyDirection' )
 			const perpFallback = vec2( bodyDirection.y.negate(), bodyDirection.x ).toVar( 'perpFallback' )
 			const limitBlend = dirSumLen.smoothstep(
-				this._miterThreshold.mul( 0.75 ),
-				this._miterThreshold
+				values._miterThreshold.mul( 0.75 ),
+				values._miterThreshold
 			).toVar( 'limitBlend' )
 
+			const safeFinalW = ( foldMode !== 'off' || this.antialias )
+				? max( finalPosition.w.abs(), float( 1e-6 ) )
+				: null
 			let miterBlend = limitBlend
 			let foldState = null
 			let foldReach = null
@@ -772,7 +970,7 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 				// hook contributes its wider side: two radii interpolated across the
 				// stroke would notch the arc where the rows meet.
 				const foldWidth = this.widthFn
-					? max( this.getLineWidth( this.lineWidth, progress, float( 1 ) ), this.getLineWidth( this.lineWidth, progress, float( -1 ) ) ).toVar( 'foldWidth' )
+					? max( this.getLineWidth( values.lineWidth, progress, float( 1 ) ), this.getLineWidth( values.lineWidth, progress, float( -1 ) ) ).toVar( 'foldWidth' )
 					: w
 				const baseHalfWidth = foldWidth.mul( 0.5 )
 				// Device pixels per unit of the aspect-corrected NDC the directions live
@@ -780,20 +978,19 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 				// mode the pixel conversion cancels out of both `innerRetreat` and `reach`.
 				// `(cameraProjectionMatrix * vec4(0, y, 0, 0)).y` is `cameraProjectionMatrix[1][1] * y`.
 				const projScaleY = cameraProjectionMatrix.element( 1 ).y
-				const invSafeW = max( finalPosition.w.abs(), float( 1e-6 ) )
 				const pixelsPerNdc = foldMode === 'exact'
-					? this.resolution.y.mul( this.dpr ).mul( 0.5 ).toVar( 'pixelsPerNdc' )
+					? values.resolution.y.mul( values.dpr ).mul( 0.5 ).toVar( 'pixelsPerNdc' )
 					: null
 				const foldRadiusPx = foldMode === 'exact'
 					? ( this.sizeAttenuation
-						? projScaleY.mul( baseHalfWidth ).div( invSafeW ).mul( pixelsPerNdc )
-						: baseHalfWidth.mul( this.dpr )
+						? projScaleY.mul( baseHalfWidth ).div( safeFinalW ).mul( pixelsPerNdc )
+						: baseHalfWidth.mul( values.dpr )
 					).toVar( 'foldRadiusPx' )
 					: null
 				const baseRadiusNdc = foldMode === 'geometry'
 					? ( this.sizeAttenuation
-						? projScaleY.mul( baseHalfWidth ).div( invSafeW )
-						: foldWidth.div( this.resolution.y )
+						? projScaleY.mul( baseHalfWidth ).div( safeFinalW )
+						: foldWidth.div( values.resolution.y )
 					).toVar( 'baseRadiusNdc' )
 					: foldRadiusPx.div( pixelsPerNdc )
 
@@ -810,36 +1007,39 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 				// A miter pulls the inner vertex back r·tan(θ/2) along both bodies. Once
 				// that passes the shorter adjacent projected segment — a foreshortened
 				// run near a fold — the strip would fold over itself, so split instead.
-				// At a joint row `min(delta1Len, delta2Len) >= 1e-7`, so clamping
-				// `innerRetreat >= 1e-9` keeps the ratio >= 100 (`smoothstep = 1`) without
-				// an extra branch or hoisting `tanHalfTurn` outside `if (foldJointRow)`.
+				// At an interior joint row (`jointRow`), `tan(θ/2) = sin(θ/2) / cos(θ/2)`
+				// reuses `sinHalfTurn` directly, saving a redundant `sqrt` and division.
 				const cosHalfTurn = dirSumLen.mul( 0.5 ).clamp( float( 1e-4 ), float( 1 ) )
-				const tanHalfTurn = float( 1 ).sub( cosHalfTurn.mul( cosHalfTurn ) ).max( 0 ).sqrt().div( cosHalfTurn )
-				const innerRetreat = max( baseRadiusNdc.mul( tanHalfTurn ), float( 1e-9 ) )
-				const foldBlend = min( delta1Len, delta2Len ).div( innerRetreat ).smoothstep( 0.75, 1 )
+				const sinHalfTurn = float( 1 ).sub( rawTurnDot ).mul( 0.5 ).max( 0 ).sqrt().toVar( 'sinHalfTurn' )
+				const foldBlend = min( delta1Len, delta2Len ).mul( cosHalfTurn )
+					.div( max( baseRadiusNdc.mul( sinHalfTurn ), float( 1e-9 ) ) )
+					.smoothstep( 0.75, 1 )
 
 				// How the path turns in 3D, from view-space bodies: invariant under
-				// camera motion, so the authored/smooth weight never flickers.
-				const viewDelta1 = viewPosition.xyz.sub( viewPrevious.xyz )
-				const viewDelta2 = viewNext.xyz.sub( viewPosition.xyz )
-				const viewLength1 = dot( viewDelta1, viewDelta1 )
-				const viewLength2 = dot( viewDelta2, viewDelta2 )
-				const turnCos3 = viewLength1.greaterThan( float( 1e-30 ) ).and( viewLength2.greaterThan( float( 1e-30 ) ) ).select(
-					dot( viewDelta1, viewDelta2 ).mul( inverseSqrt( viewLength1 ) ).mul( inverseSqrt( viewLength2 ) ).clamp( -1, 1 ),
-					float( 1 )
-				)
-				// Each mode reads this weight once. A node first built inside a `select`
-				// branch stays private to it, so a second reader outside would emit the
-				// whole 3D turn again.
-				const authored = this._joinType === 'round'
-					? float( 0 )
-					: float( 1 ).sub( smoothstep( FOLD_COS_AUTHORED, FOLD_COS_SMOOTH, turnCos3 ) )
+				// camera motion, so the authored/smooth weight never flickers. Round joins
+				// always use `authored = 0`, skipping the 3D turn calculation altogether.
+				let authored = null
+				if ( this._joinType !== 'round' ) {
+					const viewDelta1 = viewPosition.xyz.sub( viewPrevious.xyz )
+					const viewDelta2 = viewNext.xyz.sub( viewPosition.xyz )
+					const viewLength1 = dot( viewDelta1, viewDelta1 )
+					const viewLength2 = dot( viewDelta2, viewDelta2 )
+					const turnCos3 = viewLength1.greaterThan( float( 1e-30 ) ).and( viewLength2.greaterThan( float( 1e-30 ) ) ).select(
+						dot( viewDelta1, viewDelta2 ).mul( inverseSqrt( viewLength1 ) ).mul( inverseSqrt( viewLength2 ) ).clamp( -1, 1 ),
+						float( 1 )
+					)
+					authored = float( 1 ).sub( smoothstep( FOLD_COS_AUTHORED, FOLD_COS_SMOOTH, turnCos3 ) )
+				}
 
 				let foldMiterBlend
 				if ( foldMode === 'geometry' ) {
 					// Without a fragment clip, a smooth curve's miter may only grow to a
-					// small limit before its rows split; authored corners keep the user's.
-					const threshold = float( 2 ).div( mix( float( FOLD_SMOOTH_LIMIT ), float( 2 ).div( this._miterThreshold ), authored ) )
+					// small limit (`FOLD_SMOOTH_LIMIT = 1.25`) before its rows split;
+					// authored corners keep the miter threshold. Since
+					// `2 / mix(L, 2 / T, a) == T / mix(0.5 * L * T, 1, a)`, a single division suffices.
+					const threshold = authored
+						? values._miterThreshold.div( mix( values._miterThreshold.mul( FOLD_SMOOTH_LIMIT * 0.5 ), float( 1 ), authored ) )
+						: float( 2 / FOLD_SMOOTH_LIMIT )
 					foldMiterBlend = dirSumLen.smoothstep( threshold.mul( 0.75 ), threshold ).mul( foldBlend )
 				} else {
 					foldMiterBlend = limitBlend.mul( foldBlend )
@@ -850,9 +1050,6 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 				// projected reversal has no usable miter at all and always splits.
 				const splitWeight = max( float( 1 ).sub( miterBlend ), float( projectedReversal ) ).toVar( 'splitWeight' )
 
-				// The raw projected bodies, not the endpoint-substituted dir1/dir2.
-				// For unit vectors, |d2 - d1| / 2 == sqrt(max(0, (1 - dot(d1, d2)) * 0.5)).
-				const sinHalfTurn = float( 1 ).sub( rawTurnDot ).mul( 0.5 ).max( 0 ).sqrt()
 				if ( foldMode === 'geometry' ) {
 					// Split rows overlap past the joint along their own bodies: zero while
 					// mitered, growing with the split to the depth of the round join,
@@ -861,8 +1058,8 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 					// out) rather than a notched one.
 					const radiusNdc = this.widthFn
 						? ( this.sizeAttenuation
-							? projScaleY.mul( w.mul( 0.5 ) ).div( invSafeW )
-							: w.div( this.resolution.y ) )
+							? projScaleY.mul( w.mul( 0.5 ) ).div( safeFinalW )
+							: w.div( values.resolution.y ) )
 						: baseRadiusNdc
 					foldReach = { jointRow, radiusNdc, extent: splitWeight.sqrt().mul( sinHalfTurn ) }
 				} else {
@@ -875,11 +1072,16 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 					// round silhouette (plus the tolerance); authored corners keep their full
 					// miter up to the limit, then melt continuously to round by twice the
 					// limit instead of dropping to a notch.
-					const limit = float( 2 ).div( this._miterThreshold )
-					const melt = smoothstep( limit, limit.mul( 2 ), miterFactor )
 					const roundFactor = min( miterFactor, float( 1 ).add( float( FOLD_TOLERANCE_PX ).div( max( foldRadiusPx, float( FOLD_TOLERANCE_PX ) ) ) ) )
-					const authoredFactor = min( miterFactor, limit.sub( limit.sub( 1 ).mul( melt ) ) )
-					const clipFactor = mix( roundFactor, authoredFactor, authored ).toVar( 'clipFactor' )
+					let clipFactor
+					if ( authored ) {
+						const limit = float( 2 ).div( values._miterThreshold )
+						const melt = smoothstep( limit, limit.mul( 2 ), miterFactor )
+						const authoredFactor = min( miterFactor, limit.sub( limit.sub( 1 ).mul( melt ) ) )
+						clipFactor = mix( roundFactor, authoredFactor, authored ).toVar( 'clipFactor' )
+					} else {
+						clipFactor = roundFactor.toVar( 'clipFactor' )
+					}
 
 					const split = splitWeight.greaterThan( float( 0 ) )
 					const clipsTip = clipFactor.lessThan( miterFactor.mul( 1 - 1e-3 ) )
@@ -895,10 +1097,8 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 				}
 			}
 
-			const blendedPerp = mix(
-				perpFallback,
-				perpRaw.div( max( dirSumLen, float( 0.0001 ) ) ),
-				miterBlend
+			const blendedPerp = perpFallback.mul( float( 1 ).sub( miterBlend ) ).add(
+				perpRaw.mul( miterBlend.div( max( dirSumLen, float( 0.0001 ) ) ) )
 			).toVar( 'blendedPerp' )
 			const blendedPerpLength = blendedPerp.length().toVar( 'blendedPerpLength' )
 			const unitPerp = mix(
@@ -909,7 +1109,7 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 
 			const miterHalfWidth = mix(
 				w.mul( 0.5 ),
-				w.div( max( dirSumLen, this._miterThreshold ) ),
+				w.div( max( dirSumLen, values._miterThreshold ) ),
 				miterBlend
 			).toVar( 'miterHalfWidth' )
 
@@ -945,8 +1145,8 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 				// the canvas still uses more physical pixels on high-DPR screens, but
 				// the visible CSS size stays stable instead of being multiplied twice.
 				normal.x.divAssign( aspect )
-				if ( needsVec4Normal ) normal.xy.mulAssign( finalPosition.w.mul( 2 ).div( this.resolution.y ) )
-				else normal.mulAssign( finalPosition.w.mul( 2 ).div( this.resolution.y ) )
+				if ( needsVec4Normal ) normal.xy.mulAssign( finalPosition.w.mul( 2 ).div( values.resolution.y ) )
+				else normal.mulAssign( finalPosition.w.mul( 2 ).div( values.resolution.y ) )
 			}
 
 			if ( this.antialias ) {
@@ -955,11 +1155,11 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 				// marks the *unpadded* edge. The fragment band is then centred on the
 				// real silhouette instead of eaten out of the stroke.
 				const normalXY = needsVec4Normal ? normal.xy : normal
-				const halfNdc = normalXY.div( max( finalPosition.w.abs(), float( 1e-6 ) ) ).toVar( 'halfNdc' )
+				const halfNdc = normalXY.div( safeFinalW ).toVar( 'halfNdc' )
 				const halfPx = vec2(
-					halfNdc.x.mul( this.resolution.x ),
-					halfNdc.y.mul( this.resolution.y )
-				).mul( float( 0.5 ).mul( this.dpr ) ).length().toVar( 'halfPx' )
+					halfNdc.x.mul( values.resolution.x ),
+					halfNdc.y.mul( values.resolution.y )
+				).mul( float( 0.5 ).mul( values.dpr ) ).length().toVar( 'halfPx' )
 				// The pad rides along the miter bisector, so at a corner only
 				// cos(theta/2) of it lands perpendicular to the stroke. Divide that
 				// back out, bounded by the miter limit — which already bounds how far
@@ -967,7 +1167,7 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 				// the fallback cross-section has no bisector stretch to undo.
 				const cosHalfAngle = mix(
 					float( 1 ),
-					max( dirSumLen.mul( 0.5 ), this._miterThreshold.mul( 0.5 ) ),
+					max( dirSumLen.mul( 0.5 ), values._miterThreshold.mul( 0.5 ) ),
 					miterBlend
 				).toVar( 'cosHalfAngle' )
 				const edgePad = float( AA_EDGE_PADDING_PX ).div( max( cosHalfAngle, float( 1e-4 ) ) ).toVar( 'edgePad' )
@@ -1062,49 +1262,33 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 		let uvCoords = null
 		if ( ( this.map && this.map.value ) || ( this.alphaMap && this.alphaMap.value ) || this.uvFn || this.fragmentColorFn || this.fragmentAlphaFn || this.discardFn ) {
 			uvCoords = uv()
-			if ( this.repeat ) uvCoords = uvCoords.mul( this.repeat )
-			if ( this.mapOffset ) uvCoords = uvCoords.add( this.mapOffset )
-			if ( this.uvFn ) uvCoords = this.uvFn( uvCoords.toVar( 'uvCoords' ), vProgress, fragmentSide )
-			if ( this.repeat || this.mapOffset || this.uvFn ) uvCoords = uvCoords.toVar( 'uvCoords' )
+			if ( values.repeat ) uvCoords = uvCoords.mul( values.repeat )
+			if ( values.mapOffset ) uvCoords = uvCoords.add( values.mapOffset )
+			if ( this.uvFn ) {
+				const baseUvCoords = uvCoords
+				uvCoords = Fn( () => {
+					const coords = baseUvCoords.toVar( 'uvCoords' )
+					coords.assign( this.uvFn( coords, vProgress, fragmentSide ) )
+					return coords
+				} )()
+			} else if ( values.repeat || values.mapOffset ) {
+				uvCoords = uvCoords.toVar( 'uvCoords' )
+			}
 		}
 		// Folded-join coverage: 1 away from any clipped end, the disc's box-filter
 		// coverage past one. The opacity node applies it last, after every
 		// derivative and texture sample, and never through `maskNode`: the shadow
 		// pass would inherit that without the varyings it reads.
-		const foldCoverage = foldMode === 'exact' ? Fn( () => {
-			const coverage = float( 1 ).toVar( 'foldCoverage' )
-			// Quads whose two ends are both unclipped skip the rest as a whole.
-			If( max( vFoldEnds.y, vFoldEnds.z ).greaterThan( 0 ), () => {
-				const inverseW = float( 1 ).div( vFoldFrame.z )
-				const along = vFoldFrame.x.mul( inverseW ).toVar( 'foldAlongPx' )
-				const across = vFoldFrame.y.mul( inverseW ).toVar( 'foldAcrossPx' )
-				const segmentLength = vFoldFrame.w
-				const startWeight = vFoldEnds.x
-				const endWeight = float( 1 ).sub( startWeight )
-				const startFactor = startWeight.greaterThan( 1e-6 ).select( vFoldEnds.y.div( startWeight ), float( 0 ) )
-				const endFactor = endWeight.greaterThan( 1e-6 ).select( vFoldEnds.z.div( endWeight ), float( 0 ) )
-				const beyondStart = along.lessThan( 0 ).and( startFactor.greaterThan( 0.5 ) ).toVar( 'foldBeyondStart' )
-				const beyondEnd = along.greaterThan( segmentLength ).and( endFactor.greaterThan( 0.5 ) )
-				If( beyondStart.or( beyondEnd ), () => {
-					const offset = vec2( beyondStart.select( along, along.sub( segmentLength ) ), across )
-					const radius = vFoldEnds.w.mul( beyondStart.select( startFactor, endFactor ) )
-					// The pixel centre sits half a pixel inside a pixel the edge touches.
-					const disc = radius.sub( offset.length() ).add( 0.5 ).clamp( 0, 1 )
-					const ownSide = dot( offset, beyondStart.select( vFoldSplit.xy, vFoldSplit.zw ) ).greaterThanEqual( 0 )
-					coverage.assign( ownSide.select( disc, float( 0 ) ) )
-				} )
-			} )
-			return coverage
-		} )().toVar( 'foldCoverageValue' ) : null
+		const foldCoverage = foldMode === 'exact' ? exactFoldCoverageFn().toVar( 'foldCoverageValue' ) : null
 		this._foldCoverageNode = foldCoverage
 		const foldBlended = this._isBlended()
 
 		// Color node
-		const baseColorNode = this._needsVaryingColor ? vColor : vec4( this.color, 1 )
-		const hasColorModifiers = Boolean( this.gradient || ( this.map && this.map.value ) || this.fragmentColorFn )
+		const baseColorNode = this._needsVaryingColor ? vColor : vec4( values.color, 1 )
+		const hasColorModifiers = Boolean( values.gradient || ( this.map && this.map.value ) || this.fragmentColorFn )
 		this.colorNode = hasColorModifiers ? Fn( () => {
 			let color = baseColorNode.toVar( 'color' )
-			if ( this.gradient ) {
+			if ( values.gradient ) {
 				let gradientFactor = vProgress.toVar( 'gradientFactor' )
 
 				// Apply gradient modifier if provided
@@ -1112,7 +1296,7 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 					gradientFactor.assign( this.gradientFn( gradientFactor, fragmentSide ) )
 				}
 
-				color.rgb.assign( mix( color.rgb, this.gradient, gradientFactor ) )
+				color.rgb.assign( mix( color.rgb, values.gradient, gradientFactor ) )
 			}
 
 			if ( this.map && this.map.value ) {
@@ -1132,14 +1316,14 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 			this.antialias ||
 			( foldCoverage && foldBlended ) ||
 			( this.alphaMap && this.alphaMap.value ) ||
-			this.opacity ||
+			values.opacity ||
 			this.opacityFn ||
 			this.fragmentAlphaFn
 		)
 		const hasOpacityNode = Boolean(
 			hasAlphaModifiers ||
 			foldCoverage ||
-			this.dashCount ||
+			values.dashCount ||
 			this.discardFn
 		)
 		// Default to literal `float( 1 )` rather than `null` so Three.js NodeMaterial
@@ -1177,8 +1361,8 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 				alpha.mulAssign( this.alphaMap.sample( uvCoords ).r )
 			}
 
-			if ( this.opacity ) {
-				alpha.mulAssign( this.opacity )
+			if ( values.opacity ) {
+				alpha.mulAssign( values.opacity )
 			}
 
 			// Apply opacity modifier if provided
@@ -1186,8 +1370,8 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 				alpha.assign( this.opacityFn( alpha, vProgress, fragmentSide ) )
 			}
 
-			if ( this.dashCount ) {
-				let cyclePosition = fract( vProgress.mul( this.dashCount ).add( this.dashOffset ) ).toVar( 'cyclePosition' )
+			if ( values.dashCount ) {
+				let cyclePosition = fract( vProgress.mul( values.dashCount ).add( values.dashOffset ) ).toVar( 'cyclePosition' )
 
 				// Apply dash modifier if provided
 				if ( this.dashFn ) {
@@ -1195,7 +1379,7 @@ class MeshLineNodeMaterial extends MeshBasicNodeMaterial {
 				}
 
 				// dashRatio represents a dash portion: 0.1 = 10% dash, 90% gap
-				Discard( cyclePosition.greaterThan( this.dashRatio ) )
+				Discard( cyclePosition.greaterThan( values.dashRatio ) )
 			}
 
 			if ( this.discardFn ) {

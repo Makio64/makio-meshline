@@ -54,6 +54,10 @@ test( 'hidden demos keep their own route', () => {
 	const follow = demoCatalog.find( demo => demo.id === 'follow' )
 	assert.equal( follow?.hidden, true )
 	assert.equal( follow?.sourceFile, 'follow.js' )
+
+	const isobars = demoCatalog.find( demo => demo.id === 'isobars' )
+	assert.equal( isobars?.hidden, true )
+	assert.equal( isobars?.sourceFile, 'isobars.js' )
 } )
 
 test( 'Basic keeps the feature gallery on the stable route', () => {
@@ -91,6 +95,7 @@ test( 'merged demos keep their historical routes as aliases', () => {
 		'v2-updates': 'drawlines',
 		'vertex-colors': 'waves',
 		'gpu-circle': 'gpu-instance',
+		'lorenz-trails': 'wind-tunnel',
 	}
 
 	for ( const [alias, id] of Object.entries( routes ) ) {

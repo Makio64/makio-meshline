@@ -116,7 +116,9 @@ export class MeshLineCullingSystem {
 	readonly lastError: unknown
 	add( line: MeshLine, options?: MeshLineCullingHandleOptions ): MeshLineCullingHandle | null
 	remove( lineOrHandle: MeshLine | MeshLineCullingHandle ): void
-	update( camera: Camera ): Promise<boolean>
+	warmupAsync( camera?: Camera | null ): Promise<boolean>
+	update( camera?: Camera | null ): Promise<boolean>
+	updateAsync( camera?: Camera | null ): Promise<boolean>
 	dispose(): void
 }
 

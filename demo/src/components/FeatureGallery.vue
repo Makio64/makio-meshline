@@ -4,7 +4,7 @@
 			<span class="FeatureGalleryInspector-title">{{ title }}</span>
 			<div class="FeatureGalleryInspector-actions">
 				<button type="button" class="FeatureGalleryInspector-btn" @click="copy">{{ copied ? 'Copied' : 'Copy' }}</button>
-				<a class="FeatureGalleryInspector-btn" href="/sandbox">Sandbox</a>
+				<a class="FeatureGalleryInspector-btn" href="/examples/sandbox">Sandbox</a>
 				<button type="button" class="FeatureGalleryInspector-btn" aria-label="Close snippet" @click="api.select( null )">✕</button>
 			</div>
 		</div>
@@ -46,8 +46,7 @@ export default {
 .FeatureGalleryInspector
 	position fixed
 	top calc(18px + var(--sait, 0px))
-	left 50%
-	transform translateX(-50%)
+	left calc(18px + var(--sail, 0px))
 	z-index 25
 	width unquote('min(420px, calc(100vw - 36px))')
 	padding 12px 14px
@@ -59,6 +58,7 @@ export default {
 	-webkit-backdrop-filter blur(14px)
 	color rgba(255, 255, 255, .92)
 	font 500 12px/1.45 'Inter', system-ui, -apple-system, sans-serif
+	text-align left
 
 	&-header
 		display flex

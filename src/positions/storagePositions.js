@@ -19,6 +19,9 @@ import { clamp, float, floor, Fn, instanceIndex, mix, storage, uint } from 'thre
  *   instanced banks whose closed loops duplicate point 0 at `pointsPerLine - 1`)
  *   so `previous`/`next` samples at the loop seam wrap to the opposite end
  *   segment instead of clamping to a butt cap.
+ * - Pass `snap: true` when the line has exactly `pointsPerLine - 1` segments.
+ *   Every sample then lands on a stored point, which is read directly: one
+ *   storage read instead of two, and exact however long the line is.
  *
  * @param {import('three/webgpu').StorageBufferAttribute} buffer - Point storage (or `from` storage when morphing)
  * @param {object} options
@@ -27,9 +30,10 @@ import { clamp, float, floor, Fn, instanceIndex, mix, storage, uint } from 'thre
  * @param {import('three/webgpu').StorageBufferAttribute} [options.toBuffer] - Target point storage for GPU morph transitions
  * @param {number | import('three/tsl').ShaderNodeObject<any>} [options.morph] - Interpolation factor `0..1` between `buffer` and `toBuffer`
  * @param {boolean | number | import('three/tsl').ShaderNodeObject<any>} [options.closed] - Loop seam wrapping (`true` or a `0..1` per-instance TSL node)
+ * @param {boolean} [options.snap=false] - Read the nearest stored point instead of interpolating
  * @returns {( progress: any ) => any} TSL function for `gpuPositionNode`
  */
-export function storagePositions( buffer, { pointsPerLine, head = null, toBuffer = null, morph = null, closed = null } = {} ) {
+export function storagePositions( buffer, { pointsPerLine, head = null, toBuffer = null, morph = null, closed = null, snap = false } = {} ) {
 	if ( !buffer?.isStorageBufferAttribute ) {
 		throw new Error( 'storagePositions: buffer must be a StorageBufferAttribute' )
 	}
@@ -79,8 +83,10 @@ export function storagePositions( buffer, { pointsPerLine, head = null, toBuffer
 				: outside.select( mix( rawP, wrappedP, float( closed ).clamp( 0, 1 ) ), rawP ).toVar()
 		}
 
-		const pivot = clamp( floor( p ), 0, lastPoint.sub( 1 ) ).toVar()
-		const t = p.sub( pivot )
+		// A snapped sample is the stored point nearest to `p`; an interpolated one
+		// blends the two points around it.
+		const pivot = ( snap ? clamp( p.round(), 0, lastPoint ) : clamp( floor( p ), 0, lastPoint.sub( 1 ) ) ).toVar()
+		const t = snap ? null : p.sub( pivot )
 		const base = instanceIndex.mul( length )
 		const step = pivot.toUint()
 
@@ -100,10 +106,12 @@ export function storagePositions( buffer, { pointsPerLine, head = null, toBuffer
 			second = first.add( uint( 1 ) )
 		}
 
-		const fromSample = mix( points.element( first ).xyz, points.element( second ).xyz, t )
+		const sample = source => snap
+			? source.element( first ).xyz
+			: mix( source.element( first ).xyz, source.element( second ).xyz, t )
+		const fromSample = sample( points )
 		if ( toPoints ) {
-			const toSample = mix( toPoints.element( first ).xyz, toPoints.element( second ).xyz, t )
-			return mix( fromSample, toSample, float( morph ) )
+			return mix( fromSample, sample( toPoints ), float( morph ) )
 		}
 
 		return fromSample

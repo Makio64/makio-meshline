@@ -9,7 +9,6 @@
 import { circlePositions, MeshLine } from 'makio-meshline'
 
 import stage3d from '@/makio/three/stage3d'
-import { createDemoHint } from '@/utils/demoHint'
 
 export default class BasicExample {
 	async init() {
@@ -22,7 +21,5 @@ export default class BasicExample {
 			.color( 0xff8800 )
 			.gradientColor( 0xffffff )
 			.autoResize() )
-
-		createDemoHint( '64-segment closed loop · gradient stroke · drag to orbit', { accent: '#ff8800' } )
 	}
 }

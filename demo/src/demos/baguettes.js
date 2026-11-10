@@ -12,7 +12,6 @@ import { reducedMotion } from '@/makio/utils/detect'
 import random from '@/makio/utils/random'
 import { crustShader, SUN_DIRECTION, vBake, vScreenDir, vWorldPos } from '@/utils/baguettesCrustShader'
 import { createDemoControls, onShortcut } from '@/utils/demoControls'
-import { createDemoHint } from '@/utils/demoHint'
 import { times } from '@/utils/points'
 
 const BAGUETTE_COUNT = 30
@@ -74,7 +73,6 @@ export default class FlyingBaguettesExample {
 		this.createSky()
 		this.createLine()
 		this.createControls()
-		createDemoHint( `${BAGUETTE_COUNT} baguettes · one MeshLine · fake 3D normals & lights (L to toggle Flat)`, { accent: '#f5b453' } )
 	}
 
 	createSky() {

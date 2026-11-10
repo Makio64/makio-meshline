@@ -22,6 +22,19 @@ const releaseAttribute = ( renderer, attribute ) => {
 	}
 }
 
+// A dynamic surface whose vertex count changes keeps buffers with room to grow:
+// round joins re-tessellate as the path bends, and new GPU buffers every frame
+// cost far more than the surface itself. The first build and any exact fit stay
+// exact, so only a count that really changes pays for headroom, and a count far
+// below the capacity gives it back.
+const CAPACITY_GROWTH = 1.5
+const CAPACITY_SHRINK = 4
+const resolveCapacity = ( current, needed ) => {
+	if ( current === 0 || current === needed ) return needed
+	if ( current > needed && current <= needed * CAPACITY_SHRINK ) return current
+	return Math.ceil( needed * CAPACITY_GROWTH )
+}
+
 const DEFAULT_SURFACE_OPTIONS = {
 	frame: 'transport',
 	up: [0, 1, 0],
@@ -59,6 +72,9 @@ export class MeshLineSurfaceGeometry extends BufferGeometry {
 		this._surfaceLines = []
 		this._lineRanges = []
 		this._renderer = null
+		this._clearedDrawRange = null
+		this._vertexCount = 0
+		this._indexCount = 0
 
 		if ( options ) this.buildLine( options )
 	}
@@ -70,6 +86,32 @@ export class MeshLineSurfaceGeometry extends BufferGeometry {
 	 */
 	_trackRenderer( renderer ) {
 		if ( renderer ) this._renderer = renderer
+	}
+
+	/**
+	 * Vertices in use. A dynamic surface keeps its buffers when its vertex count
+	 * changes, so `attributes.position.count` can be a larger capacity.
+	 * @type {number}
+	 */
+	get vertexCount() {
+		return this._vertexCount
+	}
+
+	/**
+	 * Indices in use. Past them, a buffer with spare capacity holds zeros:
+	 * degenerate triangles that draw nothing.
+	 * @type {number}
+	 */
+	get indexCount() {
+		return this._indexCount
+	}
+
+	// A copy holds the same buffers, spare capacity included.
+	copy( source ) {
+		super.copy( source )
+		this._vertexCount = source._vertexCount ?? source.attributes?.position?.count ?? 0
+		this._indexCount = source._indexCount ?? source.index?.count ?? 0
+		return this
 	}
 
 	dispose() {
@@ -121,7 +163,14 @@ export class MeshLineSurfaceGeometry extends BufferGeometry {
 		validateOptions( nextOptions, surface, join, cap )
 		this.options = nextOptions
 
-		if ( lines !== undefined ) this.setLines( lines )
+		if ( lines === undefined ) return
+		try {
+			this.setLines( lines )
+		} catch ( error ) {
+			// A rejected build keeps the options of the last accepted one.
+			this.options = previousOptions
+			throw error
+		}
 	}
 
 	/**
@@ -135,9 +184,30 @@ export class MeshLineSurfaceGeometry extends BufferGeometry {
 		const inputs = normalizeLinesInput( lines )
 		if ( inputs.length === 0 ) throw new Error( '[MeshLineSurfaceGeometry] At least one line is required' )
 
-		if ( closed !== undefined ) this.options.closed = closed
-		const closedOption = this.options?.closed ?? false
+		// `lines` and `closed` reach the options only once the build accepts them.
+		const closedOption = ( closed !== undefined ? closed : this.options?.closed ) ?? false
+		// A rejected build emptied the draw range in clearGeometry(): unless the
+		// caller set another since, the next accepted one draws the saved range.
+		const cleared = this._clearedDrawRange
 		const singleLine = inputs.length === 1
+		if ( singleLine ) {
+			const isClosed0 = Array.isArray( closedOption ) ? !!closedOption[0] : !!closedOption
+			const input0 = inputs[0]
+			if (
+				!isClosed0 &&
+				( input0 instanceof Float32Array || input0 instanceof Float64Array ) &&
+				input0.length >= 6 &&
+				input0.length % 3 === 0
+			) {
+				if ( this.tryBuildSingleOpenSurface( input0, input0 instanceof Float32Array ) ) {
+					this.options.lines = lines
+					if ( closed !== undefined ) this.options.closed = closed
+					if ( cleared && this.drawRange.count === 0 ) this.setDrawRange( cleared.start, cleared.count )
+					this._clearedDrawRange = null
+					return
+				}
+			}
+		}
 		const prepared = new Array( inputs.length )
 
 		for ( let i = 0; i < inputs.length; i++ ) {
@@ -156,7 +226,6 @@ export class MeshLineSurfaceGeometry extends BufferGeometry {
 			}
 		}
 
-		this.options.lines = lines
 		try {
 			const linePoints = new Array( prepared.length )
 			const surfaceLines = new Array( prepared.length )
@@ -181,6 +250,10 @@ export class MeshLineSurfaceGeometry extends BufferGeometry {
 			this.clearGeometry()
 			throw error
 		}
+		this.options.lines = lines
+		if ( closed !== undefined ) this.options.closed = closed
+		if ( cleared && this.drawRange.count === 0 ) this.setDrawRange( cleared.start, cleared.count )
+		this._clearedDrawRange = null
 	}
 
 	clearGeometry() {
@@ -190,9 +263,14 @@ export class MeshLineSurfaceGeometry extends BufferGeometry {
 		}
 		releaseAttribute( this._renderer, this.index )
 		this.setIndex( null )
+		if ( !this._clearedDrawRange || this.drawRange.count !== 0 ) {
+			this._clearedDrawRange = { start: this.drawRange.start, count: this.drawRange.count }
+		}
 		this.setDrawRange( 0, 0 )
 		this.boundingBox = null
 		this.boundingSphere = null
+		this._vertexCount = 0
+		this._indexCount = 0
 	}
 
 	/**
@@ -233,35 +311,71 @@ export class MeshLineSurfaceGeometry extends BufferGeometry {
 		const normalAttr = this.getAttribute( 'normal' )
 		const indexAttr = this.getIndex()
 
+		// Only what is in use: a dynamic surface may hold spare capacity.
+		const used = attribute => attribute.array.slice( 0, this._vertexCount * attribute.itemSize )
+		const usedIndex = indexAttr ? indexAttr.array.slice( 0, this._indexCount ) : null
+
 		if ( targetGeometry.isBufferGeometry ) {
-			if ( positionAttr ) targetGeometry.setAttribute( 'position', positionAttr.clone() )
-			if ( uvAttr ) targetGeometry.setAttribute( 'uv', uvAttr.clone() )
-			if ( normalAttr ) targetGeometry.setAttribute( 'normal', normalAttr.clone() )
-			if ( indexAttr ) targetGeometry.setIndex( indexAttr.clone() )
+			const copy = attribute => new BufferAttribute( used( attribute ), attribute.itemSize, attribute.normalized ).setUsage( attribute.usage )
+			if ( positionAttr ) targetGeometry.setAttribute( 'position', copy( positionAttr ) )
+			if ( uvAttr ) targetGeometry.setAttribute( 'uv', copy( uvAttr ) )
+			if ( normalAttr ) targetGeometry.setAttribute( 'normal', copy( normalAttr ) )
+			if ( usedIndex ) targetGeometry.setIndex( new BufferAttribute( usedIndex, 1 ).setUsage( indexAttr.usage ) )
 			return targetGeometry
 		}
 
 		// @makio/mini3 Geometry (canonical attribute order: position, uv, normal)
-		if ( positionAttr ) targetGeometry.setAttribute( 'position', new Float32Array( positionAttr.array ), 3 )
-		if ( uvAttr ) targetGeometry.setAttribute( 'uv', new Float32Array( uvAttr.array ), 2 )
-		if ( normalAttr ) targetGeometry.setAttribute( 'normal', new Float32Array( normalAttr.array ), 3 )
-		if ( indexAttr && typeof targetGeometry.setIndex === 'function' ) {
-			const IndexConstructor = indexAttr.array.constructor
-			targetGeometry.setIndex( new IndexConstructor( indexAttr.array ) )
-		}
+		if ( positionAttr ) targetGeometry.setAttribute( 'position', used( positionAttr ), 3 )
+		if ( uvAttr ) targetGeometry.setAttribute( 'uv', used( uvAttr ), 2 )
+		if ( normalAttr ) targetGeometry.setAttribute( 'normal', used( normalAttr ), 3 )
+		if ( usedIndex && typeof targetGeometry.setIndex === 'function' ) targetGeometry.setIndex( usedIndex )
 		return targetGeometry
 	}
 
-	setOrUpdateAttribute( name, array, itemSize, usage = StaticDrawUsage ) {
+	// `usedLength` is the part of `array` this build wrote: the rest of a buffer
+	// with spare capacity is never drawn, so it is never uploaded either.
+	setOrUpdateAttribute( name, array, itemSize, usage = StaticDrawUsage, usedLength = array.length ) {
 		const existing = this.getAttribute( name )
 		if ( existing && existing.itemSize === itemSize && existing.array.length === array.length && existing.array.constructor === array.constructor && existing.usage === usage ) {
 			if ( existing.array !== array ) existing.copyArray( array )
+			existing.clearUpdateRanges()
+			if ( usedLength < array.length ) existing.addUpdateRange( 0, usedLength )
 			existing.needsUpdate = true
 			return
 		}
 
 		this.setAttribute( name, new BufferAttribute( array, itemSize ).setUsage( usage ) )
 		releaseAttribute( this._renderer, existing )
+	}
+
+	// Buffer sizes for a build that needs `count` vertices or indices: exact for
+	// a static surface, the kept capacity or a grown one for a dynamic surface.
+	_resolveVertexCapacity( count, usage ) {
+		if ( usage === StaticDrawUsage ) return count
+		const position = this.getAttribute( 'position' )
+		return resolveCapacity( position?.usage === usage ? position.count : 0, count )
+	}
+
+	_resolveIndexCapacity( count, IndexArray, usage ) {
+		if ( usage === StaticDrawUsage ) return count
+		const index = this.getIndex()
+		return resolveCapacity( index?.array.constructor === IndexArray ? index.array.length : 0, count )
+	}
+
+	// Install the index of a finished build. Indices past the ones in use stay
+	// zero, so the spare capacity of a dynamic surface is degenerate triangles.
+	_commitIndex( indices, existingIndex, indexCount, changed ) {
+		if ( existingIndex && existingIndex.array === indices ) {
+			if ( this._indexCount > indexCount ) {
+				indices.fill( 0, indexCount, this._indexCount )
+				changed = true
+			}
+			if ( changed ) existingIndex.needsUpdate = true
+		} else {
+			this.setIndex( new BufferAttribute( indices, 1 ) )
+			releaseAttribute( this._renderer, existingIndex )
+		}
+		this._indexCount = indexCount
 	}
 
 	getReusableAttributeArray( name, ArrayType, length, itemSize, usage ) {
@@ -305,20 +419,94 @@ export class MeshLineSurfaceGeometry extends BufferGeometry {
 				: ( line.rowCount - 1 ) * 6 + ( line.capTopology?.indexCount || 0 )
 		}
 
-		const IndexArray = totalVertices > 65535 ? Uint32Array : Uint16Array
-		const positions = this.getReusableAttributeArray( 'position', Float32Array, totalVertices * 3, 3, usage )
-		const normals = this.getReusableAttributeArray( 'normal', Float32Array, totalVertices * 3, 3, usage )
-		const tangents = needsTangents ? this.getReusableAttributeArray( 'tangent', Float32Array, totalVertices * 4, 4, usage ) : null
-		const uvs = needsUV ? this.getReusableAttributeArray( 'uv', Float32Array, totalVertices * 2, 2, usage ) : null
-		const progress = needsProgress ? this.getReusableAttributeArray( 'progress', Float32Array, totalVertices, 1, usage ) : null
-		const sides = needsSide ? this.getReusableAttributeArray( 'side', Float32Array, totalVertices, 1, usage ) : null
+		let vertexCapacity = this._resolveVertexCapacity( totalVertices, usage )
+		let IndexArray = vertexCapacity > 65535 ? Uint32Array : Uint16Array
+		let positions = this.getReusableAttributeArray( 'position', Float32Array, vertexCapacity * 3, 3, usage )
+		let normals = this.getReusableAttributeArray( 'normal', Float32Array, vertexCapacity * 3, 3, usage )
+		const tangents = needsTangents ? this.getReusableAttributeArray( 'tangent', Float32Array, vertexCapacity * 4, 4, usage ) : null
+		const uvs = needsUV ? this.getReusableAttributeArray( 'uv', Float32Array, vertexCapacity * 2, 2, usage ) : null
+		const progress = needsProgress ? this.getReusableAttributeArray( 'progress', Float32Array, vertexCapacity, 1, usage ) : null
+		const sides = needsSide ? this.getReusableAttributeArray( 'side', Float32Array, vertexCapacity, 1, usage ) : null
 		const existingIndex = this.getIndex()
-		const reusedIndex = !!( existingIndex && existingIndex.array.constructor === IndexArray && existingIndex.array.length === totalIndices )
-		const indices = reusedIndex
+		let indexCapacity = this._resolveIndexCapacity( totalIndices, IndexArray, usage )
+		let reusedIndex = !!( existingIndex && existingIndex.array.constructor === IndexArray && existingIndex.array.length === indexCapacity )
+		let indices = reusedIndex
 			? existingIndex.array
-			: new IndexArray( totalIndices )
-		const trackIndexChanges = reusedIndex
-		indexWriteChanged = !reusedIndex
+			: new IndexArray( indexCapacity )
+		const forceRewriteIndex = !!this._forceRewriteIndex
+		this._forceRewriteIndex = false
+		let trackIndexChanges = reusedIndex && !forceRewriteIndex
+		indexWriteChanged = !reusedIndex || forceRewriteIndex
+
+		const bounds = boundsScratch
+		bounds[0] = Infinity
+		bounds[1] = Infinity
+		bounds[2] = Infinity
+		bounds[3] = -Infinity
+		bounds[4] = -Infinity
+		bounds[5] = -Infinity
+
+		if ( this._surfaceLines.length === 1 && this._surfaceLines[0].topology?.directStream ) {
+			const line0 = this._surfaceLines[0]
+			const singleTopoSegments0 = line0.pointCount - 1
+			const skipBaseQuads0 = reusedIndex &&
+				this._canonicalTopoSegments === singleTopoSegments0 &&
+				this._canonicalTopoIndexType === IndexArray
+			const streamedIndexCount = emitDirectStreamVariableLine(
+				line0, positions, normals, indices, bounds, skipBaseQuads0
+			)
+			if ( streamedIndexCount >= 0 ) {
+				if ( trackIndexChanges ) indexWriteChanged = true
+				bounds[0] = lastBoundsMinX; bounds[1] = lastBoundsMinY; bounds[2] = lastBoundsMinZ
+				bounds[3] = lastBoundsMaxX; bounds[4] = lastBoundsMaxY; bounds[5] = lastBoundsMaxZ
+				this._lineRanges = [
+					{
+						lineIndex: 0,
+						closed: false,
+						pointCount: line0.pointCount,
+						rowStart: 0,
+						rowCount: line0.rowCount,
+						vertexStart: 0,
+						vertexCount: totalVertices,
+						seamVertexStart: null,
+						indexStart: 0,
+						indexCount: streamedIndexCount,
+						totalLength: line0.totalLength,
+					},
+				]
+				this._canonicalCompactRows = 0
+				this._canonicalCompactIndexType = null
+				this._canonicalTopoSegments = singleTopoSegments0
+				this._canonicalTopoIndexType = IndexArray
+				this._commitBuild( totalVertices, usage, positions, normals, tangents, uvs, progress, sides )
+				this._commitIndex( indices, existingIndex, streamedIndexCount, indexWriteChanged )
+				this.updateBounds( positions, bounds[0], bounds[1], bounds[2], bounds[3], bounds[4], bounds[5], totalVertices * 3 )
+				return
+			}
+			materializeDirectStreamFallback( line0, 0, this.options )
+			totalVertices = line0.topology
+				? line0.topology.vertexCount
+				: line0.rowCount * 2 + ( line0.capTopology?.vertexCount || 0 )
+			totalIndices = line0.topology
+				? line0.topology.indexCount
+				: ( line0.rowCount - 1 ) * 6 + ( line0.capTopology?.indexCount || 0 )
+			vertexCapacity = this._resolveVertexCapacity( totalVertices, usage )
+			IndexArray = vertexCapacity > 65535 ? Uint32Array : Uint16Array
+			if ( positions.length !== vertexCapacity * 3 ) {
+				positions = this.getReusableAttributeArray( 'position', Float32Array, vertexCapacity * 3, 3, usage )
+				normals = this.getReusableAttributeArray( 'normal', Float32Array, vertexCapacity * 3, 3, usage )
+			}
+			indexCapacity = this._resolveIndexCapacity( totalIndices, IndexArray, usage )
+			reusedIndex = !!( existingIndex && existingIndex.array.constructor === IndexArray && existingIndex.array.length === indexCapacity )
+			indices = reusedIndex ? existingIndex.array : new IndexArray( indexCapacity )
+			trackIndexChanges = false
+			indexWriteChanged = true
+			this._canonicalTopoSegments = 0
+			this._canonicalTopoIndexType = null
+			bounds[0] = Infinity; bounds[1] = Infinity; bounds[2] = Infinity
+			bounds[3] = -Infinity; bounds[4] = -Infinity; bounds[5] = -Infinity
+		}
+
 		const singleCanonicalCompact = this._surfaceLines.length === 1 &&
 			!this._surfaceLines[0].topology &&
 			this._surfaceLines[0].fastCanonicalQuads
@@ -330,6 +518,7 @@ export class MeshLineSurfaceGeometry extends BufferGeometry {
 		const singleCanonicalTopoUnaliased = this._surfaceLines.length === 1 &&
 			!!this._surfaceLines[0].topology &&
 			!this._surfaceLines[0].topology.pairVertices &&
+			!this._surfaceLines[0].topology.hasAliases &&
 			this._surfaceLines[0].fastCanonicalQuads
 		const singleTopoSegments = singleCanonicalTopoUnaliased
 			? ( this._surfaceLines[0].closed ? this._surfaceLines[0].pointCount : this._surfaceLines[0].pointCount - 1 )
@@ -343,13 +532,6 @@ export class MeshLineSurfaceGeometry extends BufferGeometry {
 		let rowOffset = 0
 		let vertexOffset = 0
 		let indexOffset = 0
-		const bounds = boundsScratch
-		bounds[0] = Infinity
-		bounds[1] = Infinity
-		bounds[2] = Infinity
-		bounds[3] = -Infinity
-		bounds[4] = -Infinity
-		bounds[5] = -Infinity
 
 		for ( let lineIndex = 0; lineIndex < this._surfaceLines.length; lineIndex++ ) {
 			const line = this._surfaceLines[lineIndex]
@@ -395,31 +577,72 @@ export class MeshLineSurfaceGeometry extends BufferGeometry {
 		this._canonicalCompactIndexType = singleCanonicalCompact ? IndexArray : null
 		this._canonicalTopoSegments = singleTopoSegments
 		this._canonicalTopoIndexType = singleCanonicalTopoUnaliased ? IndexArray : null
-		this.setOrUpdateAttribute( 'position', positions, 3, usage )
-		this.setOrUpdateAttribute( 'normal', normals, 3, usage )
-		this.commitOptionalAttribute( 'tangent', tangents, 4, usage )
-		this.commitOptionalAttribute( 'uv', uvs, 2, usage )
-		this.commitOptionalAttribute( 'progress', progress, 1, usage )
-		this.commitOptionalAttribute( 'side', sides, 1, usage )
-		if ( existingIndex && existingIndex.array === indices ) {
-			if ( indexWriteChanged ) existingIndex.needsUpdate = true
-		} else {
-			this.setIndex( new BufferAttribute( indices, 1 ) )
-			releaseAttribute( this._renderer, existingIndex )
-		}
-		this.updateBounds( positions, bounds[0], bounds[1], bounds[2], bounds[3], bounds[4], bounds[5] )
+		this._commitBuild( totalVertices, usage, positions, normals, tangents, uvs, progress, sides )
+		this._commitIndex( indices, existingIndex, totalIndices, indexWriteChanged )
+		this.updateBounds( positions, bounds[0], bounds[1], bounds[2], bounds[3], bounds[4], bounds[5], totalVertices * 3 )
 	}
 
-	commitOptionalAttribute( name, array, itemSize, usage ) {
+	// Install the attributes of a finished build that wrote `vertexCount` vertices.
+	_commitBuild( vertexCount, usage, positions, normals, tangents, uvs, progress, sides ) {
+		this._vertexCount = vertexCount
+		this.setOrUpdateAttribute( 'position', positions, 3, usage, vertexCount * 3 )
+		this.setOrUpdateAttribute( 'normal', normals, 3, usage, vertexCount * 3 )
+		this.commitOptionalAttribute( 'tangent', tangents, 4, usage, vertexCount * 4 )
+		this.commitOptionalAttribute( 'uv', uvs, 2, usage, vertexCount * 2 )
+		this.commitOptionalAttribute( 'progress', progress, 1, usage, vertexCount )
+		this.commitOptionalAttribute( 'side', sides, 1, usage, vertexCount )
+	}
+
+	commitOptionalAttribute( name, array, itemSize, usage, usedLength ) {
 		if ( array ) {
-			this.setOrUpdateAttribute( name, array, itemSize, usage )
+			this.setOrUpdateAttribute( name, array, itemSize, usage, usedLength )
 		} else if ( this.getAttribute( name ) ) {
 			releaseAttribute( this._renderer, this.getAttribute( name ) )
 			this.deleteAttribute( name )
 		}
 	}
 
-	updateBounds( positions, minX, minY, minZ, maxX, maxY, maxZ ) {
+	computeBoundingBox() {
+		if ( !this.attributes.position && this._ownerLine && !this._ownerLine._built && !this._ownerLine._building ) {
+			this._ownerLine.ensureBuilt()
+			if ( this.boundingBox ) return
+		}
+		if ( this._computeUsedBounds() ) return
+		super.computeBoundingBox()
+	}
+
+	computeBoundingSphere() {
+		if ( !this.attributes.position && this._ownerLine && !this._ownerLine._built && !this._ownerLine._building ) {
+			this._ownerLine.ensureBuilt()
+			if ( this.boundingSphere ) return
+		}
+		if ( this._computeUsedBounds() ) return
+		super.computeBoundingSphere()
+	}
+
+	// Bounds of the vertices in use, when the position buffer holds more: three's
+	// own scan would include the unused ones.
+	_computeUsedBounds() {
+		const position = this.attributes.position
+		if ( !position || this._vertexCount === 0 || this._vertexCount >= position.count ) return false
+		const positions = position.array
+		const length = this._vertexCount * 3
+		let minX = Infinity, minY = Infinity, minZ = Infinity
+		let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity
+		for ( let offset = 0; offset < length; offset += 3 ) {
+			const x = positions[offset], y = positions[offset + 1], z = positions[offset + 2]
+			if ( x < minX ) minX = x
+			if ( x > maxX ) maxX = x
+			if ( y < minY ) minY = y
+			if ( y > maxY ) maxY = y
+			if ( z < minZ ) minZ = z
+			if ( z > maxZ ) maxZ = z
+		}
+		this.updateBounds( positions, minX, minY, minZ, maxX, maxY, maxZ, length )
+		return true
+	}
+
+	updateBounds( positions, minX, minY, minZ, maxX, maxY, maxZ, usedLength = positions.length ) {
 		if ( !this.boundingBox ) this.boundingBox = new Box3()
 		this.boundingBox.min.set( minX, minY, minZ )
 		this.boundingBox.max.set( maxX, maxY, maxZ )
@@ -429,7 +652,232 @@ export class MeshLineSurfaceGeometry extends BufferGeometry {
 		const centerY = ( minY + maxY ) * 0.5
 		const centerZ = ( minZ + maxZ ) * 0.5
 		this.boundingSphere.center.set( centerX, centerY, centerZ )
-		this.boundingSphere.radius = Math.sqrt( computeMaxRadiusSq( positions, centerX, centerY, centerZ ) )
+		this.boundingSphere.radius = Math.sqrt( computeMaxRadiusSq( positions, centerX, centerY, centerZ, usedLength ) )
+	}
+
+	tryBuildSingleOpenSurface( points, isFloat32Input ) {
+		const options = this.options
+		const surface = options.surface || DEFAULT_SURFACE_OPTIONS
+		const join = options.join || DEFAULT_JOIN_OPTIONS
+		const cap = options.cap || DEFAULT_CAP_OPTIONS
+		const halfWidth = ( options.lineWidth ?? 0.3 ) * 0.5
+		if ( options.widthCallback || !( halfWidth > 0 && halfWidth < Infinity ) ) return false
+		if ( !( surface.bank === 0 || surface.bank == null ) ) return false
+		const needsTangents = !!( options.needsTangents || surface.normalMap )
+		const needsProgress = !!options.needsProgress
+		const needsSide = !!options.needsSide
+		if ( needsTangents || needsProgress || needsSide ) return false
+		const needsUV = !!(
+			options.needsUV ||
+			options.map ||
+			options.alphaMap ||
+			surface.normalMap ||
+			surface.roughnessMap ||
+			surface.metalnessMap
+		)
+		if ( needsUV && surface.uvMode !== 'distance' ) return false
+
+		const pointCount = points.length / 3
+		const segmentCount = pointCount - 1
+		const usage = options.usage ?? ( options.dynamic === true ? StreamDrawUsage : StaticDrawUsage )
+		const existingIndex = this.getIndex()
+
+		if ( join.type === 'miter' ) {
+			const probePoints = pointCount < 3 ? pointCount : 3
+			const probeUvs = needsUV ? singlePassProbeUvs : null
+			if ( !singlePassMiterWarmedUp ) {
+				singlePassMiterWarmedUp = true
+				for ( let w = 0; w < 8; w++ ) {
+					emitSinglePassOpenMiterSurface(
+						points, probePoints, isFloat32Input, halfWidth, surface, join.limit,
+						singlePassProbePositions, singlePassProbeNormals, probeUvs
+					)
+				}
+			}
+			const probeLen = emitSinglePassOpenMiterSurface(
+				points, probePoints, isFloat32Input, halfWidth, surface, join.limit,
+				singlePassProbePositions, singlePassProbeNormals, probeUvs
+			)
+			if ( probeLen > 0 ) {
+				const capVertexCount = cap.type === 'butt' ? 0 : ( cap.type === 'square' ? 4 : cap.segments * 2 )
+				const capIndexCount = cap.type === 'butt' ? 0 : ( cap.type === 'square' ? 12 : cap.segments * 6 )
+				const totalVertices = pointCount * 2 + capVertexCount
+				const totalIndices = segmentCount * 6 + capIndexCount
+				const vertexCapacity = this._resolveVertexCapacity( totalVertices, usage )
+				const IndexArray = vertexCapacity > 65535 ? Uint32Array : Uint16Array
+				const positions = this.getReusableAttributeArray( 'position', Float32Array, vertexCapacity * 3, 3, usage )
+				const normals = this.getReusableAttributeArray( 'normal', Float32Array, vertexCapacity * 3, 3, usage )
+				const uvs = needsUV ? this.getReusableAttributeArray( 'uv', Float32Array, vertexCapacity * 2, 2, usage ) : null
+				const totalLength = emitSinglePassOpenMiterSurface(
+					points, pointCount, isFloat32Input, halfWidth, surface, join.limit, positions, normals, uvs
+				)
+				if ( totalLength > 0 ) {
+					const indexCapacity = this._resolveIndexCapacity( totalIndices, IndexArray, usage )
+					const reusedIndex = !!( existingIndex && existingIndex.array.constructor === IndexArray && existingIndex.array.length === indexCapacity )
+					const indices = reusedIndex ? existingIndex.array : new IndexArray( indexCapacity )
+					const skipCompactIndexWrite = reusedIndex &&
+						this._canonicalCompactRows === pointCount &&
+						this._canonicalCompactIndexType === IndexArray
+					indexWriteChanged = !reusedIndex
+					let indexOffset = writeCompactIndices(
+						indices, 0, positions, normals, 0, pointCount,
+						reusedIndex, true, skipCompactIndexWrite
+					)
+					let capTopology = null
+					const bounds = boundsScratch
+					bounds[0] = lastBoundsMinX; bounds[1] = lastBoundsMinY; bounds[2] = lastBoundsMinZ
+					bounds[3] = lastBoundsMaxX; bounds[4] = lastBoundsMaxY; bounds[5] = lastBoundsMaxZ
+					if ( cap.type !== 'butt' ) {
+						singlePassCapPath.points = points
+						singlePassCapPath.pointCount = pointCount
+						singlePassCapPath.segmentCount = segmentCount
+						singlePassCapPath.totalLength = totalLength
+						singlePassCapNeeds.uvs = needsUV
+						capTopology = buildCompactCapTopology(
+							singlePassCapPath, singlePassCapFrame, singlePassEndOffsets,
+							halfWidth, surface, cap, singlePassCapNeeds, true
+						)
+						indexOffset = emitCompactCaps(
+							capTopology, 0, 0, pointCount * 2,
+							positions, normals, null, uvs, null, null, indices, indexOffset, bounds,
+							reusedIndex && !indexWriteChanged, true
+						)
+					}
+					this._lines = [points]
+					this._surfaceLines = [
+						{
+							points,
+							closed: false,
+							isFloat32Input,
+							fastFloat32Safe: true,
+							fastUvSafe: true,
+							fastCanonicalQuads: true,
+							pointCount,
+							rowCount: pointCount,
+							totalLength,
+							topology: null,
+							capTopology,
+						},
+					]
+					this._lineRanges = [
+						{
+							lineIndex: 0,
+							closed: false,
+							pointCount,
+							rowStart: 0,
+							rowCount: pointCount,
+							vertexStart: 0,
+							vertexCount: totalVertices,
+							seamVertexStart: null,
+							indexStart: 0,
+							indexCount: indexOffset,
+							totalLength,
+						},
+					]
+					this._canonicalCompactRows = pointCount
+					this._canonicalCompactIndexType = IndexArray
+					this._canonicalTopoSegments = 0
+					this._canonicalTopoIndexType = null
+					this._commitBuild( totalVertices, usage, positions, normals, null, uvs, null, null )
+					this._commitIndex( indices, existingIndex, indexOffset, indexWriteChanged )
+					this.updateBounds( positions, bounds[0], bounds[1], bounds[2], bounds[3], bounds[4], bounds[5], totalVertices * 3 )
+					return true
+				}
+				return false
+			}
+		}
+
+		if (
+			!needsUV &&
+			cap.type === 'butt' &&
+			pointCount >= 3
+		) {
+			const totalVertices = segmentCount * 4
+			const totalIndices = segmentCount * 6 + ( pointCount - 2 ) * 3
+			const vertexCapacity = this._resolveVertexCapacity( totalVertices, usage )
+			const IndexArray = vertexCapacity > 65535 ? Uint32Array : Uint16Array
+			const probeIndices = vertexCapacity > 65535 ? singlePassProbeIndices32 : singlePassProbeIndices16
+			if ( !singlePassVariableWarmedUp ) {
+				singlePassVariableWarmedUp = true
+				for ( let w = 0; w < 64; w++ ) {
+					emitSinglePassOpenVariableSurface(
+						points, 3, isFloat32Input, halfWidth, surface, join,
+						singlePassProbePositions, singlePassProbeNormals, probeIndices, true
+					)
+				}
+			}
+			const probeLen = emitSinglePassOpenVariableSurface(
+				points, 3, isFloat32Input, halfWidth, surface, join,
+				singlePassProbePositions, singlePassProbeNormals, probeIndices, true
+			)
+			if ( probeLen > 0 ) {
+				const positions = this.getReusableAttributeArray( 'position', Float32Array, vertexCapacity * 3, 3, usage )
+				const normals = this.getReusableAttributeArray( 'normal', Float32Array, vertexCapacity * 3, 3, usage )
+				const indexCapacity = this._resolveIndexCapacity( totalIndices, IndexArray, usage )
+				const reusedIndex = !!( existingIndex && existingIndex.array.constructor === IndexArray && existingIndex.array.length === indexCapacity )
+				const indices = reusedIndex ? existingIndex.array : new IndexArray( indexCapacity )
+				const skipBaseQuads = reusedIndex &&
+					this._canonicalTopoSegments === segmentCount &&
+					this._canonicalTopoIndexType === IndexArray
+				const totalLength = emitSinglePassOpenVariableSurface(
+					points, pointCount, isFloat32Input, halfWidth, surface, join, positions, normals, indices, skipBaseQuads
+				)
+				if ( totalLength > 0 ) {
+					this._lines = [points]
+					this._surfaceLines = [
+						{
+							points,
+							closed: false,
+							isFloat32Input,
+							fastFloat32Safe: true,
+							fastUvSafe: true,
+							fastCanonicalQuads: true,
+							pointCount,
+							rowCount: pointCount,
+							totalLength,
+							topology: {
+								directUnaliased: true,
+								directStream: true,
+								hasAliases: false,
+								pairVertices: null,
+								vertexCount: totalVertices,
+								indexCount: totalIndices,
+								seamPair: null,
+							},
+							capTopology: null,
+						},
+					]
+					this._lineRanges = [
+						{
+							lineIndex: 0,
+							closed: false,
+							pointCount,
+							rowStart: 0,
+							rowCount: pointCount,
+							vertexStart: 0,
+							vertexCount: totalVertices,
+							seamVertexStart: null,
+							indexStart: 0,
+							indexCount: totalIndices,
+							totalLength,
+						},
+					]
+					this._canonicalCompactRows = 0
+					this._canonicalCompactIndexType = null
+					this._canonicalTopoSegments = segmentCount
+					this._canonicalTopoIndexType = IndexArray
+					this._commitBuild( totalVertices, usage, positions, normals, null, null, null, null )
+					this._commitIndex( indices, existingIndex, totalIndices, true )
+					this.updateBounds( positions, lastBoundsMinX, lastBoundsMinY, lastBoundsMinZ, lastBoundsMaxX, lastBoundsMaxY, lastBoundsMaxZ, totalVertices * 3 )
+					return true
+				}
+				this._canonicalTopoSegments = 0
+				this._canonicalTopoIndexType = null
+				if ( reusedIndex ) this._forceRewriteIndex = true
+			}
+		}
+
+		return false
 	}
 
 }
@@ -451,13 +899,14 @@ function getCompactIndexTemplate16( segmentCount ) {
 	const indexCount = segmentCount * 6
 	const current = compactIndexTemplate16
 	if ( current.length >= indexCount ) return current.subarray( 0, indexCount )
-	const capSegments = Math.max( segmentCount, Math.floor( current.length / 6 ) * 2, 1024 )
+	const oldSegments = Math.floor( current.length / 6 )
+	const capSegments = oldSegments === 0 ? Math.max( segmentCount, 64 ) : Math.max( segmentCount, oldSegments * 2, 1024 )
 	const next = new Uint16Array( capSegments * 6 )
 	const view = next.subarray( 0, indexCount )
 	const oldLen = current.length
 	if ( oldLen > 0 ) next.set( current )
 	if ( capSegments * 6 <= MAX_POOLED_SCRATCH_LENGTH ) compactIndexTemplate16 = next
-	for ( let segment = Math.floor( oldLen / 6 ), left0 = segment * 2, offset = oldLen; segment < capSegments; segment++, left0 += 2, offset += 6 ) {
+	for ( let segment = oldSegments, left0 = segment * 2, offset = oldLen; segment < capSegments; segment++, left0 += 2, offset += 6 ) {
 		const right0 = left0 + 1
 		const left1 = left0 + 2
 		next[offset] = left0
@@ -474,13 +923,14 @@ function getCompactIndexTemplate32( segmentCount ) {
 	const indexCount = segmentCount * 6
 	const current = compactIndexTemplate32
 	if ( current.length >= indexCount ) return current.subarray( 0, indexCount )
-	const capSegments = Math.max( segmentCount, Math.floor( current.length / 6 ) * 2, 1024 )
+	const oldSegments = Math.floor( current.length / 6 )
+	const capSegments = oldSegments === 0 ? Math.max( segmentCount, 64 ) : Math.max( segmentCount, oldSegments * 2, 1024 )
 	const next = new Uint32Array( capSegments * 6 )
 	const view = next.subarray( 0, indexCount )
 	const oldLen = current.length
 	if ( oldLen > 0 ) next.set( current )
 	if ( capSegments * 6 <= MAX_POOLED_SCRATCH_LENGTH ) compactIndexTemplate32 = next
-	for ( let segment = Math.floor( oldLen / 6 ), left0 = segment * 2, offset = oldLen; segment < capSegments; segment++, left0 += 2, offset += 6 ) {
+	for ( let segment = oldSegments, left0 = segment * 2, offset = oldLen; segment < capSegments; segment++, left0 += 2, offset += 6 ) {
 		const right0 = left0 + 1
 		const left1 = left0 + 2
 		next[offset] = left0
@@ -501,13 +951,14 @@ function getTopoQuadTemplate16( segmentCount ) {
 	const indexCount = segmentCount * 6
 	const current = topoQuadTemplate16
 	if ( current.length >= indexCount ) return current.subarray( 0, indexCount )
-	const capSegments = Math.max( segmentCount, Math.floor( current.length / 6 ) * 2, 1024 )
+	const oldSegments = Math.floor( current.length / 6 )
+	const capSegments = oldSegments === 0 ? Math.max( segmentCount, 64 ) : Math.max( segmentCount, oldSegments * 2, 1024 )
 	const next = new Uint16Array( capSegments * 6 )
 	const view = next.subarray( 0, indexCount )
 	const oldLen = current.length
 	if ( oldLen > 0 ) next.set( current )
 	if ( capSegments * 6 <= MAX_POOLED_SCRATCH_LENGTH ) topoQuadTemplate16 = next
-	for ( let segment = Math.floor( oldLen / 6 ), left0 = segment * 4, offset = oldLen; segment < capSegments; segment++, left0 += 4, offset += 6 ) {
+	for ( let segment = oldSegments, left0 = segment * 4, offset = oldLen; segment < capSegments; segment++, left0 += 4, offset += 6 ) {
 		const right0 = left0 + 1
 		const left1 = left0 + 2
 		next[offset] = left0
@@ -524,13 +975,14 @@ function getTopoQuadTemplate32( segmentCount ) {
 	const indexCount = segmentCount * 6
 	const current = topoQuadTemplate32
 	if ( current.length >= indexCount ) return current.subarray( 0, indexCount )
-	const capSegments = Math.max( segmentCount, Math.floor( current.length / 6 ) * 2, 1024 )
+	const oldSegments = Math.floor( current.length / 6 )
+	const capSegments = oldSegments === 0 ? Math.max( segmentCount, 64 ) : Math.max( segmentCount, oldSegments * 2, 1024 )
 	const next = new Uint32Array( capSegments * 6 )
 	const view = next.subarray( 0, indexCount )
 	const oldLen = current.length
 	if ( oldLen > 0 ) next.set( current )
 	if ( capSegments * 6 <= MAX_POOLED_SCRATCH_LENGTH ) topoQuadTemplate32 = next
-	for ( let segment = Math.floor( oldLen / 6 ), left0 = segment * 4, offset = oldLen; segment < capSegments; segment++, left0 += 4, offset += 6 ) {
+	for ( let segment = oldSegments, left0 = segment * 4, offset = oldLen; segment < capSegments; segment++, left0 += 4, offset += 6 ) {
 		const right0 = left0 + 1
 		const left1 = left0 + 2
 		next[offset] = left0
@@ -547,8 +999,7 @@ function getTopoQuadTemplate( isUint32, segmentCount ) {
 	return isUint32 ? getTopoQuadTemplate32( segmentCount ) : getTopoQuadTemplate16( segmentCount )
 }
 
-function computeMaxRadiusSq( positions, centerX, centerY, centerZ ) {
-	const len = positions.length
+function computeMaxRadiusSq( positions, centerX, centerY, centerZ, len = positions.length ) {
 	const rem = len % 12
 	let maxRadiusSquared = 0
 	let offset = 0
@@ -556,7 +1007,8 @@ function computeMaxRadiusSq( positions, centerX, centerY, centerZ ) {
 		const dx = positions[offset] - centerX
 		const dy = positions[offset + 1] - centerY
 		const dz = positions[offset + 2] - centerZ
-		maxRadiusSquared = Math.max( maxRadiusSquared, dx * dx + dy * dy + dz * dz )
+		const d = dx * dx + dy * dy + dz * dz
+		if ( d > maxRadiusSquared ) maxRadiusSquared = d
 	}
 	for ( ; offset < len; offset += 12 ) {
 		const dx0 = positions[offset] - centerX, dy0 = positions[offset + 1] - centerY, dz0 = positions[offset + 2] - centerZ
@@ -571,7 +1023,10 @@ function computeMaxRadiusSq( positions, centerX, centerY, centerZ ) {
 		const dx3 = positions[offset + 9] - centerX, dy3 = positions[offset + 10] - centerY, dz3 = positions[offset + 11] - centerZ
 		const d3 = dx3 * dx3 + dy3 * dy3 + dz3 * dz3
 
-		maxRadiusSquared = Math.max( maxRadiusSquared, Math.max( Math.max( d0, d1 ), Math.max( d2, d3 ) ) )
+		const m01 = d0 > d1 ? d0 : d1
+		const m23 = d2 > d3 ? d2 : d3
+		const m = m01 > m23 ? m01 : m23
+		if ( m > maxRadiusSquared ) maxRadiusSquared = m
 	}
 	return maxRadiusSquared
 }
@@ -950,9 +1405,9 @@ function emitDirectUnaliasedVariableLine(
 	const p1x = Math.fround( sx + swx ), p1y = Math.fround( sy + swy ), p1z = Math.fround( sz + swz )
 	positions[0] = p0x; positions[1] = p0y; positions[2] = p0z
 	positions[3] = p1x; positions[4] = p1y; positions[5] = p1z
-	normals[0] = normals[3] = normalsSource[0]
-	normals[1] = normals[4] = normalsSource[1]
-	normals[2] = normals[5] = normalsSource[2]
+	const n0x = normalsSource[0], n0y = normalsSource[1], n0z = normalsSource[2]
+	normals[0] = n0x; normals[1] = n0y; normals[2] = n0z
+	normals[3] = n0x; normals[4] = n0y; normals[5] = n0z
 	minX = Math.min( minX, Math.min( p0x, p1x ) ); maxX = Math.max( maxX, Math.max( p0x, p1x ) )
 	minY = Math.min( minY, Math.min( p0y, p1y ) ); maxY = Math.max( maxY, Math.max( p0y, p1y ) )
 	minZ = Math.min( minZ, Math.min( p0z, p1z ) ); maxZ = Math.max( maxZ, Math.max( p0z, p1z ) )
@@ -970,17 +1425,14 @@ function emitDirectUnaliasedVariableLine(
 	const p3x = Math.fround( ex + ewx ), p3y = Math.fround( ey + ewy ), p3z = Math.fround( ez + ewz )
 	positions[posBase] = p2x; positions[posBase + 1] = p2y; positions[posBase + 2] = p2z
 	positions[posBase + 3] = p3x; positions[posBase + 4] = p3y; positions[posBase + 5] = p3z
-	normals[posBase] = normals[posBase + 3] = normalsSource[lastPt3]
-	normals[posBase + 1] = normals[posBase + 4] = normalsSource[lastPt3 + 1]
-	normals[posBase + 2] = normals[posBase + 5] = normalsSource[lastPt3 + 2]
+	const nLx = normalsSource[lastPt3], nLy = normalsSource[lastPt3 + 1], nLz = normalsSource[lastPt3 + 2]
+	normals[posBase] = nLx; normals[posBase + 1] = nLy; normals[posBase + 2] = nLz
+	normals[posBase + 3] = nLx; normals[posBase + 4] = nLy; normals[posBase + 5] = nLz
 	minX = Math.min( minX, Math.min( p2x, p3x ) ); maxX = Math.max( maxX, Math.max( p2x, p3x ) )
 	minY = Math.min( minY, Math.min( p2y, p3y ) ); maxY = Math.max( maxY, Math.max( p2y, p3y ) )
 	minZ = Math.min( minZ, Math.min( p2z, p3z ) ); maxZ = Math.max( maxZ, Math.max( p2z, p3z ) )
 
-	let indexOffset = writeTopoBaseQuads(
-		indices, 0, positions, normals, null,
-		0, segmentCount, trackChanges, true, skipTopoBaseQuadWrite
-	)
+	let indexOffset = segmentCount * 6
 
 	for (
 		let pointIndex = 1, incomingEnd0 = 2, ie0 = 6, pointOffset = 3, inSide3 = 0, info = JOIN_STRIDE;
@@ -1036,9 +1488,1041 @@ function emitDirectUnaliasedVariableLine(
 		indices[indexOffset + 2] = incomingEnd0 + 1 + turnBit
 	}
 
+	writeTopoBaseQuads(
+		indices, 0, positions, normals, null,
+		0, segmentCount, trackChanges, true, skipTopoBaseQuadWrite
+	)
+
+	if ( !line.isFloat32Input ) assertFloat32PathSegments( points, false, 0 )
+
 	lastBoundsMinX = minX; lastBoundsMinY = minY; lastBoundsMinZ = minZ
 	lastBoundsMaxX = maxX; lastBoundsMaxY = maxY; lastBoundsMaxZ = maxZ
 	return indexOffset
+}
+
+function emitDirectAliasedVariableLine( line, positions, normals, indices, bounds ) {
+	const topo = line.topology
+	const points = line.points
+	const normalsSource = line.normals
+	const halfWidths = line.halfWidths
+	const constantHalfWidth = typeof halfWidths === 'number' ? halfWidths : null
+	const pointCount = line.pointCount
+	const segmentCount = pointCount - 1
+	const segmentStartSides = joinScratch.segmentStartSides
+	const segmentEndSides = joinScratch.segmentEndSides
+	const joinData = topo.joinData
+	const isMiterJoin = topo.joinType === 'miter'
+	const joinLimit = topo.joinLimit
+
+	let minX = bounds[0], minY = bounds[1], minZ = bounds[2]
+	let maxX = bounds[3], maxY = bounds[4], maxZ = bounds[5]
+
+	const w0 = constantHalfWidth !== null ? constantHalfWidth : halfWidths[0]
+	const swx = segmentStartSides[0] * w0
+	const swy = segmentStartSides[1] * w0
+	const swz = segmentStartSides[2] * w0
+	const sx = points[0], sy = points[1], sz = points[2]
+	const p0x = Math.fround( sx - swx ), p0y = Math.fround( sy - swy ), p0z = Math.fround( sz - swz )
+	const p1x = Math.fround( sx + swx ), p1y = Math.fround( sy + swy ), p1z = Math.fround( sz + swz )
+	positions[0] = p0x; positions[1] = p0y; positions[2] = p0z
+	positions[6] = p1x; positions[7] = p1y; positions[8] = p1z
+	const n0x = normalsSource[0], n0y = normalsSource[1], n0z = normalsSource[2]
+	normals[0] = n0x; normals[1] = n0y; normals[2] = n0z
+	normals[6] = n0x; normals[7] = n0y; normals[8] = n0z
+	minX = Math.min( minX, Math.min( p0x, p1x ) ); maxX = Math.max( maxX, Math.max( p0x, p1x ) )
+	minY = Math.min( minY, Math.min( p0y, p1y ) ); maxY = Math.max( maxY, Math.max( p0y, p1y ) )
+	minZ = Math.min( minZ, Math.min( p0z, p1z ) ); maxZ = Math.max( maxZ, Math.max( p0z, p1z ) )
+
+	indices[0] = 0; indices[1] = 1; indices[2] = 2
+	indices[3] = 2; indices[4] = 1; indices[5] = 3
+
+	let prevEndLeft = 1
+	let prevEndRight = 3
+	let nextVertex = 4
+	let quadIndexOffset = 6
+	let extraIndexOffset = segmentCount * 6
+
+	for (
+		let pointIndex = 1, pointOffset = 3, inSide3 = 0, info = JOIN_STRIDE;
+		pointIndex < pointCount - 1;
+		pointIndex++, pointOffset += 3, inSide3 += 3, info += JOIN_STRIDE, quadIndexOffset += 6
+	) {
+		const centerX = points[pointOffset]
+		const centerY = points[pointOffset + 1]
+		const centerZ = points[pointOffset + 2]
+		const nx = normalsSource[pointOffset]
+		const ny = normalsSource[pointOffset + 1]
+		const nz = normalsSource[pointOffset + 2]
+		const width = constantHalfWidth !== null ? constantHalfWidth : halfWidths[pointIndex]
+		const angle = joinData[info + JOIN_ANGLE]
+		const scale = joinData[info + JOIN_SCALE]
+		const pel3 = prevEndLeft * 3
+		const per3 = prevEndRight * 3
+
+		if ( angle === 0 || ( isMiterJoin && scale <= joinLimit ) ) {
+			let mx, my, mz
+			if ( angle === 0 ) {
+				mx = segmentEndSides[inSide3] * width
+				my = segmentEndSides[inSide3 + 1] * width
+				mz = segmentEndSides[inSide3 + 2] * width
+			} else {
+				const ws = width * scale
+				mx = joinData[info + JOIN_MITER] * ws
+				my = joinData[info + JOIN_MITER + 1] * ws
+				mz = joinData[info + JOIN_MITER + 2] * ws
+			}
+			const lx = Math.fround( centerX - mx ), ly = Math.fround( centerY - my ), lz = Math.fround( centerZ - mz )
+			const rx = Math.fround( centerX + mx ), ry = Math.fround( centerY + my ), rz = Math.fround( centerZ + mz )
+			positions[pel3] = lx; positions[pel3 + 1] = ly; positions[pel3 + 2] = lz
+			positions[per3] = rx; positions[per3 + 1] = ry; positions[per3 + 2] = rz
+			normals[pel3] = nx; normals[pel3 + 1] = ny; normals[pel3 + 2] = nz
+			normals[per3] = nx; normals[per3 + 1] = ny; normals[per3 + 2] = nz
+			minX = Math.min( minX, Math.min( lx, rx ) ); maxX = Math.max( maxX, Math.max( lx, rx ) )
+			minY = Math.min( minY, Math.min( ly, ry ) ); maxY = Math.max( maxY, Math.max( ly, ry ) )
+			minZ = Math.min( minZ, Math.min( lz, rz ) ); maxZ = Math.max( maxZ, Math.max( lz, rz ) )
+
+			const curEndLeft = nextVertex
+			const curEndRight = nextVertex + 1
+			nextVertex += 2
+			indices[quadIndexOffset] = prevEndLeft
+			indices[quadIndexOffset + 1] = curEndLeft
+			indices[quadIndexOffset + 2] = prevEndRight
+			indices[quadIndexOffset + 3] = prevEndRight
+			indices[quadIndexOffset + 4] = curEndLeft
+			indices[quadIndexOffset + 5] = curEndRight
+			prevEndLeft = curEndLeft
+			prevEndRight = curEndRight
+			continue
+		}
+
+		const curStartLeft = nextVertex
+		const curEndLeft = nextVertex + 1
+		const curStartRight = nextVertex + 2
+		const curEndRight = nextVertex + 3
+		nextVertex += 4
+		const csl3 = curStartLeft * 3
+		const csr3 = curStartRight * 3
+		normals[pel3] = nx; normals[pel3 + 1] = ny; normals[pel3 + 2] = nz
+		normals[per3] = nx; normals[per3 + 1] = ny; normals[per3 + 2] = nz
+		normals[csl3] = nx; normals[csl3 + 1] = ny; normals[csl3 + 2] = nz
+		normals[csr3] = nx; normals[csr3 + 1] = ny; normals[csr3 + 2] = nz
+
+		const positiveTurn = angle > 0
+		const outerWidth = positiveTurn ? -width : width
+		const innerScale = -outerWidth * scale
+		const innerX = Math.fround( centerX + joinData[info + JOIN_MITER] * innerScale )
+		const innerY = Math.fround( centerY + joinData[info + JOIN_MITER + 1] * innerScale )
+		const innerZ = Math.fround( centerZ + joinData[info + JOIN_MITER + 2] * innerScale )
+		const inOuterX = Math.fround( centerX + segmentEndSides[inSide3] * outerWidth )
+		const inOuterY = Math.fround( centerY + segmentEndSides[inSide3 + 1] * outerWidth )
+		const inOuterZ = Math.fround( centerZ + segmentEndSides[inSide3 + 2] * outerWidth )
+		const outOuterX = Math.fround( centerX + segmentStartSides[pointOffset] * outerWidth )
+		const outOuterY = Math.fround( centerY + segmentStartSides[pointOffset + 1] * outerWidth )
+		const outOuterZ = Math.fround( centerZ + segmentStartSides[pointOffset + 2] * outerWidth )
+
+		if ( positiveTurn ) {
+			positions[pel3] = inOuterX; positions[pel3 + 1] = inOuterY; positions[pel3 + 2] = inOuterZ
+			positions[per3] = innerX; positions[per3 + 1] = innerY; positions[per3 + 2] = innerZ
+			positions[csl3] = outOuterX; positions[csl3 + 1] = outOuterY; positions[csl3 + 2] = outOuterZ
+			positions[csr3] = innerX; positions[csr3 + 1] = innerY; positions[csr3 + 2] = innerZ
+			indices[extraIndexOffset] = prevEndRight
+			indices[extraIndexOffset + 1] = prevEndLeft
+			indices[extraIndexOffset + 2] = curStartLeft
+		} else {
+			positions[pel3] = innerX; positions[pel3 + 1] = innerY; positions[pel3 + 2] = innerZ
+			positions[per3] = inOuterX; positions[per3 + 1] = inOuterY; positions[per3 + 2] = inOuterZ
+			positions[csl3] = innerX; positions[csl3 + 1] = innerY; positions[csl3 + 2] = innerZ
+			positions[csr3] = outOuterX; positions[csr3 + 1] = outOuterY; positions[csr3 + 2] = outOuterZ
+			indices[extraIndexOffset] = prevEndLeft
+			indices[extraIndexOffset + 1] = curStartRight
+			indices[extraIndexOffset + 2] = prevEndRight
+		}
+		extraIndexOffset += 3
+
+		minX = Math.min( minX, Math.min( innerX, Math.min( inOuterX, outOuterX ) ) )
+		maxX = Math.max( maxX, Math.max( innerX, Math.max( inOuterX, outOuterX ) ) )
+		minY = Math.min( minY, Math.min( innerY, Math.min( inOuterY, outOuterY ) ) )
+		maxY = Math.max( maxY, Math.max( innerY, Math.max( inOuterY, outOuterY ) ) )
+		minZ = Math.min( minZ, Math.min( innerZ, Math.min( inOuterZ, outOuterZ ) ) )
+		maxZ = Math.max( maxZ, Math.max( innerZ, Math.max( inOuterZ, outOuterZ ) ) )
+
+		indices[quadIndexOffset] = curStartLeft
+		indices[quadIndexOffset + 1] = curEndLeft
+		indices[quadIndexOffset + 2] = curStartRight
+		indices[quadIndexOffset + 3] = curStartRight
+		indices[quadIndexOffset + 4] = curEndLeft
+		indices[quadIndexOffset + 5] = curEndRight
+		prevEndLeft = curEndLeft
+		prevEndRight = curEndRight
+	}
+
+	const lastSegIndex = segmentCount - 1
+	const lastSeg3 = lastSegIndex * 3
+	const lastPt3 = ( pointCount - 1 ) * 3
+	const wLast = constantHalfWidth !== null ? constantHalfWidth : halfWidths[pointCount - 1]
+	const ewx = segmentEndSides[lastSeg3] * wLast
+	const ewy = segmentEndSides[lastSeg3 + 1] * wLast
+	const ewz = segmentEndSides[lastSeg3 + 2] * wLast
+	const ex = points[lastPt3], ey = points[lastPt3 + 1], ez = points[lastPt3 + 2]
+	const pel3 = prevEndLeft * 3
+	const per3 = prevEndRight * 3
+	const p2x = Math.fround( ex - ewx ), p2y = Math.fround( ey - ewy ), p2z = Math.fround( ez - ewz )
+	const p3x = Math.fround( ex + ewx ), p3y = Math.fround( ey + ewy ), p3z = Math.fround( ez + ewz )
+	positions[pel3] = p2x; positions[pel3 + 1] = p2y; positions[pel3 + 2] = p2z
+	positions[per3] = p3x; positions[per3 + 1] = p3y; positions[per3 + 2] = p3z
+	const nLx = normalsSource[lastPt3], nLy = normalsSource[lastPt3 + 1], nLz = normalsSource[lastPt3 + 2]
+	normals[pel3] = nLx; normals[pel3 + 1] = nLy; normals[pel3 + 2] = nLz
+	normals[per3] = nLx; normals[per3 + 1] = nLy; normals[per3 + 2] = nLz
+	minX = Math.min( minX, Math.min( p2x, p3x ) ); maxX = Math.max( maxX, Math.max( p2x, p3x ) )
+	minY = Math.min( minY, Math.min( p2y, p3y ) ); maxY = Math.max( maxY, Math.max( p2y, p3y ) )
+	minZ = Math.min( minZ, Math.min( p2z, p3z ) ); maxZ = Math.max( maxZ, Math.max( p2z, p3z ) )
+
+	if ( !line.isFloat32Input ) assertFloat32PathSegments( points, false, 0 )
+
+	lastBoundsMinX = minX; lastBoundsMinY = minY; lastBoundsMinZ = minZ
+	lastBoundsMaxX = maxX; lastBoundsMaxY = maxY; lastBoundsMaxZ = maxZ
+	return extraIndexOffset
+}
+
+const singlePassEndNormals = new Float64Array( 6 )
+const singlePassEndDirections = new Float64Array( 6 )
+const singlePassEndOffsets = new Float64Array( 6 )
+const singlePassProbePositions = new Float32Array( 24 )
+const singlePassProbeNormals = new Float32Array( 24 )
+const singlePassProbeUvs = new Float32Array( 16 )
+const singlePassProbeIndices16 = new Uint16Array( 15 )
+const singlePassProbeIndices32 = new Uint32Array( 15 )
+let singlePassMiterWarmedUp = false
+let singlePassVariableWarmedUp = false
+const singlePassCapFrame = { normals: singlePassEndNormals, endNormalOffset: 3 }
+const singlePassCapPath = {
+	points: null,
+	pointCount: 0,
+	segmentCount: 0,
+	totalLength: 0,
+	segmentDirections: singlePassEndDirections,
+	endDirectionOffset: 3,
+	tangents: null,
+	progress: null,
+}
+const singlePassCapNeeds = { tangents: false, uvs: false, progress: false, sides: false }
+
+function emitSinglePassOpenMiterSurface( points, pointCount, isFloat32Input, halfWidth, surface, joinLimit, positions, normals, uvs ) {
+	const openSegments = pointCount - 1
+	const epsSq = EPSILON * EPSILON
+	const safeRatio = 0.45
+	const fixedUp = surface.frame === 'fixed-up'
+	const up = normalizeVector( readVectorLike( surface.up, 'surface.up' ) )
+	const upX = up[0], upY = up[1], upZ = up[2]
+	const invUvScale = uvs ? 1 / surface.uvScale : 0
+
+	let nxPt = points[0], nyPt = points[1], nzPt = points[2]
+	let prevX = points[3], prevY = points[4], prevZ = points[5]
+	let dx = Math.abs( nxPt ), dy = Math.abs( nyPt ), dz = Math.abs( nzPt )
+	let outX = Math.abs( prevX ), outY = Math.abs( prevY ), outZ = Math.abs( prevZ )
+	let maxMag = Math.max(
+		dx > dy ? ( dx > dz ? dx : dz ) : ( dy > dz ? dy : dz ),
+		outX > outY ? ( outX > outZ ? outX : outZ ) : ( outY > outZ ? outY : outZ )
+	)
+	dx = prevX - nxPt; dy = prevY - nyPt; dz = prevZ - nzPt
+	let curSegLen = dx * dx + dy * dy + dz * dz
+	if ( !( curSegLen > 1e-300 && curSegLen < Infinity ) ) return -1
+	curSegLen = Math.sqrt( curSegLen )
+	let scale = 1 / curSegLen
+	let inX = dx * scale, inY = dy * scale, inZ = dz * scale
+	let minLen = curSegLen
+	let totalLength = curSegLen
+	let prevSafeLen = curSegLen * safeRatio
+
+	seedNormalScalar( frameCandidateScratch, inX, inY, inZ, upX, upY, upZ )
+	writeOrthonormalFrameScalar( singlePassEndNormals, 0, inX, inY, inZ, frameCandidateScratch[0], frameCandidateScratch[1], frameCandidateScratch[2] )
+	let prevNormalX = singlePassEndNormals[0]
+	let prevNormalY = singlePassEndNormals[1]
+	let prevNormalZ = singlePassEndNormals[2]
+	let prevTangentX = inX, prevTangentY = inY, prevTangentZ = inZ
+
+	singlePassEndDirections[0] = inX
+	singlePassEndDirections[1] = inY
+	singlePassEndDirections[2] = inZ
+	let miterX = prevNormalY * inZ - prevNormalZ * inY
+	let miterY = prevNormalZ * inX - prevNormalX * inZ
+	let miterZ = prevNormalX * inY - prevNormalY * inX
+	singlePassEndOffsets[0] = miterX
+	singlePassEndOffsets[1] = miterY
+	singlePassEndOffsets[2] = miterZ
+
+	dx = miterX * halfWidth; dy = miterY * halfWidth; dz = miterZ * halfWidth
+	let lpx = Math.fround( nxPt - dx ), lpy = Math.fround( nyPt - dy ), lpz = Math.fround( nzPt - dz )
+	let rpx = Math.fround( nxPt + dx ), rpy = Math.fround( nyPt + dy ), rpz = Math.fround( nzPt + dz )
+	positions[0] = lpx; positions[1] = lpy; positions[2] = lpz
+	positions[3] = rpx; positions[4] = rpy; positions[5] = rpz
+	normals[0] = prevNormalX; normals[1] = prevNormalY; normals[2] = prevNormalZ
+	normals[3] = prevNormalX; normals[4] = prevNormalY; normals[5] = prevNormalZ
+	if ( uvs ) {
+		uvs[0] = 0; uvs[1] = 0; uvs[2] = 0; uvs[3] = 1
+	}
+	let minX = Math.min( lpx, rpx ), maxX = Math.max( lpx, rpx )
+	let minY = Math.min( lpy, rpy ), maxY = Math.max( lpy, rpy )
+	let minZ = Math.min( lpz, rpz ), maxZ = Math.max( lpz, rpz )
+
+	let maxScale = 0
+	let maxFiniteScale = Math.SQRT2
+	let tanX = 0, tanY = 0, tanZ = 0
+	let normalX = 0, normalY = 0, normalZ = 0
+	let c = 0, q = 0, lsSq = 0
+
+	for (
+		let i = 1, pointOffset = 3, posOffset = 6, uvOffset = 4;
+		i < openSegments;
+		i++, pointOffset += 3, posOffset += 6, uvOffset += 4
+	) {
+		const curDist = totalLength
+		nxPt = points[pointOffset + 3]
+		nyPt = points[pointOffset + 4]
+		nzPt = points[pointOffset + 5]
+		dx = Math.abs( nxPt ); dy = Math.abs( nyPt ); dz = Math.abs( nzPt )
+		c = dx > dy ? ( dx > dz ? dx : dz ) : ( dy > dz ? dy : dz )
+		if ( c > maxMag ) maxMag = c
+
+		dx = nxPt - prevX
+		dy = nyPt - prevY
+		dz = nzPt - prevZ
+		lsSq = dx * dx + dy * dy + dz * dz
+		if ( !( lsSq > 1e-300 && lsSq < Infinity ) ) return -1
+		curSegLen = Math.sqrt( lsSq )
+		if ( curSegLen < minLen ) minLen = curSegLen
+		totalLength += curSegLen
+		scale = 1 / curSegLen
+		outX = dx * scale
+		outY = dy * scale
+		outZ = dz * scale
+
+		tanX = inX + outX
+		tanY = inY + outY
+		tanZ = inZ + outZ
+		lsSq = tanX * tanX + tanY * tanY + tanZ * tanZ
+		if ( lsSq <= epsSq ) return -1
+		scale = 1 / Math.sqrt( lsSq )
+		tanX *= scale
+		tanY *= scale
+		tanZ *= scale
+
+		if ( !fixedUp ) {
+			c = prevTangentX * tanX + prevTangentY * tanY + prevTangentZ * tanZ
+			if ( !( c > -0.999999 ) ) return -1
+			q = ( tanX * prevNormalX + tanY * prevNormalY + tanZ * prevNormalZ ) / ( 1 + c )
+			dx = prevNormalX - ( prevTangentX + tanX ) * q
+			dy = prevNormalY - ( prevTangentY + tanY ) * q
+			dz = prevNormalZ - ( prevTangentZ + tanZ ) * q
+			c = tanX * dx + tanY * dy + tanZ * dz
+			dx -= tanX * c
+			dy -= tanY * c
+			dz -= tanZ * c
+			scale = 1.5 - 0.5 * ( dx * dx + dy * dy + dz * dz )
+			normalX = dx * scale
+			normalY = dy * scale
+			normalZ = dz * scale
+		} else {
+			c = tanX * upX + tanY * upY + tanZ * upZ
+			dx = upX - tanX * c
+			dy = upY - tanY * c
+			dz = upZ - tanZ * c
+			lsSq = dx * dx + dy * dy + dz * dz
+			if ( !( lsSq > epsSq && lsSq < Infinity ) ) return -1
+			q = Math.sqrt( lsSq )
+			scale = ( dx * prevNormalX + dy * prevNormalY + dz * prevNormalZ < 0 ) ? -1 / q : 1 / q
+			dx *= scale; dy *= scale; dz *= scale
+			c = tanX * dx + tanY * dy + tanZ * dz
+			dx -= tanX * c; dy -= tanY * c; dz -= tanZ * c
+			lsSq = dx * dx + dy * dy + dz * dz
+			if ( !( lsSq > epsSq && lsSq < Infinity ) ) return -1
+			scale = lsSq > 0.999999 && lsSq < 1.000001 ? 1.5 - 0.5 * lsSq : 1 / Math.sqrt( lsSq )
+			normalX = dx * scale
+			normalY = dy * scale
+			normalZ = dz * scale
+		}
+		prevNormalX = normalX; prevNormalY = normalY; prevNormalZ = normalZ
+		prevTangentX = tanX; prevTangentY = tanY; prevTangentZ = tanZ
+
+		miterX = normalY * tanZ - normalZ * tanY
+		miterY = normalZ * tanX - normalX * tanZ
+		miterZ = normalX * tanY - normalY * tanX
+		c = tanX * outX + tanY * outY + tanZ * outZ
+		q = 0.5 * ( ( outX - inX ) * miterX + ( outY - inY ) * miterY + ( outZ - inZ ) * miterZ )
+		inX = outX; inY = outY; inZ = outZ
+
+		dx = c * c
+		dy = q * q
+		lsSq = dx + dy
+		if ( !( lsSq > epsSq && lsSq < Infinity ) ) return -1
+		if ( dx - dy <= REVERSAL_SPLIT_DOT * lsSq ) return -1
+		dz = Math.sqrt( lsSq )
+		if ( c <= EPSILON * dz ) return -1
+
+		const invC = 1 / c
+		scale = dz * invC
+		if ( scale > maxFiniteScale ) maxFiniteScale = scale
+		const curSafeLen = curSegLen * safeRatio
+		const absQ = Math.abs( q )
+		if ( !( dx > dy && 2 * c * absQ <= 1e-8 * lsSq ) ) {
+			if ( scale > joinLimit ) return -1
+			if ( absQ * invC * halfWidth > prevSafeLen || absQ * invC * halfWidth > curSafeLen ) return -1
+			if ( scale > maxScale ) maxScale = scale
+		}
+		prevSafeLen = curSafeLen
+
+		dx = ( miterX * scale ) * halfWidth
+		dy = ( miterY * scale ) * halfWidth
+		dz = ( miterZ * scale ) * halfWidth
+		lpx = Math.fround( prevX - dx ); lpy = Math.fround( prevY - dy ); lpz = Math.fround( prevZ - dz )
+		rpx = Math.fround( prevX + dx ); rpy = Math.fround( prevY + dy ); rpz = Math.fround( prevZ + dz )
+		positions[posOffset] = lpx; positions[posOffset + 1] = lpy; positions[posOffset + 2] = lpz
+		positions[posOffset + 3] = rpx; positions[posOffset + 4] = rpy; positions[posOffset + 5] = rpz
+		normals[posOffset] = normalX; normals[posOffset + 1] = normalY; normals[posOffset + 2] = normalZ
+		normals[posOffset + 3] = normalX; normals[posOffset + 4] = normalY; normals[posOffset + 5] = normalZ
+		if ( uvs ) {
+			c = curDist * invUvScale
+			uvs[uvOffset] = c; uvs[uvOffset + 1] = 0; uvs[uvOffset + 2] = c; uvs[uvOffset + 3] = 1
+		}
+		minX = Math.min( minX, Math.min( lpx, rpx ) ); maxX = Math.max( maxX, Math.max( lpx, rpx ) )
+		minY = Math.min( minY, Math.min( lpy, rpy ) ); maxY = Math.max( maxY, Math.max( lpy, rpy ) )
+		minZ = Math.min( minZ, Math.min( lpz, rpz ) ); maxZ = Math.max( maxZ, Math.max( lpz, rpz ) )
+		prevX = nxPt; prevY = nyPt; prevZ = nzPt
+	}
+
+	if ( !fixedUp ) {
+		c = prevTangentX * inX + prevTangentY * inY + prevTangentZ * inZ
+		if ( !( c > -0.999999 ) ) return -1
+		q = ( inX * prevNormalX + inY * prevNormalY + inZ * prevNormalZ ) / ( 1 + c )
+		dx = prevNormalX - ( prevTangentX + inX ) * q
+		dy = prevNormalY - ( prevTangentY + inY ) * q
+		dz = prevNormalZ - ( prevTangentZ + inZ ) * q
+		c = inX * dx + inY * dy + inZ * dz
+		dx -= inX * c; dy -= inY * c; dz -= inZ * c
+		scale = 1.5 - 0.5 * ( dx * dx + dy * dy + dz * dz )
+		normalX = dx * scale; normalY = dy * scale; normalZ = dz * scale
+	} else {
+		c = inX * upX + inY * upY + inZ * upZ
+		dx = upX - inX * c; dy = upY - inY * c; dz = upZ - inZ * c
+		lsSq = dx * dx + dy * dy + dz * dz
+		if ( !( lsSq > epsSq && lsSq < Infinity ) ) return -1
+		q = Math.sqrt( lsSq )
+		scale = ( dx * prevNormalX + dy * prevNormalY + dz * prevNormalZ < 0 ) ? -1 / q : 1 / q
+		dx *= scale; dy *= scale; dz *= scale
+		c = inX * dx + inY * dy + inZ * dz
+		dx -= inX * c; dy -= inY * c; dz -= inZ * c
+		lsSq = dx * dx + dy * dy + dz * dz
+		if ( !( lsSq > epsSq && lsSq < Infinity ) ) return -1
+		scale = lsSq > 0.999999 && lsSq < 1.000001 ? 1.5 - 0.5 * lsSq : 1 / Math.sqrt( lsSq )
+		normalX = dx * scale; normalY = dy * scale; normalZ = dz * scale
+	}
+
+	singlePassEndNormals[3] = normalX
+	singlePassEndNormals[4] = normalY
+	singlePassEndNormals[5] = normalZ
+	singlePassEndDirections[3] = inX
+	singlePassEndDirections[4] = inY
+	singlePassEndDirections[5] = inZ
+	miterX = normalY * inZ - normalZ * inY
+	miterY = normalZ * inX - normalX * inZ
+	miterZ = normalX * inY - normalY * inX
+	singlePassEndOffsets[3] = miterX
+	singlePassEndOffsets[4] = miterY
+	singlePassEndOffsets[5] = miterZ
+
+	const lastPosOffset = openSegments * 6
+	dx = miterX * halfWidth; dy = miterY * halfWidth; dz = miterZ * halfWidth
+	lpx = Math.fround( prevX - dx ); lpy = Math.fround( prevY - dy ); lpz = Math.fround( prevZ - dz )
+	rpx = Math.fround( prevX + dx ); rpy = Math.fround( prevY + dy ); rpz = Math.fround( prevZ + dz )
+	positions[lastPosOffset] = lpx; positions[lastPosOffset + 1] = lpy; positions[lastPosOffset + 2] = lpz
+	positions[lastPosOffset + 3] = rpx; positions[lastPosOffset + 4] = rpy; positions[lastPosOffset + 5] = rpz
+	normals[lastPosOffset] = normalX; normals[lastPosOffset + 1] = normalY; normals[lastPosOffset + 2] = normalZ
+	normals[lastPosOffset + 3] = normalX; normals[lastPosOffset + 4] = normalY; normals[lastPosOffset + 5] = normalZ
+	if ( uvs ) {
+		const lastUvOffset = openSegments * 4
+		c = totalLength * invUvScale
+		uvs[lastUvOffset] = c; uvs[lastUvOffset + 1] = 0; uvs[lastUvOffset + 2] = c; uvs[lastUvOffset + 3] = 1
+	}
+	minX = Math.min( minX, Math.min( lpx, rpx ) ); maxX = Math.max( maxX, Math.max( lpx, rpx ) )
+	minY = Math.min( minY, Math.min( lpy, rpy ) ); maxY = Math.max( maxY, Math.max( lpy, rpy ) )
+	minZ = Math.min( minZ, Math.min( lpz, rpz ) ); maxZ = Math.max( maxZ, Math.max( lpz, rpz ) )
+
+	if ( maxScale > 16 ) return -1
+	c = maxMag * Number.EPSILON * 4
+	q = c > DUPLICATE_EPSILON ? c : DUPLICATE_EPSILON
+	if ( !( maxMag < Infinity && minLen > q && totalLength > 0 && totalLength < Infinity ) ) return -1
+	c = maxMag + halfWidth * maxFiniteScale
+	if ( !( c <= 1e30 && halfWidth >= c * 2e-6 && ( isFloat32Input || minLen >= maxMag * 1e-5 ) ) ) return -1
+	if ( uvs ) {
+		c = ( totalLength + halfWidth ) * invUvScale
+		if ( !( c <= 3.4028234663852886e+38 && c >= -3.4028234663852886e+38 ) ) return -1
+	}
+	if ( !isFloat32Input && pointCount * 3 === points.length ) assertFloat32PathSegments( points, false, 0 )
+
+	lastBoundsMinX = minX; lastBoundsMinY = minY; lastBoundsMinZ = minZ
+	lastBoundsMaxX = maxX; lastBoundsMaxY = maxY; lastBoundsMaxZ = maxZ
+	return totalLength
+}
+
+function emitSinglePassOpenVariableSurface( points, pointCount, isFloat32Input, halfWidth, surface, join, positions, normals, indices, skipTopoBaseQuadWrite ) {
+	const segmentCount = pointCount - 1
+	const epsSq = EPSILON * EPSILON
+	const safeRatio = 0.45
+	const fixedUp = surface.frame === 'fixed-up'
+	const up = normalizeVector( readVectorLike( surface.up, 'surface.up' ) )
+	const upX = up[0], upY = up[1], upZ = up[2]
+	const joinType = join.type
+	const joinLimit = join.limit
+	const joinSegments = join.segments
+	const minVariableScale = joinType === 'miter' ? joinLimit : -1
+	const singleSegCos = joinType === 'round' ? Math.cos( Math.PI / joinSegments ) + 1e-12 : -2
+
+	let nxPt = points[0], nyPt = points[1], nzPt = points[2]
+	let prevX = points[3], prevY = points[4], prevZ = points[5]
+	let dx = Math.abs( nxPt ), dy = Math.abs( nyPt ), dz = Math.abs( nzPt )
+	let outDirX = Math.abs( prevX ), outDirY = Math.abs( prevY ), outDirZ = Math.abs( prevZ )
+	let maxMag = Math.max(
+		dx > dy ? ( dx > dz ? dx : dz ) : ( dy > dz ? dy : dz ),
+		outDirX > outDirY ? ( outDirX > outDirZ ? outDirX : outDirZ ) : ( outDirY > outDirZ ? outDirY : outDirZ )
+	)
+	dx = prevX - nxPt; dy = prevY - nyPt; dz = prevZ - nzPt
+	let curSegLen = dx * dx + dy * dy + dz * dz
+	if ( !( curSegLen > 1e-300 && curSegLen < Infinity ) ) return -1
+	curSegLen = Math.sqrt( curSegLen )
+	let scale = 1 / curSegLen
+	let inDirX = dx * scale, inDirY = dy * scale, inDirZ = dz * scale
+	let minLen = curSegLen
+	let totalLength = curSegLen
+	let prevSegLen = curSegLen
+
+	seedNormalScalar( frameCandidateScratch, inDirX, inDirY, inDirZ, upX, upY, upZ )
+	writeOrthonormalFrameScalar( singlePassEndNormals, 0, inDirX, inDirY, inDirZ, frameCandidateScratch[0], frameCandidateScratch[1], frameCandidateScratch[2] )
+	let prevNormalX = singlePassEndNormals[0]
+	let prevNormalY = singlePassEndNormals[1]
+	let prevNormalZ = singlePassEndNormals[2]
+	let prevTangentX = inDirX, prevTangentY = inDirY, prevTangentZ = inDirZ
+
+	let miterX = prevNormalY * inDirZ - prevNormalZ * inDirY
+	let miterY = prevNormalZ * inDirX - prevNormalX * inDirZ
+	let miterZ = prevNormalX * inDirY - prevNormalY * inDirX
+	let lsSq = miterX * miterX + miterY * miterY + miterZ * miterZ
+	if ( !( lsSq > epsSq && lsSq < Infinity ) ) return -1
+	scale = halfWidth / Math.sqrt( lsSq )
+	dx = miterX * scale; dy = miterY * scale; dz = miterZ * scale
+	let innerX = Math.fround( nxPt - dx ), innerY = Math.fround( nyPt - dy ), innerZ = Math.fround( nzPt - dz )
+	let inOuterX = Math.fround( nxPt + dx ), inOuterY = Math.fround( nyPt + dy ), inOuterZ = Math.fround( nzPt + dz )
+	positions[0] = innerX; positions[1] = innerY; positions[2] = innerZ
+	positions[3] = inOuterX; positions[4] = inOuterY; positions[5] = inOuterZ
+	normals[0] = prevNormalX; normals[1] = prevNormalY; normals[2] = prevNormalZ
+	normals[3] = prevNormalX; normals[4] = prevNormalY; normals[5] = prevNormalZ
+	let minX = Math.min( innerX, inOuterX ), maxX = Math.max( innerX, inOuterX )
+	let minY = Math.min( innerY, inOuterY ), maxY = Math.max( innerY, inOuterY )
+	let minZ = Math.min( innerZ, inOuterZ ), maxZ = Math.max( innerZ, inOuterZ )
+
+	let indexOffset = segmentCount * 6
+	let maxFiniteScale = Math.SQRT2
+	let tanX = 0, tanY = 0, tanZ = 0
+	let nx = 0, ny = 0, nz = 0
+	let c = 0, q = 0
+
+	for (
+		let pointIndex = 1, incomingEnd0 = 2, ie0 = 6, pointOffset = 3;
+		pointIndex < segmentCount;
+		pointIndex++, incomingEnd0 += 4, ie0 += 12, pointOffset += 3, indexOffset += 3
+	) {
+		nxPt = points[pointOffset + 3]
+		nyPt = points[pointOffset + 4]
+		nzPt = points[pointOffset + 5]
+		dx = Math.abs( nxPt ); dy = Math.abs( nyPt ); dz = Math.abs( nzPt )
+		c = dx > dy ? ( dx > dz ? dx : dz ) : ( dy > dz ? dy : dz )
+		if ( c > maxMag ) maxMag = c
+
+		dx = nxPt - prevX
+		dy = nyPt - prevY
+		dz = nzPt - prevZ
+		lsSq = dx * dx + dy * dy + dz * dz
+		if ( !( lsSq > 1e-300 && lsSq < Infinity ) ) return -1
+		curSegLen = Math.sqrt( lsSq )
+		if ( curSegLen < minLen ) minLen = curSegLen
+		totalLength += curSegLen
+		scale = 1 / curSegLen
+		outDirX = dx * scale
+		outDirY = dy * scale
+		outDirZ = dz * scale
+
+		tanX = inDirX + outDirX
+		tanY = inDirY + outDirY
+		tanZ = inDirZ + outDirZ
+		lsSq = tanX * tanX + tanY * tanY + tanZ * tanZ
+		if ( lsSq <= epsSq ) return -1
+		scale = 1 / Math.sqrt( lsSq )
+		tanX *= scale
+		tanY *= scale
+		tanZ *= scale
+
+		if ( !fixedUp ) {
+			c = prevTangentX * tanX + prevTangentY * tanY + prevTangentZ * tanZ
+			if ( !( c > -0.999999 ) ) return -1
+			q = ( tanX * prevNormalX + tanY * prevNormalY + tanZ * prevNormalZ ) / ( 1 + c )
+			dx = prevNormalX - ( prevTangentX + tanX ) * q
+			dy = prevNormalY - ( prevTangentY + tanY ) * q
+			dz = prevNormalZ - ( prevTangentZ + tanZ ) * q
+			c = tanX * dx + tanY * dy + tanZ * dz
+			dx -= tanX * c
+			dy -= tanY * c
+			dz -= tanZ * c
+			scale = 1.5 - 0.5 * ( dx * dx + dy * dy + dz * dz )
+			nx = dx * scale
+			ny = dy * scale
+			nz = dz * scale
+		} else {
+			c = tanX * upX + tanY * upY + tanZ * upZ
+			dx = upX - tanX * c
+			dy = upY - tanY * c
+			dz = upZ - tanZ * c
+			lsSq = dx * dx + dy * dy + dz * dz
+			if ( !( lsSq > epsSq && lsSq < Infinity ) ) return -1
+			q = Math.sqrt( lsSq )
+			scale = ( dx * prevNormalX + dy * prevNormalY + dz * prevNormalZ < 0 ) ? -1 / q : 1 / q
+			dx *= scale; dy *= scale; dz *= scale
+			c = tanX * dx + tanY * dy + tanZ * dz
+			dx -= tanX * c; dy -= tanY * c; dz -= tanZ * c
+			lsSq = dx * dx + dy * dy + dz * dz
+			if ( !( lsSq > epsSq && lsSq < Infinity ) ) return -1
+			scale = lsSq > 0.999999 && lsSq < 1.000001 ? 1.5 - 0.5 * lsSq : 1 / Math.sqrt( lsSq )
+			nx = dx * scale
+			ny = dy * scale
+			nz = dz * scale
+		}
+		prevNormalX = nx; prevNormalY = ny; prevNormalZ = nz
+		prevTangentX = tanX; prevTangentY = tanY; prevTangentZ = tanZ
+
+		miterX = ny * tanZ - nz * tanY
+		miterY = nz * tanX - nx * tanZ
+		miterZ = nx * tanY - ny * tanX
+		c = tanX * outDirX + tanY * outDirY + tanZ * outDirZ
+		q = 0.5 * (
+			( outDirX - inDirX ) * miterX +
+			( outDirY - inDirY ) * miterY +
+			( outDirZ - inDirZ ) * miterZ
+		)
+		inDirX = outDirX; inDirY = outDirY; inDirZ = outDirZ
+		lsSq = c * c + q * q
+		if ( !( lsSq > epsSq && lsSq < Infinity ) ) return -1
+		dz = Math.sqrt( lsSq )
+		if ( !( c > EPSILON * dz ) ) return -1
+		const invLsC = 1 / ( dz * c )
+		const invLs = c * invLsC
+		const invC = dz * invLsC
+		const cNorm = c * invLs
+		const qNorm = q * invLs
+		const cosine = cNorm * cNorm - qNorm * qNorm
+		const sine = 2 * cNorm * qNorm
+		if ( cosine <= REVERSAL_SPLIT_DOT || ( cosine > 0 && Math.abs( sine ) <= 1e-8 ) || cosine < singleSegCos ) return -1
+		scale = dz * invC
+		if ( scale > 16 || scale <= minVariableScale ) return -1
+		dx = Math.abs( q ) * invC * halfWidth
+		if ( dx > prevSegLen * safeRatio || dx > curSegLen * safeRatio ) return -1
+		prevSegLen = curSegLen
+		if ( scale > maxFiniteScale ) maxFiniteScale = scale
+
+		normals[ie0] = nx; normals[ie0 + 1] = ny; normals[ie0 + 2] = nz
+		normals[ie0 + 3] = nx; normals[ie0 + 4] = ny; normals[ie0 + 5] = nz
+		normals[ie0 + 6] = nx; normals[ie0 + 7] = ny; normals[ie0 + 8] = nz
+		normals[ie0 + 9] = nx; normals[ie0 + 10] = ny; normals[ie0 + 11] = nz
+
+		const turnBit = sine > 0 ? 1 : 0
+		const innerBias = turnBit * 3
+		const outerBias = 3 - innerBias
+		const outerWidth = sine > 0 ? -halfWidth : halfWidth
+		const innerScale = -outerWidth * scale
+		innerX = Math.fround( prevX + miterX * innerScale )
+		innerY = Math.fround( prevY + miterY * innerScale )
+		innerZ = Math.fround( prevZ + miterZ * innerScale )
+		dx = miterX * cNorm; dy = miterY * cNorm; dz = miterZ * cNorm
+		const qtX = tanX * qNorm, qtY = tanY * qNorm, qtZ = tanZ * qNorm
+		inOuterX = Math.fround( prevX + ( dx + qtX ) * outerWidth )
+		inOuterY = Math.fround( prevY + ( dy + qtY ) * outerWidth )
+		inOuterZ = Math.fround( prevZ + ( dz + qtZ ) * outerWidth )
+		const outOuterX = Math.fround( prevX + ( dx - qtX ) * outerWidth )
+		const outOuterY = Math.fround( prevY + ( dy - qtY ) * outerWidth )
+		const outOuterZ = Math.fround( prevZ + ( dz - qtZ ) * outerWidth )
+		prevX = nxPt; prevY = nyPt; prevZ = nzPt
+
+		const inOutIdx = ie0 + outerBias
+		const inInIdx = ie0 + innerBias
+		const outOutIdx = ie0 + 6 + outerBias
+		const outInIdx = ie0 + 6 + innerBias
+		positions[inOutIdx] = inOuterX; positions[inOutIdx + 1] = inOuterY; positions[inOutIdx + 2] = inOuterZ
+		positions[inInIdx] = innerX; positions[inInIdx + 1] = innerY; positions[inInIdx + 2] = innerZ
+		positions[outOutIdx] = outOuterX; positions[outOutIdx + 1] = outOuterY; positions[outOutIdx + 2] = outOuterZ
+		positions[outInIdx] = innerX; positions[outInIdx + 1] = innerY; positions[outInIdx + 2] = innerZ
+
+		minX = Math.min( minX, Math.min( innerX, Math.min( inOuterX, outOuterX ) ) )
+		maxX = Math.max( maxX, Math.max( innerX, Math.max( inOuterX, outOuterX ) ) )
+		minY = Math.min( minY, Math.min( innerY, Math.min( inOuterY, outOuterY ) ) )
+		maxY = Math.max( maxY, Math.max( innerY, Math.max( inOuterY, outOuterY ) ) )
+		minZ = Math.min( minZ, Math.min( innerZ, Math.min( inOuterZ, outOuterZ ) ) )
+		maxZ = Math.max( maxZ, Math.max( innerZ, Math.max( inOuterZ, outOuterZ ) ) )
+
+		indices[indexOffset] = incomingEnd0 + turnBit
+		indices[indexOffset + 1] = incomingEnd0 + outerBias
+		indices[indexOffset + 2] = incomingEnd0 + 1 + turnBit
+	}
+
+	if ( !fixedUp ) {
+		c = prevTangentX * inDirX + prevTangentY * inDirY + prevTangentZ * inDirZ
+		if ( !( c > -0.999999 ) ) return -1
+		q = ( inDirX * prevNormalX + inDirY * prevNormalY + inDirZ * prevNormalZ ) / ( 1 + c )
+		dx = prevNormalX - ( prevTangentX + inDirX ) * q
+		dy = prevNormalY - ( prevTangentY + inDirY ) * q
+		dz = prevNormalZ - ( prevTangentZ + inDirZ ) * q
+		c = inDirX * dx + inDirY * dy + inDirZ * dz
+		dx -= inDirX * c; dy -= inDirY * c; dz -= inDirZ * c
+		scale = 1.5 - 0.5 * ( dx * dx + dy * dy + dz * dz )
+		nx = dx * scale; ny = dy * scale; nz = dz * scale
+	} else {
+		c = inDirX * upX + inDirY * upY + inDirZ * upZ
+		dx = upX - inDirX * c; dy = upY - inDirY * c; dz = upZ - inDirZ * c
+		lsSq = dx * dx + dy * dy + dz * dz
+		if ( !( lsSq > epsSq && lsSq < Infinity ) ) return -1
+		q = Math.sqrt( lsSq )
+		scale = ( dx * prevNormalX + dy * prevNormalY + dz * prevNormalZ < 0 ) ? -1 / q : 1 / q
+		dx *= scale; dy *= scale; dz *= scale
+		c = inDirX * dx + inDirY * dy + inDirZ * dz
+		dx -= inDirX * c; dy -= inDirY * c; dz -= inDirZ * c
+		lsSq = dx * dx + dy * dy + dz * dz
+		if ( !( lsSq > epsSq && lsSq < Infinity ) ) return -1
+		scale = lsSq > 0.999999 && lsSq < 1.000001 ? 1.5 - 0.5 * lsSq : 1 / Math.sqrt( lsSq )
+		nx = dx * scale; ny = dy * scale; nz = dz * scale
+	}
+
+	miterX = ny * inDirZ - nz * inDirY
+	miterY = nz * inDirX - nx * inDirZ
+	miterZ = nx * inDirY - ny * inDirX
+	lsSq = miterX * miterX + miterY * miterY + miterZ * miterZ
+	if ( !( lsSq > epsSq && lsSq < Infinity ) ) return -1
+	scale = halfWidth / Math.sqrt( lsSq )
+	dx = miterX * scale; dy = miterY * scale; dz = miterZ * scale
+	const posBase = ( ( segmentCount - 1 ) * 4 + 2 ) * 3
+	innerX = Math.fround( prevX - dx ); innerY = Math.fround( prevY - dy ); innerZ = Math.fround( prevZ - dz )
+	inOuterX = Math.fround( prevX + dx ); inOuterY = Math.fround( prevY + dy ); inOuterZ = Math.fround( prevZ + dz )
+	positions[posBase] = innerX; positions[posBase + 1] = innerY; positions[posBase + 2] = innerZ
+	positions[posBase + 3] = inOuterX; positions[posBase + 4] = inOuterY; positions[posBase + 5] = inOuterZ
+	normals[posBase] = nx; normals[posBase + 1] = ny; normals[posBase + 2] = nz
+	normals[posBase + 3] = nx; normals[posBase + 4] = ny; normals[posBase + 5] = nz
+	minX = Math.min( minX, Math.min( innerX, inOuterX ) ); maxX = Math.max( maxX, Math.max( innerX, inOuterX ) )
+	minY = Math.min( minY, Math.min( innerY, inOuterY ) ); maxY = Math.max( maxY, Math.max( innerY, inOuterY ) )
+	minZ = Math.min( minZ, Math.min( innerZ, inOuterZ ) ); maxZ = Math.max( maxZ, Math.max( innerZ, inOuterZ ) )
+
+	c = maxMag * Number.EPSILON * 4
+	q = c > DUPLICATE_EPSILON ? c : DUPLICATE_EPSILON
+	if ( !( maxMag < Infinity && minLen > q && totalLength > 0 && totalLength < Infinity ) ) return -1
+	c = maxMag + halfWidth * maxFiniteScale
+	if ( !( c <= 1e30 && halfWidth >= c * 2e-6 && ( isFloat32Input || minLen >= maxMag * 1e-5 ) ) ) return -1
+	if ( !isFloat32Input && pointCount * 3 === points.length ) assertFloat32PathSegments( points, false, 0 )
+
+	writeTopoBaseQuads(
+		indices, 0, positions, normals, null,
+		0, segmentCount, false, true, skipTopoBaseQuadWrite
+	)
+
+	lastBoundsMinX = minX; lastBoundsMinY = minY; lastBoundsMinZ = minZ
+	lastBoundsMaxX = maxX; lastBoundsMaxY = maxY; lastBoundsMaxZ = maxZ
+	return totalLength
+}
+
+function canDirectUnaliasedFirstJoin( path, frame, maxHalfWidth, join ) {
+	if ( path.pointCount < 3 ) return false
+	const directions = path.segmentDirections
+	const normals = frame.normals
+	const tangents = path.tangents
+	const inDirX = directions[0], inDirY = directions[1], inDirZ = directions[2]
+	const outDirX = directions[3], outDirY = directions[4], outDirZ = directions[5]
+	const nx = normals[3], ny = normals[4], nz = normals[5]
+	const tx = tangents[3], ty = tangents[4], tz = tangents[5]
+	const miterX = ny * tz - nz * ty
+	const miterY = nz * tx - nx * tz
+	const miterZ = nx * ty - ny * tx
+	const c = tx * outDirX + ty * outDirY + tz * outDirZ
+	const q = 0.5 * (
+		( outDirX - inDirX ) * miterX +
+		( outDirY - inDirY ) * miterY +
+		( outDirZ - inDirZ ) * miterZ
+	)
+	const lsSq = c * c + q * q
+	if ( !( lsSq > EPSILON * EPSILON && lsSq < Infinity ) ) return false
+	const ls = Math.sqrt( lsSq )
+	if ( !( c > EPSILON * ls ) ) return false
+	const invLsC = 1 / ( ls * c )
+	const invLs = c * invLsC
+	const invC = ls * invLsC
+	const cNorm = c * invLs
+	const qNorm = q * invLs
+	const cosine = cNorm * cNorm - qNorm * qNorm
+	const sine = 2 * cNorm * qNorm
+	const absSine = Math.abs( sine )
+	const singleSegCos = join.type === 'round' ? Math.cos( Math.PI / join.segments ) + 1e-12 : -2
+	if ( cosine <= REVERSAL_SPLIT_DOT || ( cosine > 0 && absSine <= 1e-8 ) || cosine < singleSegCos ) return false
+	const scale = ls * invC
+	if ( scale > 16 || ( join.type === 'miter' && scale <= join.limit ) ) return false
+	const insetLen = Math.abs( q ) * invC * maxHalfWidth
+	const segmentLengths = path.segmentLengths
+	return insetLen <= segmentLengths[0] * 0.45 && insetLen <= segmentLengths[1] * 0.45
+}
+
+function emitDirectStreamVariableLine( line, positions, normals, indices, bounds, skipTopoBaseQuadWrite ) {
+	const topo = line.topology
+	const path = topo.path
+	const frame = topo.frame
+	const join = topo.join
+	const points = line.points
+	const normalsSource = frame.normals
+	const tangents = path.tangents
+	const directions = path.segmentDirections
+	const segmentLengths = path.segmentLengths
+	const halfWidths = line.halfWidths
+	const constantHalfWidth = typeof halfWidths === 'number' ? halfWidths : null
+	const maxHalfWidth = topo.maxHalfWidth
+	const pointCount = line.pointCount
+	const segmentCount = pointCount - 1
+	const epsSq = EPSILON * EPSILON
+	const safeRatio = 0.45
+	const isMiterJoin = join.type === 'miter'
+	const joinLimit = join.limit
+	const singleSegCos = join.type === 'round' ? Math.cos( Math.PI / join.segments ) + 1e-12 : -2
+
+	let minX = bounds[0], minY = bounds[1], minZ = bounds[2]
+	let maxX = bounds[3], maxY = bounds[4], maxZ = bounds[5]
+
+	const n0x = normalsSource[0], n0y = normalsSource[1], n0z = normalsSource[2]
+	const d0x = directions[0], d0y = directions[1], d0z = directions[2]
+	const s0x = n0y * d0z - n0z * d0y
+	const s0y = n0z * d0x - n0x * d0z
+	const s0z = n0x * d0y - n0y * d0x
+	const s0LenSq = s0x * s0x + s0y * s0y + s0z * s0z
+	if ( !( s0LenSq > epsSq && s0LenSq < Infinity ) ) {
+		throw new Error( '[MeshLineSurfaceGeometry] Surface frame is parallel to a path segment' )
+	}
+	const w0Scale = ( constantHalfWidth !== null ? constantHalfWidth : halfWidths[0] ) / Math.sqrt( s0LenSq )
+	const swx = s0x * w0Scale, swy = s0y * w0Scale, swz = s0z * w0Scale
+	const sx = points[0], sy = points[1], sz = points[2]
+	const p0x = Math.fround( sx - swx ), p0y = Math.fround( sy - swy ), p0z = Math.fround( sz - swz )
+	const p1x = Math.fround( sx + swx ), p1y = Math.fround( sy + swy ), p1z = Math.fround( sz + swz )
+	positions[0] = p0x; positions[1] = p0y; positions[2] = p0z
+	positions[3] = p1x; positions[4] = p1y; positions[5] = p1z
+	normals[0] = n0x; normals[1] = n0y; normals[2] = n0z
+	normals[3] = n0x; normals[4] = n0y; normals[5] = n0z
+	minX = Math.min( minX, Math.min( p0x, p1x ) ); maxX = Math.max( maxX, Math.max( p0x, p1x ) )
+	minY = Math.min( minY, Math.min( p0y, p1y ) ); maxY = Math.max( maxY, Math.max( p0y, p1y ) )
+	minZ = Math.min( minZ, Math.min( p0z, p1z ) ); maxZ = Math.max( maxZ, Math.max( p0z, p1z ) )
+
+	const lastSegIndex = segmentCount - 1
+	const lastSeg3 = lastSegIndex * 3
+	const lastPt3 = ( pointCount - 1 ) * 3
+	const nLx = normalsSource[lastPt3], nLy = normalsSource[lastPt3 + 1], nLz = normalsSource[lastPt3 + 2]
+	const dLx = directions[lastSeg3], dLy = directions[lastSeg3 + 1], dLz = directions[lastSeg3 + 2]
+	const sLx = nLy * dLz - nLz * dLy
+	const sLy = nLz * dLx - nLx * dLz
+	const sLz = nLx * dLy - nLy * dLx
+	const sLLenSq = sLx * sLx + sLy * sLy + sLz * sLz
+	if ( !( sLLenSq > epsSq && sLLenSq < Infinity ) ) {
+		throw new Error( '[MeshLineSurfaceGeometry] Surface frame is parallel to a path segment' )
+	}
+	const wLastScale = ( constantHalfWidth !== null ? constantHalfWidth : halfWidths[pointCount - 1] ) / Math.sqrt( sLLenSq )
+	const ewx = sLx * wLastScale, ewy = sLy * wLastScale, ewz = sLz * wLastScale
+	const ex = points[lastPt3], ey = points[lastPt3 + 1], ez = points[lastPt3 + 2]
+	const posBase = ( lastSegIndex * 4 + 2 ) * 3
+	const p2x = Math.fround( ex - ewx ), p2y = Math.fround( ey - ewy ), p2z = Math.fround( ez - ewz )
+	const p3x = Math.fround( ex + ewx ), p3y = Math.fround( ey + ewy ), p3z = Math.fround( ez + ewz )
+	positions[posBase] = p2x; positions[posBase + 1] = p2y; positions[posBase + 2] = p2z
+	positions[posBase + 3] = p3x; positions[posBase + 4] = p3y; positions[posBase + 5] = p3z
+	normals[posBase] = nLx; normals[posBase + 1] = nLy; normals[posBase + 2] = nLz
+	normals[posBase + 3] = nLx; normals[posBase + 4] = nLy; normals[posBase + 5] = nLz
+	minX = Math.min( minX, Math.min( p2x, p3x ) ); maxX = Math.max( maxX, Math.max( p2x, p3x ) )
+	minY = Math.min( minY, Math.min( p2y, p3y ) ); maxY = Math.max( maxY, Math.max( p2y, p3y ) )
+	minZ = Math.min( minZ, Math.min( p2z, p3z ) ); maxZ = Math.max( maxZ, Math.max( p2z, p3z ) )
+
+	let indexOffset = segmentCount * 6
+
+	let inDirX = d0x, inDirY = d0y, inDirZ = d0z
+	let prevSegLen = segmentLengths[0]
+	let maxFiniteScale = Math.SQRT2
+
+	for (
+		let pointIndex = 1, incomingEnd0 = 2, ie0 = 6, pointOffset = 3;
+		pointIndex < pointCount - 1;
+		pointIndex++, incomingEnd0 += 4, ie0 += 12, pointOffset += 3, indexOffset += 3
+	) {
+		const outDirX = directions[pointOffset]
+		const outDirY = directions[pointOffset + 1]
+		const outDirZ = directions[pointOffset + 2]
+		const curSegLen = segmentLengths[pointIndex]
+		const nx = normalsSource[pointOffset]
+		const ny = normalsSource[pointOffset + 1]
+		const nz = normalsSource[pointOffset + 2]
+		const tanX = tangents[pointOffset]
+		const tanY = tangents[pointOffset + 1]
+		const tanZ = tangents[pointOffset + 2]
+		const miterX = ny * tanZ - nz * tanY
+		const miterY = nz * tanX - nx * tanZ
+		const miterZ = nx * tanY - ny * tanX
+
+		const c = tanX * outDirX + tanY * outDirY + tanZ * outDirZ
+		const q = 0.5 * (
+			( outDirX - inDirX ) * miterX +
+			( outDirY - inDirY ) * miterY +
+			( outDirZ - inDirZ ) * miterZ
+		)
+		inDirX = outDirX; inDirY = outDirY; inDirZ = outDirZ
+		const lsSq = c * c + q * q
+		if ( !( lsSq > epsSq && lsSq < Infinity ) ) {
+			throw new Error( '[MeshLineSurfaceGeometry] Surface frame is parallel to a path segment' )
+		}
+		const ls = Math.sqrt( lsSq )
+		if ( !( c > EPSILON * ls ) ) return -1
+		const invLsC = 1 / ( ls * c )
+		const invLs = c * invLsC
+		const invC = ls * invLsC
+		const cNorm = c * invLs
+		const qNorm = q * invLs
+		const cosine = cNorm * cNorm - qNorm * qNorm
+		const sine = 2 * cNorm * qNorm
+		const absSine = Math.abs( sine )
+		if ( cosine <= REVERSAL_SPLIT_DOT || ( cosine > 0 && absSine <= 1e-8 ) || cosine < singleSegCos ) return -1
+		const scale = ls * invC
+		if ( scale > 16 || ( isMiterJoin && scale <= joinLimit ) ) return -1
+		const insetLen = Math.abs( q ) * invC * maxHalfWidth
+		if ( insetLen > prevSegLen * safeRatio || insetLen > curSegLen * safeRatio ) return -1
+		prevSegLen = curSegLen
+		if ( scale > maxFiniteScale ) maxFiniteScale = scale
+
+		const cmX = miterX * cNorm
+		const cmY = miterY * cNorm
+		const cmZ = miterZ * cNorm
+		const qtX = tanX * qNorm
+		const qtY = tanY * qNorm
+		const qtZ = tanZ * qNorm
+
+		const centerX = points[pointOffset]
+		const centerY = points[pointOffset + 1]
+		const centerZ = points[pointOffset + 2]
+		normals[ie0] = nx; normals[ie0 + 1] = ny; normals[ie0 + 2] = nz
+		normals[ie0 + 3] = nx; normals[ie0 + 4] = ny; normals[ie0 + 5] = nz
+		normals[ie0 + 6] = nx; normals[ie0 + 7] = ny; normals[ie0 + 8] = nz
+		normals[ie0 + 9] = nx; normals[ie0 + 10] = ny; normals[ie0 + 11] = nz
+
+		const width = constantHalfWidth !== null ? constantHalfWidth : halfWidths[pointIndex]
+		const positiveTurn = sine > 0
+		const turnBit = positiveTurn ? 1 : 0
+		const innerBias = turnBit * 3
+		const outerBias = 3 - innerBias
+		const outerWidth = positiveTurn ? -width : width
+		const innerScale = -outerWidth * scale
+		const innerX = Math.fround( centerX + miterX * innerScale )
+		const innerY = Math.fround( centerY + miterY * innerScale )
+		const innerZ = Math.fround( centerZ + miterZ * innerScale )
+		const inOuterX = Math.fround( centerX + ( cmX + qtX ) * outerWidth )
+		const inOuterY = Math.fround( centerY + ( cmY + qtY ) * outerWidth )
+		const inOuterZ = Math.fround( centerZ + ( cmZ + qtZ ) * outerWidth )
+		const outOuterX = Math.fround( centerX + ( cmX - qtX ) * outerWidth )
+		const outOuterY = Math.fround( centerY + ( cmY - qtY ) * outerWidth )
+		const outOuterZ = Math.fround( centerZ + ( cmZ - qtZ ) * outerWidth )
+
+		const inOutIdx = ie0 + outerBias
+		const inInIdx = ie0 + innerBias
+		const outOutIdx = ie0 + 6 + outerBias
+		const outInIdx = ie0 + 6 + innerBias
+		positions[inOutIdx] = inOuterX; positions[inOutIdx + 1] = inOuterY; positions[inOutIdx + 2] = inOuterZ
+		positions[inInIdx] = innerX; positions[inInIdx + 1] = innerY; positions[inInIdx + 2] = innerZ
+		positions[outOutIdx] = outOuterX; positions[outOutIdx + 1] = outOuterY; positions[outOutIdx + 2] = outOuterZ
+		positions[outInIdx] = innerX; positions[outInIdx + 1] = innerY; positions[outInIdx + 2] = innerZ
+
+		minX = Math.min( minX, Math.min( innerX, Math.min( inOuterX, outOuterX ) ) )
+		maxX = Math.max( maxX, Math.max( innerX, Math.max( inOuterX, outOuterX ) ) )
+		minY = Math.min( minY, Math.min( innerY, Math.min( inOuterY, outOuterY ) ) )
+		maxY = Math.max( maxY, Math.max( innerY, Math.max( inOuterY, outOuterY ) ) )
+		minZ = Math.min( minZ, Math.min( innerZ, Math.min( inOuterZ, outOuterZ ) ) )
+		maxZ = Math.max( maxZ, Math.max( innerZ, Math.max( inOuterZ, outOuterZ ) ) )
+
+		indices[indexOffset] = incomingEnd0 + turnBit
+		indices[indexOffset + 1] = incomingEnd0 + outerBias
+		indices[indexOffset + 2] = incomingEnd0 + 1 + turnBit
+	}
+
+	const maxVertexMag = topo.maxCoordMagnitude + maxHalfWidth * maxFiniteScale
+	if ( !( maxVertexMag <= 1e30 && topo.minHalfWidth >= maxVertexMag * 2e-6 ) ) return -1
+	if ( !line.isFloat32Input ) assertFloat32PathSegments( points, false, 0 )
+
+	writeTopoBaseQuads(
+		indices, 0, positions, normals, null,
+		0, segmentCount, false, true, skipTopoBaseQuadWrite
+	)
+
+	lastBoundsMinX = minX; lastBoundsMinY = minY; lastBoundsMinZ = minZ
+	lastBoundsMaxX = maxX; lastBoundsMaxY = maxY; lastBoundsMaxZ = maxZ
+	return indexOffset
+}
+
+function materializeDirectStreamFallback( line, lineIndex, options ) {
+	const topo = line.topology
+	const { path, frame, topologyNeeds, minHalfWidth, maxHalfWidth, maxCoordMagnitude } = topo
+	const joinData = computeJoinInfos( path, frame, maxHalfWidth, options.join )
+	const innerFactors = resolveInnerJoinFootprints( path, joinData, line.halfWidths, maxHalfWidth, options.join, lineIndex )
+	const topologyMode = getVariableTopologyMode( path, options.join, options.cap )
+	let offsets = null
+	if ( topologyMode !== 'full' ) {
+		offsets = computeOffsets( path, frame, joinData, true )
+	}
+	const maxVertexMag = maxCoordMagnitude + maxHalfWidth * lastJoinMaxFiniteScale
+	const fastFloat32Safe = minHalfWidth > 0 && maxVertexMag <= 1e30 && minHalfWidth >= maxVertexMag * 2e-6 &&
+		( line.isFloat32Input || path.minSegmentLength >= maxCoordMagnitude * 1e-5 )
+	const fastCanonicalQuads = fastFloat32Safe &&
+		!path.hasCusps &&
+		!lastJoinHasSplit &&
+		!lastFootprintClipped &&
+		lastFootprintCanonicalSafe &&
+		lastJoinMaxScale <= 16 &&
+		( typeof options.surface.bank === 'number' || options.surface.bank == null )
+	line.fastFloat32Safe = fastFloat32Safe
+	line.fastCanonicalQuads = fastCanonicalQuads
+	line.offsets = offsets
+	if ( topologyMode === 'full' ) {
+		if ( fastCanonicalQuads && !lastJoinHasMultiSegRound ) {
+			const segmentCount = path.segmentCount
+			const lastSegOffset = ( segmentCount - 1 ) * 3
+			writeSegmentSide( joinScratch.segmentStartSides, 0, frame.normals, 0, path.segmentDirections, 0 )
+			writeSegmentSide( joinScratch.segmentEndSides, lastSegOffset, frame.normals, ( path.pointCount - 1 ) * 3, path.segmentDirections, lastSegOffset )
+			const aliasedCount = lastJoinHasAliased ? lastJoinAliasedCount : 0
+			line.topology = {
+				directUnaliased: true,
+				hasAliases: lastJoinHasAliased,
+				joinType: options.join.type,
+				joinLimit: options.join.limit,
+				joinData,
+				innerFactors,
+				positions: null,
+				normals: null,
+				tangents: null,
+				uvs: null,
+				progress: null,
+				sides: null,
+				extraIndices: null,
+				extraIndexCount: 0,
+				pairVertices: null,
+				vertexCount: segmentCount * 4 - aliasedCount * 2,
+				indexCount: segmentCount * 6 + ( path.pointCount - 2 - aliasedCount ) * 3,
+				seamPair: null,
+			}
+		} else {
+			line.topology = buildVariableTopology( path, frame, line.halfWidths, options.surface, options.join, options.cap, topologyNeeds, innerFactors, joinData, true )
+		}
+	} else {
+		line.topology = null
+	}
+	line.capTopology = topologyMode === 'caps'
+		? buildCompactCapTopology( path, frame, offsets, line.halfWidths, options.surface, options.cap, topologyNeeds, true )
+		: null
 }
 
 function emitVariableTopologyLine(
@@ -1048,9 +2532,9 @@ function emitVariableTopologyLine(
 	const topo = line.topology
 	if ( topo.directUnaliased ) {
 		if ( trackChanges ) indexWriteChanged = true
-		const nextOffset = emitDirectUnaliasedVariableLine(
-			line, positions, normals, indices, bounds, false, skipTopoBaseQuadWrite
-		)
+		const nextOffset = topo.hasAliases
+			? emitDirectAliasedVariableLine( line, positions, normals, indices, bounds )
+			: emitDirectUnaliasedVariableLine( line, positions, normals, indices, bounds, false, skipTopoBaseQuadWrite )
 		bounds[0] = lastBoundsMinX; bounds[1] = lastBoundsMinY; bounds[2] = lastBoundsMinZ
 		bounds[3] = lastBoundsMaxX; bounds[4] = lastBoundsMaxY; bounds[5] = lastBoundsMaxZ
 		return nextOffset
@@ -1204,9 +2688,12 @@ function emitCompactRows( line, lineIndex, vertexStart, positions, normals, tang
 		const nx = lineNormals[pointOffset]
 		const ny = lineNormals[pointOffset + 1]
 		const nz = lineNormals[pointOffset + 2]
-		normals[leftPosition] = normals[rightPosition] = nx
-		normals[leftPosition + 1] = normals[rightPosition + 1] = ny
-		normals[leftPosition + 2] = normals[rightPosition + 2] = nz
+		normals[leftPosition] = nx
+		normals[leftPosition + 1] = ny
+		normals[leftPosition + 2] = nz
+		normals[rightPosition] = nx
+		normals[rightPosition + 1] = ny
+		normals[rightPosition + 2] = nz
 
 		if ( tangents ) writePair4( tangents, vertex, lineTangents[pointOffset], lineTangents[pointOffset + 1], lineTangents[pointOffset + 2], 1 )
 		if ( uvs ) {
@@ -1456,8 +2943,32 @@ function buildSurfaceLine( line, lineIndex, options, usePooledLineArrays = false
 	let joinData = null
 	let innerFactors = null
 	let topologyMode = null
+	let directStream = false
 	if ( offsets ) {
 		topologyMode = !path.closed && options.cap.type !== 'butt' ? 'caps' : null
+	} else if (
+		usePooledLineArrays &&
+		!path.closed &&
+		!path.hasCusps &&
+		options.cap.type === 'butt' &&
+		!topologyNeeds.tangents &&
+		!topologyNeeds.uvs &&
+		!topologyNeeds.progress &&
+		!topologyNeeds.sides &&
+		( typeof options.surface.bank === 'number' || options.surface.bank == null ) &&
+		minHalfWidth > 0 &&
+		( isFloat32Input || path.minSegmentLength >= maxCoordMagnitude * 1e-5 ) &&
+		canDirectUnaliasedFirstJoin( path, frame, maxHalfWidth, options.join )
+	) {
+		directStream = true
+		topologyMode = 'full'
+		lastJoinHasSplit = false
+		lastJoinHasAliased = false
+		lastJoinHasMultiSegRound = false
+		lastFootprintClipped = false
+		lastFootprintCanonicalSafe = true
+		lastJoinMaxScale = 1
+		lastJoinMaxFiniteScale = Math.SQRT2
 	} else {
 		joinData = computeJoinInfos( path, frame, maxHalfWidth, options.join )
 		innerFactors = resolveInnerJoinFootprints( path, joinData, halfWidths, maxHalfWidth, options.join, lineIndex )
@@ -1481,26 +2992,18 @@ function buildSurfaceLine( line, lineIndex, options, usePooledLineArrays = false
 
 	let topology = null
 	if ( topologyMode === 'full' ) {
-		if (
-			usePooledLineArrays &&
-			fastCanonicalQuads &&
-			!path.closed &&
-			options.cap.type === 'butt' &&
-			!lastJoinHasAliased &&
-			!lastJoinHasMultiSegRound &&
-			!topologyNeeds.tangents &&
-			!topologyNeeds.uvs &&
-			!topologyNeeds.progress &&
-			!topologyNeeds.sides
-		) {
+		if ( directStream && fastCanonicalQuads ) {
 			const segmentCount = path.segmentCount
-			const lastSegOffset = ( segmentCount - 1 ) * 3
-			writeSegmentSide( joinScratch.segmentStartSides, 0, frame.normals, 0, path.segmentDirections, 0 )
-			writeSegmentSide( joinScratch.segmentEndSides, lastSegOffset, frame.normals, ( pointCount - 1 ) * 3, path.segmentDirections, lastSegOffset )
 			topology = {
 				directUnaliased: true,
-				joinData,
-				innerFactors,
+				directStream: true,
+				path,
+				frame,
+				join: options.join,
+				topologyNeeds,
+				minHalfWidth,
+				maxHalfWidth,
+				maxCoordMagnitude,
 				positions: null,
 				normals: null,
 				tangents: null,
@@ -1512,6 +3015,42 @@ function buildSurfaceLine( line, lineIndex, options, usePooledLineArrays = false
 				pairVertices: null,
 				vertexCount: segmentCount * 4,
 				indexCount: segmentCount * 6 + ( pointCount - 2 ) * 3,
+				seamPair: null,
+			}
+		} else if (
+			usePooledLineArrays &&
+			fastCanonicalQuads &&
+			!path.closed &&
+			options.cap.type === 'butt' &&
+			!lastJoinHasMultiSegRound &&
+			!topologyNeeds.tangents &&
+			!topologyNeeds.uvs &&
+			!topologyNeeds.progress &&
+			!topologyNeeds.sides
+		) {
+			const segmentCount = path.segmentCount
+			const lastSegOffset = ( segmentCount - 1 ) * 3
+			writeSegmentSide( joinScratch.segmentStartSides, 0, frame.normals, 0, path.segmentDirections, 0 )
+			writeSegmentSide( joinScratch.segmentEndSides, lastSegOffset, frame.normals, ( pointCount - 1 ) * 3, path.segmentDirections, lastSegOffset )
+			const aliasedCount = lastJoinHasAliased ? lastJoinAliasedCount : 0
+			topology = {
+				directUnaliased: true,
+				hasAliases: lastJoinHasAliased,
+				joinType: options.join.type,
+				joinLimit: options.join.limit,
+				joinData,
+				innerFactors,
+				positions: null,
+				normals: null,
+				tangents: null,
+				uvs: null,
+				progress: null,
+				sides: null,
+				extraIndices: null,
+				extraIndexCount: 0,
+				pairVertices: null,
+				vertexCount: segmentCount * 4 - aliasedCount * 2,
+				indexCount: segmentCount * 6 + ( pointCount - 2 - aliasedCount ) * 3,
 				seamPair: null,
 			}
 		} else {
@@ -1577,12 +3116,13 @@ function buildCompactCapTopology( path, frame, offsets, halfWidths, surface, cap
 		const localVertex = vCursor++
 		const v3 = localVertex * 3
 		const offset = pointIndex * 3
+		const normalOffset = pointIndex === 0 ? 0 : ( frame.endNormalOffset ?? offset )
 		positions[v3] = x
 		positions[v3 + 1] = y
 		positions[v3 + 2] = z
-		normals[v3] = frameNormals[offset]
-		normals[v3 + 1] = frameNormals[offset + 1]
-		normals[v3 + 2] = frameNormals[offset + 2]
+		normals[v3] = frameNormals[normalOffset]
+		normals[v3 + 1] = frameNormals[normalOffset + 1]
+		normals[v3 + 2] = frameNormals[normalOffset + 2]
 		if ( tangents ) {
 			tangents[v3] = pathTangents[offset]
 			tangents[v3 + 1] = pathTangents[offset + 1]
@@ -1602,11 +3142,12 @@ function buildCompactCapTopology( path, frame, offsets, halfWidths, surface, cap
 		const isEnd = endStep === 1
 		const pointIndex = isEnd ? path.pointCount - 1 : 0
 		const offset = pointIndex * 3
-		const directionOffset = ( isEnd ? path.segmentCount - 1 : 0 ) * 3
+		const normalOffset = isEnd ? ( frame.endNormalOffset ?? offset ) : 0
+		const directionOffset = isEnd ? ( path.endDirectionOffset ?? ( path.segmentCount - 1 ) * 3 ) : 0
 		const dirX = segmentDirections[directionOffset]
 		const dirY = segmentDirections[directionOffset + 1]
 		const dirZ = segmentDirections[directionOffset + 2]
-		writeSegmentSide( segmentSideScratch, 0, frameNormals, offset, segmentDirections, directionOffset )
+		writeSegmentSide( segmentSideScratch, 0, frameNormals, normalOffset, segmentDirections, directionOffset )
 		const sideX = segmentSideScratch[0]
 		const sideY = segmentSideScratch[1]
 		const sideZ = segmentSideScratch[2]
@@ -1621,9 +3162,9 @@ function buildCompactCapTopology( path, frame, offsets, halfWidths, surface, cap
 			: 0
 		const endpointProgress = progress ? ( isEnd ? 1 : 0 ) : 0
 		const directionSign = isEnd ? 1 : -1
-		const offX = offsets[offset] * halfWidth
-		const offY = offsets[offset + 1] * halfWidth
-		const offZ = offsets[offset + 2] * halfWidth
+		const offX = offsets[normalOffset] * halfWidth
+		const offY = offsets[normalOffset + 1] * halfWidth
+		const offZ = offsets[normalOffset + 2] * halfWidth
 		const leftX = centerX - offX
 		const leftY = centerY - offY
 		const leftZ = centerZ - offZ
@@ -1662,9 +3203,9 @@ function buildCompactCapTopology( path, frame, offsets, halfWidths, surface, cap
 		const startRadialX = leftX - centerX
 		const startRadialY = leftY - centerY
 		const startRadialZ = leftZ - centerZ
-		const normalX = frameNormals[offset]
-		const normalY = frameNormals[offset + 1]
-		const normalZ = frameNormals[offset + 2]
+		const normalX = frameNormals[normalOffset]
+		const normalY = frameNormals[normalOffset + 1]
+		const normalZ = frameNormals[normalOffset + 2]
 		const crossX = normalY * startRadialZ - normalZ * startRadialY
 		const crossY = normalZ * startRadialX - normalX * startRadialZ
 		const crossZ = normalX * startRadialY - normalY * startRadialX
@@ -1672,21 +3213,22 @@ function buildCompactCapTopology( path, frame, offsets, halfWidths, surface, cap
 		const axisDotX = normalX * dot
 		const axisDotY = normalY * dot
 		const axisDotZ = normalZ * dot
-		const sweep = isEnd ? Math.PI : -Math.PI
+		const radX = startRadialX - axisDotX
+		const radY = startRadialY - axisDotY
+		const radZ = startRadialZ - axisDotZ
+		const capTrig = getHalfTurnTrigTable( capSegments )
+		const invHalfWidth = halfWidth > EPSILON ? 1 / halfWidth : 0
 		const distanceUv = uvs && surface.uvMode === 'distance'
-		const uvScale = surface.uvScale
+		const invUvScale = distanceUv ? 1 / surface.uvScale : 0
 		let prevVertex = pair0
-		for ( let segment = 1; segment < capSegments; segment++ ) {
-			const angle = sweep * segment / capSegments
-			const cosine = Math.cos( angle )
-			const sine = Math.sin( angle )
-			const inverseCosine = 1 - cosine
-			const rx = startRadialX * cosine + crossX * sine + axisDotX * inverseCosine
-			const ry = startRadialY * cosine + crossY * sine + axisDotY * inverseCosine
-			const rz = startRadialZ * cosine + crossZ * sine + axisDotZ * inverseCosine
-			const sideCoordinate = halfWidth > EPSILON ? ( rx * sideX + ry * sideY + rz * sideZ ) / halfWidth : 0
-			const longitudinal = distanceUv ? rx * dirX + ry * dirY + rz * dirZ : 0
-			const u = distanceUv ? baseU + longitudinal / uvScale : baseU
+		for ( let segment = 1, trigOffset = 2; segment < capSegments; segment++, trigOffset += 2 ) {
+			const cosine = capTrig[trigOffset]
+			const sine = isEnd ? capTrig[trigOffset + 1] : -capTrig[trigOffset + 1]
+			const rx = axisDotX + radX * cosine + crossX * sine
+			const ry = axisDotY + radY * cosine + crossY * sine
+			const rz = axisDotZ + radZ * cosine + crossZ * sine
+			const sideCoordinate = ( rx * sideX + ry * sideY + rz * sideZ ) * invHalfWidth
+			const u = distanceUv ? baseU + ( rx * dirX + ry * dirY + rz * dirZ ) * invUvScale : baseU
 			const nextVertex = emitVertex(
 				pointIndex,
 				centerX + rx, centerY + ry, centerZ + rz,
@@ -1738,10 +3280,6 @@ function acquireTopoBuffer( scratchName, length, usePooled ) {
 	return usePooled
 		? acquireScratch( scratchName, length )
 		: new joinScratch[scratchName].constructor( length )
-}
-
-function initIdentityAliases( aliases, baseVertices ) {
-	for ( let v = 0; v < baseVertices; v++ ) aliases[v] = v
 }
 
 function emitBaseSegmentVertices(
@@ -1867,12 +3405,10 @@ function emitBaseSegmentVertices(
 		const enx = normalsSource[endOffset]
 		const eny = normalsSource[endOffset + 1]
 		const enz = normalsSource[endOffset + 2]
-		normals[posBase] = normals[posBase + 3] = snx
-		normals[posBase + 1] = normals[posBase + 4] = sny
-		normals[posBase + 2] = normals[posBase + 5] = snz
-		normals[posBase + 6] = normals[posBase + 9] = enx
-		normals[posBase + 7] = normals[posBase + 10] = eny
-		normals[posBase + 8] = normals[posBase + 11] = enz
+		normals[posBase] = snx; normals[posBase + 1] = sny; normals[posBase + 2] = snz
+		normals[posBase + 3] = snx; normals[posBase + 4] = sny; normals[posBase + 5] = snz
+		normals[posBase + 6] = enx; normals[posBase + 7] = eny; normals[posBase + 8] = enz
+		normals[posBase + 9] = enx; normals[posBase + 10] = eny; normals[posBase + 11] = enz
 
 		if ( tangents ) {
 			const stx = tangentsSource[startOffset]
@@ -1881,12 +3417,10 @@ function emitBaseSegmentVertices(
 			const etx = tangentsSource[endOffset]
 			const ety = tangentsSource[endOffset + 1]
 			const etz = tangentsSource[endOffset + 2]
-			tangents[posBase] = tangents[posBase + 3] = stx
-			tangents[posBase + 1] = tangents[posBase + 4] = sty
-			tangents[posBase + 2] = tangents[posBase + 5] = stz
-			tangents[posBase + 6] = tangents[posBase + 9] = etx
-			tangents[posBase + 7] = tangents[posBase + 10] = ety
-			tangents[posBase + 8] = tangents[posBase + 11] = etz
+			tangents[posBase] = stx; tangents[posBase + 1] = sty; tangents[posBase + 2] = stz
+			tangents[posBase + 3] = stx; tangents[posBase + 4] = sty; tangents[posBase + 5] = stz
+			tangents[posBase + 6] = etx; tangents[posBase + 7] = ety; tangents[posBase + 8] = etz
+			tangents[posBase + 9] = etx; tangents[posBase + 10] = ety; tangents[posBase + 11] = etz
 		}
 		if ( uvs ) {
 			const startU = stretchUV ? progressSource[startPoint] : distancesSource[startPoint] * invUvScale
@@ -2011,15 +3545,14 @@ function topoEmitVertex( state, pointIndex, x, y, z, side, u, vertexProgress ) {
 	return vertex
 }
 
-function topoAliasJoinRows( state, baseVertices, incomingEnd0, incomingEnd1, outgoingStart0, outgoingStart1 ) {
+function topoAliasJoinRows( state, pointCount, pointIndex ) {
 	let aliases = state.aliases
 	if ( !aliases ) {
-		aliases = acquireScratch( 'topoAliases', baseVertices )
-		initIdentityAliases( aliases, baseVertices )
+		aliases = acquireScratch( 'topoAliases', pointCount )
+		aliases.fill( 0, 0, pointCount )
 		state.aliases = aliases
 	}
-	aliases[outgoingStart0] = incomingEnd0
-	aliases[outgoingStart1] = incomingEnd1
+	aliases[pointIndex] = 1
 	state.hasAliases = true
 }
 
@@ -2049,9 +3582,8 @@ function emitFusedVariableSegmentVerticesAndJoins(
 		positions[4] = sy + swy
 		positions[5] = sz + swz
 		const snx = normalsSource[0], sny = normalsSource[1], snz = normalsSource[2]
-		normals[0] = normals[3] = snx
-		normals[1] = normals[4] = sny
-		normals[2] = normals[5] = snz
+		normals[0] = snx; normals[1] = sny; normals[2] = snz
+		normals[3] = snx; normals[4] = sny; normals[5] = snz
 
 		const lastSegIndex = segmentCount - 1
 		const lastSeg3 = lastSegIndex * 3
@@ -2069,9 +3601,8 @@ function emitFusedVariableSegmentVerticesAndJoins(
 		positions[posBase + 4] = ey + ewy
 		positions[posBase + 5] = ez + ewz
 		const enx = normalsSource[lastPt3], eny = normalsSource[lastPt3 + 1], enz = normalsSource[lastPt3 + 2]
-		normals[posBase] = normals[posBase + 3] = enx
-		normals[posBase + 1] = normals[posBase + 4] = eny
-		normals[posBase + 2] = normals[posBase + 5] = enz
+		normals[posBase] = enx; normals[posBase + 1] = eny; normals[posBase + 2] = enz
+		normals[posBase + 3] = enx; normals[posBase + 4] = eny; normals[posBase + 5] = enz
 	}
 
 	const firstJoinPoint = closed ? 0 : 1
@@ -2097,9 +3628,10 @@ function emitFusedVariableSegmentVerticesAndJoins(
 		const nx = normalsSource[pointOffset]
 		const ny = normalsSource[pointOffset + 1]
 		const nz = normalsSource[pointOffset + 2]
-		normals[ie0] = normals[ie0 + 3] = normals[os0] = normals[os0 + 3] = nx
-		normals[ie0 + 1] = normals[ie0 + 4] = normals[os0 + 1] = normals[os0 + 4] = ny
-		normals[ie0 + 2] = normals[ie0 + 5] = normals[os0 + 2] = normals[os0 + 5] = nz
+		normals[ie0] = nx; normals[ie0 + 1] = ny; normals[ie0 + 2] = nz
+		normals[ie0 + 3] = nx; normals[ie0 + 4] = ny; normals[ie0 + 5] = nz
+		normals[os0] = nx; normals[os0 + 1] = ny; normals[os0 + 2] = nz
+		normals[os0 + 3] = nx; normals[os0 + 4] = ny; normals[os0 + 5] = nz
 
 		const width = constantHalfWidth !== null ? constantHalfWidth : halfWidths[pointIndex]
 		const info = pointIndex * JOIN_STRIDE
@@ -2125,7 +3657,7 @@ function emitFusedVariableSegmentVerticesAndJoins(
 			} else {
 				positions[os0] = lx; positions[os0 + 1] = ly; positions[os0 + 2] = lz
 				positions[os0 + 3] = rx; positions[os0 + 4] = ry; positions[os0 + 5] = rz
-				topoAliasJoinRows( state, baseVertices, incomingEnd0, incomingEnd1, outgoingStart0, outgoingStart1 )
+				topoAliasJoinRows( state, pointCount, pointIndex )
 			}
 			continue
 		}
@@ -2143,7 +3675,7 @@ function emitFusedVariableSegmentVerticesAndJoins(
 			positions[os0] = lx; positions[os0 + 1] = ly; positions[os0 + 2] = lz
 			positions[ie0 + 3] = rx; positions[ie0 + 4] = ry; positions[ie0 + 5] = rz
 			positions[os0 + 3] = rx; positions[os0 + 4] = ry; positions[os0 + 5] = rz
-			if ( !seamJoin ) topoAliasJoinRows( state, baseVertices, incomingEnd0, incomingEnd1, outgoingStart0, outgoingStart1 )
+			if ( !seamJoin ) topoAliasJoinRows( state, pointCount, pointIndex )
 			continue
 		}
 
@@ -2262,7 +3794,7 @@ function emitVariableJoins(
 		const angle = joinData[info + JOIN_ANGLE]
 		const seamJoin = closed && pointIndex === 0
 		if ( angle === 0 ) {
-			if ( !seamJoin ) topoAliasJoinRows( state, baseVertices, incomingEnd0, incomingEnd1, outgoingStart0, outgoingStart1 )
+			if ( !seamJoin ) topoAliasJoinRows( state, pointCount, pointIndex )
 			continue
 		}
 
@@ -2287,7 +3819,7 @@ function emitVariableJoins(
 			positions[os0] = lx; positions[os0 + 1] = ly; positions[os0 + 2] = lz
 			positions[ie0 + 3] = rx; positions[ie0 + 4] = ry; positions[ie0 + 5] = rz
 			positions[os0 + 3] = rx; positions[os0 + 4] = ry; positions[os0 + 5] = rz
-			if ( !seamJoin ) topoAliasJoinRows( state, baseVertices, incomingEnd0, incomingEnd1, outgoingStart0, outgoingStart1 )
+			if ( !seamJoin ) topoAliasJoinRows( state, pointCount, pointIndex )
 			continue
 		}
 
@@ -2511,9 +4043,8 @@ const joinScratch = {
 	topoProgress: new Float32Array( 0 ),
 	topoSides: new Float32Array( 0 ),
 	topoIndices: new Uint32Array( 0 ),
-	topoAliases: new Int32Array( 0 ),
+	topoAliases: new Uint8Array( 0 ),
 	topoSplits: new Uint8Array( 0 ),
-	topoRemap: new Int32Array( 0 ),
 	topoUsed: new Int32Array( 0 ),
 	topoPairVertices: new Int32Array( 0 ),
 	topoCompactPositions: new Float64Array( 0 ),
@@ -2538,6 +4069,7 @@ function acquireScratch( name, length ) {
 
 let lastJoinHasSplit = false
 let lastJoinHasAliased = false
+let lastJoinAliasedCount = 0
 let lastJoinHasMultiSegRound = false
 let lastJoinMaxScale = 0
 let lastJoinMaxFiniteScale = Math.SQRT2
@@ -2684,6 +4216,7 @@ function computeJoinInfos( path, frame, maxHalfWidth = 0, join = DEFAULT_JOIN_OP
 	const epsSq = EPSILON * EPSILON
 	let hasSplit = false
 	let hasAliased = false
+	let aliasedCount = 0
 	let hasMultiSegRound = false
 	let maxScale = 0
 	let maxFiniteScale = Math.SQRT2
@@ -2784,9 +4317,13 @@ function computeJoinInfos( path, frame, maxHalfWidth = 0, join = DEFAULT_JOIN_OP
 			if ( scale > maxFiniteScale ) maxFiniteScale = scale
 			if ( isFlat ) {
 				hasAliased = true
+				if ( pointIndex > 0 ) aliasedCount++
 			} else {
 				const withinMiterLimit = scale <= joinLimit
-				if ( isMiterJoin && withinMiterLimit ) hasAliased = true
+				if ( isMiterJoin && withinMiterLimit ) {
+					hasAliased = true
+					if ( pointIndex > 0 ) aliasedCount++
+				}
 				unitInset = Math.abs( q ) * invC
 				if ( unitInset > maxUnitInset ) maxUnitInset = unitInset
 				if ( scale > maxScale ) maxScale = scale
@@ -2816,6 +4353,7 @@ function computeJoinInfos( path, frame, maxHalfWidth = 0, join = DEFAULT_JOIN_OP
 
 	lastJoinHasSplit = hasSplit
 	lastJoinHasAliased = hasAliased
+	lastJoinAliasedCount = aliasedCount
 	lastJoinHasMultiSegRound = hasMultiSegRound
 	lastJoinMaxScale = maxScale
 	lastJoinMaxFiniteScale = maxFiniteScale
@@ -2913,44 +4451,34 @@ function resolveInnerJoinFootprints( path, joinData, halfWidths, maxHalfWidth, j
 	return null
 }
 
-function remapBaseAndExtraIndices( extraIndices, extraIndexCount, baseVertices, aliases, remap, used, pairVertices, outExtraIndices ) {
-	let usedBaseCount = 0
-	for ( let base = 0; base < baseVertices; base += 4 ) {
-		const s0 = aliases[base]
-		let m0 = remap[s0]
-		if ( m0 === -1 ) {
-			m0 = usedBaseCount
-			remap[s0] = usedBaseCount
-			used[usedBaseCount++] = s0
+function remapBaseAndExtraIndices( extraIndices, extraIndexCount, baseVertices, aliases, used, pairVertices, outExtraIndices ) {
+	pairVertices[0] = 0
+	pairVertices[2] = 1
+	pairVertices[1] = 2
+	pairVertices[3] = 3
+	used[0] = 0
+	used[1] = 2
+	used[2] = 1
+	used[3] = 3
+	let usedBaseCount = 4
+	for ( let base = 4, pointIndex = 1; base < baseVertices; base += 4, pointIndex++ ) {
+		if ( aliases[pointIndex] ) {
+			pairVertices[base] = pairVertices[base - 2]
+			pairVertices[base + 2] = usedBaseCount
+			used[usedBaseCount++] = base + 2
+			pairVertices[base + 1] = pairVertices[base - 1]
+			pairVertices[base + 3] = usedBaseCount
+			used[usedBaseCount++] = base + 3
+		} else {
+			pairVertices[base] = usedBaseCount
+			used[usedBaseCount++] = base
+			pairVertices[base + 2] = usedBaseCount
+			used[usedBaseCount++] = base + 2
+			pairVertices[base + 1] = usedBaseCount
+			used[usedBaseCount++] = base + 1
+			pairVertices[base + 3] = usedBaseCount
+			used[usedBaseCount++] = base + 3
 		}
-		pairVertices[base] = m0
-
-		const s2 = aliases[base + 2]
-		let m2 = remap[s2]
-		if ( m2 === -1 ) {
-			m2 = usedBaseCount
-			remap[s2] = usedBaseCount
-			used[usedBaseCount++] = s2
-		}
-		pairVertices[base + 2] = m2
-
-		const s1 = aliases[base + 1]
-		let m1 = remap[s1]
-		if ( m1 === -1 ) {
-			m1 = usedBaseCount
-			remap[s1] = usedBaseCount
-			used[usedBaseCount++] = s1
-		}
-		pairVertices[base + 1] = m1
-
-		const s3 = aliases[base + 3]
-		let m3 = remap[s3]
-		if ( m3 === -1 ) {
-			m3 = usedBaseCount
-			remap[s3] = usedBaseCount
-			used[usedBaseCount++] = s3
-		}
-		pairVertices[base + 3] = m3
 	}
 
 	// Every extra vertex (`rawVertex >= baseVertices`) emitted by `topoEmitVertex`
@@ -3046,12 +4574,10 @@ function finalizeVariableTopology(
 		}
 	}
 
-	const remap = acquireScratch( 'topoRemap', baseVertices )
-	remap.fill( -1, 0, baseVertices )
 	const used = acquireScratch( 'topoUsed', baseVertices )
 	const pairVertices = acquireTopoBuffer( 'topoPairVertices', baseVertices, usePooledLineArrays )
 	const outExtraIndices = acquireTopoBuffer( 'topoCompactIndices', extraIndexCount, usePooledLineArrays )
-	const usedBaseCount = remapBaseAndExtraIndices( extraIndices, extraIndexCount, baseVertices, aliases, remap, used, pairVertices, outExtraIndices )
+	const usedBaseCount = remapBaseAndExtraIndices( extraIndices, extraIndexCount, baseVertices, aliases, used, pairVertices, outExtraIndices )
 	const usedCount = usedBaseCount + ( vertexCount - baseVertices )
 
 	const outPositions = acquireTopoBuffer( 'topoCompactPositions', usedCount * 3, usePooledLineArrays )
@@ -3128,6 +4654,22 @@ function writeSegmentSide( target, targetOffset, normals, normalOffset, directio
 	target[targetOffset + 2] = sideZ
 }
 
+const halfTurnTrigTables = new Map()
+
+function getHalfTurnTrigTable( segments ) {
+	let table = halfTurnTrigTables.get( segments )
+	if ( table ) return table
+	table = new Float64Array( segments * 2 )
+	const step = Math.PI / segments
+	for ( let s = 1, offset = 2; s < segments; s++, offset += 2 ) {
+		const angle = step * s
+		table[offset] = Math.cos( angle )
+		table[offset + 1] = Math.sin( angle )
+	}
+	if ( segments <= 256 ) halfTurnTrigTables.set( segments, table )
+	return table
+}
+
 function emitRoundJoin(
 	state,
 	pointIndex, pivot, outerStart, outerEnd, outerSlot,
@@ -3151,24 +4693,34 @@ function emitRoundJoin(
 	const axisDotX = normalX * dot
 	const axisDotY = normalY * dot
 	const axisDotZ = normalZ * dot
+	const baseX = centerX + axisDotX
+	const baseY = centerY + axisDotY
+	const baseZ = centerZ + axisDotZ
+	const radX = startRadialX - axisDotX
+	const radY = startRadialY - axisDotY
+	const radZ = startRadialZ - axisDotZ
 	const outerSide = outerSlot === 0 ? -1 : 1
 	const positiveTurn = angle > 0
+	const stepDelta = angle / segmentCount
+	const stepCos = Math.cos( stepDelta )
+	const stepSin = Math.sin( stepDelta )
+	let cosine = stepCos
+	let sine = stepSin
 	let prevVertex = outerStart
 	for ( let segment = 1; segment < segmentCount; segment++ ) {
-		const stepAngle = angle * segment / segmentCount
-		const cosine = Math.cos( stepAngle )
-		const sine = Math.sin( stepAngle )
-		const inverseCosine = 1 - cosine
 		const nextVertex = topoEmitVertex(
 			state, pointIndex,
-			centerX + ( startRadialX * cosine + crossX * sine + axisDotX * inverseCosine ),
-			centerY + ( startRadialY * cosine + crossY * sine + axisDotY * inverseCosine ),
-			centerZ + ( startRadialZ * cosine + crossZ * sine + axisDotZ * inverseCosine ),
+			baseX + radX * cosine + crossX * sine,
+			baseY + radY * cosine + crossY * sine,
+			baseZ + radZ * cosine + crossZ * sine,
 			outerSide
 		)
 		if ( positiveTurn ) topoPushTriangle( state, pivot, prevVertex, nextVertex )
 		else topoPushTriangle( state, pivot, nextVertex, prevVertex )
 		prevVertex = nextVertex
+		const nextCos = cosine * stepCos - sine * stepSin
+		sine = sine * stepCos + cosine * stepSin
+		cosine = nextCos
 	}
 	if ( positiveTurn ) topoPushTriangle( state, pivot, prevVertex, outerEnd )
 	else topoPushTriangle( state, pivot, outerEnd, prevVertex )
@@ -3214,21 +4766,31 @@ function emitSeamJoin(
 		const axisDotX = normalX * dot
 		const axisDotY = normalY * dot
 		const axisDotZ = normalZ * dot
+		const baseX = centerX + axisDotX
+		const baseY = centerY + axisDotY
+		const baseZ = centerZ + axisDotZ
+		const radX = startRadialX - axisDotX
+		const radY = startRadialY - axisDotY
+		const radZ = startRadialZ - axisDotZ
+		const stepDelta = angle / segmentCount
+		const stepCos = Math.cos( stepDelta )
+		const stepSin = Math.sin( stepDelta )
+		let cosine = stepCos
+		let sine = stepSin
 		for ( let segment = 1; segment < segmentCount; segment++ ) {
-			const stepAngle = angle * segment / segmentCount
-			const cosine = Math.cos( stepAngle )
-			const sine = Math.sin( stepAngle )
-			const inverseCosine = 1 - cosine
 			const nextVertex = topoEmitVertex(
 				state, pointIndex,
-				centerX + ( startRadialX * cosine + crossX * sine + axisDotX * inverseCosine ),
-				centerY + ( startRadialY * cosine + crossY * sine + axisDotY * inverseCosine ),
-				centerZ + ( startRadialZ * cosine + crossZ * sine + axisDotZ * inverseCosine ),
+				baseX + radX * cosine + crossX * sine,
+				baseY + radY * cosine + crossY * sine,
+				baseZ + radZ * cosine + crossZ * sine,
 				outerSide, seamU, 1
 			)
 			if ( positiveTurn ) topoPushTriangle( state, pivot, prevVertex, nextVertex )
 			else topoPushTriangle( state, pivot, nextVertex, prevVertex )
 			prevVertex = nextVertex
+			const nextCos = cosine * stepCos - sine * stepSin
+			sine = sine * stepCos + cosine * stepSin
+			cosine = nextCos
 		}
 	}
 	const endVertex = topoEmitVertex(
@@ -3318,7 +4880,6 @@ function emitCap(
 	const startRadialY = positions[leftOffset + 1] - centerY
 	const startRadialZ = positions[leftOffset + 2] - centerZ
 	const pivot = topoEmitVertex( state, pointIndex, centerX, centerY, centerZ, 0, baseU, endpointProgress )
-	const sweep = isEnd ? Math.PI : -Math.PI
 	const normalX = frame.normals[pointOffset]
 	const normalY = frame.normals[pointOffset + 1]
 	const normalZ = frame.normals[pointOffset + 2]
@@ -3329,20 +4890,22 @@ function emitCap(
 	const axisDotX = normalX * dot
 	const axisDotY = normalY * dot
 	const axisDotZ = normalZ * dot
+	const radX = startRadialX - axisDotX
+	const radY = startRadialY - axisDotY
+	const radZ = startRadialZ - axisDotZ
+	const capTrig = getHalfTurnTrigTable( capSegments )
+	const invWidth = width > EPSILON ? 1 / width : 0
 	const distanceUv = state.uvs && surface.uvMode === 'distance'
-	const uvScale = surface.uvScale
+	const invUvScale = distanceUv ? 1 / surface.uvScale : 0
 	let prevVertex = pairLeft
-	for ( let capSegment = 1; capSegment < capSegments; capSegment++ ) {
-		const stepAngle = sweep * capSegment / capSegments
-		const cosine = Math.cos( stepAngle )
-		const sine = Math.sin( stepAngle )
-		const inverseCosine = 1 - cosine
-		const rx = startRadialX * cosine + crossX * sine + axisDotX * inverseCosine
-		const ry = startRadialY * cosine + crossY * sine + axisDotY * inverseCosine
-		const rz = startRadialZ * cosine + crossZ * sine + axisDotZ * inverseCosine
-		const sideCoordinate = width > EPSILON ? ( rx * sideX + ry * sideY + rz * sideZ ) / width : 0
-		const longitudinal = distanceUv ? rx * dirX + ry * dirY + rz * dirZ : 0
-		const u = distanceUv ? baseU + longitudinal / uvScale : baseU
+	for ( let capSegment = 1, trigOffset = 2; capSegment < capSegments; capSegment++, trigOffset += 2 ) {
+		const cosine = capTrig[trigOffset]
+		const sine = isEnd ? capTrig[trigOffset + 1] : -capTrig[trigOffset + 1]
+		const rx = axisDotX + radX * cosine + crossX * sine
+		const ry = axisDotY + radY * cosine + crossY * sine
+		const rz = axisDotZ + radZ * cosine + crossZ * sine
+		const sideCoordinate = ( rx * sideX + ry * sideY + rz * sideZ ) * invWidth
+		const u = distanceUv ? baseU + ( rx * dirX + ry * dirY + rz * dirZ ) * invUvScale : baseU
 		const nextVertex = topoEmitVertex(
 			state, pointIndex,
 			centerX + rx, centerY + ry, centerZ + rz,

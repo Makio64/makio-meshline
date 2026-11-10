@@ -14,11 +14,11 @@ The interactive diagram below is **rendered live with `MeshLine`** on `WebGPURen
 
 | Optimization Area | V1 / Baseline | V2 Result | Improvement |
 |---|---:|---:|---:|
-| **Partial 128-pt edit on 200K-pt billboard (`setPositionRange`)** | `1.28 ms` CPU · `28.80 MB` upload | `0.0039 ms` CPU · `18.62 KB` upload | **331× faster CPU · 99.94% less GPU upload** |
+| **Partial 128-pt edit on 200K-pt billboard (`setPositionRange`)** | `1.23 ms` CPU · `28.80 MB` upload | `0.0039 ms` CPU · `18.62 KB` upload | **331× faster CPU · 99.94% less GPU upload** |
 | **Padding-only bounds refresh (`lineWidth()` / `miterLimit()`) on 200K×1** | `1.58 ms` ($O(\text{points})$ scan) | `0.00025 ms` ($0.25\ \mu\text{s}$, $O(\text{lines})$) | **6,300× faster** |
-| **Padding-only bounds refresh on 200K points across 64 lines** | `1.59 ms` ($O(\text{points})$ scan) | `0.0057 ms` ($5.7\ \mu\text{s}$, $O(\text{lines})$) | **278× faster** |
+| **Padding-only bounds refresh on 200K points across 64 lines** | `1.59 ms` ($O(\text{points})$ scan) | `0.0035 ms` ($3.5\ \mu\text{s}$, $O(\text{lines})$) | **454× faster** |
 | **50K-pt surface `round8-butt` geometry memory** | `549,982` verts · `18.31 MiB` | `199,996` verts · `6.29 MiB` | **63.6% fewer vertices · 65.6% less RAM** |
-| **50K-pt surface build (`miter-butt` / `bevel` / `round`)** | `10.78–21.84 ms` (per-corner allocs) | **`3.32–3.92 ms`** (bisector frame + orthonormal join basis + flat scratch pool) | **3.3×–5.6× faster** |
+| **50K-pt surface build (`miter-butt` / `bevel` / `round`)** | `15.69–23.94 ms` (per-corner allocs) | **`2.00–3.33 ms`** (single-pass register-streaming surface builders + orthonormal join basis) | **7.0×–8.3× faster** |
 | **3D camera-fold miter overshoot (24 camera poses)** | `31.6 px` spike + `489` notched pixels | `4.8 px` (`'geometry'`) / `1.6 px` (`'exact'`) | **Zero spikes & zero notched core pixels** |
 | **200K-pt `MeshLineGPUPath` with local dyadic oracle** | `199,999` segments (CPU fallback) | `1,646` retained segments (indirect draw) | **65.9% less GPU buffer memory · ~10% faster frame** |
 
@@ -36,10 +36,10 @@ pnpm bench:hotpaths
 
 | Profile | Full `setPositions()` | Full + Bounds | Partial `setPositionRange()` | Pending Upload Bytes | Full `position + previous + next` |
 |---|---:|---:|---:|---:|---:|
-| **Default (`needsProgress: false`)** | `1.28 ms` | `1.54 ms` | **`0.0039 ms`** | **`18.6 KB`** (`18,624` B) | `28.8 MB` (`28,800,000` B) |
-| **Progress + UV (`needsProgress` + `needsUV`)** | `2.18 ms` | `2.27 ms` | `0.58 ms` | `9.62 MB` | `28.8 MB` |
-| **Endpoint Metadata (`needsEndpointMetadata`)** | `2.45 ms` | `2.55 ms` | `0.91 ms` | `16.02 MB` | `28.8 MB` |
-| **Width Callback (`widthCallback`)** | `2.67 ms` | `2.72 ms` | **`0.93 ms`** | `6.42 MB` | `28.8 MB` |
+| **Default (`needsProgress: false`)** | **`1.23 ms`** | **`1.26 ms`** | **`0.0039 ms`** | **`18.6 KB`** (`18,624` B) | `28.8 MB` (`28,800,000` B) |
+| **Progress + UV (`needsProgress` + `needsUV`)** | **`1.92 ms`** | **`1.97 ms`** | **`0.57 ms`** | `9.62 MB` | `28.8 MB` |
+| **Endpoint Metadata (`needsEndpointMetadata`)** | **`2.22 ms`** | **`2.19 ms`** | **`0.83 ms`** | `16.02 MB` | `28.8 MB` |
+| **Width Callback (`widthCallback`)** | **`2.43 ms`** | **`2.40 ms`** | **`0.93 ms`** | `6.42 MB` | `28.8 MB` |
 
 ::: tip Why `needsProgress: false` is 331× faster for partial edits
 When a line does not depend on cumulative arc-length progress, UVs, or a progress-driven `widthCallback`, a 128-point edit inside a 200,000-point line touches only `130 × 4 = 520` physical vertices across `position`, `previous`, and `next` (`18,624` bytes total). When arc-length progress is active, changing segment lengths shifts downstream normalized progress along that line, and V2 streams the normalized progress (`rawProgress[i] * invTotalLength`) directly into the target attribute buffers without a separate normalization pass.
@@ -59,19 +59,19 @@ pnpm bench:bounds
 
 | Configuration | `lineWidth()` Refresh | `join({ limit })` Refresh | Full `setPositions(pts, true)` Rescan | Speedup vs Rescan |
 |---|---:|---:|---:|---:|
-| **10,000 pts (1 line)** | `0.0012 ms` (`1.2 µs`) | `0.0009 ms` (`0.9 µs`) | `0.110 ms` | **~95×–120×** |
-| **10,000 pts (64 lines)** | `0.0072 ms` (`7.2 µs`) | `0.0059 ms` (`5.9 µs`) | `0.111 ms` | **~15×–19×** |
-| **100,000 pts (1 line)** | `0.00054 ms` (`0.54 µs`) | `0.00062 ms` (`0.62 µs`) | `0.860 ms` | **~1,380×–1,590×** |
-| **100,000 pts (64 lines)** | `0.0064 ms` (`6.4 µs`) | `0.0060 ms` (`6.0 µs`) | `0.804 ms` | **~125×–135×** |
-| **200,000 pts (1 line)** | **`0.00025 ms` (`0.25 µs`)** | **`0.00042 ms` (`0.42 µs`)** | `1.696 ms` | **~4,040×–6,780×** |
-| **200,000 pts (64 lines)** | **`0.0057 ms` (`5.7 µs`)** | **`0.0053 ms` (`5.3 µs`)** | `1.692 ms` | **~298×–317×** |
+| **10,000 pts (1 line)** | `0.0012 ms` (`1.2 µs`) | `0.0009 ms` (`0.9 µs`) | `0.088 ms` | **~73×–98×** |
+| **10,000 pts (64 lines)** | `0.0040 ms` (`4.0 µs`) | `0.0041 ms` (`4.1 µs`) | `0.085 ms` | **~21×** |
+| **100,000 pts (1 line)** | `0.00050 ms` (`0.50 µs`) | `0.00062 ms` (`0.62 µs`) | `0.676 ms` | **~1,090×–1,350×** |
+| **100,000 pts (64 lines)** | `0.0040 ms` (`4.0 µs`) | `0.0038 ms` (`3.8 µs`) | `0.619 ms` | **~155×–163×** |
+| **200,000 pts (1 line)** | **`0.00025 ms` (`0.25 µs`)** | **`0.00042 ms` (`0.42 µs`)** | `1.264 ms` | **~3,010×–5,050×** |
+| **200,000 pts (64 lines)** | **`0.0035 ms` (`3.5 µs`)** | **`0.0035 ms` (`3.5 µs`)** | `1.226 ms` | **~350×** |
 
 ---
 
 ## 3. World-Space Surface Topology & Scratch Pool (`pnpm bench:surface-topology`)
 
 World-space road and ribbon surfaces (`MeshLineSurfaceGeometry`) transport a 3D frame (`transport` or `fixed-up`), evaluate banking, and emit true miter, bevel, or round join/cap geometry. V2 optimizes surface generation in three ways:
-1. **Bisector reflection frame transport + orthonormal $\{\vec{t}, \vec{n}, \vec{m} = \vec{n} \times \vec{t}\}$ join basis + flat scratch pool**: Parallel transport uses algebraic bisector reflection with a single Newton-Raphson normalization step, and join/cap solvers derive miter directions, side projections, and cap fans in the local orthonormal basis into reusable flat typed buffers (`JOIN_STRIDE = 6`, zero JS array allocations), cutting `miter-butt`, `miter-round8`, `bevel`, and `round` build times by **3.3×–5.6×**.
+1. **Single-pass register-streaming surface builders + bisector reflection frame transport + orthonormal $\{\vec{t}, \vec{n}, \vec{m} = \vec{n} \times \vec{t}\}$ join basis**: Single open paths (`miter-butt`, `miter-round8`, `miter-square`, `bevel-butt`, single-segment `round`, and over-limit `miter`) fuse path validation, bisector reflection frame transport (with a single Newton-Raphson normalization step), orthonormal join math, and `position`/`normal`/`uv`/`index` buffer writes into a single register-resident loop with zero intermediate scratch arrays (`segmentDirections`, `segmentLengths`, `tangents`, `normals`, `joinData`, `innerFactors`, or `offsets`), cutting 50K-point build times by **7.0×–8.3×**.
 2. **Canonical index reuse on `setPositions()`**: When updating a compact surface path (including capped `round` or `square` strips) whose vertex/index topology has not changed, `MeshLineSurfaceGeometry` skips rewriting and re-uploading the index buffer (`indexAttr.version` stays unchanged).
 3. **Angle-adaptive round fans**: `join.segments` is treated as a half-turn ($\pi$ rad) budget, so shallow bends allocate proportionally fewer fan triangles instead of unconditionally emitting the maximum fan at every vertex.
 
@@ -83,11 +83,11 @@ pnpm bench:surface-topology -- 50000 7
 
 | Join / Cap Policy | Vertices | Indices | Buffer Size | Median Build Time | Notes |
 |---|---:|---:|---:|---:|---|
-| **`miter-butt`** | `100,000` | `299,994` | `3.43 MiB` (`3,599,976` B) | **`3.32 ms`** | Compact 2-row strip (`2 × N` vertices, **3.3× faster**) |
-| **`miter-round8`** | `100,016` | `300,042` | `3.43 MiB` (`3,600,552` B) | **`3.42 ms`** | Pooled zero-alloc cap buffers; adds only 16 cap vertices (**4.9× faster**) |
-| **`bevel-butt`** | `199,996` | `449,988` | `6.29 MiB` (`6,599,856` B) | **`3.58 ms`** | Direct unaliased target-buffer emission + bridge wedge (**4.9× faster**) |
-| **`round8-butt` (V2 adaptive)** | `199,996` | `449,988` | **`6.29 MiB` (`6,599,856` B)** | **`3.74 ms`** | **Down from `549,982` verts / `18.31 MiB` (-65.6% RAM · 4.7× faster)** |
-| **`sharp160-miter2`** | `199,996` | `449,988` | `6.29 MiB` (`6,599,856` B) | **`3.92 ms`** | Automatic bevel fallback when miter exceeds `limit: 2` (**5.6× faster**) |
+| **`miter-butt`** | `100,000` | `299,994` | `3.43 MiB` (`3,599,976` B) | **`2.00 ms`** | Single-pass compact 2-row strip (`2 × N` vertices, **8.2× faster**) |
+| **`miter-round8`** | `100,016` | `300,042` | `3.43 MiB` (`3,600,552` B) | **`2.01 ms`** | Single-pass strip + endpoint-only cap fan; adds 16 cap vertices (**7.8× faster**) |
+| **`bevel-butt`** | `199,996` | `449,988` | `6.29 MiB` (`6,599,856` B) | **`3.09 ms`** | Single-pass register-streamed target-buffer emission + bridge wedge (**7.5× faster**) |
+| **`round8-butt` (V2 adaptive)** | `199,996` | `449,988` | **`6.29 MiB` (`6,599,856` B)** | **`3.33 ms`** | **Down from `549,982` verts / `18.31 MiB` (-65.6% RAM · 7.0× faster)** |
+| **`sharp160-miter2`** | `199,996` | `449,988` | `6.29 MiB` (`6,599,856` B) | **`2.89 ms`** | Single-pass bevel fallback when miter exceeds `limit: 2` (**8.3× faster**) |
 
 ---
 
@@ -102,21 +102,67 @@ pnpm bench:v2
 | Point Count | Initial Build | `setPositions(pts, false)` | `setPositions(pts, true)` (+bounds) | Total Buffer Bytes |
 |---:|---:|---:|---:|---:|
 | **1,000** | `0.053 ms` | `0.009 ms` | `0.010 ms` | `188.0 KB` (`187,988` B) |
-| **10,000** | `0.217 ms` | `0.062 ms` | `0.078 ms` | `1.88 MB` (`1,879,988` B) |
-| **50,000** | `1.199 ms` | `0.311 ms` | `0.381 ms` | `10.00 MB` (`9,999,976` B) |
-| **200,000** | `4.046 ms` | `1.304 ms` | `1.532 ms` | `40.00 MB` (`39,999,976` B) |
+| **10,000** | `0.204 ms` | `0.060 ms` | `0.061 ms` | `1.88 MB` (`1,879,988` B) |
+| **50,000** | `1.081 ms` | `0.301 ms` | `0.320 ms` | `10.00 MB` (`9,999,976` B) |
+| **200,000** | `4.046 ms` | `1.228 ms` | `1.254 ms` | `40.00 MB` (`39,999,976` B) |
 
 ### World-Space Surface (`MeshLineSurfaceGeometry`, `frame: 'transport', uvMode: 'distance'`)
 
 | Point Count | Initial Build | `setPositions(pts)` | In-Place Buffer & Index Reuse | Total Buffer Bytes |
 |---:|---:|---:|---:|---:|
-| **1,000** | `0.273 ms` | `0.173 ms` | `true` | `60.0 KB` (`59,988` B) |
-| **10,000** | `0.470 ms` | `0.409 ms` | `true` | `600.0 KB` (`599,988` B) |
-| **50,000** | `2.249 ms` | `2.029 ms` | `true` | `3.60 MB` (`3,599,976` B) |
+| **1,000** | `0.191 ms` | `0.155 ms` | `true` | `60.0 KB` (`59,988` B) |
+| **10,000** | `0.396 ms` | `0.340 ms` | `true` | `600.0 KB` (`599,988` B) |
+| **50,000** | `1.856 ms` | `1.799 ms` | `true` | `3.60 MB` (`3,599,976` B) |
 
 ---
 
-## 5. Shader, Picker, Compute, and Native-WebGPU Optimizations
+## 5. End-to-End Browser Benchmarks (`pnpm bench:browser`) {#browser-benchmarks}
+
+The benchmarks above run in Node and time JavaScript only. In a browser two other costs dominate: the upload a position update causes, and the shader graph Three.js builds for each object. `pnpm bench:browser` runs `benchmarks/browser/suites.js` in headless Chrome and times whole frames, each one waiting for the GPU to finish. It needs Chrome (set `CHROME_PATH` if it is not in a default location) and no other dependency.
+
+```bash
+pnpm bench:browser
+pnpm bench:browser -- --only=startup,dynamic
+pnpm bench:browser -- --webgl --json=results.json
+```
+
+Measured on an Apple M3 Max, Chrome, WebGPU, three r187. Frame times vary by a millisecond or two between runs; uploads and build counts do not.
+
+### First render of 200 separate lines
+
+| | First render | Shader graphs built | Programs compiled |
+|---|---:|---:|---:|
+| **One graph per line (before)** | `288 ms` | `201` | `2` |
+| **Shared shader graphs** | **`16 ms`** | **`2`** | `2` |
+| One batched `MeshLine` | `3.5 ms` | `2` | `2` |
+
+### Every point moved each frame (`setPositions()`)
+
+| Points | `.dynamic( true )` | `.dynamic( 'storage' )` | Upload per frame |
+|---:|---:|---:|---:|
+| **10,000** | `1.6 ms` | **`1.0 ms`** | `1.4 MB` → `156 KB` |
+| **50,000** | `6.2 ms` | **`1.4 ms`** | `6.9 MB` → `781 KB` |
+| **200,000** | `8.6 ms` | **`3.6 ms`** | `27.5 MB` → `3.1 MB` |
+
+### One point appended each frame (`lines()` on a `.dynamic( true )` line)
+
+| Points | Before | Buffers reused | New GPU buffers per frame |
+|---:|---:|---:|---:|
+| **2,000** | `1.5 ms` | **`0.8 ms`** | `5` (341 KB) → `0.1` |
+| **20,000** | `3.2 ms` | **`1.0 ms`** | `5` (3.5 MB) → `0.1` |
+
+### Surface with round joins bending each frame (`setPositions()`)
+
+The joins re-tessellate as the corners sharpen, so the vertex count changes on about a third of the frames. A static surface then needs new buffers; a dynamic one keeps its own. The rebuild and its upload dominate either way, so the gain is in buffers no longer created rather than in frame time.
+
+| Points | Vertices | Static frame | Dynamic frame | New GPU buffers per frame |
+|---:|---:|---:|---:|---:|
+| **1,000** | `6,990` | `1.4 ms` | `1.2 ms` | `0.7` (37 KB) → `0.1` |
+| **10,000** | `69,990` | `3.6 ms` | `3.6 ms` | `0.7` (396 KB) → `0.1` |
+
+---
+
+## 6. Shader, Picker, Compute, and Native-WebGPU Optimizations
 
 - **Billboard Vertex Shader Projection (`MeshLineNodeMaterial`)**:
   - Projects vertices through `P · (MV · p)` instead of multiplying `P · MV` per vertex, projects the half-width once into NDC (`baseRadiusNdc`) via scalar `cameraProjectionMatrix[1].y`, decodes `joinRole` linearly without branching, and reuses the reversal guard's projected lengths and directions.

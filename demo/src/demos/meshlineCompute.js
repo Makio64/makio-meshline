@@ -3,18 +3,18 @@
  * Demonstrates: MeshLineCompute, mode ('autonomous' | 'follow' | 'field'), stiffness,
  * mouseStrength, curlStrength, arcLengthNode( progress ), and TSL widthFn / colorFn / fragmentAlphaFn.
  */
-import GUI from 'lil-gui'
 import { MeshLineCompute } from 'makio-meshline'
 import { color, float, Fn, instanceIndex, mix, mod, smoothstep, uniform, uv, vec4 } from 'three/tsl'
 import { AdditiveBlending, Plane, Raycaster, Vector2, Vector3 } from 'three/webgpu'
+import { markRaw, reactive } from 'vue'
 
+import MeshlineCompute from '@/components/MeshlineCompute.vue'
 import { stage } from '@/makio/core/stage'
 import stage3d from '@/makio/three/stage3d'
-import { noUI, reducedMotion } from '@/makio/utils/detect'
+import { reducedMotion } from '@/makio/utils/detect'
 import { onMove } from '@/makio/utils/input/mouse'
 import { createBloomPipeline } from '@/utils/bloomPipeline'
 import { WebGPURequiredError } from '@/utils/demoFailure'
-import { createDemoHint } from '@/utils/demoHint'
 
 const BACKGROUND = 0x010208
 const AUTO_ROTATE_SPEED = 0.00005
@@ -30,13 +30,17 @@ const backgroundGlow = Fn( () => {
 } )
 
 export default class MeshLineComputeExample {
-	params = {
+	uiComponent = markRaw( MeshlineCompute )
+	isCompactGui = false
+	params = reactive( {
+		open: true,
 		mode: 'autonomous',
 		curveCount: 140,
 		curlStrength: 0.7,
 		mouseStrength: 12,
 		stiffness: 1,
-	}
+		dashSpacing: 2.2,
+	} )
 	dashSpacing = uniform( 2.2 )
 	dashPhase = uniform( 0 )
 
@@ -51,8 +55,7 @@ export default class MeshLineComputeExample {
 
 		this.createLine()
 		createBloomPipeline( { strength: 0.8, radius: 0.45, threshold: 0.05 } )
-		this.createGui()
-		createDemoHint( 'Move to stir · curves simulated in WebGPU compute', { accent: '#ff7a9e', hideAfter: 8000 } )
+		this.syncGuiLayout()
 		stage3d.listen( onMove, this.onMouseMove )
 	}
 
@@ -62,7 +65,11 @@ export default class MeshLineComputeExample {
 
 		const { curveCount } = this.params
 		this.line = new MeshLineCompute( {
-			...this.params,
+			mode: this.params.mode,
+			curveCount,
+			curlStrength: this.params.curlStrength,
+			mouseStrength: this.params.mouseStrength,
+			stiffness: this.params.stiffness,
 			pointsPerCurve: 64,
 			curveLength: 5,
 			bounds: 13,
@@ -103,17 +110,44 @@ export default class MeshLineComputeExample {
 		stage3d.add( this.line )
 	}
 
-	createGui() {
-		const gui = stage3d.own( new GUI( { width: noUI ? 220 : 250 } ) )
-		gui.domElement.classList.add( 'DemoGuiTop' )
-		if ( noUI || stage.width <= 700 ) gui.close()
+	setMode( mode ) {
+		this.params.mode = mode
+		this.line.mode( mode )
+	}
 
-		gui.add( this.params, 'mode', { Galaxy: 'autonomous', Follow: 'follow', Field: 'field' } ).onChange( value => this.line.mode( value ) )
-		gui.add( this.params, 'curveCount', 16, 320, 1 ).onFinishChange( () => this.createLine() )
-		gui.add( this.params, 'mouseStrength', 0, 24, 0.1 ).onChange( value => this.line.mouseStrength( value ) )
-		gui.add( this.params, 'curlStrength', 0, 5, 0.05 ).onChange( value => this.line.curlStrength( value ) )
-		gui.add( this.params, 'stiffness', 0, 1, 0.01 ).onChange( value => this.line.stiffness( value ) )
-		gui.add( this.dashSpacing, 'value', 0.5, 4, 0.01 ).name( 'dashSpacing' )
+	setCurveCount( count, commit = false ) {
+		this.params.curveCount = count
+		if ( commit ) this.createLine()
+	}
+
+	setMouseStrength( value ) {
+		this.params.mouseStrength = value
+		this.line.mouseStrength( value )
+	}
+
+	setCurlStrength( value ) {
+		this.params.curlStrength = value
+		this.line.curlStrength( value )
+	}
+
+	setStiffness( value ) {
+		this.params.stiffness = value
+		this.line.stiffness( value )
+	}
+
+	setDashSpacing( value ) {
+		this.params.dashSpacing = value
+		this.dashSpacing.value = value
+	}
+
+	syncGuiLayout() {
+		const compact = stage.width <= 700
+		if ( compact && !this.isCompactGui ) this.params.open = false
+		this.isCompactGui = compact
+	}
+
+	onResize = () => {
+		this.syncGuiLayout()
 	}
 
 	onMouseMove = mouse => {

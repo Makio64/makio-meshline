@@ -86,7 +86,7 @@ test( 'selection and control mutations keep the height gizmo attached to the sel
 	const moveControl = section( source, 'moveControl( index, x, z ) {', 'setSelectedClearance( clearance ) {' )
 	const insert = section( source, 'insertControl( x, z, hintY ) {', 'removeControl( index ) {' )
 	const remove = section( source, 'removeControl( index ) {', '//---------------------------------------------------------- PICKING' )
-	const updateRoad = section( demo, 'updateRoad() {', 'update = () => {' )
+	const updateRoad = section( demo, 'updateRoad() {', 'update = dt => {' )
 
 	assert.match( syncHandles, /this\.syncHeightGizmo\(\)/ )
 	assert.match( syncGizmo, /const handle = this\.handles\[this\.selectedIndex\]/ )

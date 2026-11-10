@@ -74,9 +74,12 @@ export function measureRoadSurfaceClearance( points, geometry, heightAt, minimum
 		measure( points[index * 3], points[index * 3 + 1], points[index * 3 + 2], progress[index], index )
 	}
 
+	// Only what the surface draws: a dynamic one keeps spare buffer capacity, whose
+	// vertices sit at the origin or where an earlier road left them.
+	const vertexCount = geometry.vertexCount ?? position.count
 	const positions = position.array
 	const renderedProgress = vertexProgress.array
-	for ( let vertex = 0; vertex < position.count; vertex++ ) {
+	for ( let vertex = 0; vertex < vertexCount; vertex++ ) {
 		const offset = vertex * 3
 		const rowProgress = renderedProgress[vertex]
 		const pointIndex = nearestProgressIndex( progress, rowProgress )
@@ -100,7 +103,8 @@ export function measureRoadSurfaceClearance( points, geometry, heightAt, minimum
 
 	const indices = geometry.getIndex()?.array
 	if ( indices ) {
-		for ( let offset = 0; offset < indices.length; offset += 3 ) {
+		const indexCount = geometry.indexCount ?? indices.length
+		for ( let offset = 0; offset < indexCount; offset += 3 ) {
 			const first = indices[offset]
 			const second = indices[offset + 1]
 			const third = indices[offset + 2]

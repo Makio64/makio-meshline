@@ -122,7 +122,7 @@ export function seedRopes() {
 			const bow = Math.sin( pointRatio * Math.PI )
 			const offset = ( ropeIndex * POINTS_PER_ROPE + pointIndex ) * 3
 			const brightness = ( pointRatio ** 1.35 * 0.76 + 0.28 ) * depthCue
-			const bead = MathUtils.smoothstep( pointRatio, 0.91, 0.975 ) * 0.85
+			const bead = MathUtils.smoothstep( pointRatio, 0.91, 0.975 ) * 0.68
 
 			positions.set( [
 				anchorX + bow * Math.sin( ropeIndex * 1.7 ) * 0.06,

@@ -21,7 +21,7 @@ new MeshLineGeometry(options?: MeshLineGeometryOptions)
 
 ```ts
 type LinePoint = [x: number, y: number, z?: number] | THREE.Vector2 | THREE.Vector3 | { x: number, y: number, z?: number }
-type LinePoints = Float32Array | number[] | THREE.BufferGeometry | LinePoint[]
+type LinePoints = Float32Array | Float64Array | number[] | THREE.BufferGeometry | LinePoint[]
 
 interface MeshLineGeometryOptions {
   lines?: LinePoints | LinePoints[]          // One line or multiple lines
@@ -136,6 +136,7 @@ When a `THREE.BufferGeometry` is provided, the positions are extracted from its 
 
 - `lines` – A line input, or an array of line inputs for multiple disconnected lines. Each line can be:
   - `Float32Array` of flattened XYZ coordinates
+  - `Float64Array` of flattened XYZ coordinates, converted to a `Float32Array`
   - Flat numeric XYZ array
   - Nested number array of `[x,y,z]` coordinates
   - `Vector2`, `Vector3`, or plain `{ x, y, z? }` point arrays
@@ -242,6 +243,10 @@ Two caveats:
 - In geometry, it is a flat bevel bridge rather than a tessellated triangle fan. On billboards, `line.join( { type: 'round' } )` or `line.join( { fold: 'exact' } )` clips the outer corner to a round silhouette in the fragment shader; for tessellated triangle-fan round joins and caps in geometry, use the world-space [surface profile](./surface.md) or the optional [GPU path](./gpu-path.md).
 
 The alternative for very sharp static polylines remains [smooth sharp bends](#smooth-sharp-bends), which subdivides the corner on the CPU instead of filling it on the GPU. The two are independent and can be combined.
+
+## Counts in use
+
+`geometry.vertexCount` and `geometry.indexCount` are the vertices (four per point) and indices the line uses. A static geometry is exact, so they equal `attributes.position.count` and `index.count`. A dynamic one (`dynamic: true`, or a non-static `usage`) keeps its buffers when the point count changes: those counts are then capacities, `drawRange` covers the indices in use, and the indices past them are zero.
 
 ## Internal Structure
 

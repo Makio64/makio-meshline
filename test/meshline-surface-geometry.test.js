@@ -1024,3 +1024,48 @@ test( 'MeshLineSurfaceGeometry.copyToGeometry populates Mini3 Geometry and Three
 	assert.equal( threeTarget.getAttribute( 'normal' ).count, surface.getAttribute( 'normal' ).count )
 	assert.equal( threeTarget.getIndex().count, surface.getIndex().count )
 } )
+
+test( 'rejected setLines() and buildLine() keep the options of the last accepted build', () => {
+	const lines = new Float32Array( [0, 0, 0, 0, 0, 2] )
+	const geometry = new MeshLineSurfaceGeometry( { lines } )
+	geometry.setDrawRange( 0, 3 )
+
+	// Two points cannot close a loop, and a NaN width fails during the build.
+	assert.throws( () => geometry.setLines( new Float32Array( [0, 0, 0, 1, 0, 0] ), true ), /at least 3 distinct points/ )
+	assert.throws( () => geometry.buildLine( { closed: true, needsTangents: true, cap: 'round' } ), /at least 3 distinct points/ )
+	assert.throws( () => geometry.buildLine( { widthCallback: () => Number.NaN } ), /non-finite/ )
+	assert.equal( geometry.options.lines, lines )
+	assert.equal( geometry.options.closed, false )
+	assert.equal( geometry.options.widthCallback, null )
+	assert.deepEqual( geometry.options.cap, { type: 'butt', segments: 8 } )
+
+	geometry.buildLine( { lineWidth: 2 } )
+	assert.deepEqual( Object.keys( geometry.attributes ).sort(), ['normal', 'position'] )
+	assert.equal( geometry.getIndex().count, 6 )
+	// The NaN width cleared the geometry, which draws the caller's range again
+	// once rebuilt, by the single open line's fast path and by the general one,
+	// however many rejections cleared it. Later builds keep a range set since.
+	assert.equal( geometry.drawRange.count, 3 )
+	geometry.setDrawRange( 0, 4 )
+	geometry.setLines( [lines, lines] )
+	assert.equal( geometry.drawRange.count, 4 )
+	for ( let i = 0; i < 2; i++ ) {
+		assert.throws( () => geometry.buildLine( { widthCallback: () => Number.NaN } ), /non-finite/ )
+	}
+	geometry.setLines( [lines, lines] )
+	assert.equal( geometry.drawRange.count, 4 )
+	geometry.setDrawRange( 0, 5 )
+	geometry.setLines( lines )
+	assert.equal( geometry.drawRange.count, 5 )
+	// A range set while the geometry is cleared wins over the saved one.
+	assert.throws( () => geometry.buildLine( { widthCallback: () => Number.NaN } ), /non-finite/ )
+	geometry.setDrawRange( 0, 2 )
+	geometry.setLines( lines )
+	assert.equal( geometry.drawRange.count, 2 )
+
+	// A range set before the first build stays too.
+	const unbuilt = new MeshLineSurfaceGeometry()
+	unbuilt.setDrawRange( 0, 3 )
+	unbuilt.buildLine( { lines } )
+	assert.equal( unbuilt.drawRange.count, 3 )
+} )

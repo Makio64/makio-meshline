@@ -26,7 +26,9 @@
    **Exception**: If you call `line.addInstanceAttribute()`, `line.addInstanceAttributes()`, `line.addVertexAttribute()`, or `line.addVertexAttributes()` before adding `line` to the scene, call `line.build()` first so the geometry exists.
 4. **Never recreate `MeshLine` every frame**:
    - **Same point count**: Configure `.dynamic( true )` once, then call `line.setPositions( points )` or `line.setPositionRange( slice, startPoint, { lineIndex } )` each frame.
-   - **Variable point count or open/closed change**: Call `line.lines( newPoints, closed )` (or `line.geometry.setLines( newPoints, closed )`).
+   - **Variable point count or open/closed change**: Call `line.lines( newPoints, closed )` (or `line.geometry.setLines( newPoints, closed )`). With `.dynamic( true )` the buffers are reused, for surfaces too; `geometry.vertexCount` and `geometry.indexCount` then give the counts in use, since `attribute.count` is a capacity.
+   - **Large plain lines moved every frame**: `.dynamic( 'storage' )` keeps the points in one WebGPU storage buffer (16 bytes per point uploaded instead of 144). It needs `Float32Array` points of equal length per line and no gradient, dashes, map, vertex colors or progress hooks; otherwise, and on WebGL2, it behaves as `.dynamic( true )`.
+   - **Billboard lines only**: import `MeshLineBillboard` instead of `MeshLine` to leave the surface builders out of the bundle.
    - **Uniform changes**: Call `line.lineWidth( w )`, `line.color( c )`, `line.opacity( a )`, or mutate `line.material.dashOffset.value` directly.
 5. **Respect the WebGPU 8-Vertex-Buffer Budget**:
    Portable WebGPU guarantees 8 vertex buffers. Pack multiple custom attributes into a single interleaved buffer:
@@ -111,7 +113,7 @@ Every option can be passed to `new MeshLine( options )` / `line.configure( optio
 | `shadow` / `.shadow( enabled?, receiveShadow? )` | `boolean` (`false`) | Enable shadow casting and receiving (`receiveShadow` defaults to `enabled`; uses 3D cylindrical tube normal reconstruction on billboards). |
 | `receiveShadow` / `.setReceiveShadow( bool )` | `boolean` (`false`) | Enable or disable shadow receiving independently of `castShadow`. |
 | `wireframe` / `.wireframe( bool )` | `boolean` (`false`) | Render triangle wireframe. |
-| `dynamic` / `.dynamic( bool )` | `boolean` (`false`) | Use `DynamicDrawUsage` and keep `previous`/`next` attributes for fast `setPositions()` / `setPositionRange()`. |
+| `dynamic` / `.dynamic( bool \| 'storage' )` | `boolean \| 'storage'` (`false`) | Mark the buffers for frequent `setPositions()` / `setPositionRange()` updates and reuse them when `lines()` changes the point count. `'storage'` also keeps the points in a WebGPU storage buffer. |
 | `instances` / `.instances( count )` | `number` | Enable GPU instancing with `count` instances. |
 | `gpuPositionNode` / `.gpuPositionNode( fn )` | `Fn( ( [progress, extra] ) => vec3 )` | Compute centerline positions on the GPU without CPU `positions`/`previous`/`next` buffers. |
 | `autoResize` / `.autoResize( target? )` | `Window` | Automatically sync `resolution` uniform on window resize (cleaned up in `dispose()`). |

@@ -69,18 +69,21 @@ function readRibbonEdges( ribbon ) {
 	const rows = surfaceLine ? surfaceLine.rowCount : ( edges ? edges.count / 2 : 0 )
 	if ( !edges || !Number.isInteger( rows ) || rows < 2 ) return null
 
-	const widthPairs = surfaceLine?.topology?.widthPairs
+	const topology = surfaceLine?.topology
+	const pairVertices = topology?.pairVertices
 	const edgeCoords = new Float32Array( rows * 6 )
 	for ( let row = 0; row < rows; row++ ) {
 		for ( let side = 0; side < 2; side++ ) {
 			let v0 = row * 2 + side
 			let v1 = v0
 			// A join splits its row in two vertex pairs: the edge runs halfway between them.
-			if ( widthPairs ) {
-				const entering = ( row - 1 ) * 8 + 4 + side
-				const leaving = row * 8 + side
-				v0 = widthPairs[row === 0 ? leaving : entering]
-				v1 = widthPairs[row === rows - 1 ? entering : leaving]
+			if ( topology ) {
+				const entering = ( row - 1 ) * 4 + 2 + side
+				const leaving = row * 4 + side
+				const slot0 = row === 0 ? leaving : entering
+				const slot1 = row === rows - 1 ? entering : leaving
+				v0 = pairVertices ? pairVertices[slot0] : slot0
+				v1 = pairVertices ? pairVertices[slot1] : slot1
 			}
 			for ( let axis = 0; axis < 3; axis++ ) {
 				edgeCoords[( row * 2 + side ) * 3 + axis] = ( edges.getComponent( v0, axis ) + edges.getComponent( v1, axis ) ) * 0.5

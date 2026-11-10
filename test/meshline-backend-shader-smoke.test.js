@@ -5,8 +5,9 @@ import {
 	Mesh,
 	MeshBasicNodeMaterial,
 	PerspectiveCamera,
+	Texture,
 } from 'three/webgpu'
-import { attribute, Fn, vec4 } from 'three/tsl'
+import { attribute, Fn, vec2, vec4 } from 'three/tsl'
 
 import { lineCoord } from '../src/MeshLineNodeMaterial.js'
 import MeshLine from '../src/MeshLine.js'
@@ -212,6 +213,40 @@ test( 'analytic antialiasing and lineCoord build on both renderer backends', asy
 				!/\bfwidth\s*\(/.test( builder.fragmentShader ),
 				'fwidth is the Manhattan sum and over-blurs diagonals',
 			)
+
+			line.dispose()
+		} )
+	}
+} )
+
+test( 'uvFn with texture map builds a single uvCoords declaration without TSL rename warnings', async t => {
+	for ( const target of targets ) {
+		await t.test( target.name, () => {
+			const renderer = createRenderer( target.forceWebGL )
+			const scrollingUV = Fn( ( [coords, progress] ) => vec2( coords.x.add( progress ), coords.y ) )
+			const line = new MeshLine( {
+				lines: new Float32Array( [0, 0, 0, 1, 0, 0, 1, 1, 0] ),
+				map: new Texture(),
+				uvFn: scrollingUV,
+			} ).build()
+
+			const warnings = []
+			const warn = console.warn
+			let builder
+			try {
+				console.warn = ( ...args ) => warnings.push( args.join( ' ' ) )
+				builder = buildShaderGraph( renderer, line )
+			} finally {
+				console.warn = warn
+			}
+
+			assert.equal(
+				warnings.filter( message => message.includes( 'uvCoords' ) ).length,
+				0,
+				'uvFn must not trigger a duplicate uvCoords declaration warning',
+			)
+			assert.match( builder.fragmentShader, /\buvCoords\b/ )
+			assert.doesNotMatch( builder.fragmentShader, /\buvCoords_1\b/ )
 
 			line.dispose()
 		} )

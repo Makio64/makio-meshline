@@ -49,12 +49,6 @@
 
 				<button
 					type="button"
-					:aria-pressed="ui.detail === 'before'"
-					:disabled="controlsDisabled"
-					@click="toggleOriginal"
-				>Original</button>
-				<button
-					type="button"
 					:aria-pressed="ui.renderMode === 'wireframe'"
 					title="Toggle wireframe (W)"
 					@click="toggleWireframe"
@@ -80,7 +74,6 @@ export default {
 			return this.ui.backend !== 'webgpu'
 		},
 		activePolyCount() {
-			if ( this.ui.detail === 'before' ) return this.ui.sourcePointCount
 			return this.ui.retainedPointCount ?? this.ui.sourcePointCount
 		},
 		polyCountLabel() {
@@ -90,14 +83,12 @@ export default {
 			return `${Math.round( count / 1000 )}k`
 		},
 		reductionTag() {
-			if ( this.ui.detail === 'before' ) return 'raw'
 			if ( this.ui.retainedPointCount == null ) return ''
 			const reduction = Math.max( 0, 1 - this.ui.retainedPointCount / this.ui.sourcePointCount )
 			if ( reduction < 0.005 ) return ''
 			return `−${Math.round( reduction * 100 )}%`
 		},
 		gpuTimeLabel() {
-			if ( this.ui.detail === 'before' ) return '0 ms'
 			if ( this.ui.gpuComputeMs == null ) return '—'
 			const ms = this.ui.gpuComputeMs
 			return `${ms < 10 ? ms.toFixed( 1 ) : Math.round( ms )} ms`
@@ -107,9 +98,6 @@ export default {
 		onShortcut( 'w', this.toggleWireframe )
 	},
 	methods: {
-		toggleOriginal() {
-			this.api.setDetailView( this.ui.detail === 'before' ? 'after' : 'before' )
-		},
 		toggleWireframe() {
 			this.api.setRenderMode( this.ui.renderMode === 'wireframe' ? 'ribbons' : 'wireframe' )
 		},
@@ -120,10 +108,6 @@ export default {
 <style lang="stylus" scoped>
 .GpuSimplificationInfo
 	font-variant-numeric tabular-nums
-
-	// This bar is wider than most, so the pill must drop below it sooner than .DemoHint does.
-	@media (min-width 721px) and (max-width 1120px)
-		top calc(66px + var(--sait, 0px))
 
 	&__value
 		color #fff

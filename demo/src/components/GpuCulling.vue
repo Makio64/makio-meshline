@@ -9,12 +9,29 @@
 				<div class="GpuCullingHud__statRow">
 					<span class="GpuCullingHud__percent">{{ hud.measuring ? '—' : percent }}</span>
 					<span class="GpuCullingHud__label">{{ hud.measuring ? 'measuring…' : 'drawn' }}</span>
+					<span v-if="!hud.measuring && culledPercent" class="GpuCullingHud__culled">{{ culledPercent }} culled</span>
 				</div>
 				<span class="GpuCullingHud__metric">{{ metric }}</span>
 			</div>
 			<canvas ref="map" class="GpuCullingHud__ring" width="148" height="148" aria-hidden="true" />
 		</div>
+		<div class="GpuCullingHud__legend" aria-hidden="true">
+			<span class="GpuCullingHud__key GpuCullingHud__key--kept">Inside frustum · drawn</span>
+			<span class="GpuCullingHud__key GpuCullingHud__key--culled">Outside · culled</span>
+		</div>
 	</aside>
+
+	<div v-if="!noUI && hud.viewMode === 'split'" class="GpuCullingSplit" aria-hidden="true">
+		<div class="GpuCullingSplit__divider" />
+		<div class="GpuCullingSplit__pane GpuCullingSplit__pane--god">
+			<span class="GpuCullingSplit__pill">Scene 1 · God View</span>
+			<span class="GpuCullingSplit__desc">Observer camera · 3D camera rig &amp; frustum cone</span>
+		</div>
+		<div class="GpuCullingSplit__pane GpuCullingSplit__pane--pov">
+			<span class="GpuCullingSplit__pill GpuCullingSplit__pill--pov">Scene 2 · Camera POV</span>
+			<span class="GpuCullingSplit__desc">Live cull-camera feed · 0 missing lines</span>
+		</div>
+	</div>
 </template>
 
 <script>
@@ -41,10 +58,18 @@ export default {
 		return { noUI, hud: this.api.hud }
 	},
 	computed: {
-		percent() {
+		ratio() {
 			const { indexCount, visibleIndexCount } = this.hud
-			const ratio = indexCount ? visibleIndexCount / indexCount : 1
-			return `${( ratio * 100 ).toFixed( ratio < 0.1 ? 1 : 0 )}%`
+			return indexCount ? visibleIndexCount / indexCount : 1
+		},
+		percent() {
+			const r = this.ratio
+			return `${( r * 100 ).toFixed( r < 0.1 ? 1 : 0 )}%`
+		},
+		culledPercent() {
+			const culled = Math.max( 0, 1 - this.ratio )
+			if ( culled <= 0.005 ) return ''
+			return `${Math.round( culled * 100 )}%`
 		},
 		metric() {
 			const { chunkCount, gpuTime, indexCount, measuring, visibleIndexCount } = this.hud
@@ -64,13 +89,14 @@ export default {
 		drawMap() {
 			const { passCamera, ringBins } = this.api
 			const canvas = this.$refs.map
+			if ( !canvas ) return
 			const context = canvas.getContext( '2d' )
 			const { width, height } = canvas
 			const center = width * 0.5
-			const scale = width / 225
+			const scale = width / 235
 			const toX = x => center + x * scale
 			const toY = z => center + z * scale
-			const peak = Math.max( ...ringBins )
+			const peak = Math.max( 1, ...ringBins )
 
 			context.clearRect( 0, 0, width, height )
 			context.lineCap = 'round'
@@ -96,14 +122,15 @@ export default {
 			}
 
 			// Pass camera position and frustum cone on the map.
-			const camIdx = Math.floor( this.hud.flight / ( Math.PI * 2 ) * MAP_BINS )
+			const flight = Number.isFinite( this.hud.flight ) ? this.hud.flight : 0
+			const camIdx = ( Math.floor( flight / ( Math.PI * 2 ) * MAP_BINS ) % MAP_BINS + MAP_BINS ) % MAP_BINS
 			const camera = MAP_PATH[camIdx]
 			const next = MAP_PATH[( camIdx + 4 ) % MAP_BINS]
 			const cx = toX( camera.x )
 			const cy = toY( camera.z )
 			const heading = Math.atan2( toY( next.z ) - cy, toX( next.x ) - cx )
 
-			context.fillStyle = 'rgba(103, 232, 249, .2)'
+			context.fillStyle = 'rgba(103, 232, 249, .22)'
 			context.beginPath()
 			context.moveTo( cx, cy )
 			context.arc( cx, cy, passCamera.far * scale, heading - 0.52, heading + 0.52 )
@@ -128,11 +155,11 @@ export default {
 	display grid
 	gap 8px
 	box-sizing border-box
-	width unquote('min(260px, calc(100vw - 84px))')
+	width unquote('min(276px, calc(100vw - 84px))')
 	padding 11px 14px
 	border 1px solid rgba(255, 255, 255, .1)
 	border-radius 16px
-	background rgba(8, 9, 12, .72)
+	background rgba(8, 9, 12, .74)
 	box-shadow 0 14px 36px rgba(0, 0, 0, .34)
 	backdrop-filter blur(14px)
 	-webkit-backdrop-filter blur(14px)
@@ -194,7 +221,7 @@ export default {
 
 	&__big
 		display grid
-		gap 2px
+		gap 3px
 		color #fff
 
 	&__statRow
@@ -214,6 +241,15 @@ export default {
 		font-size 10px
 		font-weight 600
 
+	&__culled
+		padding 2px 6px
+		border-radius 999px
+		background rgba(56, 189, 248, .14)
+		color #7dd3fc
+		font-size 9px
+		font-weight 700
+		font-variant-numeric tabular-nums
+
 	&__metric
 		color rgba(203, 225, 240, .64)
 		font-size 10px
@@ -222,8 +258,114 @@ export default {
 	&__ring
 		display block
 		flex none
-		width 52px
-		height 52px
+		width 54px
+		height 54px
+
+	&__legend
+		display flex
+		align-items center
+		justify-content space-between
+		gap 8px
+		padding-top 6px
+		border-top 1px solid rgba(255, 255, 255, .08)
+		font-size 9.5px
+		color rgba(203, 225, 240, .72)
+
+	&__key
+		display inline-flex
+		align-items center
+		gap 5px
+		white-space nowrap
+
+		&::before
+			content ''
+			width 7px
+			height 7px
+			border-radius 50%
+
+		&--kept::before
+			background #38bdf8
+			box-shadow 0 0 8px #38bdf8
+
+		&--culled::before
+			background #1e3f66
+			border 1px solid rgba(100, 116, 139, .55)
+
+.GpuCullingSplit
+	position fixed
+	inset 0
+	z-index 12
+	pointer-events none
+	user-select none
+
+	&__divider
+		position absolute
+		left 50%
+		top 0
+		bottom 0
+		width 1px
+		background linear-gradient(180deg, rgba(56, 189, 248, .08), rgba(56, 189, 248, .34) 50%, rgba(56, 189, 248, .08))
+
+	&__pane
+		position absolute
+		bottom calc(18px + var(--saib, 0px))
+		display inline-flex
+		align-items center
+		gap 8px
+		padding 6px 12px
+		border 1px solid rgba(255, 255, 255, .1)
+		border-radius 999px
+		background rgba(8, 9, 12, .72)
+		backdrop-filter blur(12px)
+		-webkit-backdrop-filter blur(12px)
+		font 500 10px/1.2 'Inter', system-ui, -apple-system, sans-serif
+		color rgba(226, 242, 252, .72)
+
+		&--god
+			left calc(18px + var(--sail, 0px))
+
+		&--pov
+			right calc(114px + var(--sair, 0px))
+
+	&__pill
+		padding 2px 7px
+		border-radius 999px
+		background rgba(56, 189, 248, .16)
+		color #7dd3fc
+		font-size 9px
+		font-weight 750
+		letter-spacing .06em
+		text-transform uppercase
+
+		&--pov
+			background rgba(52, 211, 153, .16)
+			color #6ee7b7
+
+	&__desc
+		white-space nowrap
+
+@media (max-aspect-ratio: 1/1)
+	.GpuCullingSplit
+		&__divider
+			left 0
+			right 0
+			top 50%
+			bottom auto
+			width auto
+			height 1px
+			background linear-gradient(90deg, rgba(56, 189, 248, .08), rgba(56, 189, 248, .34) 50%, rgba(56, 189, 248, .08))
+
+		&__pane
+			&--god
+				bottom calc(50% + 12px)
+				left calc(12px + var(--sail, 0px))
+
+			&--pov
+				bottom calc(14px + var(--saib, 0px))
+				left calc(12px + var(--sail, 0px))
+
+		&__desc
+			display none
 
 @media (max-width: 720px)
 	.GpuCullingHud
@@ -240,4 +382,7 @@ export default {
 		&__ring
 			width 44px
 			height 44px
+
+		&__legend
+			display none
 </style>

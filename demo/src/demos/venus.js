@@ -18,7 +18,6 @@ import stage3d from '@/makio/three/stage3d'
 import { backInOut } from '@/makio/tsl/easing'
 import { isMobile } from '@/makio/utils/detect'
 import { createBloomPipeline } from '@/utils/bloomPipeline'
-import { createDemoHint } from '@/utils/demoHint'
 import { sampleContourRings } from '@/utils/venusContourRings'
 
 const RINGS = 64
@@ -55,7 +54,6 @@ export default class VenusExample {
 		stage3d.renderer.toneMapping = ACESFilmicToneMapping
 		this.createLine( ringsA, ringsB )
 		createBloomPipeline( { strength: 0.5, radius: 0.01, threshold: 0.4, resolutionScale: 1 } )
-		createDemoHint( 'BVH-traced contour rings · GPU morph · drag to orbit', { accent: '#fb923c' } )
 		animate( this.opacity, { value: 1, duration: 1.8, delay: 0.02, ease: 'outExpo' } )
 	}
 

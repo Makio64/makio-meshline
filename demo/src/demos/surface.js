@@ -8,7 +8,6 @@ import { DirectionalLight, DoubleSide, HemisphereLight, PointLight } from 'three
 
 import stage3d from '@/makio/three/stage3d'
 import { createDemoControls } from '@/utils/demoControls'
-import { createDemoHint } from '@/utils/demoHint'
 import { linePoints } from '@/utils/points'
 import { createStudio, createTextures, FLOOR_Y, SKY_TOP } from '@/utils/surfaceStudio'
 
@@ -56,11 +55,6 @@ export default class SurfaceExample {
 			[{ id: 'wireframe', label: 'Wireframe', key: 'W', pressed: false, onClick: this.toggleWireframe }],
 			{ accent: ACCENT },
 		)
-		createDemoHint( 'Fixed-up · distance UV vs Transport · banked · stretch UV', {
-			accent: ACCENT,
-			hideAfter: 0,
-			attributes: { role: 'complementary', 'aria-label': 'Surface rendering comparison' },
-		} )
 	}
 
 	createSurfaces() {

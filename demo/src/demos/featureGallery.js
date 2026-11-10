@@ -14,7 +14,6 @@ import stage from '@/makio/core/stage'
 import stage3d from '@/makio/three/stage3d'
 import { reducedMotion } from '@/makio/utils/detect'
 import { createBloomPipeline } from '@/utils/bloomPipeline'
-import { createDemoHint } from '@/utils/demoHint'
 import { createLabel, createLabelRenderer } from '@/utils/featureGalleryLabels'
 import { getFeatureGalleryLayout } from '@/utils/featureGalleryLayout'
 import { createGalleryTextures } from '@/utils/featureGalleryTextures'
@@ -100,7 +99,7 @@ export default class FeatureGalleryExample {
 		this.cssRenderer = createLabelRenderer()
 		this.createCells()
 		this.onResize()
-		createBloomPipeline( { strength: 0.38, radius: 0.4, threshold: 0.24 } )
+		createBloomPipeline( { strength: 0.24, radius: 0.32, threshold: 0.3 } )
 
 		// Render one hidden frame and wait for the GPU: the reveal then starts with
 		// every pipeline compiled instead of the lines popping in seconds later.
@@ -164,7 +163,6 @@ export default class FeatureGalleryExample {
 			label.element.style.opacity = '1'
 			if ( plane ) animate( plane.material, { opacity: 1, duration: 0.7, delay, ease: 'outQuad' } )
 		} )
-		createDemoHint( 'Cyan labels are TSL hooks · click any label for code · drag to orbit', { accent: '#67e8f9', hideAfter: 12000 } )
 		this.reveal()
 	}
 

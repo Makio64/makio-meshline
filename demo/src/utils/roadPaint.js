@@ -25,14 +25,21 @@ const CENTRE_PAINT = 0xE2B63E
 const UNDERSIDE = 0x8C8880
 
 /**
- * Pin the paint to the authored controls.
+ * Pin the paint to the authored controls, and square it with the built ribbon.
  *
- * Distance UVs count metres from the start of the road, so lengthening one span
- * used to slide every dash after it and re-roll the asphalt grain along the
+ * Along the road, distance UVs count metres from its start, so lengthening one
+ * span used to slide every dash after it and re-roll the asphalt grain along the
  * whole route. Each span between two controls is instead given a whole number
  * of dash periods and its UVs are rescaled onto that, so every control sits on
  * the same dash phase. A longer span then re-spaces only its own dashes, and
  * everything after it moves by whole periods, which the periodic paint hides.
+ *
+ * Across the road, `inner: 'clip'` pulls the inside vertex of a join towards the
+ * centreline wherever a tight bend leaves the full width no room, but that vertex
+ * keeps the UV of the edge. Left alone, the whole cross-section is squeezed onto
+ * the narrower row: the centre dash and both edge lines step sideways on every
+ * trimmed row. Each edge vertex is given the share of the half width it really
+ * reaches instead, so the bands run straight on and only the verge is cut short.
  *
  * Call it after every `setPositions()`: the surface rewrites its UVs each time.
  */
@@ -40,29 +47,53 @@ export function pinRoadPaintToControls( geometry, points, anchors, period = DASH
 	const uv = geometry?.getAttribute( 'uv' )
 	if ( !uv || !points || !anchors || anchors.length < 2 ) return false
 
+	// Metres travelled at every row: what the surface wrote into `uv.x` of its vertices.
+	const rows = points.length / 3
+	const travelled = new Float64Array( rows )
+	for ( let row = 1, offset = 3; row < rows; row++, offset += 3 ) {
+		travelled[row] = travelled[row - 1] + Math.hypot(
+			points[offset] - points[offset - 3],
+			points[offset + 1] - points[offset - 2],
+			points[offset + 2] - points[offset - 1]
+		)
+	}
+
 	const count = anchors.length
 	const from = new Float64Array( count )
 	const to = new Float64Array( count )
-	let travelled = 0
-	let row = 0
 	for ( let index = 0; index < count; index++ ) {
-		for ( ; row < anchors[index]; row++ ) {
-			const offset = row * 3
-			travelled += Math.hypot(
-				points[offset + 3] - points[offset],
-				points[offset + 4] - points[offset + 1],
-				points[offset + 5] - points[offset + 2]
-			)
-		}
-		from[index] = travelled
+		from[index] = travelled[anchors[index]]
 		if ( index > 0 ) {
 			to[index] = to[index - 1] + Math.max( 1, Math.round( ( from[index] - from[index - 1] ) / period ) ) * period
 		}
 	}
 
+	const position = geometry.getAttribute( 'position' )?.array
+	const half = geometry.options?.lineWidth * 0.5
 	const array = uv.array
-	for ( let vertex = 0; vertex < uv.count; vertex++ ) {
+	// A dynamic surface keeps spare capacity past the vertices it draws.
+	const vertexCount = geometry.vertexCount ?? uv.count
+	for ( let vertex = 0; vertex < vertexCount; vertex++ ) {
 		const u = array[vertex * 2]
+		const across = array[vertex * 2 + 1]
+		if ( position && half > 0 && ( across === 0 || across === 1 ) ) {
+			let before = 0
+			let after = rows - 1
+			while ( before + 1 < after ) {
+				const middle = ( before + after ) >> 1
+				if ( travelled[middle] <= u ) before = middle
+				else after = middle
+			}
+			const centre = ( u - travelled[before] <= travelled[after] - u ? before : after ) * 3
+			const reach = Math.hypot(
+				position[vertex * 3] - points[centre],
+				position[vertex * 3 + 1] - points[centre + 1],
+				position[vertex * 3 + 2] - points[centre + 2]
+			) / half
+			// A mitred corner reaches past the half width and still is the edge.
+			if ( reach < 1 ) array[vertex * 2 + 1] = 0.5 + ( across - 0.5 ) * reach
+		}
+
 		let lower = 0
 		let upper = count - 2
 		while ( lower < upper ) {

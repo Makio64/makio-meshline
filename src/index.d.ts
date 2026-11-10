@@ -40,8 +40,12 @@ export type LinePointTuple = [x: number, y: number, z?: number]
 /** Object form for one 2D/3D line point. */
 export type LinePointObject = Vector2 | Vector3 | { x: number; y: number; z?: number }
 
-/** Accepted formats for a single polyline's point data. */
-export type LinePoints = Float32Array | number[] | BufferGeometry | Array<LinePointTuple | LinePointObject>
+/**
+ * Accepted formats for a single polyline's point data. A `Float32Array` is used
+ * as given. A `Float64Array` is read as is by the surface profile and converted
+ * by the billboard and GPU path profiles, like every other format.
+ */
+export type LinePoints = Float32Array | Float64Array | number[] | BufferGeometry | Array<LinePointTuple | LinePointObject>
 
 /** One or more polylines. */
 export type MultiLinePoints = Array<LinePoints> | LinePoints
@@ -395,7 +399,8 @@ export interface MeshLineConfigureOptions {
 	verbose?: boolean
 	renderWidth?: number
 	renderHeight?: number
-	dynamic?: boolean
+	/** `true` for stream-usage buffers; `'storage'` also keeps the points in a GPU storage buffer on WebGPU. */
+	dynamic?: boolean | 'storage'
 	autoResize?: MeshLineResizeTarget
 
 	// gpu / instancing
@@ -530,8 +535,20 @@ export interface MeshLineComputeOptions extends Omit<MeshLineConfigureOptions, '
 // MeshLine (main facade)
 // ---------------------------------------------------------------------------
 
-export class MeshLine extends ThreeMesh {
+/**
+ * The line facade without the world-space surface profile. `MeshLine` extends
+ * it with `surface()`; import this class instead when an app only draws
+ * billboard lines, so bundlers leave the surface geometry builders out.
+ * Calling `surface()` with anything but `false` throws.
+ */
+export class MeshLineBillboard extends ThreeMesh {
 	constructor( options?: MeshLineConfigureOptions )
+
+	/**
+	 * The storage buffer holding the line's points while `dynamic( 'storage' )`
+	 * is active (one vec4 per point, line after line), else `null`.
+	 */
+	readonly positionStorage: BufferAttribute | null
 
 	configure( options?: MeshLineConfigureOptions ): this
 
@@ -566,7 +583,15 @@ export class MeshLine extends ThreeMesh {
 	alphaMap( tex: Texture | null ): this
 	dash( options?: MeshLineDashOptions | null | false ): this
 	dpr( value: number ): this
-	dynamic( enable: boolean ): this
+	/**
+	 * `true` marks the buffers for frequent updates, and keeps them when a
+	 * later `lines()` call changes the point count. `'storage'` also keeps the
+	 * points in one GPU storage buffer on WebGPU, so `setPositions()` uploads 16
+	 * bytes per point instead of 144. It applies to open lines given as
+	 * `Float32Array`s of equal length that read no progress, UVs, vertex colors
+	 * or custom attributes; any other line, and WebGL2, behave as `true`.
+	 */
+	dynamic( enable: boolean | 'storage' ): this
 	setFrustumCulled( enabled: boolean ): this
 	verbose( enabled: boolean ): this
 	renderSize( width?: number, height?: number ): this
@@ -611,6 +636,7 @@ export class MeshLine extends ThreeMesh {
 	build(): this
 	rebuild(): this
 	ensureBuilt(): this
+	warmupAsync( renderer: WebGPURenderer, camera: Camera, scene?: Scene | null ): Promise<this>
 	raycast( raycaster: Raycaster, intersects: Array<Intersection<Object3D> & { lineIndex?: number; instanceId?: number }> ): void
 	setPositions( points: MultiLinePoints, updateBounding?: boolean ): void
 	setPositionRange( points: ArrayLike<number> | Array<LinePointTuple | LinePointObject>, startPoint: number, options?: MeshLinePositionRangeOptions ): this
@@ -628,6 +654,9 @@ export class MeshLine extends ThreeMesh {
 	autoResize( target?: MeshLineResizeTarget ): this
 	dispose(): void
 }
+
+/** The full line facade: `MeshLineBillboard` plus the world-space surface profile. */
+export class MeshLine extends MeshLineBillboard {}
 
 // ---------------------------------------------------------------------------
 // MeshLineCompute (WebGPU-only compute facade)
@@ -667,6 +696,8 @@ export class MeshLineCompute extends MeshLine {
 	clearMouse(): this
 	arcLengthNode( progress: MeshLineNodeValue ): MeshLineNodeValue
 	step( renderer: WebGPURenderer, delta?: number ): boolean
+	stepAsync( renderer: WebGPURenderer, delta?: number ): Promise<boolean>
+	warmupAsync( renderer: WebGPURenderer, camera: Camera, scene?: Scene | null, options?: { step?: boolean; delta?: number } ): Promise<this>
 	reset(): this
 }
 
@@ -675,6 +706,10 @@ export class MeshLineCompute extends MeshLine {
 // ---------------------------------------------------------------------------
 
 export class MeshLineGeometry extends BufferGeometry {
+	/** Vertices in use: four per point. `attributes.position.count` can be a larger capacity on a dynamic line. */
+	readonly vertexCount: number
+	/** Indices in use. Past them, a buffer with spare capacity holds zeros (degenerate triangles). */
+	readonly indexCount: number
 	readonly isMeshLine: true
 	constructor( options?: MeshLineGeometryOptions )
 	buildLine( options?: MeshLineGeometryOptions ): void
@@ -736,6 +771,10 @@ export interface MeshLineExternalGeometryTarget {
 }
 
 export class MeshLineSurfaceGeometry extends BufferGeometry {
+	/** Vertices in use. `attributes.position.count` can be a larger capacity on a dynamic surface. */
+	readonly vertexCount: number
+	/** Indices in use. Past them, a buffer with spare capacity holds zeros (degenerate triangles). */
+	readonly indexCount: number
 	readonly isMeshLineSurfaceGeometry: true
 	constructor( options?: MeshLineSurfaceGeometryOptions )
 	buildLine( options?: MeshLineSurfaceGeometryOptions ): void
@@ -793,6 +832,7 @@ export class MeshLinePicker {
 	remove( line: MeshLine ): this
 	pick( x: number, y: number ): Promise<MeshLinePickerHit | null>
 	updateDebug(): void
+	warmupAsync(): Promise<this>
 	dispose(): void
 }
 
@@ -824,6 +864,7 @@ export class MeshLinePickerHelper extends ThreeGroup {
 	setOpacity( opacity: number ): void
 	/** Tear down and rebuild proxies from the picker's current registry — call after `picker.add()` / `remove()`. */
 	rebuild(): void
+	warmupAsync( renderer?: WebGPURenderer, camera?: Camera, scene?: Scene | Object3D | null ): Promise<this>
 	dispose(): void
 }
 
@@ -865,6 +906,12 @@ export interface StoragePositionsOptions {
 	 * duplicates the first (`point[N-1] === point[0]`) for seamless closed joins.
 	 */
 	closed?: boolean | MeshLineNodeValue
+	/**
+	 * Read the stored point nearest to each sample instead of interpolating two.
+	 * Use it when the line has exactly `pointsPerLine - 1` segments: one storage
+	 * read per sample, and exact however long the line is.
+	 */
+	snap?: boolean
 }
 
 /**

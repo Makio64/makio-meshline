@@ -1,4 +1,4 @@
-import { clamp, float, floor, Fn, instanceIndex, length, Loop, max, min, mix, normalize, sin, smoothstep, storage, uint, uniform, vec3 } from 'three/tsl'
+import { clamp, cos, dot, float, floor, Fn, instanceIndex, inverseSqrt, length, Loop, max, min, mix, sin, smoothstep, storage, uint, uniform, vec3 } from 'three/tsl'
 import { StorageBufferAttribute, Vector3 } from 'three/webgpu'
 
 import MeshLine from './MeshLine.js'
@@ -9,7 +9,7 @@ const TAU = Math.PI * 2
 // Share of each constrained point pulled toward its neighbours' midpoint before
 // its spacing is restored. Neighbouring points sample slightly different flow,
 // and without this an inextensible curve folds that difference into zigzags.
-const BEND_SMOOTHING = 0.06
+const BEND_SMOOTHING = 0.12
 const FAR_MOUSE = new Vector3( 100000, 100000, 100000 )
 const _mouseTarget = new Vector3()
 
@@ -336,6 +336,43 @@ export default class MeshLineCompute extends MeshLine {
 		return true
 	}
 
+	async stepAsync( renderer, delta = 1 / 60 ) {
+		this.ensureBuilt()
+
+		if ( renderer?._initialized === false && typeof renderer.init === 'function' ) {
+			await renderer.init()
+		}
+
+		if ( !renderer || ( typeof renderer.computeAsync !== 'function' && typeof renderer.compute !== 'function' ) ) {
+			if ( !this._warnedNoCompute ) {
+				console.warn( 'MeshLineCompute.stepAsync: WebGPURenderer.computeAsync() or compute() is required. This class is WebGPU-only.' )
+				this._warnedNoCompute = true
+			}
+			return false
+		}
+
+		if ( typeof renderer.computeAsync !== 'function' ) {
+			return this.step( renderer, delta )
+		}
+
+		this._storageRenderer = renderer
+		const safeDelta = Math.max( 0.0001, Math.min( Number( delta ) || 1 / 60, 1 / 15 ) )
+		this._time += safeDelta
+		this._uTime.value = this._time
+		this._uDelta.value = safeDelta
+
+		await renderer.computeAsync( [this._computeNode, this._distanceComputeNode] )
+		return true
+	}
+
+	async warmupAsync( renderer, camera, scene = this.parent ?? null, { step = false, delta = 1 / 60 } = {} ) {
+		await super.warmupAsync( renderer, camera, scene )
+		if ( step ) {
+			await this.stepAsync( renderer, delta )
+		}
+		return this
+	}
+
 	arcLengthNode( progress ) {
 		this._ensureComputeStorage()
 		return this._distanceSampleNode( progress )
@@ -406,30 +443,55 @@ export default class MeshLineCompute extends MeshLine {
 		const seed = this._seedBuffer.array
 		const distance = this._distanceBuffer.array
 
+		const pointRatios = new Float32Array( pointsPerCurve )
+		const breathings = new Float32Array( pointsPerCurve )
+		const pointSin = new Float32Array( pointsPerCurve )
+		const pointCos = new Float32Array( pointsPerCurve )
+		for ( let i = 0; i < pointsPerCurve; i++ ) {
+			const pointRatio = pointsPerCurve === 1 ? 0 : i / ( pointsPerCurve - 1 )
+			const pointAngle = pointRatio * TAU
+			pointRatios[i] = pointRatio
+			breathings[i] = Math.sin( pointRatio * Math.PI )
+			pointSin[i] = Math.sin( pointAngle )
+			pointCos[i] = Math.cos( pointAngle )
+		}
+
 		for ( let curveIndex = 0; curveIndex < curveCount; curveIndex++ ) {
 			const curveRatio = curveCount === 1 ? 0 : curveIndex / ( curveCount - 1 )
 			const goldenAngle = curveIndex * 2.399963229728653
-			const spiralRadius = ( 0.14 + Math.sqrt( curveRatio ) * 0.5 ) * bounds
-			const arcSpan = 0.34 + hash01( curveIndex + 41.2 ) * 0.62
-			const depth = ( hash01( curveIndex + 2.1 ) - 0.5 ) * bounds * 0.18
-			const verticalLift = ( hash01( curveIndex + 8.4 ) - 0.5 ) * bounds * 0.12
+			const dirX = Math.cos( goldenAngle )
+			const dirZ = Math.sin( goldenAngle )
+			const tangentX = -dirZ
+			const tangentZ = dirX
+			const crownRadius = ( 0.05 + Math.sqrt( curveRatio ) * 0.26 ) * bounds
+			const crownY = ( ( 1 - curveRatio * 0.82 ) * 0.12 - 0.18 ) * bounds
+				+ ( hash01( curveIndex + 8.4 ) - 0.5 ) * bounds * 0.025
 			const curveSeed = hash01( curveIndex + 17.3 )
-			const phase = hash01( curveIndex + 91.7 ) * TAU
+			const phaseRatio = hash01( curveIndex + 91.7 )
+			const phase = phaseRatio * TAU
+			const sinPhase = Math.sin( phase )
+			const cosPhase = Math.cos( phase )
+			// Inner tentacles reach mostly upward; outer tentacles splay outward in a dome.
+			const radialSplay = ( 0.22 + Math.pow( curveRatio, 0.75 ) * 0.72 ) * curveLength * ( 0.88 + curveSeed * 0.24 )
+			const verticalReach = ( 0.92 - curveRatio * 0.38 ) * curveLength * ( 0.88 + ( 1 - curveSeed ) * 0.24 )
+			const waveScale = curveLength * ( 0.08 + curveSeed * 0.06 )
 			let lastX = 0
 			let lastY = 0
 			let lastZ = 0
 			let accumulatedDistance = 0
 
 			for ( let i = 0; i < pointsPerCurve; i++ ) {
-				const pointRatio = pointsPerCurve === 1 ? 0 : i / ( pointsPerCurve - 1 )
-				const centered = pointRatio - 0.5
-				const angle = goldenAngle + centered * arcSpan
-				const breathing = Math.sin( pointRatio * Math.PI )
-				const radius = spiralRadius + breathing * curveLength * ( 0.26 + curveSeed * 0.2 )
-				const ribbonWave = Math.sin( pointRatio * TAU + phase ) * curveLength * 0.13
-				const x = Math.cos( angle ) * radius
-				const y = Math.sin( angle ) * radius * 0.64 + verticalLift + ribbonWave
-				const z = depth + centered * curveLength * 0.34 + Math.cos( pointRatio * TAU + phase ) * curveLength * 0.08
+				const pointRatio = pointRatios[i]
+				const radialCurve = Math.pow( pointRatio, 1.18 )
+				const verticalCurve = Math.sin( pointRatio * Math.PI * 0.58 )
+				const sinWave = pointSin[i] * cosPhase + pointCos[i] * sinPhase
+				const cosWave = pointCos[i] * cosPhase - pointSin[i] * sinPhase
+				const waveEnvelope = pointRatio * ( 0.35 + 0.65 * breathings[i] )
+				const radialOffset = radialCurve * radialSplay + sinWave * waveScale * waveEnvelope
+				const tangentOffset = cosWave * waveScale * waveEnvelope * 0.75
+				const x = dirX * ( crownRadius + radialOffset ) + tangentX * tangentOffset
+				const y = crownY + verticalCurve * verticalReach + sinWave * waveScale * 0.35 * pointRatio
+				const z = dirZ * ( crownRadius + radialOffset ) + tangentZ * tangentOffset
 				const pointIndex = curveIndex * pointsPerCurve + i
 				const p3 = pointIndex * 3
 				const p4 = pointIndex * 4
@@ -445,7 +507,7 @@ export default class MeshLineCompute extends MeshLine {
 				base[p4 + 2] = z
 				base[p4 + 3] = pointRatio
 				seed[p4] = curveSeed
-				seed[p4 + 1] = phase / TAU
+				seed[p4 + 1] = phaseRatio
 				seed[p4 + 2] = hash01( pointIndex + 73.2 )
 				seed[p4 + 3] = curveRatio
 
@@ -514,6 +576,7 @@ export default class MeshLineCompute extends MeshLine {
 			const accumulatedDistance = float( 0 ).toVar( 'accumulatedDistance' )
 			const maxSpeed = max( 0.2, this._uBounds.mul( 0.5 ) ).toVar( 'constraintMaxSpeed' )
 			const inverseDelta = float( 1 ).div( this._uDelta ).toVar( 'constraintInverseDelta' )
+			const smoothFactor = this._uStiffness.mul( BEND_SMOOTHING ).toVar( 'constraintSmoothFactor' )
 			distances.element( firstIndex ).assign( accumulatedDistance )
 			const point0 = positions.element( firstIndex ).toVar( 'distancePoint0' )
 			const point1 = positions.element( firstIndex.add( uint( 1 ) ) ).toVar( 'distancePoint1' )
@@ -527,11 +590,13 @@ export default class MeshLineCompute extends MeshLine {
 				const base1 = bases.element( index1 ).xyz.toVar( 'distanceBase1' )
 				const restLength = length( base1.sub( base0 ) )
 				const midpoint = point0.add( point2 ).mul( 0.5 )
-				const smoothed = mix( point1, midpoint, this._uStiffness.mul( BEND_SMOOTHING ) )
+				const smoothed = mix( point1, midpoint, smoothFactor )
 				const offset = smoothed.sub( point0 ).toVar( 'constraintOffset' )
-				const offsetLength = max( length( offset ), 0.000001 )
-				const target = point0.add( offset.mul( restLength.div( offsetLength ) ) )
-				const corrected = mix( smoothed, target, this._uStiffness ).toVar( 'constraintPoint' )
+				const rawOffsetLength = length( offset ).toVar( 'constraintOffsetLength' )
+				const correctedLength = mix( rawOffsetLength, restLength, this._uStiffness ).toVar( 'constraintLength' )
+				const corrected = point0.add(
+					offset.mul( correctedLength.div( max( rawOffsetLength, 0.000001 ) ) )
+				).toVar( 'constraintPoint' )
 				const velocity = velocities.element( index1 )
 				velocity.assign( clamp(
 					velocity.add( corrected.sub( point1 ).mul( inverseDelta ) ),
@@ -539,7 +604,7 @@ export default class MeshLineCompute extends MeshLine {
 					vec3( maxSpeed )
 				) )
 				positions.element( index1 ).assign( corrected )
-				accumulatedDistance.addAssign( length( corrected.sub( point0 ) ) )
+				accumulatedDistance.addAssign( correctedLength )
 				distances.element( index1 ).assign( accumulatedDistance )
 				point0.assign( corrected )
 				point1.assign( point2 )
@@ -562,38 +627,68 @@ export default class MeshLineCompute extends MeshLine {
 
 		return Fn( () => {
 			const pointProgress = base.w.toVar( 'pointProgress' )
-			const phase = seed.x.mul( TAU ).add( this._uTime.mul( this._uFlowSpeed ) ).toVar( 'phase' )
-			// Per-curve offset only — sampling the flow field with seed.z (per-point random) made
-			// adjacent points on the same curve push in different directions, producing zigzag.
-			const curveOffset = vec3( seed.y, seed.x, seed.w ).mul( 3.7 ).toVar( 'curveOffset' )
-			const local = position.mul( 0.075 ).add( curveOffset ).add( pointProgress.mul( 1.7 ) ).toVar( 'local' )
-			const flow = vec3(
-				sin( local.y.add( phase ) ).add( sin( local.z.mul( 1.7 ).sub( phase.mul( 0.7 ) ) ) ),
-				sin( local.z.add( phase.mul( 1.17 ) ) ).sub( sin( local.x.mul( 1.3 ).add( phase.mul( 0.3 ) ) ) ),
-				sin( local.x.sub( phase.mul( 0.83 ) ) ).add( sin( local.y.mul( 1.9 ).add( phase ) ) )
-			).mul( 0.5 ).toVar( 'flow' )
-
 			const mode = this._uMode.toVar( 'mode' )
 			const autonomousWeight = float( 1 ).sub( clamp( mode.abs(), 0, 1 ) ).toVar( 'autonomousWeight' )
 			const followWeight = float( 1 ).sub( clamp( mode.sub( 1 ).abs(), 0, 1 ) ).toVar( 'followWeight' )
 			const fieldWeight = float( 1 ).sub( clamp( mode.sub( 2 ).abs(), 0, 1 ) ).toVar( 'fieldWeight' )
 
-			const toMouse = this._uMouse.sub( position ).toVar( 'toMouse' )
-			const mouseDistance = length( toMouse ).toVar( 'mouseDistance' )
-			const mouseFalloff = float( 1 ).sub( smoothstep( 0, this._uMouseRadius, mouseDistance ) ).toVar( 'mouseFalloff' )
-			const mouseDirection = toMouse.div( max( mouseDistance, 0.000001 ) ).toVar( 'mouseDirection' )
+			// Wave phase propagates outward from root (pointProgress = 0) to tip (pointProgress = 1).
+			const phase = seed.x.mul( TAU ).add( this._uTime.mul( this._uFlowSpeed ).mul( 1.65 ) ).sub( pointProgress.mul( 3.2 ) ).toVar( 'phase' )
+			const curveOffset = vec3( seed.y, seed.x, seed.w ).mul( 4.1 ).toVar( 'curveOffset' )
+			const local = position.mul( 0.11 ).add( curveOffset ).toVar( 'local' )
+			const curl = vec3(
+				sin( local.y.add( phase ) ).add( cos( local.z.mul( 1.5 ).sub( phase.mul( 0.75 ) ) ) ),
+				sin( local.z.add( phase.mul( 1.13 ) ) ).sub( cos( local.x.mul( 1.35 ).add( phase.mul( 0.45 ) ) ) ).mul( 0.75 ),
+				sin( local.x.sub( phase.mul( 0.85 ) ) ).add( cos( local.y.mul( 1.7 ).add( phase ) ) )
+			).toVar( 'curl' )
+			const swirlTangent = vec3( position.z.negate(), sin( phase ).mul( this._uBounds ).mul( 0.08 ), position.x ).toVar( 'swirlTangent' )
+			const swirlDir = swirlTangent.mul( inverseSqrt( max( dot( swirlTangent, swirlTangent ), 1e-6 ) ) ).toVar( 'swirlDir' )
+			const flow = curl.add( swirlDir.mul( fieldWeight.mul( 2.1 ).add( autonomousWeight.mul( 0.22 ) ) ) ).toVar( 'flow' )
+
+			// Root-anchored breathing posture in autonomous/field modes; free-swimming in follow mode.
+			const breathPhase = this._uTime.mul( this._uFlowSpeed ).mul( 1.25 ).sub( seed.w.mul( 2.4 ) ).add( seed.y.mul( TAU ) ).toVar( 'breathPhase' )
+			const breath = sin( breathPhase ).mul( pointProgress ).mul( 0.08 ).toVar( 'breath' )
+			const homeTarget = vec3(
+				base.x.mul( float( 1 ).add( breath ) ),
+				base.y.add( breath.mul( this._uBounds ).mul( 0.12 ) ),
+				base.z.mul( float( 1 ).add( breath ) )
+			).toVar( 'homeTarget' )
+			const rootAnchor = float( 1 ).sub( smoothstep( 0, 0.22, pointProgress ) ).toVar( 'rootAnchor' )
+			const postureProfile = rootAnchor.mul( 3.2 ).add( float( 1 ).sub( pointProgress.mul( 0.65 ) ).mul( 0.42 ) ).toVar( 'postureProfile' )
+			const homeAmount = autonomousWeight.mul( postureProfile )
+				.add( fieldWeight.mul( rootAnchor.mul( 2.4 ).add( 0.16 ) ) )
+				.add( followWeight.mul( 0.08 ) )
+				.toVar( 'homeAmount' )
+
+			// Mobility ramps from the anchored root toward the whip-like tip in rooted modes.
+			const tipMobility = smoothstep( 0, 0.18, pointProgress ).mul( pointProgress.mul( 0.65 ).add( 0.8 ) ).add( 0.06 ).toVar( 'tipMobility' )
+			const flowMobility = mix( tipMobility, float( 1 ), followWeight ).toVar( 'flowMobility' )
 			const headBias = float( 1 ).sub( pointProgress ).mul( 0.85 ).add( 0.15 ).toVar( 'headBias' )
 			const audioBoost = this._uAudioLevel.mul( 1.5 ).add( 1 ).toVar( 'audioBoost' )
 			const textureBoost = this._uTextureStrength.mul( seed.z.sub( 0.5 ) ).toVar( 'textureBoost' )
 			const depthLift = vec3( 0, this._uDepthStrength.mul( pointProgress.sub( 0.5 ) ), 0 ).toVar( 'depthLift' )
 
-			const flowAmount = autonomousWeight.add( fieldWeight.mul( 1.8 ) ).add( followWeight.mul( 0.35 ) ).toVar( 'flowAmount' )
-			const mouseAmount = followWeight.mul( 2.5 ).add( autonomousWeight.mul( 0.8 ) ).add( fieldWeight.mul( 0.35 ) ).toVar( 'mouseAmount' )
-			const homeAmount = autonomousWeight.add( fieldWeight.mul( 0.45 ) ).add( followWeight.mul( 0.12 ) ).toVar( 'homeAmount' )
+			const toMouse = this._uMouse.sub( position ).toVar( 'toMouse' )
+			const mouseDistance = length( toMouse ).toVar( 'mouseDistance' )
+			const mouseFalloff = float( 1 ).sub( smoothstep( 0, this._uMouseRadius, mouseDistance ) ).toVar( 'mouseFalloff' )
+			const mouseDir = toMouse.div( max( mouseDistance, 0.000001 ) ).toVar( 'mouseDir' )
+			const mouseSwirlRaw = vec3( toMouse.z.negate(), toMouse.y.mul( 0.25 ), toMouse.x ).toVar( 'mouseSwirlRaw' )
+			const mouseSwirl = mouseSwirlRaw.mul( inverseSqrt( max( dot( mouseSwirlRaw, mouseSwirlRaw ), 1e-6 ) ) ).toVar( 'mouseSwirl' )
+			// Rooted modes part and swirl around the cursor; follow mode attracts and orbits the head.
+			const partVector = mouseDir.negate().mul( 0.85 ).add( mouseSwirl.mul( 0.65 ) ).mul( tipMobility ).toVar( 'partVector' )
+			const orbitPull = smoothstep( this._uMouseRadius.mul( 0.12 ), this._uMouseRadius.mul( 0.42 ), mouseDistance ).mul( 1.25 ).sub( 0.25 )
+			const followVector = mouseDir.mul( orbitPull ).add( mouseSwirl.mul( 0.78 ) ).mul( headBias ).toVar( 'followVector' )
+			const mouseDirection = mix( partVector, followVector, followWeight ).toVar( 'mouseDirection' )
 
-			const homeForce = base.xyz.sub( position ).mul( this._uHomeStrength.mul( homeAmount ) ).toVar( 'homeForce' )
-			const flowForce = normalize( flow ).mul( this._uCurlStrength.mul( flowAmount ).mul( audioBoost ).add( textureBoost ) ).toVar( 'flowForce' )
-			const mouseForce = mouseDirection.mul( mouseFalloff.mul( this._uMouseStrength ).mul( mouseAmount ).mul( headBias ) ).toVar( 'mouseForce' )
+			const flowAmount = autonomousWeight.add( fieldWeight.mul( 1.65 ) ).add( followWeight.mul( 0.55 ) ).toVar( 'flowAmount' )
+			const mouseAmount = followWeight.mul( 1.8 ).add( autonomousWeight.mul( 1.15 ) ).add( fieldWeight.mul( 0.9 ) ).toVar( 'mouseAmount' )
+
+			const homeForce = homeTarget.sub( position ).mul( this._uHomeStrength.mul( homeAmount ) ).toVar( 'homeForce' )
+			const flowScale = this._uCurlStrength.mul( flowAmount ).mul( flowMobility ).mul( audioBoost ).add( textureBoost )
+				.mul( inverseSqrt( max( dot( flow, flow ), 1e-12 ) ) )
+			const flowForce = flow.mul( flowScale ).toVar( 'flowForce' )
+			const mouseScale = mouseFalloff.mul( this._uMouseStrength ).mul( mouseAmount ).toVar( 'mouseScale' )
+			const mouseForce = mouseDirection.mul( mouseScale ).toVar( 'mouseForce' )
 			const force = homeForce.add( flowForce ).add( mouseForce ).add( depthLift ).toVar( 'force' )
 
 			velocity.addAssign( force.mul( this._uDelta ) )

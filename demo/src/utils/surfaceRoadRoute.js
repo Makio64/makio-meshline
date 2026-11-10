@@ -91,7 +91,7 @@ export const planRoute = ( controls, half ) => planRoadPath( controls, {
 	spacing: 36,
 	maxAngle: Math.PI / 32,
 	maxChordError: 0.085,
-	maxBankAngle: Math.PI / 32,
+	maxBankAngle: Math.PI / 180,
 	minRadius: half * 1.5,
 	foldRadius: half * 1.05,
 } )

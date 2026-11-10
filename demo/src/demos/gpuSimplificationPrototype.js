@@ -39,7 +39,6 @@ export default class GpuSimplificationPrototypeExample {
 		backend: 'initializing',
 		busy: true,
 		datasetId: this.options.datasetId,
-		detail: this.options.detail,
 		gpuComputeMs: null,
 		level: this.settings.level,
 		renderMode: this.options.renderMode,
@@ -149,18 +148,11 @@ export default class GpuSimplificationPrototypeExample {
 
 	setSimplificationLevel( level, commit = false ) {
 		if ( this.metrics.fallback ) return
-		if ( this.ui.detail !== 'after' ) this.setDetailView( 'after' )
 		this.settings = resolveSimplificationSettings( level, WORLD_SIZE )
 		this.applySettings()
 		this.ui.busy = true
 		if ( commit ) this.rebuilds.queue()
 		else this.rebuilds.scheduleInteractive()
-	}
-
-	setDetailView( detail ) {
-		if ( this.metrics.fallback && detail === 'after' ) return
-		this.ui.detail = detail
-		this.syncView()
 	}
 
 	setRenderMode( mode ) {
@@ -169,9 +161,9 @@ export default class GpuSimplificationPrototypeExample {
 	}
 
 	syncView() {
-		const { detail, renderMode } = this.ui
-		this.pipeline?.show( detail, renderMode )
-		Object.assign( this.metrics, { renderMode, view: detail } )
+		const { renderMode } = this.ui
+		this.pipeline?.show( renderMode )
+		this.metrics.renderMode = renderMode
 	}
 
 	update = () => {
@@ -181,7 +173,7 @@ export default class GpuSimplificationPrototypeExample {
 		// World-space simplification is camera independent, so the default path
 		// dispatches exactly once and then never touches the GPU again. Only the
 		// opt-in screen-space LOD re-runs, and then at a capped rate.
-		if ( !this.options.cameraLod || this.rebuilds.measuring || !this.cameraLodDirty || this.ui.detail !== 'after' ) return
+		if ( !this.options.cameraLod || this.rebuilds.measuring || !this.cameraLodDirty ) return
 		const now = performance.now()
 		if ( now - this.lastCameraLodTime < CAMERA_LOD_INTERVAL_MS ) return
 
@@ -209,7 +201,6 @@ export default class GpuSimplificationPrototypeExample {
 		Object.assign( this.ui, {
 			backend: 'webgl2',
 			busy: false,
-			detail: 'before',
 			gpuComputeMs: null,
 			retainedPointCount: this.dataset?.pointCount ?? null,
 		} )

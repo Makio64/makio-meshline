@@ -9,11 +9,11 @@
 export const sineWavePositions = ( wavelengths = 2, segments = 100, amplitude = 1, length = 4 ) => {
 	segments = Math.max( segments, 2 )
 	const positions = new Float32Array( segments * 3 )
-	const last = segments - 1
+	const invLast = 1 / ( segments - 1 )
 	const freq = wavelengths * Math.PI * 2
 
 	for ( let i = 0, index = 0; i < segments; i++, index += 3 ) {
-		const t = i / last
+		const t = i * invLast
 		positions[ index ] = ( t - 0.5 ) * length
 		positions[ index + 1 ] = Math.sin( t * freq ) * amplitude
 	}

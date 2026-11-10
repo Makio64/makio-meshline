@@ -19,7 +19,7 @@ const TUNNEL_LENGTH = 90
 const RING_SPACING = TUNNEL_LENGTH / RING_COUNT
 const RING_RADIUS = 2.6
 const CRUISE_SPEED = 5
-const WARP_SPEED = 30
+const WARP_SPEED = 90
 const PALETTE_SECONDS = 7
 // Styles the tunnel drifts through; each new ring samples the current one.
 const PALETTES = [

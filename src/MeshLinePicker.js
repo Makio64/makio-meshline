@@ -5,6 +5,29 @@ import MeshLineNodeMaterial from './MeshLineNodeMaterial.js'
 
 const _size = new Vector2()
 const _savedClearColor = new Color()
+let _instancedPickingColorFn = null
+
+const hasVertexProgressHook = options => !!(
+	options.gpuPositionNode ||
+	options.positionFn ||
+	options.previousFn ||
+	options.nextFn ||
+	options.widthFn ||
+	options.normalFn ||
+	options.vertexFn
+)
+
+const getInstancedPickingColorNode = slotUniform => {
+	if ( !_instancedPickingColorFn ) {
+		_instancedPickingColorFn = Fn( ( [slot] ) => {
+			const idx = instanceIndex.toUint()
+			const hi = float( idx.shiftRight( uint( 8 ) ) ).mul( 1 / 255 )
+			const lo = float( idx.bitAnd( uint( 255 ) ) ).mul( 1 / 255 )
+			return vec4( slot, hi, lo, 1 )
+		} )
+	}
+	return _instancedPickingColorFn( slotUniform )
+}
 
 class MeshLinePickingMaterial extends MeshLineNodeMaterial {
 
@@ -30,6 +53,7 @@ class MeshLinePickingMaterial extends MeshLineNodeMaterial {
 			transparent: false,
 			alphaTest: 0,
 			depthWrite: true,
+			needsProgress: hasVertexProgressHook( options ),
 			needsVertexColor: false,
 			needsUV: false,
 			gradientColor: null,
@@ -58,12 +82,7 @@ class MeshLinePickingMaterial extends MeshLineNodeMaterial {
 		const instanced = this.options && this.options.instanceCount > 0
 
 		this.colorNode = instanced
-			? Fn( () => {
-				const idx = instanceIndex.toUint()
-				const hi = float( idx.shiftRight( uint( 8 ) ) ).mul( 1 / 255 )
-				const lo = float( idx.bitAnd( uint( 255 ) ) ).mul( 1 / 255 )
-				return vec4( slotF, hi, lo, 1 )
-			} )()
+			? getInstancedPickingColorNode( slotF )
 			: vec4( slotF, float( 0 ), float( 0 ), 1 )
 
 		// Keep exact joins exact, so a hit never lands on a clipped fold.
@@ -111,8 +130,10 @@ export default class MeshLinePicker {
 		this._lineToSlot = new Map()
 		this._nextSlot = 1
 
-		this._deviceTargetSize = 0
-		this._target = new RenderTarget( 1, 1, {
+		const initialDpr = typeof this.renderer?.getPixelRatio === 'function' ? this.renderer.getPixelRatio() : 1
+		const initialTargetSize = Math.max( 1, Math.ceil( this.targetSize * initialDpr ) )
+		this._deviceTargetSize = initialTargetSize
+		this._target = new RenderTarget( initialTargetSize, initialTargetSize, {
 			format: RGBAFormat,
 			type: UnsignedByteType,
 			depthBuffer: true,
@@ -120,14 +141,14 @@ export default class MeshLinePicker {
 		} )
 		this._target.texture.colorSpace = NoColorSpace
 		this._target.texture.generateMipmaps = false
-		this._bytesPerRow = 256
-		this._ensureTargetSize()
+		this._bytesPerRow = Math.max( 256, Math.ceil( initialTargetSize * 4 / 256 ) * 256 )
 		this._picking = false
 		this._disposed = false
 	}
 
 	_ensureTargetSize() {
-		const deviceTargetSize = Math.max( 1, Math.ceil( this.targetSize * this.renderer.getPixelRatio() ) )
+		const dpr = typeof this.renderer?.getPixelRatio === 'function' ? this.renderer.getPixelRatio() : 1
+		const deviceTargetSize = Math.max( 1, Math.ceil( this.targetSize * dpr ) )
 		if ( deviceTargetSize === this._deviceTargetSize ) return
 
 		this._deviceTargetSize = deviceTargetSize
@@ -155,6 +176,8 @@ export default class MeshLinePicker {
 			return this
 		}
 
+		// A storage-backed line settles how it draws from the renderer.
+		line._syncPositionStorage?.( this.renderer )
 		if ( typeof line.ensureBuilt === 'function' ) line.ensureBuilt()
 		if ( line.geometry?.isMeshLineSurfaceGeometry ) {
 			console.warn( 'MeshLinePicker.add: world-space surfaces use standard triangle raycasting; call raycaster.intersectObject( surface ) instead.' )
@@ -163,7 +186,7 @@ export default class MeshLinePicker {
 
 		const slot = this._nextSlot++
 		const material = new MeshLinePickingMaterial()
-		const options = line._options ?? {}
+		const options = line._effectiveOptions?.() ?? line._options ?? {}
 		material.buildLine( {
 			...options,
 			needsVertexColor: false,
@@ -177,7 +200,14 @@ export default class MeshLinePicker {
 		if ( line.count > 0 ) proxy.count = line.count
 		this._pickScene.add( proxy )
 
-		const entry = { line, proxy, material, instanced: options.instanceCount > 0 }
+		const entry = {
+			line,
+			proxy,
+			material,
+			instanced: options.instanceCount > 0,
+			join: line.material?.options?.join,
+			positionNode: options.gpuPositionNode ?? null,
+		}
 		this._registry.set( slot, entry )
 		this._lineToSlot.set( line, slot )
 		this._syncProxyMaterial( entry )
@@ -291,6 +321,14 @@ export default class MeshLinePicker {
 	}
 
 	_syncProxyMaterial( entry ) {
+		// A line that moved to or from a storage buffer draws through another
+		// position node, and its proxy has to follow.
+		const built = entry.line._effectiveOptions?.()
+		if ( built && ( built.gpuPositionNode ?? null ) !== entry.positionNode ) {
+			entry.positionNode = built.gpuPositionNode ?? null
+			entry.instanced = built.instanceCount > 0
+			entry.material.buildLine( { ...built, needsVertexColor: false } )
+		}
 		const src = entry.line.material
 		entry.material.lineWidth.value = src.lineWidth.value * this.hitRadius
 		entry.material.dpr.value = src.dpr.value
@@ -340,6 +378,23 @@ export default class MeshLinePicker {
 	 */
 	updateDebug() {
 		this._syncProxies()
+	}
+
+	/**
+	 * Synchronize all registered proxy meshes and asynchronously precompile the
+	 * offscreen picking scene's GPU pipelines via `renderer.compileAsync()`.
+	 * @returns {Promise<this>}
+	 */
+	async warmupAsync() {
+		if ( this._disposed || this._registry.size === 0 ) return this
+		if ( this.renderer?._initialized === false && typeof this.renderer.init === 'function' ) {
+			await this.renderer.init()
+		}
+		this._syncProxies()
+		if ( typeof this.renderer?.compileAsync === 'function' && this.camera ) {
+			await this.renderer.compileAsync( this._pickScene, this.camera )
+		}
+		return this
 	}
 
 	_pixelOrder( ts ) {

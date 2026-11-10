@@ -3,16 +3,16 @@
  * Demonstrates: .surface(), .join({ type, limit, segments }), .cap({ type, segments }), .miterLimit(),
  * 180° reversal cusp splitting, and MeshLineGPUPath screen-space variable topology.
  */
-import GUI from 'lil-gui'
 import { MeshLine } from 'makio-meshline'
 import MeshLineGPUPath from 'makio-meshline/gpu-path'
 import { attribute, color, frontFacing, mix, screenUV, smoothstep, varying, vec3, vec4 } from 'three/tsl'
 import { DirectionalLight, DoubleSide, HemisphereLight, MathUtils } from 'three/webgpu'
+import { markRaw, reactive } from 'vue'
 
+import VariableTopology from '@/components/VariableTopology.vue'
 import stage from '@/makio/core/stage'
 import stage3d from '@/makio/three/stage3d'
-import { noUI, reducedMotion } from '@/makio/utils/detect'
-import { createDemoHint } from '@/utils/demoHint'
+import { reducedMotion } from '@/makio/utils/detect'
 import { addBadge, createLabel, createLabelRenderer, paintBadge } from '@/utils/variableTopologyHud'
 import { createMirror } from '@/utils/variableTopologyMirror'
 
@@ -28,6 +28,7 @@ const DEFAULT_MITER_LIMIT = 2.5
 const JOIN_ANGLE_MIN = 20
 const JOIN_ANGLE_MAX = 165
 const JOIN_ANGLE_DEFAULT = 60
+const JOIN_ANGLE_SPEED = 0.12
 const JOIN_ANGLE_CENTER = ( JOIN_ANGLE_MIN + JOIN_ANGLE_MAX ) * 0.5
 const JOIN_ANGLE_AMPLITUDE = ( JOIN_ANGLE_MAX - JOIN_ANGLE_MIN ) * 0.5
 const JOIN_ARM_LENGTH = 2.65
@@ -118,29 +119,26 @@ const nearestJoinPhase = ( angle, phase ) => {
 }
 
 // The paths are flat: y stays 0 and position.y lifts the ribbon and its wire.
-const writeJoinPose = ( target, center, angle, direction ) => {
+const writeJoinPose = ( target, center, angle ) => {
 	const halfAngle = MathUtils.degToRad( angle * 0.5 )
 	const halfWidth = Math.sin( halfAngle ) * JOIN_ARM_LENGTH
 	const halfDepth = Math.cos( halfAngle ) * JOIN_ARM_LENGTH * 0.5
-	const rotation = MathUtils.degToRad( direction )
-	const cosine = Math.cos( rotation )
-	const sine = Math.sin( rotation )
 	const centerX = center[0]
 	const centerZ = center[1] + 0.1
 
-	target[0] = centerX - halfWidth * cosine + halfDepth * sine
-	target[2] = centerZ - halfWidth * sine - halfDepth * cosine
-	target[3] = centerX - halfDepth * sine
-	target[5] = centerZ + halfDepth * cosine
-	target[6] = centerX + halfWidth * cosine + halfDepth * sine
-	target[8] = centerZ + halfWidth * sine - halfDepth * cosine
+	target[0] = centerX - halfWidth
+	target[2] = centerZ - halfDepth
+	target[3] = centerX
+	target[5] = centerZ + halfDepth
+	target[6] = centerX + halfWidth
+	target[8] = centerZ - halfDepth
 	return target
 }
 
 const toSurfacePoints = ( path, [centerX, centerZ] ) => new Float32Array( path.flatMap( ( [x, z] ) => [x + centerX, 0, z + centerZ] ) )
 
 const specimenPoints = config => config.kind === 'join'
-	? writeJoinPose( new Float32Array( 9 ), config.center, JOIN_ANGLE_DEFAULT, 0 )
+	? writeJoinPose( new Float32Array( 9 ), config.center, JOIN_ANGLE_DEFAULT )
 	: toSurfacePoints( config.points, config.center )
 
 const surfaceLine = ( points, config, surface ) => new MeshLine()
@@ -189,10 +187,11 @@ const specimenCost = metrics => {
 	return `+${Math.max( 1, metrics.triangleCount - 4 )}/${JOIN_FAN_SEGMENTS} fan`
 }
 
-// The topology really changes: read the counts back from the rebuilt geometry.
+// The topology really changes: read the counts in use back from the rebuilt
+// geometry. Its buffers can be larger, so an animated join keeps reusing them.
 const refreshBadge = ( { surface, metrics, badgeElement } ) => {
-	metrics.vertexCount = surface.geometry.getAttribute( 'position' ).count
-	metrics.triangleCount = surface.geometry.getIndex().count / 3
+	metrics.vertexCount = surface.geometry.vertexCount
+	metrics.triangleCount = surface.geometry.indexCount / 3
 	metrics.variableTopology = metrics.vertexCount > metrics.sourcePointCount * 2
 	metrics.badge = `${metrics.triangleCount} tris · ${specimenCost( metrics )}`
 	paintBadge( badgeElement, metrics )
@@ -213,18 +212,21 @@ const createMetrics = ( cameraCase, examples ) => ( {
 } )
 
 export default class VariableTopologyExample {
+	uiComponent = markRaw( VariableTopology )
 	wires = []
 	animatedJoins = []
 	isCompactGui = false
 	joinAnglePhase = nearestJoinPhase( JOIN_ANGLE_DEFAULT, 0 )
-	params = {
+	params = reactive( {
+		open: true,
+		animateAngles: false,
 		showTriangles: true,
 		joinAngle: JOIN_ANGLE_DEFAULT,
 		turnAngle: 180 - JOIN_ANGLE_DEFAULT,
 		miterLimit: DEFAULT_MITER_LIMIT,
-		joinDirection: 0,
-		angleSpeed: 0.12,
-	}
+		miterScale: Number( ( 1 / Math.sin( MathUtils.degToRad( JOIN_ANGLE_DEFAULT * 0.5 ) ) ).toFixed( 2 ) ),
+		telemetry: '',
+	} )
 
 	async init() {
 		const query = new URLSearchParams( window.location.search )
@@ -250,13 +252,8 @@ export default class VariableTopologyExample {
 		this.labelRenderer = createLabelRenderer()
 		this.createSpecimens()
 		this.createLights()
-		this.hint = createDemoHint( '', {
-			accent: '#fde68a',
-			hideAfter: 0,
-			attributes: { role: 'complementary', 'aria-label': 'Surface topology' },
-		} )
 		this.updateTelemetry()
-		this.createGui()
+		this.syncGuiLayout()
 		await this.createScreenPath()
 		this.onResize()
 
@@ -298,47 +295,30 @@ export default class VariableTopologyExample {
 		stage3d.add( new HemisphereLight( 0xD9F1FF, 0x182033, 2.35 ), sun )
 	}
 
-	createGui() {
-		const { params } = this
-		const scrubAngle = angle => {
-			params.animateAngles = false
-			this.setJoinPose( angle, params.joinDirection )
-		}
+	setAnimateAngles( enabled ) {
+		this.params.animateAngles = enabled
+		if ( enabled ) this.joinAnglePhase = nearestJoinPhase( this.params.joinAngle, this.joinAnglePhase )
+	}
 
-		this.gui = stage3d.own( new GUI( { title: 'Topology', width: noUI ? 220 : 250 } ) )
-		this.gui.domElement.classList.add( 'VariableTopologyControls' )
+	scrubJoinAngle( angle ) {
+		this.params.animateAngles = false
+		this.setJoinPose( angle )
+	}
 
-		this.gui.add( params, 'animateAngles' ).name( 'Animate joins' ).listen().onChange( enabled => {
-			if ( enabled ) this.joinAnglePhase = nearestJoinPhase( params.joinAngle, this.joinAnglePhase )
-		} )
-		this.gui.add( params, 'joinAngle', JOIN_ANGLE_MIN, JOIN_ANGLE_MAX, 0.1 )
-			.name( 'Opening (°)' )
-			.listen()
-			.onChange( scrubAngle )
-		this.gui.add( params, 'turnAngle', 180 - JOIN_ANGLE_MAX, 180 - JOIN_ANGLE_MIN, 0.1 )
-			.name( 'Turn (°)' )
-			.listen()
-			.onChange( turn => scrubAngle( 180 - turn ) )
-		this.gui.add( params, 'miterLimit', 1.2, 6, 0.05 )
-			.name( 'Miter limit' )
-			.onChange( limit => this.setMiterLimit( limit ) )
-		this.gui.add( params, 'joinDirection', -180, 180, 0.1 )
-			.name( 'Orientation (°)' )
-			.listen()
-			.onChange( direction => this.setJoinPose( params.joinAngle, direction ) )
-		this.gui.add( params, 'angleSpeed', 0.03, 0.3, 0.01 ).name( 'Motion speed' )
-		// The wire overlay is the proof: extra triangles appear only where a join or
-		// cap needs them.
-		this.gui.add( params, 'showTriangles' ).name( 'Show triangles' ).onChange( visible => {
-			for ( const wire of this.wires ) wire.visible = visible
-		} )
+	scrubTurnAngle( turn ) {
+		this.scrubJoinAngle( 180 - turn )
+	}
 
-		this.syncGuiLayout()
+	// The wire overlay is the proof: extra triangles appear only where a join or
+	// cap needs them.
+	setShowTriangles( visible ) {
+		this.params.showTriangles = visible
+		for ( const wire of this.wires ) wire.visible = visible
 	}
 
 	syncGuiLayout() {
 		const compact = stage.width <= 700
-		if ( compact && !this.isCompactGui ) this.gui.close()
+		if ( compact && !this.isCompactGui ) this.params.open = false
 		this.isCompactGui = compact
 	}
 
@@ -361,14 +341,13 @@ export default class VariableTopologyExample {
 		createLabel( prepared ? 'GPU screen path · round' : 'Screen path fallback', 0x38BDF8, [0, LABEL_Y, SCREEN_PATH_Z + 1.2] )
 	}
 
-	setJoinPose( angle, direction ) {
+	setJoinPose( angle ) {
 		const { params } = this
 		params.joinAngle = angle
 		params.turnAngle = 180 - angle
-		params.joinDirection = MathUtils.euclideanModulo( direction + 180, 360 ) - 180
 
 		for ( const entry of this.animatedJoins ) {
-			writeJoinPose( entry.points, entry.center, angle, params.joinDirection )
+			writeJoinPose( entry.points, entry.center, angle )
 			entry.surface.setPositions( entry.points )
 			entry.wire.setPositions( entry.points )
 			refreshBadge( entry )
@@ -377,6 +356,7 @@ export default class VariableTopologyExample {
 	}
 
 	setMiterLimit( limit ) {
+		this.params.miterLimit = limit
 		for ( const entry of this.animatedJoins ) {
 			if ( entry.metrics.join !== 'miter' ) continue
 			entry.surface.miterLimit( limit )
@@ -392,11 +372,13 @@ export default class VariableTopologyExample {
 		const opening = Math.round( joinAngle )
 		const turn = Math.round( turnAngle )
 		const miterScale = 1 / Math.sin( MathUtils.degToRad( joinAngle * 0.5 ) )
+		const roundedScale = Number( miterScale.toFixed( 2 ) )
 		surface.joinAngle = joinAngle
 		surface.turnAngle = turnAngle
-		surface.miterScale = Number( miterScale.toFixed( 2 ) )
+		surface.miterScale = roundedScale
 		surface.miterLimit = miterLimit
-		this.hint.setText( `Joins, caps + reversals · Opening ${opening}° · Turn ${turn}° · Miter ×${miterScale.toFixed( 2 )} · Drag to orbit` )
+		this.params.miterScale = roundedScale
+		this.params.telemetry = `Joins, caps + reversals · Opening ${opening}° · Turn ${turn}° · Miter ×${miterScale.toFixed( 2 )}`
 	}
 
 	onResize = () => {
@@ -407,9 +389,9 @@ export default class VariableTopologyExample {
 
 	update = dt => {
 		if ( this.params.animateAngles ) {
-			this.joinAnglePhase += dt * 0.001 * this.params.angleSpeed * Math.PI * 2
+			this.joinAnglePhase += dt * 0.001 * JOIN_ANGLE_SPEED * Math.PI * 2
 			const angle = JOIN_ANGLE_CENTER + Math.sin( this.joinAnglePhase ) * JOIN_ANGLE_AMPLITUDE
-			this.setJoinPose( angle, this.params.joinDirection )
+			this.setJoinPose( angle )
 		}
 		this.screenPath.update( stage3d.camera )
 		this.labelRenderer.render( stage3d.scene, stage3d.camera )

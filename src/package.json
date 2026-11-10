@@ -29,6 +29,7 @@
     "index.js",
     "index.d.ts",
     "MeshLine.js",
+    "MeshLineBillboard.js",
     "MeshLineGeometry.js",
     "MeshLineNodeMaterial.js",
     "MeshLineSurfaceGeometry.js",
@@ -112,7 +113,7 @@
     "prepublishOnly": "pnpm -w run lint && pnpm -w run test && pnpm -w run test:types && pnpm -w run verify:package"
   },
   "devDependencies": {
-    "@types/three": "0.186.0",
-    "three": "0.186.1"
+    "@types/three": "0.187.0",
+    "three": "0.187.0"
   }
 }
