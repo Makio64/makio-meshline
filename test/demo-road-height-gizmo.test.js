@@ -28,10 +28,10 @@ test( 'the road height gizmo is double-ended and keeps its pick proxies outside 
 	const pickLength = numberConstant( source, 'HEIGHT_GIZMO_PICK_LENGTH' )
 	const pickCenter = numberConstant( source, 'HEIGHT_GIZMO_PICK_CENTER' )
 
-	assert.match( source, /ConeGeometry,[\s\S]*CylinderGeometry,/ )
+	assert.match( source, /CylinderGeometry,[\s\S]*ShapeGeometry,/ )
 	assert.match( create, /for \( const direction of \[-1, 1\] \)/ )
-	assert.match( create, /new Mesh\( shaftGeometry, this\.heightGizmoMaterial \)/ )
-	assert.match( create, /new Mesh\( arrowGeometry, this\.heightGizmoMaterial \)/ )
+	assert.match( create, /const shaft = heightPart\( shaftGeometry, shaftOutline \)/ )
+	assert.match( create, /const arrow = heightPart\( arrowGeometry, arrowOutline \)/ )
 	assert.match( create, /if \( direction < 0 \) arrow\.rotation\.z = Math\.PI/ )
 	assert.match( create, /picker\.position\.y = direction \* HEIGHT_GIZMO_PICK_CENTER/ )
 	assert.match( create, /this\.heightGizmoPickers\.push\( picker \)/ )
@@ -82,7 +82,7 @@ test( 'selection and control mutations keep the height gizmo attached to the sel
 	const [demo, source, gizmos] = await Promise.all( [readDemo(), readEditor(), readGizmos()] )
 	const syncHandles = section( source, 'syncHandles() {', 'syncHeightGizmo() {' )
 	const syncGizmo = section( source, 'syncHeightGizmo() {', '/** Along the built road' )
-	const place = section( gizmos, 'place( position, tangent, bank ) {', 'updateHeightGizmoScale() {' )
+	const place = section( gizmos, 'place( position, tangent, bank ) {', '/** Keep the gizmo\'s size on screen' )
 	const moveControl = section( source, 'moveControl( index, x, z ) {', 'setSelectedClearance( clearance ) {' )
 	const insert = section( source, 'insertControl( x, z, hintY ) {', 'removeControl( index ) {' )
 	const remove = section( source, 'removeControl( index ) {', '//---------------------------------------------------------- PICKING' )
@@ -92,7 +92,7 @@ test( 'selection and control mutations keep the height gizmo attached to the sel
 	assert.match( syncGizmo, /const handle = this\.handles\[this\.selectedIndex\]/ )
 	assert.match( syncGizmo, /this\.gizmos\.place\( handle\.position, this\.selectedTangent\(\), this\.demo\.controls\[this\.selectedIndex\]\.bank \)/ )
 	assert.match( place, /this\.heightGizmo\.position\.copy\( position \)/ )
-	assert.match( place, /this\.updateHeightGizmoScale\(\)/ )
+	assert.match( place, /this\.faceCamera\(\)/ )
 	assert.match( moveControl, /if \( index === this\.selectedIndex \) this\.syncHeightGizmo\(\)/ )
 	assert.match( updateRoad, /this\.editor\.syncHeightGizmo\(\)/ )
 	assert.match( insert, /this\.selectedIndex = best\.index[\s\S]*this\.syncHandles\(\)[\s\S]*this\.demo\.updateRoad\(\)/ )
@@ -129,7 +129,7 @@ test( 'the point controller includes a 3D bank rotation gizmo and the HUD expose
 		read( 'demo/src/components/SurfaceRoad.vue' ),
 	] )
 	const create = section( source, 'constructor( parent ) {', '/** Sit on `position`' )
-	const place = section( source, 'place( position, tangent, bank ) {', 'updateHeightGizmoScale() {' )
+	const place = section( source, 'place( position, tangent, bank ) {', '/** Keep the gizmo\'s size on screen' )
 	const pointerDown = section( editor, 'onPointerDown = event => {', 'onPointerMove = event => {' )
 	const handleRadius = numberConstant( editor, 'HANDLE_RADIUS' )
 	const bankRadius = numberConstant( source, 'BANK_GIZMO_RADIUS' )
@@ -154,4 +154,29 @@ test( 'the point controller includes a 3D bank rotation gizmo and the HUD expose
 	assert.doesNotMatch( hud, /Construction/ )
 	assert.doesNotMatch( hud, /Select previous point/ )
 	assert.doesNotMatch( hud, /Select next point/ )
+} )
+
+test( 'every gizmo shape is drawn over its own outline, and the arrow heads turn to the camera', async () => {
+	const [editor, source] = await Promise.all( [readEditor(), readGizmos()] )
+	const create = section( source, 'constructor( parent ) {', '/** Sit on `position`' )
+	const faceCamera = section( source, 'faceCamera() {', '/** `dragMode` is the mode' )
+	const update = section( editor, 'update() {', '//---------------------------------------------------------- HANDLES' )
+	const outline = numberConstant( source, 'GIZMO_OUTLINE' )
+
+	assert.match( source, /outline\.renderOrder = renderOrder - 1\s+mesh\.add\( outline \)/ )
+	assert.match( source, /heightOutlineMaterial = outlineMaterial\( HEIGHT_GIZMO_COLOR \)/ )
+	assert.match( source, /bankOutlineMaterial = outlineMaterial\( BANK_GIZMO_COLOR \)/ )
+	assert.match( source, /depthTest: false, depthWrite: false, fog: false/ )
+	// No shape of the gizmo is left bare.
+	assert.doesNotMatch( create, /new Mesh\( \w+, this\.(height|bank)GizmoMaterial \)/ )
+	for ( const part of ['shaft', 'arrow', 'wing', 'arc', 'tip'] ) {
+		assert.match( create, new RegExp( `const ${part} = (height|bank)Part\\( ${part}Geometry, ${part}Outline \\)` ) )
+	}
+	assert.match( create, /aimHead\( arrow \)/ )
+	assert.match( create, /aimHead\( tip \)/ )
+	assert.match( faceCamera, /for \( const head of this\.arrowHeads \)/ )
+	assert.match( update, /this\.gizmos\.faceCamera\(\)/ )
+	// The outlined shaft must still start clear of a handle at its largest, the one being dragged.
+	const shaftStart = numberConstant( source, 'HEIGHT_GIZMO_SHAFT_CENTER' ) - numberConstant( source, 'HEIGHT_GIZMO_SHAFT_LENGTH' ) * 0.5
+	assert.ok( shaftStart - outline > numberConstant( editor, 'HANDLE_RADIUS' ) * 1.25 )
 } )

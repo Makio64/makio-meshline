@@ -104,7 +104,7 @@ export class RoadEditor {
 
 	/** Handles and gizmos keep their size on screen, and a point the road cannot take beats. */
 	update() {
-		this.gizmos.updateHeightGizmoScale()
+		this.gizmos.faceCamera()
 		const beat = reducedMotion.matches ? 1 : 1 + Math.sin( performance.now() * 0.008 ) * 0.14
 		for ( const handle of this.handles ) {
 			handle.scale.setScalar( screenScale( handle.position ) * handle.userData.scale * ( handle.userData.tight ? beat : 1 ) )
