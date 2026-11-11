@@ -1069,3 +1069,59 @@ test( 'rejected setLines() and buildLine() keep the options of the last accepted
 	unbuilt.buildLine( { lines } )
 	assert.equal( unbuilt.drawRange.count, 3 )
 } )
+
+test( 'a clipped inner join carries the UV and side of the point it is trimmed to', () => {
+	// A bend tighter than the ribbon is wide, sampled finely: every join has to pull its inside in.
+	const width = 7.4
+	const half = width * 0.5
+	const radius = 3.5
+	const bend = ( rows, sweep ) => {
+		const points = new Float64Array( rows * 3 )
+		for ( let row = 0; row < rows; row++ ) {
+			const angle = row * sweep / rows
+			points.set( [Math.sin( angle ) * radius, 2, Math.cos( angle ) * radius], row * 3 )
+		}
+		return points
+	}
+
+	for ( const [label, points, closed] of [['an open bend', bend( 30, 3.4 ), false], ['a closed loop', bend( 55, Math.PI * 2 ), true]] ) {
+		const geometry = new MeshLineSurfaceGeometry( {
+			lines: points,
+			closed,
+			lineWidth: width,
+			needsUV: true,
+			needsSide: true,
+			needsProgress: true,
+			surface: { frame: 'fixed-up', up: [0, 1, 0], bank: 0.2 },
+			join: { type: 'miter', limit: 1.25, inner: 'clip' },
+			cap: { type: 'butt' },
+		} )
+		const position = geometry.getAttribute( 'position' )
+		const uv = geometry.getAttribute( 'uv' )
+		const side = geometry.getAttribute( 'side' )
+		const progress = geometry.getAttribute( 'progress' )
+		const rows = points.length / 3
+
+		let trimmed = 0
+		for ( let vertex = 0; vertex < geometry.vertexCount; vertex++ ) {
+			// The rows are evenly spaced, so progress names the row a vertex belongs to.
+			const row = Math.round( progress.getX( vertex ) * ( closed ? rows : rows - 1 ) ) % rows
+			const reach = Math.hypot(
+				position.getX( vertex ) - points[row * 3],
+				position.getY( vertex ) - points[row * 3 + 1],
+				position.getZ( vertex ) - points[row * 3 + 2]
+			)
+			const across = side.getX( vertex )
+			assert.equal( uv.getY( vertex ), Math.fround( ( across + 1 ) * 0.5 ), `${label}: vertex ${vertex} has a UV that disagrees with its side` )
+			if ( reach < half * 0.99 ) {
+				trimmed++
+				// Along the mitre the corner is a hair further out than its share of the half width.
+				assert.ok( Math.abs( Math.abs( across ) * half - reach ) < half * 0.004, `${label}: vertex ${vertex} sits ${reach} from the centreline and claims ${Math.abs( across ) * half}` )
+			} else {
+				assert.equal( Math.abs( across ), 1, `${label}: vertex ${vertex} reaches the edge and is not marked as it` )
+			}
+		}
+		assert.ok( trimmed >= 8, `${label}: only ${trimmed} vertices were trimmed, the bend is not tight enough to test anything` )
+		geometry.dispose()
+	}
+} )

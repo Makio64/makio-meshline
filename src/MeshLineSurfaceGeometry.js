@@ -3838,13 +3838,23 @@ function emitVariableJoins(
 		positions[ii3] = innerX; positions[ii3 + 1] = innerY; positions[ii3 + 2] = innerZ
 		positions[oi3] = innerX; positions[oi3 + 1] = innerY; positions[oi3 + 2] = innerZ
 
+		// A clipped corner stops `innerFactor` of the way to the edge, and its UV and
+		// side say so: a texture is then cut at the trim rather than squeezed into it.
+		if ( innerFactor < 1 ) {
+			const innerSide = ( innerSlot * 2 - 1 ) * innerFactor
+			const uvs = state.uvs
+			const sides = state.sides
+			if ( uvs ) uvs[incomingInner * 2 + 1] = uvs[outgoingInner * 2 + 1] = ( innerSide + 1 ) * 0.5
+			if ( sides ) sides[incomingInner] = sides[outgoingInner] = innerSide
+		}
+
 		if ( seamJoin ) {
 			emitSeamJoin(
 				state,
 				pointIndex, incomingOuter, outgoingOuter, innerSlot, outerSlot,
 				centerX, centerY, centerZ, innerX, innerY, innerZ,
 				angle, normalsSource[pointOffset], normalsSource[pointOffset + 1], normalsSource[pointOffset + 2],
-				join, seamEndU
+				join, seamEndU, innerFactor
 			)
 		} else if ( isRoundJoin ) {
 			const roundSegs = Math.ceil( Math.abs( angle ) * angleToSegments ) || 1
@@ -4729,7 +4739,7 @@ function emitRoundJoin(
 function emitSeamJoin(
 	state,
 	pointIndex, incomingOuter, outgoingOuter, innerSlot, outerSlot,
-	centerX, centerY, centerZ, innerX, innerY, innerZ, angle, normalX, normalY, normalZ, join, seamU
+	centerX, centerY, centerZ, innerX, innerY, innerZ, angle, normalX, normalY, normalZ, join, seamU, innerFactor = 1
 ) {
 	const positions = state.positions
 	const startOffset = incomingOuter * 3
@@ -4740,7 +4750,8 @@ function emitSeamJoin(
 	const endPosX = positions[endOffset]
 	const endPosY = positions[endOffset + 1]
 	const endPosZ = positions[endOffset + 2]
-	const pivot = topoEmitVertex( state, pointIndex, innerX, innerY, innerZ, innerSlot === 0 ? -1 : 1, seamU, 1 )
+	// The pivot is the inner corner again, on the far side of the texture seam.
+	const pivot = topoEmitVertex( state, pointIndex, innerX, innerY, innerZ, ( innerSlot === 0 ? -1 : 1 ) * innerFactor, seamU, 1 )
 	const outerSide = outerSlot === 0 ? -1 : 1
 	const positiveTurn = angle > 0
 	let prevVertex = topoEmitVertex(
