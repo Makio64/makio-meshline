@@ -69,6 +69,18 @@ test( 'road saves reject impossible control counts and non-finite points', () =>
 	assert.throws( () => parseRoad( { kind: 'other', controls } ), /Unsupported kind/ )
 } )
 
+test( 'a loop is saved as one, and every older save stays an open road', () => {
+	assert.equal( 'closed' in serializeRoad( { controls } ), false )
+	assert.equal( 'closed' in serializeRoad( { controls, closed: false } ), false )
+	const loop = serializeRoad( { name: 'Ring', controls, closed: true } )
+	assert.equal( loop.closed, true )
+	assert.equal( parseRoad( JSON.stringify( loop ) ).closed, true )
+	assert.equal( readRoadFromLocation( createShareUrl( 'https://example.com/examples/surface-road', loop ) ).closed, true )
+	// Only `true` closes a road, and two controls cannot go round.
+	assert.equal( 'closed' in serializeRoad( { controls, closed: 'yes' } ), false )
+	assert.equal( 'closed' in serializeRoad( { controls: controls.slice( 0, 2 ), closed: true } ), false )
+} )
+
 test( 'missing width falls back to the editor default', () => {
 	assert.equal( serializeRoad( { controls } ).roadWidth, ROAD_SAVE_LIMITS.defaultWidth )
 } )

@@ -619,3 +619,259 @@ test( 'option defaults survive undefined adaptive overrides', () => {
 	assert.ok( Number.isFinite( plan.stats.maxTurn ) )
 	assert.ok( Number.isFinite( plan.stats.length ) )
 } )
+
+test( 'a bend nearly as tight as the road is wide keeps even spacing, so no join needs trimming', () => {
+	// A road built in the editor: a banked, climbing hairpin at its fourth control,
+	// 6% wider in radius than half the ribbon.
+	const half = 3.7
+	const controls = [
+		[-13.3928, 2.0256, -25.5539, 0.668161],
+		[4.2496, 2.9515, -23.6786, 0.668161],
+		[7.2703, 4.4863, 0.4084, 0.442912],
+		[-19.8648, 2.6498, 0.236, 0.151845],
+		[-5.9309, 6.3994, 19.5802, 0.531447],
+		[-22.1852, 3.0472, 23.2234, 0.043825],
+		[-34.7764, 3.5572, 16.3567, -0.092114],
+		[-58.4948, 3.4402, 3.4702, -0.092114],
+		[-39.3313, 19.3366, 0.7378, -0.035431],
+		[-31.8588, 8.9128, -17.5822, 0.040658],
+	].map( ( [x, y, z, bank] ) => ( { x, y, z, bank } ) )
+	const settings = {
+		spacing: 36,
+		maxAngle: Math.PI / 32,
+		maxChordError: 0.085,
+		maxBankAngle: Math.PI / 180,
+		minRadius: half * 1.5,
+		foldRadius: half * 1.05,
+	}
+	const plan = planRoadPath( controls, settings )
+	assert.equal( plan.stats.tightCount, 0, 'the road stopped being buildable' )
+	assert.ok( plan.stats.minRadius < half * 1.1, `the hairpin opened up to ${plan.stats.minRadius}m and no longer tests anything` )
+	assert.ok( plan.stats.maxTurn <= settings.maxAngle + 1e-9, 'evening out the spacing broke the turn budget' )
+
+	// Where the road turns that tightly, a row is never much longer than the one next to it.
+	const { points } = plan
+	const step = row => [points[row * 3 + 3] - points[row * 3], points[row * 3 + 4] - points[row * 3 + 1], points[row * 3 + 5] - points[row * 3 + 2]]
+	let tightRows = 0
+	for ( let row = 1; row < points.length / 3 - 1; row++ ) {
+		const before = step( row - 1 )
+		const after = step( row )
+		const turn = Math.hypot(
+			before[1] * after[2] - before[2] * after[1],
+			before[2] * after[0] - before[0] * after[2],
+			before[0] * after[1] - before[1] * after[0]
+		)
+		const chord = Math.hypot( before[0] + after[0], before[1] + after[1], before[2] + after[2] )
+		const radius = Math.hypot( ...before ) * Math.hypot( ...after ) * chord / ( 2 * turn )
+		if ( radius >= settings.foldRadius * 1.4 ) continue
+		tightRows++
+		const ratio = Math.hypot( ...after ) / Math.hypot( ...before )
+		assert.ok( ratio < 1.3 && ratio > 1 / 1.3, `rows ${row - 1} and ${row} turn on ${radius}m and are ${Math.hypot( ...before )}m and ${Math.hypot( ...after )}m long` )
+	}
+	assert.ok( tightRows > 20, `only ${tightRows} rows are in a tight bend` )
+
+	// `inner: 'exact'` refuses a road whose joins would have to be trimmed.
+	const geometry = new MeshLineSurfaceGeometry( {
+		lines: points,
+		lineWidth: half * 2,
+		needsUV: true,
+		surface: { frame: 'fixed-up', up: [0, 1, 0], bank: plan.bank },
+		join: { type: 'miter', limit: 1.25, inner: 'exact' },
+		cap: { type: 'butt' },
+	} )
+	assert.ok( geometry.vertexCount >= points.length / 3 * 2 )
+	geometry.dispose()
+} )
+
+test( 'samples next to a rounded corner or a short, steep stretch leave every join its room', () => {
+	// Roads from the editor, one control pulled until the bend was as tight as the planner
+	// accepts. Sampling each curve on its own crowded a join on every one of them: a row
+	// several times shorter than the row beside it has no room for the turn they share.
+	const half = 3.7
+	const roads = {
+		'a span sampled twice as finely as the rounded corner it runs into': [
+			[-7.895, 0.49, 0.928, 0],
+			[9.76, 1.88, 4.668, 0.035],
+			[14.263, 1.601, 4.697, -0.117],
+			[30.2, 3.372, -16.987, 0.006],
+			[40.07, 3.035, -29.419, 0.052],
+		],
+		'a wide rounded corner stepping three times as long as the span leaving it': [
+			[3.419, 1.048, -0.642, 0],
+			[7.025, 5.098, 10.084, -0.062],
+			[35.768, 2.456, -14.417, -0.026],
+			[38.967, 3.096, -29.544, -0.146],
+			[33.321, 5.171, -16.733, -0.244],
+		],
+		'a rounded corner only two rows long, beside a gentle span': [
+			[2.446, 1.013, 1.219, 0],
+			[13.456, 1.41, -9.459, 0.058],
+			[18.714, 1.201, -24.925, -0.093],
+			[34.406, 1.502, -31.869, 0.022],
+			[21.022, 1.194, -27.764, -0.068],
+			[-18.662, -0.308, -16.432, 0.062],
+			[17.987, 5.873, 7.34, 0.055],
+		],
+		'a long gentle span meeting a short, steep stretch at a control': [
+			[6.845, 1.247, 4.822, 0],
+			[-9.475, 3.499, 2.157, 0.099],
+			[-15.664, 7.582, 2.936, -0.002],
+			[-38.574, 7.608, -8.252, -0.017],
+			[-41.458, 3.976, -29.845, -0.008],
+			[-30.774, 9.034, -20.798, 0.077],
+		],
+		'a smooth control between a gentle span and a short, steep one': [
+			[1.161, 0.872, -5.703, 0],
+			[4.255, 3.388, -27.105, 0.002],
+			[3.498, 4.005, -4.57, -0.016],
+			[2.734, 1.027, 1.124, 0.032],
+			[-9.98, 0.392, 10.514, 0.06],
+			[-10.817, 0.147, 25.399, 0.22],
+		],
+	}
+	const settings = {
+		spacing: 36,
+		maxAngle: Math.PI / 32,
+		maxChordError: 0.085,
+		maxBankAngle: Math.PI / 180,
+		minRadius: half * 1.5,
+		foldRadius: half * 1.05,
+	}
+
+	for ( const [label, road] of Object.entries( roads ) ) {
+		const controls = road.map( ( [x, y, z, bank] ) => ( { x, y, z, bank } ) )
+		const plan = planRoadPath( controls, settings )
+		assert.equal( plan.stats.tightCount, 0, `${label}: the road stopped being buildable` )
+		assert.ok( plan.stats.maxTurn <= settings.maxAngle + 1e-9, `${label}: a row turns ${plan.stats.maxTurn}, past the budget` )
+		assert.ok( plan.stats.maxBankStep <= settings.maxBankAngle + 1e-6, `${label}: a row rolls ${plan.stats.maxBankStep}, past the budget` )
+		for ( let index = 0; index < controls.length; index++ ) {
+			const anchor = plan.anchors[index] * 3
+			const miss = Math.hypot( plan.points[anchor] - controls[index].x, plan.points[anchor + 1] - controls[index].y, plan.points[anchor + 2] - controls[index].z )
+			assert.ok( miss < 1e-9, `${label}: control ${index} is no longer a sample` )
+		}
+
+		// `inner: 'exact'` refuses a centreline with a join it would have to trim.
+		assert.doesNotThrow( () => new MeshLineSurfaceGeometry( {
+			lines: Float32Array.from( plan.points ),
+			lineWidth: half * 2,
+			needsUV: true,
+			surface: { frame: 'fixed-up', up: [0, 1, 0], bank: plan.bank, uvMode: 'distance', uvScale: 1 },
+			join: { type: 'miter', limit: 1.25, inner: 'exact' },
+			cap: { type: 'butt' },
+		} ).dispose(), `${label}: a join had to be trimmed` )
+	}
+} )
+
+test( 'a hairpin that climbs turns in plan instead of standing the road on end', () => {
+	const half = 3.7
+	const settings = {
+		spacing: 36,
+		maxAngle: Math.PI / 32,
+		maxChordError: 0.085,
+		maxBankAngle: Math.PI / 180,
+		minRadius: half * 1.5,
+		foldRadius: half * 1.05,
+	}
+	const grade = ( from, to ) => Math.abs( to.y - from.y ) / Math.hypot( to.x - from.x, to.z - from.z )
+
+	// Two legs that double back while they both climb span a plane standing on its
+	// edge, and their 3D bisector points up the hill. A road turned in either
+	// climbs a wall at the bend, after dipping under the control before it.
+	const assertGraded = ( controls, label ) => {
+		const plan = planRoadPath( controls, settings )
+		const { points, anchors } = plan
+		let steepestLeg = 0
+		for ( let index = 1; index < controls.length; index++ ) steepestLeg = Math.max( steepestLeg, grade( controls[index - 1], controls[index] ) )
+		let steepest = 0
+		for ( let row = 1; row < points.length / 3; row++ ) {
+			const run = Math.hypot( points[row * 3] - points[row * 3 - 3], points[row * 3 + 2] - points[row * 3 - 1] )
+			steepest = Math.max( steepest, Math.abs( points[row * 3 + 1] - points[row * 3 - 2] ) / run )
+		}
+		assert.ok( steepest <= steepestLeg * 2, `${label}: the road climbs at ${steepest}, its steepest leg at ${steepestLeg}` )
+
+		for ( let stretch = 0; stretch < anchors.length - 1; stretch++ ) {
+			const low = Math.min( controls[stretch].y, controls[stretch + 1].y )
+			const high = Math.max( controls[stretch].y, controls[stretch + 1].y )
+			for ( let row = anchors[stretch]; row <= anchors[stretch + 1]; row++ ) {
+				const y = points[row * 3 + 1]
+				assert.ok( y >= low - 1e-9 && y <= high + 1e-9, `${label}: stretch ${stretch} leaves the heights ${low} to ${high} of its controls at ${y}` )
+			}
+		}
+		return plan
+	}
+
+	// A road the editor's random walk drew: its fourth control doubles back within half a degree in plan.
+	const drawn = [[6.1, 1.2, 0.9, 0], [-2.2, 0.8, 12.2, -0.17], [-14.7, 3.5, 20.1, -0.06], [-34, 5, 28.9, 0.09], [-21.2, 9.3, 23.2, -0.03], [-8.4, 7.2, 6.5, -0.04], [7.2, 6.1, 2.7, 0.12], [25.6, 5.2, 6, -0.01]]
+	const plan = assertGraded( drawn.map( ( [x, y, z, bank] ) => ( { x, y, z, bank } ) ), 'drawn road' )
+	assert.equal( plan.stats.tightCount, 0, 'drawn road: the hairpin has the room to be built' )
+
+	// One switchback, from a bend that only needs rounding to an exact reversal, to either side.
+	for ( const degrees of [150, 165, 175, 179.5, 180] ) {
+		for ( const [gradeIn, gradeOut] of [[0.1, 0.1], [0.1, 0.3], [0.3, 0.1], [0.25, 0.25]] ) {
+			for ( const side of [1, -1] ) {
+				const out = Math.PI - degrees * Math.PI / 180
+				const leg = ( length, climb ) => ( { x: -Math.cos( out ) * length, y: length * climb, z: side * Math.sin( out ) * length, bank: 0 } )
+				assertGraded( [
+					{ x: -44, y: -44 * gradeIn, z: 0, bank: 0 },
+					{ x: -22, y: -22 * gradeIn, z: 0, bank: 0 },
+					{ x: 0, y: 0, z: 0, bank: 0 },
+					leg( 18, gradeOut ),
+					leg( 36, gradeOut ),
+				], `${degrees} degree switchback climbing ${gradeIn} then ${gradeOut}, side ${side}` )
+			}
+		}
+	}
+} )
+
+const buildExact = ( plan, width ) => new MeshLineSurfaceGeometry( {
+	lines: Float32Array.from( plan.points ),
+	lineWidth: width,
+	needsUV: true,
+	surface: { frame: 'fixed-up', up: [0, 1, 0], bank: plan.bank, uvMode: 'distance', uvScale: 1 },
+	// `inner: 'exact'` refuses a centreline with a join it would have to trim.
+	join: { type: 'miter', limit: 1.25, inner: 'exact' },
+	cap: { type: 'butt' },
+} ).dispose()
+
+test( 'a banked deck that folds over a crest is reported as too tight', () => {
+	// A road that is straight on the map, so its level turning radius has nothing to say.
+	// Level, the deck only bends along its length over the crest. Banked, part of that
+	// bend becomes a turn within the deck, and a sharp enough one folds its lower edge.
+	const half = 3.7
+	const settings = {
+		spacing: 36,
+		maxAngle: Math.PI / 32,
+		maxChordError: 0.085,
+		maxBankAngle: Math.PI / 180,
+		minRadius: half * 1.5,
+		foldRadius: half * 1.05,
+	}
+	const crest = bank => [-20, -8, 0, 8, 20].map( ( x, index ) => ( { x, y: index === 2 ? 9 : 0, z: 0, bank } ) )
+
+	for ( const bank of [0, 0.3] ) {
+		const plan = planRoadPath( crest( bank ), settings )
+		assert.equal( plan.stats.tightCount, 0, `a crest banked by ${bank} was refused` )
+		assert.ok( plan.stats.minDeckRadius >= settings.foldRadius, `a crest banked by ${bank} turns its deck on ${plan.stats.minDeckRadius}` )
+		assert.doesNotThrow( () => buildExact( plan, half * 2 ), `a crest banked by ${bank} had to trim a join` )
+	}
+
+	const plan = planRoadPath( crest( 0.6 ), settings )
+	assert.ok( plan.stats.minRadius > 100, `the road stopped being straight on the map: ${plan.stats.minRadius}` )
+	assert.ok( plan.stats.minDeckRadius < half, `the deck turns on ${plan.stats.minDeckRadius}, which no longer folds it` )
+	assert.throws( () => buildExact( plan, half * 2 ), /Exact inner join/, 'the surface no longer has to trim this crest' )
+	assert.ok( plan.stats.tightCount > 0, 'a folding crest was accepted as buildable' )
+	// The crest and the dip at each foot of it: every fold points at the control nearest to it.
+	assert.deepEqual( plan.corners.filter( corner => corner.tight ).map( corner => corner.knotIndex ), [1, 2, 3] )
+	assert.ok( plan.corners.every( corner => !corner.arc ), 'a road that is straight on the map was given a rounded corner' )
+} )
+
+test( 'a road the planner calls buildable never needs a trimmed join', () => {
+	let buildable = 0
+	for ( const [name, controls] of Object.entries( LAYOUTS ) ) {
+		const plan = planRoadPath( controls, OPTIONS )
+		if ( plan.stats.tightCount > 0 ) continue
+		buildable++
+		assert.doesNotThrow( () => buildExact( plan, ROAD_WIDTH ), `${name} is called buildable, but a join had to be trimmed` )
+	}
+	assert.ok( buildable >= 8, `only ${buildable} layouts are buildable, too few to test anything` )
+} )

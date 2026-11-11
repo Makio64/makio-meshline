@@ -109,7 +109,7 @@ test( 'height gizmo resources stay in the scene, so clearDemo disposes them once
 
 	// Every gizmo mesh hangs under the handle group, which sits in the scene.
 	assert.match( gizmos, /this\.heightGizmo\.add\( shaft, arrow, picker \)/ )
-	assert.match( gizmos, /this\.bankGizmo\.add\( wing, arc, bankPicker \)/ )
+	assert.match( gizmos, /this\.bankGizmo\.add\( arc, bankPicker \)/ )
 	assert.match( gizmos, /this\.bankGizmo\.add\( tip \)/ )
 	assert.match( gizmos, /this\.heightGizmo\.add\( this\.bankGizmo \)/ )
 	assert.match( gizmos, /parent\.add\( this\.heightGizmo \)/ )
@@ -121,7 +121,7 @@ test( 'height gizmo resources stay in the scene, so clearDemo disposes them once
 	assert.doesNotMatch( gizmos, /\.dispose\(\)/, 'clearDemo is the one place that frees the gizmos' )
 } )
 
-test( 'the point controller includes a 3D bank rotation gizmo and the HUD exposes Wireframe without Construction or prev/next point buttons', async () => {
+test( 'the point controller includes a bank rotation gizmo and the HUD exposes Wireframe without Construction or prev/next point buttons', async () => {
 	const [demo, editor, source, hud] = await Promise.all( [
 		readDemo(),
 		readEditor(),
@@ -148,7 +148,7 @@ test( 'the point controller includes a 3D bank rotation gizmo and the HUD expose
 	assert.match( pointerDown, /const bankGizmoHit = heightGizmoHit \? null : this\.pickBankGizmo\(\)/ )
 	assert.match( pointerDown, /const controlIndex = bankGizmoHit \? this\.selectedIndex : index/ )
 	assert.match( pointerDown, /bankGizmoHit \|\| event\.altKey \? 'bank'/ )
-	assert.match( place, /this\.bankGizmo\.rotation\.set\( climb, yaw, bank \)/ )
+	assert.match( place, /this\.tangent\.copy\( tangent \)\.normalize\(\)\s+this\.bank = bank/ )
 	assert.match( demo, /toggleWireframe\(\) {/ )
 	assert.match( hud, /Wireframe/ )
 	assert.doesNotMatch( hud, /Construction/ )
@@ -156,10 +156,11 @@ test( 'the point controller includes a 3D bank rotation gizmo and the HUD expose
 	assert.doesNotMatch( hud, /Select next point/ )
 } )
 
-test( 'every gizmo shape is drawn over its own outline, and the arrow heads turn to the camera', async () => {
+test( 'every gizmo shape is drawn over its own outline, and the whole gizmo faces the camera', async () => {
 	const [editor, source] = await Promise.all( [readEditor(), readGizmos()] )
 	const create = section( source, 'constructor( parent ) {', '/** Sit on `position`' )
 	const faceCamera = section( source, 'faceCamera() {', '/** `dragMode` is the mode' )
+	const bankTangent = section( source, 'captureBankDragTangent( direction, tangent ) {', '}\n}' )
 	const update = section( editor, 'update() {', '//---------------------------------------------------------- HANDLES' )
 	const outline = numberConstant( source, 'GIZMO_OUTLINE' )
 
@@ -167,14 +168,18 @@ test( 'every gizmo shape is drawn over its own outline, and the arrow heads turn
 	assert.match( source, /heightOutlineMaterial = outlineMaterial\( HEIGHT_GIZMO_COLOR \)/ )
 	assert.match( source, /bankOutlineMaterial = outlineMaterial\( BANK_GIZMO_COLOR \)/ )
 	assert.match( source, /depthTest: false, depthWrite: false, fog: false/ )
-	// No shape of the gizmo is left bare.
+	// No shape of the gizmo is left bare, and no bar joins the roll arrows to the point.
 	assert.doesNotMatch( create, /new Mesh\( \w+, this\.(height|bank)GizmoMaterial \)/ )
-	for ( const part of ['shaft', 'arrow', 'wing', 'arc', 'tip'] ) {
+	for ( const part of ['shaft', 'arrow', 'arc', 'tip'] ) {
 		assert.match( create, new RegExp( `const ${part} = (height|bank)Part\\( ${part}Geometry, ${part}Outline \\)` ) )
 	}
-	assert.match( create, /aimHead\( arrow \)/ )
-	assert.match( create, /aimHead\( tip \)/ )
-	assert.match( faceCamera, /for \( const head of this\.arrowHeads \)/ )
+	assert.doesNotMatch( source, /wing/i )
+	// Flat on the screen from any side, with the roll arrows tilted by the roll that shows from there.
+	assert.match( faceCamera, /this\.heightGizmo\.quaternion\.copy\( camera\.quaternion \)/ )
+	assert.match( faceCamera, /this\.rollSign = toward < 0 \? -1 : 1/ )
+	assert.match( faceCamera, /this\.bankGizmo\.rotation\.z = this\.bank \* toward/ )
+	// A roll turns the other way on screen where the road runs away from the camera, and so does its drag.
+	assert.match( bankTangent, /tangent\.set\( dx \/ length, dy \/ length \)\.multiplyScalar\( this\.rollSign \)/ )
 	assert.match( update, /this\.gizmos\.faceCamera\(\)/ )
 	// The outlined shaft must still start clear of a handle at its largest, the one being dragged.
 	const shaftStart = numberConstant( source, 'HEIGHT_GIZMO_SHAFT_CENTER' ) - numberConstant( source, 'HEIGHT_GIZMO_SHAFT_LENGTH' ) * 0.5

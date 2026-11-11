@@ -3,7 +3,8 @@
  * Demonstrates: .surface( { frame: 'fixed-up', bank, roughness, side } ), .join( { limit, inner } ),
  * .shadow( true, true ), .dynamic( true ) with .setPositions(), live .lineWidth() and .wireframe(),
  * procedural TSL road markings on material.colorNode, and a dashed billboard line
- * redrawn with .lines() for a route the road cannot take.
+ * redrawn with .lines() for a route the road cannot take. The road itself is that
+ * one ribbon: Structure steps through what is built around it, down to nothing.
  */
 import { MeshLine, straightLine } from 'makio-meshline'
 import { DoubleSide, MathUtils } from 'three/webgpu'
@@ -12,13 +13,15 @@ import { markRaw, reactive } from 'vue'
 import SurfaceRoadUI from '@/components/SurfaceRoad.vue'
 import stage3d from '@/makio/three/stage3d'
 import { fitRoadControlsToSurface, measureRoadSurfaceClearance } from '@/utils/roadClearance'
-import { createRoadPaintNode, createRoadPaintUniforms, pinRoadPaintToControls } from '@/utils/roadPaint'
-import { RoadBridge } from '@/utils/surfaceRoadBridge'
+import { createRoadPaintNodes, createRoadPaintTexture, createRoadPaintUniforms, pinRoadPaintToControls } from '@/utils/roadPaint'
+import { createRoadPipeline } from '@/utils/roadPipeline'
+import { createRoadSounds } from '@/utils/roadSounds'
+import { RoadBridge, STRUCTURE_LEVELS } from '@/utils/surfaceRoadBridge'
 import { RoadCamera } from '@/utils/surfaceRoadCamera'
 import { RoadEditor } from '@/utils/surfaceRoadEditor'
-import { defaultControls, elevatedControls, planRoute, randomControls, ROAD_LIFT, terrainHeight } from '@/utils/surfaceRoadRoute'
+import { defaultControls, elevatedControls, MIN_LOOP, planRoute, ROAD_LIFT, terrainHeight } from '@/utils/surfaceRoadRoute'
 import { RoadSaves } from '@/utils/surfaceRoadSaves'
-import { createRoadScenery, SKY_COLOR } from '@/utils/surfaceRoadScenery'
+import { createRoadScenery, heightAboveGround, SKY_COLOR } from '@/utils/surfaceRoadScenery'
 import { RoadTraffic } from '@/utils/surfaceRoadTraffic'
 
 const SHOULDER = 0.7
@@ -35,6 +38,9 @@ export default class SurfaceRoadExample {
 	ui = reactive( {
 		controls: 0,
 		wireframe: false,
+		// What is built around the ribbon, one of STRUCTURE_LEVELS: 'none', its 'simple' walls and piers, or the 'complex' bridge.
+		structure: 'complex',
+		sound: true,
 		// 'edit', or riding car `car` of `cars` in the 'follow' or 'drive' view.
 		view: 'edit',
 		cars: 0,
@@ -59,6 +65,8 @@ export default class SurfaceRoadExample {
 	async init() {
 		await stage3d.initRender( { background: SKY_COLOR, near: 0.3, far: 320 } )
 		if ( this.disposed ) return
+		this.sfx = stage3d.own( createRoadSounds() )
+		this.ui.sound = this.sfx.enabled
 
 		stage3d.orbit( CAMERA_RADIUS, {
 			phi: 0.78,
@@ -69,17 +77,23 @@ export default class SurfaceRoadExample {
 			// Stay above the horizon: below it the camera ends up under the terrain and
 			// sees the road's underside instead of the route.
 			maxPhi: 1.36,
+			// Shift-drag slides over the ground like a map, and no further than the terrain reaches.
+			screenSpacePanning: false,
+			maxPan: 110,
 		} )
 		this.onResize()
 
 		this.controls = defaultControls()
-		createRoadScenery()
+		this.scenery = createRoadScenery()
 		this.createRoad()
-		this.bridge = new RoadBridge()
+		this.bridge = new RoadBridge( this.scenery.grass )
+		// SurfaceRoad.vue is live before this: the level may already have been changed.
+		this.setStructure( this.ui.structure )
 		this.traffic = new RoadTraffic()
 		this.camera = new RoadCamera( this.traffic )
 		this.editor = new RoadEditor( this )
 		if ( !this.saves.restoreSavedRoad() ) this.updateRoad()
+		this.pipeline = createRoadPipeline()
 	}
 
 	/** Pull the orbit back on portrait screens so the whole route fits across. */
@@ -119,7 +133,8 @@ export default class SurfaceRoadExample {
 			.shadow( true, true )
 			.dynamic( true )
 			.build()
-		this.road.material.colorNode = createRoadPaintNode( this.roadUniforms )
+		const paintTexture = stage3d.own( createRoadPaintTexture() )
+		Object.assign( this.road.material, createRoadPaintNodes( this.roadUniforms, paintTexture, { clearance: heightAboveGround } ) )
 
 		// The route the points ask for, drawn over the scene whenever the road cannot take it.
 		this.rejected = new MeshLine()
@@ -163,7 +178,7 @@ export default class SurfaceRoadExample {
 			const { plan, converged } = fitRoadControlsToSurface(
 				this.controls,
 				controls => {
-					this.plan = planRoute( controls, half )
+					this.plan = planRoute( controls, half, true )
 					return !allowTight && this.plan?.stats.tightCount > 0 ? null : this.plan
 				},
 				plan => {
@@ -203,7 +218,9 @@ export default class SurfaceRoadExample {
 		this.road.visible = !!built
 		this.ui.controls = this.controls.length
 		const tight = this.plan?.stats.tightCount > 0
+		const previousIssue = this.ui.issue
 		this.ui.issue = fitted ? '' : !tight ? 'unbuildable' : this.plan === built ? 'folded' : 'tight'
+		if ( this.ui.issue && this.ui.issue !== previousIssue ) this.sfx?.play( 'warn' )
 		this.editor.syncHeightGizmo()
 		this.showRejectedRoute( this.plan !== built ? this.plan : null )
 		this.traffic.setRoute( built, this.laneOffset() )
@@ -238,6 +255,8 @@ export default class SurfaceRoadExample {
 	}
 
 	setControls( controls ) {
+		if ( controls.length < MIN_LOOP ) throw new RangeError( 'A track needs at least three points.' )
+		this.sfx?.play( 'whoosh' )
 		this.controls = controls
 		// A new road never falls back on the one it replaces, and a ride glides over to it.
 		this.built = null
@@ -251,21 +270,40 @@ export default class SurfaceRoadExample {
 	}
 
 	setElevatedPreset() {
+		this.roadWidth = 6
 		this.setControls( elevatedControls() )
-	}
-
-	setRandomControls() {
-		for ( let attempt = 0; attempt < 20; attempt++ ) {
-			const controls = randomControls( this.ribbonWidth() * 0.5 )
-			if ( this.setControls( controls ) ) return
-		}
-		this.setControls( defaultControls() )
 	}
 
 	// SurfaceRoad.vue is live before init() finishes, so the road, the editor and the cars may not exist yet.
 	toggleWireframe() {
 		this.ui.wireframe = !this.ui.wireframe
 		this.road?.wireframe( this.ui.wireframe )
+		this.sfx?.play( this.ui.wireframe ? 'on' : 'off' )
+	}
+
+	/** Step to the next of STRUCTURE_LEVELS: the bare ribbon, its simple walls and piers, the whole bridge. */
+	cycleStructure() {
+		this.setStructure( STRUCTURE_LEVELS[( STRUCTURE_LEVELS.indexOf( this.ui.structure ) + 1 ) % STRUCTURE_LEVELS.length] )
+		this.sfx?.play( 'build', STRUCTURE_LEVELS.indexOf( this.ui.structure ) )
+	}
+
+	/** Mute or unmute the interface sounds; the choice is remembered. */
+	toggleSound() {
+		if ( this.sfx ) this.ui.sound = this.sfx.toggle()
+	}
+
+	/** A plain button with nothing more to say than that it was pressed. */
+	playClick() {
+		this.sfx?.play( 'click' )
+	}
+
+	setStructure( level ) {
+		this.ui.structure = level
+		if ( !this.bridge ) return
+		// Only the whole bridge gives the road a kerb to paint.
+		this.roadUniforms.structure.value = level === 'complex' ? 1 : 0
+		this.bridge.setLevel( level )
+		if ( this.built ) this.bridge.update( this.road.geometry, this.built, this.ribbonWidth() * 0.5 )
 	}
 
 	removeSelectedControl() {
@@ -284,6 +322,8 @@ export default class SurfaceRoadExample {
 	setView( view ) {
 		if ( !this.camera || view === this.ui.view || ( view !== 'edit' && !this.traffic.active ) ) return
 		this.ui.view = view
+		this.sfx?.play( 'swish' )
+		this.traffic.setDriving( view === 'drive' )
 		this.editor.setEnabled( view === 'edit' )
 		this.camera.setView( view )
 	}
@@ -301,15 +341,36 @@ export default class SurfaceRoadExample {
 	}
 
 	stepCar( step ) {
+		if ( this.traffic?.active ) this.sfx?.play( 'swish' )
 		this.rideCar( ( this.camera?.carIndex ?? 0 ) + step )
 	}
 
-	saveNamedRoad = name => this.saves.saveNamedRoad( name )
+	// A loaded or imported road sweeps in through setControls().
+	saveNamedRoad = name => {
+		this.saves.saveNamedRoad( name )
+		this.sfx?.play( this.ui.saveMessage.startsWith( 'Saved' ) ? 'save' : 'deny' )
+	}
+
 	loadSavedRoad = id => this.saves.loadSavedRoad( id )
-	deleteSavedRoad = id => this.saves.deleteSavedRoad( id )
-	exportRoadFile = () => this.saves.exportRoadFile()
-	importRoadFile = () => this.saves.importRoadFile()
-	copyShareLink = () => this.saves.copyShareLink()
+	deleteSavedRoad = id => {
+		this.sfx?.play( 'remove' )
+		this.saves.deleteSavedRoad( id )
+	}
+
+	exportRoadFile = () => {
+		this.playClick()
+		this.saves.exportRoadFile()
+	}
+
+	importRoadFile = () => {
+		this.playClick()
+		this.saves.importRoadFile()
+	}
+
+	copyShareLink = () => {
+		this.playClick()
+		this.saves.copyShareLink()
+	}
 
 	// An init or a file read may still be awaiting: neither may build into the next demo.
 	dispose() {

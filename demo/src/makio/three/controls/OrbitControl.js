@@ -1,4 +1,4 @@
-import { Vector3 } from 'three/webgpu'
+import { MathUtils, Vector3 } from 'three/webgpu'
 
 import { reducedMotion } from '@/makio/utils/detect'
 import keyboard from '@/makio/utils/input/keyboard'
@@ -9,6 +9,11 @@ import { clamp } from '@/makio/utils/math'
 import { menuOpen } from '@/store'
 
 import stage from '../../core/stage'
+
+const _right = new Vector3()
+const _up = new Vector3()
+const _grabbed = new Vector3()
+const _reached = new Vector3()
 
 export default class OrbitControl {
 	/**
@@ -23,10 +28,15 @@ export default class OrbitControl {
 		this.target = new Vector3( ...target )
 		this.targetOffset = new Vector3()
 
-		// Pan system
+		// Pan system: Shift-drag slides the camera and what it looks at together.
 		this.panOffset = new Vector3()
-		this.panSpeed = 0.002
+		// At 1 the point under the pointer stays under it.
+		this.panSpeed = 1
 		this.enablePan = true
+		// False slides over the ground, as on a map, instead of across the screen.
+		this.screenSpacePanning = true
+		// How far the pan may take the view from where it started.
+		this.maxPan = Infinity
 
 		this.targetLookAt = new Vector3()
 		this.cameraOffset = new Vector3( ...cameraOffset )
@@ -158,13 +168,13 @@ export default class OrbitControl {
 			this.cameraOffset.x + this._radius * Math.sin( phi ) * Math.cos( theta ),
 			this.cameraOffset.y + this._radius * Math.cos( phi ),
 			this.cameraOffset.z + this._radius * Math.sin( phi ) * Math.sin( theta )
-		)
+		).add( this.panOffset )
 
 		this.targetLookAt.set(
 			this.target.x + this.targetOffset.x,
 			this.target.y + this.targetOffset.y,
 			this.target.z + this.targetOffset.z
-		)
+		).add( this.panOffset )
 		this.camera.lookAt( this.targetLookAt )
 		this.camera.position.add( this.offset )
 		this.camera.updateMatrixWorld()
@@ -177,6 +187,8 @@ export default class OrbitControl {
 	_onDown = ( e ) => {
 		if ( this._isGuiEvent( e ) ) return
 		this._isDown = true
+		// The pointer knows about Shift even when the keyboard events went to another element.
+		if ( e.shiftKey !== undefined ) this._isShiftDown = e.shiftKey
 	}
 
 	_onUp = ( e ) => {
@@ -195,29 +207,9 @@ export default class OrbitControl {
 			this.extraPhiTarget = mouse.normalizedY
 
 		if ( this._isDown ) {
-			// Check if shift key is pressed for panning
+			if ( e.shiftKey !== undefined ) this._isShiftDown = e.shiftKey
 			if ( this._isShiftDown && this.enablePan && !this.blockPan ) {
-				// Pan mode - move the target instead of rotating
-				const panDeltaX = mouse.moveX * this.panSpeed * this._radius
-				const panDeltaY = mouse.moveY * this.panSpeed * this._radius
-
-				// Calculate pan direction based on camera orientation
-				const phi = this._phi - this.extraPhi * this.extraPhiMax
-				const theta = this._theta + this.extraTheta * this.extraThetaMax
-
-				// Right vector (cross product of up and forward)
-				const rightX = Math.cos( theta + Math.PI * 0.5 )
-				const rightZ = Math.sin( theta + Math.PI * 0.5 )
-
-				// Up vector (relative to camera orientation)
-				const upX = -Math.sin( phi ) * Math.cos( theta )
-				const upY = Math.cos( phi )
-				const upZ = -Math.sin( phi ) * Math.sin( theta )
-
-				// Apply pan offset
-				this.target.x += rightX * panDeltaX + upX * panDeltaY
-				this.target.y += upY * panDeltaY
-				this.target.z += rightZ * panDeltaX + upZ * panDeltaY
+				this.pan( mouse.x, mouse.y, mouse.moveX, mouse.moveY )
 			} else {
 				// Normal orbit mode
 				if ( !this.blockThetaMouse )
@@ -226,6 +218,37 @@ export default class OrbitControl {
 					this._vy -= mouse.moveY * this.frictionVy
 			}
 		}
+	}
+
+	/**
+	 * Slide the view by the drag of the pointer, now at `x`, `y`, by `dx`, `dy` pixels. The scene is
+	 * grabbed: across the screen the target follows the pointer, and over the ground so does the
+	 * very spot under it.
+	 */
+	pan( x, y, dx, dy ) {
+		if ( this.screenSpacePanning ) {
+			const phi = this._phi - this.extraPhi * this.extraPhiMax
+			const theta = this._theta + this.extraTheta * this.extraThetaMax
+			// World units a pixel spans at the distance of the target.
+			const fov = MathUtils.degToRad( this.camera.fov ?? 50 )
+			const scale = this.panSpeed * 2 * Math.tan( fov / 2 ) * this._radius / ( stage.height || 1 )
+			_right.set( Math.sin( theta ), 0, -Math.cos( theta ) )
+			_up.set( -Math.cos( phi ) * Math.cos( theta ), Math.sin( phi ), -Math.cos( phi ) * Math.sin( theta ) )
+			this.panOffset.addScaledVector( _right, -dx * scale ).addScaledVector( _up, dy * scale )
+		} else if ( this.groundAt( x - dx, y - dy, _grabbed ) && this.groundAt( x, y, _reached ) ) {
+			this.panOffset.addScaledVector( _grabbed.sub( _reached ), this.panSpeed )
+		}
+		if ( this.panOffset.length() > this.maxPan ) this.panOffset.setLength( this.maxPan )
+	}
+
+	/** Where the pixel `x`, `y` looks onto the level of the target, or false towards the sky or too near the horizon. */
+	groundAt( x, y, target ) {
+		const { camera } = this
+		target.set( x / ( stage.width || 1 ) * 2 - 1, 1 - y / ( stage.height || 1 ) * 2, 0.5 ).unproject( camera ).sub( camera.position ).normalize()
+		const distance = ( this.targetLookAt.y - camera.position.y ) / target.y
+		if ( !( distance > 0 && distance < this._radius * 6 ) ) return false
+		target.multiplyScalar( distance ).add( camera.position )
+		return true
 	}
 
 	onWheel = e => {

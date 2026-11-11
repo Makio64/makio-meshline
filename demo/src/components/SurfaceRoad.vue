@@ -17,7 +17,6 @@
 			<span class="SurfaceRoadHud__divider" aria-hidden="true" />
 			<button class="SurfaceRoadHud__btn" type="button" @click="api.resetRoad()">Valley</button>
 			<button class="SurfaceRoadHud__btn" type="button" @click="api.setElevatedPreset()">3D Overpass</button>
-			<button class="SurfaceRoadHud__btn" type="button" title="Generate random road (R)" @click="api.setRandomControls()">Random</button>
 			<span class="SurfaceRoadHud__divider" aria-hidden="true" />
 			<button
 				class="SurfaceRoadHud__btn"
@@ -27,6 +26,22 @@
 				title="Toggle wireframe (W)"
 				@click="api.toggleWireframe()"
 			>Wireframe</button>
+			<button
+				class="SurfaceRoadHud__btn"
+				:class="{ 'is-active': ui.structure !== 'none' }"
+				type="button"
+				:aria-label="`Structure: ${structureLabel}`"
+				title="What is built around the road: none, simple or complex (B)"
+				@click="api.cycleStructure()"
+			>Structure<small>{{ structureLabel }}</small></button>
+			<button
+				class="SurfaceRoadHud__btn"
+				:class="{ 'is-active': ui.sound }"
+				type="button"
+				:aria-pressed="ui.sound"
+				title="Interface sounds"
+				@click="api.toggleSound()"
+			>Sound<small>{{ ui.sound ? 'On' : 'Off' }}</small></button>
 			<template v-if="!hideSaves">
 				<span class="SurfaceRoadHud__divider" aria-hidden="true" />
 				<button
@@ -35,7 +50,7 @@
 					type="button"
 					:aria-expanded="savesOpen"
 					:aria-label="savesOpen ? 'Collapse saved roads' : 'Expand saved roads'"
-					@click="savesOpen = !savesOpen"
+					@click="toggleSaves( !savesOpen )"
 				>
 					<span>Saves</span>
 					<span v-if="ui.saves.length" class="SurfaceRoadSaves__badge">{{ ui.saves.length }}</span>
@@ -62,9 +77,9 @@
 			<span class="SurfaceRoadPoint__title">Point {{ ui.point.index + 1 }}<small> / {{ ui.controls }}</small></span>
 			<span class="SurfaceRoadPoint__status">{{ statusLabel }}</span>
 			<button
-				v-if="ui.controls > 2"
 				class="SurfaceRoadPoint__delete"
 				type="button"
+				:disabled="ui.controls <= minLoop"
 				title="Delete selected point (Delete / Backspace)"
 				@click="api.removeSelectedControl()"
 			>Delete</button>
@@ -97,7 +112,7 @@
 			>
 			<output>{{ bankDegrees }}°</output>
 		</label>
-		<p class="SurfaceRoadPoint__hint">Drag a point to move it. Double-click to add one, right-click to remove it.</p>
+		<p class="SurfaceRoadPoint__hint">Drag a point to move it. Double-click to add one, right-click to remove it. Shift-drag the ground to pan.</p>
 	</aside>
 
 	<div
@@ -134,7 +149,7 @@
 					type="button"
 					:aria-expanded="savesOpen"
 					aria-label="Collapse saved roads"
-					@click="savesOpen = false"
+					@click="toggleSaves( false )"
 				>Close</button>
 			</header>
 
@@ -190,7 +205,7 @@ import { noUI } from '@/makio/utils/detect'
 import keyboard from '@/makio/utils/input/keyboard'
 import { menuOpen } from '@/store'
 import { onShortcut } from '@/utils/demoControls'
-import { MAX_CLEARANCE, MIN_CLEARANCE } from '@/utils/surfaceRoadRoute'
+import { MAX_CLEARANCE, MIN_CLEARANCE, MIN_LOOP } from '@/utils/surfaceRoadRoute'
 
 const VIEWS = [
 	{ id: 'edit', label: 'Edit', title: 'Edit the road (Esc)' },
@@ -198,9 +213,10 @@ const VIEWS = [
 	{ id: 'drive', label: 'Drive', title: 'Sit in the driver’s seat (C for the next view)' },
 ]
 const STATUS_LABELS = { smooth: 'Smooth', corner: 'Rounded corner', tight: 'Too tight' }
+const STRUCTURE_LABELS = { none: 'None', simple: 'Simple', complex: 'Complex' }
 const ISSUES = {
-	tight: { title: 'Bend too tight.', advice: 'The road keeps its last shape: give the red point more room to turn.' },
-	folded: { title: 'Bend too tight.', advice: 'The road folds at the red point: give it more room to turn.' },
+	tight: { title: 'Too tight to build.', advice: 'The road keeps its last shape: give the red point more room to turn, or less bank over a crest.' },
+	folded: { title: 'Too tight to build.', advice: 'The road folds at the red point: give it more room to turn, or less bank over a crest.' },
 	unbuildable: { title: 'This route cannot be built.', advice: 'The road keeps its last shape.' },
 }
 
@@ -217,6 +233,7 @@ export default {
 			minHeight: MIN_CLEARANCE,
 			maxHeight: MAX_CLEARANCE,
 			maxBank: 45,
+			minLoop: MIN_LOOP,
 		}
 	},
 	computed: {
@@ -229,6 +246,9 @@ export default {
 		statusLabel() {
 			return STATUS_LABELS[this.ui.point.status]
 		},
+		structureLabel() {
+			return STRUCTURE_LABELS[this.ui.structure]
+		},
 		heightLabel() {
 			// Rounded first, so a hair under the ground does not read as -0.0.
 			return `${( Math.round( this.ui.point.height * 10 ) / 10 || 0 ).toFixed( 1 )} m`
@@ -239,7 +259,7 @@ export default {
 	},
 	mounted() {
 		onShortcut( 'w', () => this.api.toggleWireframe() )
-		onShortcut( 'r', () => this.api.setRandomControls() )
+		onShortcut( 'b', () => this.api.cycleStructure() )
 		onShortcut( 'c', () => this.api.cycleView() )
 		onShortcut( 'n', () => this.api.stepCar( 1 ) )
 		onShortcut( 'Escape', () => this.api.setView( 'edit' ) )
@@ -259,6 +279,10 @@ export default {
 			if ( event.target.matches?.( 'input, textarea, select, [contenteditable="true"]' ) ) return
 			event.preventDefault()
 			this.api.removeSelectedControl()
+		},
+		toggleSaves( open ) {
+			this.savesOpen = open
+			this.api.playClick()
 		},
 		progress( value, min, max ) {
 			return `${Math.max( 0, Math.min( 100, ( value - min ) / ( max - min ) * 100 ) ).toFixed( 1 )}%`
@@ -327,6 +351,11 @@ export default {
 		font inherit
 		cursor pointer
 		transition background 0.16s ease, color 0.16s ease
+
+		// The level a button is on, beside its name.
+		small
+			font-size 11px
+			opacity 0.6
 
 		&:hover,
 		&:focus-visible
@@ -464,6 +493,10 @@ export default {
 			background rgba( 255, 93, 108, 0.2 )
 			color #ffd4d9
 			outline none
+
+		&:disabled
+			opacity 0.35
+			cursor default
 
 	// Each row wears the colour of the gizmo that drags the same value.
 	&__row

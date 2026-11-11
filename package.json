@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "pnpm --filter demo dev",
     "build": "pnpm --filter demo build",
+    "build:track-maker": "pnpm --filter demo exec vite build --config vite.track-maker.config.js",
     "test": "node --test test/*.test.js",
     "test:types": "tsc --project tsconfig.types.json",
     "bench:v2": "node benchmarks/v2-geometry.mjs",

@@ -4,13 +4,21 @@
  * The route passes through every authored XYZ control point. Smooth knots use
  * cubic Hermite spans whose tangents are widened until the requested minimum
  * curvature is met. A knot the cubic cannot make drivable becomes a circular
- * turn in the plane of its incoming and outgoing legs. Exact reversals have no
- * unique plane, so `up` explicitly chooses one.
+ * turn in the plane of the two directions it meets its legs in: their plan
+ * headings, at grades a flat arc can carry round the bend. Exact reversals
+ * have no unique plane, so `up` explicitly chooses one.
  *
  * Output tessellation has hard geometric budgets instead of a fixed lookup
  * table: maximum 3D curve length, chord error, tangent turn, and bank delta.
  * Distance UVs therefore see a faithful polyline without oversampling straight
  * spans or leaving long triangles on steep and tightly curved sections.
+ *
+ * Each stretch between two controls is sampled as one curve: the half turn
+ * leaving its first control, the span, and the half turn entering its second.
+ * Every sample takes the same share of the budgets where it lies, so samples
+ * change length only as the road changes shape, and none is left so short
+ * beside a long one that the inside edge of the ribbon has no room for the turn
+ * they share.
  *
  * Edits stay local. A smooth knot's tangent is split into a plan direction and
  * a grade: the plan direction ignores height, and the grade is a monotone
@@ -18,6 +26,12 @@
  * bends the road beside it. Tangent widening and arc conversion are solved per
  * region of difficult knots, so a tight bend elsewhere on the route cannot
  * reshape a span the edit never touched.
+ *
+ * The road is shaped by its turns on the map alone, and what that cannot shape
+ * is reported. Heights and banks are authored, and a deck banked into a sharp
+ * crest or dip has to turn within itself however straight the map is: where
+ * the finished samples turn their deck on less than the fold radius, the
+ * nearest control is marked tight, as it is for a bend with no room to turn.
  */
 
 const EPSILON = 1e-9
@@ -26,12 +40,20 @@ const SCALE_FACTORS = [1.22, 0.82]
 const CORNER_FACTORS = [1, 0.72, 0.5, 0.34]
 const REVERSAL_TURN = Math.PI - 1e-4
 // Plan/grade tangents fade back to plain 3D tangents on near-vertical legs
-// (horizontal run fraction) and on near-reversals in plan view, where a
-// horizontal heading stops being meaningful.
+// (horizontal run fraction), where a horizontal heading stops being meaningful.
 const PROFILE_RUN_MIN = 0.2
 const PROFILE_RUN_FULL = 0.45
-const PROFILE_HEADING_MIN = 0.05
-const PROFILE_HEADING_FULL = 0.25
+// Samples aim at this share of the turn, chord-error and bank budgets. Once
+// placed, each one is held to the whole budget.
+const BUDGET_SHARE = 0.9
+// Cells per sample: fine enough to follow the budgets as they change along a curve.
+const CELLS_PER_STEP = 2
+// A cubic is read at nine points at least, so a short span cannot hide a tight spot between them.
+const MIN_CUBIC_DEPTH = 2
+const LENGTH_STEPS = 16
+const MAX_RETRIES = 8
+// The sampled road counts as folding a little before it does.
+const FOLD_MARGIN = 0.98
 
 export const ROAD_PATH_DEFAULTS = {
 	spacing: 0.4,
@@ -222,8 +244,8 @@ const resolveTangentDirections = ( knots, legDirections, corners ) => {
 		const before = legDirections[index - 1]
 		const after = legDirections[index]
 		if ( !before || !after || corners[index] ) {
-			incoming[index] = before ?? after
-			outgoing[index] = after ?? before
+			incoming[index] = corners[index]?.incoming ?? before ?? after
+			outgoing[index] = corners[index]?.outgoing ?? after ?? before
 			continue
 		}
 		const tangent = [0, 0, 0]
@@ -240,9 +262,10 @@ const resolveTangentDirections = ( knots, legDirections, corners ) => {
 }
 
 /**
- * Split each smooth knot into a plan heading and the grades of its two legs.
- * The heading only reads horizontal leg directions, so raising a control can
- * never swing the road beside it sideways.
+ * Split each knot into a plan heading and the grades of its two legs. The
+ * heading only reads horizontal leg directions, so raising a control can never
+ * swing the road beside it sideways, and a hairpin that climbs still turns in
+ * plan: the 3D bisector of its two legs points up the hill, not round the bend.
  */
 const resolveKnotProfiles = ( knots, legDirections, up ) => {
 	const profiles = new Array( knots.length ).fill( null )
@@ -259,19 +282,26 @@ const resolveKnotProfiles = ( knots, legDirections, up ) => {
 		}
 		const beforeRunLength = Math.hypot( beforeRun[0], beforeRun[1], beforeRun[2] )
 		const afterRunLength = Math.hypot( afterRun[0], afterRun[1], afterRun[2] )
-		const level = smoothstep( PROFILE_RUN_MIN, PROFILE_RUN_FULL, Math.min( beforeRunLength, afterRunLength ) )
-		if ( !( level > 0 ) ) continue
-
-		const headingX = beforeRun[0] / beforeRunLength + afterRun[0] / afterRunLength
-		const headingY = beforeRun[1] / beforeRunLength + afterRun[1] / afterRunLength
-		const headingZ = beforeRun[2] / beforeRunLength + afterRun[2] / afterRunLength
-		const headingLength = Math.hypot( headingX, headingY, headingZ )
-		const weight = level * smoothstep( PROFILE_HEADING_MIN, PROFILE_HEADING_FULL, headingLength )
+		const weight = smoothstep( PROFILE_RUN_MIN, PROFILE_RUN_FULL, Math.min( beforeRunLength, afterRunLength ) )
 		if ( !( weight > 0 ) ) continue
+
+		const runs = [[0, 0, 0], [0, 0, 0]]
+		for ( let axis = 0; axis < 3; axis++ ) {
+			runs[0][axis] = beforeRun[axis] / beforeRunLength
+			runs[1][axis] = afterRun[axis] / afterRunLength
+		}
+		// The heading bisects the two runs. A road that doubles straight back
+		// leaves nothing to bisect, so `up` has it turn to the left.
+		const heading = [0, 0, 0]
+		if ( !normalize( runs[0][0] + runs[1][0], runs[0][1] + runs[1][1], runs[0][2] + runs[1][2], heading ) ) {
+			cross( up, runs[0], heading )
+		}
 
 		profiles[index] = {
 			weight,
-			heading: [headingX / headingLength, headingY / headingLength, headingZ / headingLength],
+			heading,
+			runs,
+			turn: Math.acos( clamp( dot( runs[0], runs[1] ), -1, 1 ) ),
 			beforeGrade: beforeRise / beforeRunLength,
 			afterGrade: afterRise / afterRunLength,
 		}
@@ -349,11 +379,41 @@ const reversalAxis = ( direction, up ) => {
 	return axis
 }
 
+/**
+ * The two directions a rounded corner turns between. They keep the plan
+ * headings of its legs, but not always their grades: a flat arc cannot climb
+ * all the way round a bend, and the plane of two legs that double back while
+ * they climb stands on its edge, which takes the road up a wall. So the arc
+ * carries through its control no more grade than a smooth knot would there,
+ * and meets each leg no steeper than that leg and never against its slope.
+ */
+const cornerDirections = ( before, after, profile, up ) => {
+	if ( !profile ) return [before, after]
+	const { weight, runs, beforeGrade, afterGrade } = profile
+	const mean = ( beforeGrade + afterGrade ) * 0.5
+	const carried = Math.abs( profileGrade( profile, 1 ) ) * Math.cos( profile.turn * 0.5 )
+	const through = Math.sign( mean ) * Math.min( Math.abs( mean ), carried )
+	const split = clamp(
+		( beforeGrade - afterGrade ) * 0.5,
+		Math.max( Math.min( 0, beforeGrade ) - through, through - Math.max( 0, afterGrade ) ),
+		Math.min( Math.max( 0, beforeGrade ) - through, through - Math.min( 0, afterGrade ) )
+	)
+	return [[before, runs[0], through + split], [after, runs[1], through - split]].map( ( [leg, run, grade] ) => {
+		const slope = Math.hypot( 1, grade )
+		const direction = [0, 0, 0]
+		for ( let axis = 0; axis < 3; axis++ ) {
+			direction[axis] = leg[axis] + ( ( run[axis] + up[axis] * grade ) / slope - leg[axis] ) * weight
+		}
+		normalize( direction[0], direction[1], direction[2], direction )
+		return direction
+	} )
+}
+
 /** Propose a fixed-radius 3D turn through one authored control point. */
-const proposeCorner = ( knots, legDirections, turns, index, settings ) => {
-	const before = legDirections[index - 1]
-	const after = legDirections[index]
-	const turn = turns[index]
+const proposeCorner = ( knots, legDirections, index, settings, profile ) => {
+	const up = settings.up
+	const [before, after] = cornerDirections( legDirections[index - 1], legDirections[index], profile, up )
+	const turn = Math.acos( clamp( dot( before, after ), -1, 1 ) )
 	if ( !( turn > 1e-4 ) ) return null
 
 	const axis = [0, 0, 0]
@@ -373,13 +433,21 @@ const proposeCorner = ( knots, legDirections, turns, index, settings ) => {
 		cross( axis, sum, toCentre )
 		normalize( toCentre[0], toCentre[1], toCentre[2], toCentre )
 	} else {
-		const resolvedAxis = reversalAxis( before, settings.up )
+		const resolvedAxis = reversalAxis( before, up )
 		axis[0] = resolvedAxis[0]
 		axis[1] = resolvedAxis[1]
 		axis[2] = resolvedAxis[2]
 		toCentre[0] = -before[0]
 		toCentre[1] = -before[1]
 		toCentre[2] = -before[2]
+		// An exact reversal still climbs through its control as steeply as a
+		// near one does: the turn plane leans about the line to its centre.
+		const grade = profile ? profileGrade( profile, 1 ) * profile.weight : 0
+		if ( grade !== 0 ) {
+			cross( axis, before, sum )
+			normalize( sum[0] + up[0] * grade, sum[1] + up[1] * grade, sum[2] + up[2] * grade, sum )
+			cross( before, sum, axis )
+		}
 	}
 
 	const half = turn * 0.5
@@ -401,10 +469,14 @@ const finalizeCorner = ( corner, settings ) => {
 	const outward = [-toCentre[0], -toCentre[1], -toCentre[2]]
 	const entryRadial = rotateAroundAxis( outward, axis, -sweep, [0, 0, 0] )
 	const exitRadial = rotateAroundAxis( outward, axis, sweep, [0, 0, 0] )
+	const tangent = cross( axis, outward, [0, 0, 0] )
 
 	return {
 		...corner,
 		outward,
+		// The directions the road arrives and leaves in, which the spans either side take up.
+		incoming: rotateAroundAxis( tangent, axis, -sweep, [0, 0, 0] ),
+		outgoing: rotateAroundAxis( tangent, axis, sweep, [0, 0, 0] ),
 		centre: [
 			vertex[0] + toCentre[0] * radius,
 			vertex[1] + toCentre[1] * radius,
@@ -428,11 +500,11 @@ const finalizeCorner = ( corner, settings ) => {
  * Size the arcs of one region. Legs leaving the region end at a smooth knot,
  * so the shared-leg budget never couples two regions.
  */
-const buildRegionCorners = ( region, knots, legDirections, legs, turns, needsArc, settings, factor = 1 ) => {
+const buildRegionCorners = ( region, knots, legDirections, legs, profiles, needsArc, settings, factor = 1 ) => {
 	const proposals = new Array( knots.length ).fill( null )
 	for ( let index = region.first; index <= region.last; index++ ) {
 		if ( !needsArc[index] ) continue
-		const proposal = proposeCorner( knots, legDirections, turns, index, settings )
+		const proposal = proposeCorner( knots, legDirections, index, settings, profiles[index] )
 		if ( proposal ) proposal.radius *= factor
 		proposals[index] = proposal
 	}
@@ -469,11 +541,38 @@ const createSpanCurve = ( shape, index ) => {
 }
 
 /**
+ * Split a curvature vector into the part that turns a level ribbon sideways and
+ * the part that takes it over a crest or through a dip.
+ */
+const splitCurvature = ( tangent, curvature, up, out ) => {
+	const rise = dot( up, tangent )
+	const level = 1 - rise * rise
+	if ( level < 1e-6 ) {
+		// Straight up: no level side to speak of, so all of it counts as sideways.
+		out.lateral = Math.hypot( curvature[0], curvature[1], curvature[2] )
+		out.vertical = 0
+		return
+	}
+	const scale = 1 / Math.sqrt( level )
+	const normalX = ( up[0] - tangent[0] * rise ) * scale
+	const normalY = ( up[1] - tangent[1] * rise ) * scale
+	const normalZ = ( up[2] - tangent[2] * rise ) * scale
+	out.vertical = curvature[0] * normalX + curvature[1] * normalY + curvature[2] * normalZ
+	out.lateral =
+		curvature[0] * ( normalY * tangent[2] - normalZ * tangent[1] ) +
+		curvature[1] * ( normalZ * tangent[0] - normalX * tangent[2] ) +
+		curvature[2] * ( normalX * tangent[1] - normalY * tangent[0] )
+}
+
+/**
  * Turning radius a level road actually feels. Crest and sag curvature bend the
  * ribbon along its length and cannot fold it, so the part of the curvature
  * vector that points along `up` is dropped while the tangent is mostly level
  * and the deck is not rolled onto its side. Near-vertical tangents or steeply
  * banked walls fade back to the full 3D curvature.
+ *
+ * This is the radius the planner shapes the road by: it depends on the map
+ * alone, so raising or banking a control never moves the road sideways.
  */
 const lateralRadius = ( curvatureX, curvatureY, curvatureZ, tangentRise, up, bank = 0 ) => {
 	const total = curvatureX * curvatureX + curvatureY * curvatureY + curvatureZ * curvatureZ
@@ -483,6 +582,28 @@ const lateralRadius = ( curvatureX, curvatureY, curvatureZ, tangentRise, up, ban
 	const vertical = curvatureX * up[0] + curvatureY * up[1] + curvatureZ * up[2]
 	const lateral = weight > 0 ? Math.max( 0, total - weight * vertical * vertical / level ) : total
 	return lateral > EPSILON * EPSILON ? 1 / Math.sqrt( lateral ) : Infinity
+}
+
+const SPLIT = { lateral: 0, vertical: 0 }
+
+/**
+ * Radius the ribbon turns on within its own deck, which is what its inside edge
+ * has to fit. A level deck takes all of a sideways turn and none of a crest or
+ * a sag, which only bend it along its length. A deck banked by `b` takes
+ * `cos( b )` of the turn and `sin( b )` of the crest: tilted into a sharp
+ * enough one, it folds on a road that is straight on the map. Near-vertical
+ * tangents have no level side and fade back to the full 3D curvature.
+ *
+ * Heights and banks are authored, so the planner cannot open such a fold. It
+ * reads this radius off the finished samples and reports the road as too tight.
+ */
+const deckRadius = ( tangent, curvature, up, bank = 0 ) => {
+	const rise = dot( up, tangent )
+	const weight = smoothstep( PROFILE_RUN_MIN, PROFILE_RUN_FULL, Math.sqrt( Math.max( 0, 1 - rise * rise ) ) )
+	splitCurvature( tangent, curvature, up, SPLIT )
+	const within = SPLIT.lateral * Math.cos( bank ) + SPLIT.vertical * Math.sin( bank )
+	const bend = weight * within * within + ( 1 - weight ) * dot( curvature, curvature )
+	return bend > EPSILON * EPSILON ? 1 / Math.sqrt( bend ) : Infinity
 }
 
 /** Analytic lateral-curvature report for one cubic span. */
@@ -539,37 +660,19 @@ const appendPoint = ( points, x, y, z, settings ) => {
 	return points.length / 3 - 1
 }
 
+/** Largest turn one sample may take on a bend of `radius`. */
 const maxArcStep = ( radius, settings ) => {
-	const angleBudget = settings.maxAngle * 0.9
-	if ( settings.maxChordError >= radius ) return angleBudget
-	const chordAngle = 2 * Math.acos( clamp( 1 - settings.maxChordError / radius, -1, 1 ) )
-	return Math.min( angleBudget, chordAngle )
+	const angleBudget = settings.maxAngle * BUDGET_SHARE
+	const sagitta = settings.maxChordError * BUDGET_SHARE
+	if ( sagitta >= radius ) return angleBudget
+	return Math.min( angleBudget, 2 * Math.acos( 1 - sagitta / radius ) )
 }
 
-/** Emit a circular turn with the authored knot as an exact middle sample. */
-const emitCorner = ( corner, settings, points ) => {
-	const angle = Math.abs( corner.sweep )
-	const steps = Math.max(
-		1,
-		Math.ceil( corner.radius * angle / settings.spacing ),
-		Math.ceil( angle / maxArcStep( corner.radius, settings ) )
-	)
-	const radial = [0, 0, 0]
-	const push = rotation => {
-		rotateAroundAxis( corner.outward, corner.axis, rotation, radial )
-		appendPoint(
-			points,
-			corner.centre[0] + radial[0] * corner.radius,
-			corner.centre[1] + radial[1] * corner.radius,
-			corner.centre[2] + radial[2] * corner.radius,
-			settings
-		)
-	}
-
-	for ( let step = 0; step < steps; step++ ) push( -corner.sweep * ( 1 - step / steps ) )
-	const anchor = appendPoint( points, corner.vertex[0], corner.vertex[1], corner.vertex[2], settings )
-	for ( let step = 1; step <= steps; step++ ) push( corner.sweep * step / steps )
-	return anchor
+/** Longest sample the budgets allow where the road has this curvature. `cap` holds the spacing and bank budgets. */
+const budgetStep = ( curvature, cap, settings ) => {
+	if ( !( curvature * cap > EPSILON ) ) return cap
+	const radius = 1 / curvature
+	return Math.min( cap, radius * maxArcStep( radius, settings ) )
 }
 
 const pointSegmentDistance = ( point, start, end ) => {
@@ -590,12 +693,6 @@ const pointSegmentDistance = ( point, start, end ) => {
 	)
 }
 
-const midpoint = ( a, b ) => [
-	( a[0] + b[0] ) * 0.5,
-	( a[1] + b[1] ) * 0.5,
-	( a[2] + b[2] ) * 0.5,
-]
-
 const vectorAngle = ( ax, ay, az, bx, by, bz ) => {
 	const lengthA = Math.hypot( ax, ay, az )
 	const lengthB = Math.hypot( bx, by, bz )
@@ -604,173 +701,423 @@ const vectorAngle = ( ax, ay, az, bx, by, bz ) => {
 	return Math.acos( clamp( ( ax * bx + ay * by + az * bz ) / denominator, -1, 1 ) )
 }
 
-const splitBezier = segment => {
-	const q0 = midpoint( segment.p0, segment.p1 )
-	const q1 = midpoint( segment.p1, segment.p2 )
-	const q2 = midpoint( segment.p2, segment.p3 )
-	const r0 = midpoint( q0, q1 )
-	const r1 = midpoint( q1, q2 )
-	const centre = midpoint( r0, r1 )
-	return {
-		left: { p0: segment.p0, p1: q0, p2: r0, p3: centre },
-		right: { p0: centre, p1: r1, p2: q2, p3: segment.p3 },
+/** A rounded corner, by its rotation away from the control: negative on the way in, positive on the way out. */
+const createArc = ( corner, up ) => {
+	const radial = [0, 0, 0]
+	const tangent = [0, 0, 0]
+	const arc = {
+		lateral: 0,
+		vertical: 0,
+		point( rotation, out ) {
+			rotateAroundAxis( corner.outward, corner.axis, rotation, radial )
+			out[0] = corner.centre[0] + radial[0] * corner.radius
+			out[1] = corner.centre[1] + radial[1] * corner.radius
+			out[2] = corner.centre[2] + radial[2] * corner.radius
+		},
+		/** Read `lateral` and `vertical` curvature at `rotation`. */
+		probe( rotation ) {
+			rotateAroundAxis( corner.outward, corner.axis, rotation, radial )
+			cross( corner.axis, radial, tangent )
+			radial[0] /= -corner.radius
+			radial[1] /= -corner.radius
+			radial[2] /= -corner.radius
+			splitCurvature( tangent, radial, up, arc )
+		},
 	}
+	return arc
 }
 
-const bezierNeedsSplit = ( segment, halves, settings ) => {
-	const controlLength = distance( segment.p0, segment.p1 ) +
-		distance( segment.p1, segment.p2 ) + distance( segment.p2, segment.p3 )
-	if ( controlLength > settings.spacing * ( 1 + 1e-9 ) ) return true
-
-	const flatness = Math.max(
-		pointSegmentDistance( segment.p1, segment.p0, segment.p3 ),
-		pointSegmentDistance( segment.p2, segment.p0, segment.p3 )
-	)
-	if ( flatness > settings.maxChordError ) return true
-
-	const startX = segment.p1[0] - segment.p0[0]
-	const startY = segment.p1[1] - segment.p0[1]
-	const startZ = segment.p1[2] - segment.p0[2]
-	const middleX = halves.left.p3[0] - halves.left.p2[0]
-	const middleY = halves.left.p3[1] - halves.left.p2[1]
-	const middleZ = halves.left.p3[2] - halves.left.p2[2]
-	const endX = segment.p3[0] - segment.p2[0]
-	const endY = segment.p3[1] - segment.p2[1]
-	const endZ = segment.p3[2] - segment.p2[2]
-	const angleBudget = settings.maxAngle * 0.9
-	return vectorAngle( startX, startY, startZ, endX, endY, endZ ) > angleBudget ||
-		vectorAngle( startX, startY, startZ, middleX, middleY, middleZ ) > angleBudget ||
-		vectorAngle( middleX, middleY, middleZ, endX, endY, endZ ) > angleBudget
+const createLinePoint = ( start, end ) => ( t, out ) => {
+	out[0] = start[0] + ( end[0] - start[0] ) * t
+	out[1] = start[1] + ( end[1] - start[1] ) * t
+	out[2] = start[2] + ( end[2] - start[2] ) * t
 }
 
-const emitStraightSpanInterior = ( segment, settings, points, sampling ) => {
-	const dx = segment.p3[0] - segment.p0[0]
-	const dy = segment.p3[1] - segment.p0[1]
-	const dz = segment.p3[2] - segment.p0[2]
+/** One cubic span as a Bezier, with the speed and curvature the budgets are read from. */
+const createCubic = ( p0, p1, p2, p3, up ) => {
+	const first = [0, 0, 0]
+	const second = [0, 0, 0]
+	const cubic = {
+		speed: 0,
+		curvature: 0,
+		lateral: 0,
+		vertical: 0,
+		point( t, out ) {
+			const s = 1 - t
+			const w0 = s * s * s
+			const w1 = 3 * s * s * t
+			const w2 = 3 * s * t * t
+			const w3 = t * t * t
+			out[0] = w0 * p0[0] + w1 * p1[0] + w2 * p2[0] + w3 * p3[0]
+			out[1] = w0 * p0[1] + w1 * p1[1] + w2 * p2[1] + w3 * p3[1]
+			out[2] = w0 * p0[2] + w1 * p1[2] + w2 * p2[2] + w3 * p3[2]
+		},
+		/** Read `speed`, `curvature` and its `lateral` and `vertical` parts at `t`. */
+		probe( t ) {
+			const s = 1 - t
+			for ( let axis = 0; axis < 3; axis++ ) {
+				const a = p1[axis] - p0[axis]
+				const b = p2[axis] - p1[axis]
+				const c = p3[axis] - p2[axis]
+				first[axis] = 3 * ( s * s * a + 2 * s * t * b + t * t * c )
+				second[axis] = 6 * ( s * ( b - a ) + t * ( c - b ) )
+			}
+			const speed = Math.hypot( first[0], first[1], first[2] )
+			cubic.speed = speed
+			if ( !( speed > EPSILON ) ) {
+				cubic.curvature = cubic.lateral = cubic.vertical = 0
+				return speed
+			}
+			// The curvature vector is the part of r'' square to r', over |r'|².
+			const along = dot( first, second ) / ( speed * speed )
+			for ( let axis = 0; axis < 3; axis++ ) {
+				second[axis] = ( second[axis] - first[axis] * along ) / ( speed * speed )
+				first[axis] /= speed
+			}
+			cubic.curvature = Math.hypot( second[0], second[1], second[2] )
+			splitCurvature( first, second, up, cubic )
+			return speed
+		},
+		length() {
+			let sum = cubic.probe( 0 ) + cubic.probe( 1 )
+			for ( let step = 1; step < LENGTH_STEPS; step++ ) sum += cubic.probe( step / LENGTH_STEPS ) * ( step % 2 ? 4 : 2 )
+			return sum / ( LENGTH_STEPS * 3 )
+		},
+	}
+	return cubic
+}
+
+/** Whether a span's cubic is a straight run from its start to its end. */
+const isStraightSpan = ( p0, p1, p2, p3, settings ) => {
+	const dx = p3[0] - p0[0]
+	const dy = p3[1] - p0[1]
+	const dz = p3[2] - p0[2]
 	const chord = Math.hypot( dx, dy, dz )
 	if ( chord <= EPSILON ) return false
-	const inverseChord = 1 / chord
-	const directionX = dx * inverseChord
-	const directionY = dy * inverseChord
-	const directionZ = dz * inverseChord
-	const projection = point =>
-		( point[0] - segment.p0[0] ) * directionX +
-		( point[1] - segment.p0[1] ) * directionY +
-		( point[2] - segment.p0[2] ) * directionZ
-	const first = projection( segment.p1 )
-	const second = projection( segment.p2 )
+	const projection = point => ( ( point[0] - p0[0] ) * dx + ( point[1] - p0[1] ) * dy + ( point[2] - p0[2] ) * dz ) / chord
+	const first = projection( p1 )
+	const second = projection( p2 )
 	const tolerance = Math.max( EPSILON * 4, Math.min( settings.maxChordError * 0.01, chord * 1e-8 ) )
-	if (
-		pointSegmentDistance( segment.p1, segment.p0, segment.p3 ) > tolerance ||
-		pointSegmentDistance( segment.p2, segment.p0, segment.p3 ) > tolerance ||
-		first < -tolerance || second < first - tolerance || second > chord + tolerance
-	) return false
-
-	const segments = Math.max( 1, Math.ceil( chord / settings.spacing ) )
-	for ( let segmentIndex = 1; segmentIndex < segments; segmentIndex++ ) {
-		const progress = segmentIndex / segments
-		appendPoint(
-			points,
-			segment.p0[0] + dx * progress,
-			segment.p0[1] + dy * progress,
-			segment.p0[2] + dz * progress,
-			settings
-		)
-	}
-	sampling.straightSpans++
-	sampling.linearSegments += segments
-	return true
-}
-
-/** Radius of a cubic where it ends, read from its last three control points. */
-const bezierEndRadius = segment => {
-	const ax = segment.p3[0] - segment.p2[0]
-	const ay = segment.p3[1] - segment.p2[1]
-	const az = segment.p3[2] - segment.p2[2]
-	const bx = segment.p2[0] - segment.p1[0]
-	const by = segment.p2[1] - segment.p1[1]
-	const bz = segment.p2[2] - segment.p1[2]
-	const turn = Math.hypot( ay * bz - az * by, az * bx - ax * bz, ax * by - ay * bx )
-	const leg = Math.hypot( ax, ay, az )
-	return turn > EPSILON ? 1.5 * leg * leg * leg / turn : Infinity
+	return pointSegmentDistance( p1, p0, p3 ) <= tolerance &&
+		pointSegmentDistance( p2, p0, p3 ) <= tolerance &&
+		first >= -tolerance && second >= first - tolerance && second <= chord + tolerance
 }
 
 /**
- * How many subdivision levels two neighbouring samples may differ by on a bend of `radius`.
- *
- * A sample next to a segment twice as long as its own turns half as much again
- * as its other neighbour. Under a ribbon nearly as wide as the bend, the inside
- * of that join then has no room: the surface has to trim it, which leaves a
- * sliver standing on edge across the road. A segment `r` times its neighbour is
- * safe while `r < 2 * radius / halfWidth - 1`, with `foldRadius` standing in for
- * the half width: no jump below one and a half fold radii, one level up to two
- * and a half, and so on.
+ * The road cut into cells, each a short run of one arc, line or cubic with the
+ * sample length the budgets ask for there and how fast the ribbon bends within
+ * its own surface. Samples are placed from these rather than from the curves,
+ * so a stretch made of three different curves is sampled as one.
  */
-const spacingJump = ( radius, settings ) => Math.floor( Math.log2( Math.max( 1, 2 * radius / settings.foldRadius - 1 ) ) )
+const createCells = () => ( {
+	point: [],
+	from: [],
+	to: [],
+	length: [],
+	step: [],
+	bend: [],
+	stretch: [],
+	// The stretch being added: its index, how far into it the next cell starts,
+	// and the bank there, which changes evenly with the distance travelled.
+	index: 0,
+	travelled: 0,
+	bank: 0,
+	bankRate: 0,
+} )
 
-/** Iteratively emit only the interior points of one cubic span. */
-const emitSpanInterior = ( shape, index, settings, points, sampling ) => {
-	const curve = createSpanCurve( shape, index )
-	const root = {
-		p0: curve.start,
-		p1: [
-			curve.start[0] + curve.startTangent[0] / 3,
-			curve.start[1] + curve.startTangent[1] / 3,
-			curve.start[2] + curve.startTangent[2] / 3,
-		],
-		p2: [
-			curve.end[0] - curve.endTangent[0] / 3,
-			curve.end[1] - curve.endTangent[1] / 3,
-			curve.end[2] - curve.endTangent[2] / 3,
-		],
-		p3: curve.end,
+const pushCell = ( cells, point, from, to, length, step, bend, stretch ) => {
+	cells.point.push( point )
+	cells.from.push( from )
+	cells.to.push( to )
+	cells.length.push( length )
+	cells.step.push( step )
+	cells.bend.push( bend )
+	cells.stretch.push( stretch )
+}
+
+/**
+ * Add the next cell of the current stretch. What its inside edge has to make
+ * room for is the curvature along the banked side of the ribbon: all of a level
+ * turn, and of a crest or a dip only as much as the deck is tilted into it.
+ */
+const addCell = ( cells, point, from, to, length, step, lateral, vertical ) => {
+	const bank = cells.bank + cells.bankRate * ( cells.travelled + length * 0.5 )
+	cells.travelled += length
+	pushCell( cells, point, from, to, length, step, Math.abs( lateral * Math.cos( bank ) + vertical * Math.sin( bank ) ), cells.index )
+}
+
+const addArcCells = ( corner, arc, from, to, cap, settings, cells ) => {
+	const step = budgetStep( 1 / corner.radius, cap, settings )
+	const length = corner.radius * ( to - from )
+	const count = Math.max( 1, Math.ceil( length / step * CELLS_PER_STEP ) )
+	for ( let cell = 0; cell < count; cell++ ) {
+		const start = from + ( to - from ) * cell / count
+		const end = from + ( to - from ) * ( cell + 1 ) / count
+		arc.probe( ( start + end ) * 0.5 )
+		addCell( cells, arc.point, start, end, length / count, step, arc.lateral, arc.vertical )
 	}
-	if ( emitStraightSpanInterior( root, settings, points, sampling ) ) return
-	const spanBankDelta = shape.banks ? Math.abs( shape.banks[index + 1] - shape.banks[index] ) : 0
-	const stack = [{ segment: root, depth: 0, bankDelta: spanBankDelta }]
-	const split = ( item, halves ) => {
-		if ( item.depth >= settings.maxDepth ) {
-			throw new RangeError( `[roadPath] Adaptive tessellation reached maxDepth (${settings.maxDepth}) on span ${index}` )
+}
+
+/** Halve the cubic until every cell is a fraction of the sample the budgets allow anywhere on it. */
+const addCubicCells = ( cubic, cap, spanIndex, settings, cells, sampling ) => {
+	const probe = t => {
+		const speed = cubic.probe( t )
+		return { speed, density: speed / budgetStep( cubic.curvature, cap, settings ), lateral: cubic.lateral, vertical: cubic.vertical }
+	}
+	const forced = Math.min( MIN_CUBIC_DEPTH, settings.maxDepth )
+	const stack = [{ from: 0, to: 1, depth: 0, start: probe( 0 ), middle: probe( 0.5 ), end: probe( 1 ) }]
+	while ( stack.length > 0 ) {
+		const { from, to, depth, start, middle, end } = stack.pop()
+		const span = to - from
+		const densest = Math.max( start.density, middle.density, end.density )
+		if ( depth >= forced && span * densest * CELLS_PER_STEP <= 1 ) {
+			const length = span * ( start.speed + 4 * middle.speed + end.speed ) / 6
+			const samples = span * ( start.density + 4 * middle.density + end.density ) / 6
+			addCell( cells, cubic.point, from, to, length, samples > 0 ? length / samples : cap, middle.lateral, middle.vertical )
+			continue
+		}
+		if ( depth >= settings.maxDepth ) {
+			throw new RangeError( `[roadPath] Adaptive tessellation reached maxDepth (${settings.maxDepth}) on span ${spanIndex}` )
 		}
 		sampling.splits++
-		sampling.maxDepth = Math.max( sampling.maxDepth, item.depth + 1 )
-		const bankDelta = item.bankDelta * 0.5
-		return [
-			{ segment: halves.left, depth: item.depth + 1, bankDelta },
-			{ segment: halves.right, depth: item.depth + 1, bankDelta },
-		]
+		sampling.maxDepth = Math.max( sampling.maxDepth, depth + 1 )
+		const centre = ( from + to ) * 0.5
+		stack.push(
+			{ from: centre, to, depth: depth + 1, start: middle, middle: probe( ( centre + to ) * 0.5 ), end },
+			{ from, to: centre, depth: depth + 1, start, middle: probe( ( from + centre ) * 0.5 ), end: middle }
+		)
 	}
+}
 
-	// The pieces of the span the budgets are content with, in order.
-	const leaves = []
-	while ( stack.length > 0 ) {
-		const item = stack.pop()
-		const halves = splitBezier( item.segment )
-		if ( bezierNeedsSplit( item.segment, halves, settings ) || item.bankDelta > settings.maxBankAngle * 0.9 ) {
-			const [left, right] = split( item, halves )
-			stack.push( right, left )
-			continue
+/**
+ * Add the cells of the stretch from control `index` to the next one: the second
+ * half of the corner at its first control, the span, and the first half of the
+ * corner at its second.
+ */
+const addStretchCells = ( shape, index, arcs, settings, cells, sampling ) => {
+	const exit = shape.corners[index]
+	const entry = shape.corners[index + 1]
+	const curve = createSpanCurve( shape, index )
+	const p0 = curve.start
+	const p3 = curve.end
+	const p1 = [p0[0] + curve.startTangent[0] / 3, p0[1] + curve.startTangent[1] / 3, p0[2] + curve.startTangent[2] / 3]
+	const p2 = [p3[0] - curve.endTangent[0] / 3, p3[1] - curve.endTangent[1] / 3, p3[2] - curve.endTangent[2] / 3]
+	const straight = isStraightSpan( p0, p1, p2, p3, settings )
+	const cubic = straight ? null : createCubic( p0, p1, p2, p3, shape.up )
+	const spanLength = straight ? distance( p0, p3 ) : cubic.length()
+
+	// Bank is spread evenly over the travelled distance between two controls, so
+	// its budget is one more cap on how long a sample of this stretch may be.
+	const length = ( exit ? exit.radius * exit.sweep : 0 ) + spanLength + ( entry ? entry.radius * entry.sweep : 0 )
+	const bankDelta = shape.banks[index + 1] - shape.banks[index]
+	const bankStep = settings.maxBankAngle * BUDGET_SHARE
+	const cap = Math.abs( bankDelta ) * settings.spacing > bankStep * length
+		? Math.max( EPSILON, bankStep * length / Math.abs( bankDelta ) )
+		: settings.spacing
+	cells.index = index
+	cells.travelled = 0
+	cells.bank = shape.banks[index]
+	cells.bankRate = length > EPSILON ? bankDelta / length : 0
+
+	if ( exit ) addArcCells( exit, arcs[index], 0, exit.sweep, cap, settings, cells )
+	if ( straight ) {
+		addCell( cells, createLinePoint( p0, p3 ), 0, 1, spanLength, cap, 0, 0 )
+		sampling.straightSpans++
+	} else {
+		addCubicCells( cubic, cap, index, settings, cells, sampling )
+	}
+	if ( entry ) addArcCells( entry, arcs[index + 1], -entry.sweep, 0, cap, settings, cells )
+}
+
+/**
+ * Cut long cells down next to short ones, so that no cell is more than twice
+ * the length of the one beside it. A sample that has to be shortened next to a
+ * tight bend is then shortened over a cell its own size, not over the whole
+ * length of a long, gentle one.
+ */
+const gradeCells = ( cells, settings ) => {
+	const { point, from, to, length, step, bend, stretch } = cells
+	const count = step.length
+	// Cells this short are not worth matching: a few metres further the road is back to full-length samples.
+	const floor = settings.foldRadius * maxArcStep( settings.foldRadius, settings ) / ( CELLS_PER_STEP * 4 )
+	// The length a cell may have where two of them meet: twice the shorter one,
+	// and further away no more than that plus the distance from it.
+	const size = new Float64Array( count + 1 )
+	for ( let edge = 0; edge <= count; edge++ ) {
+		size[edge] = 2 * Math.max( floor, Math.min( edge > 0 ? length[edge - 1] : Infinity, edge < count ? length[edge] : Infinity ) )
+	}
+	for ( let edge = 1; edge <= count; edge++ ) size[edge] = Math.min( size[edge], size[edge - 1] + length[edge - 1] )
+	for ( let edge = count - 1; edge >= 0; edge-- ) size[edge] = Math.min( size[edge], size[edge + 1] + length[edge] )
+
+	const graded = createCells()
+	for ( let cell = 0; cell < count; cell++ ) {
+		const whole = length[cell]
+		const span = to[cell] - from[cell]
+		for ( let done = 0; done < whole; ) {
+			// Long enough for where it starts, and for where it will end.
+			let piece = Math.min( size[cell] + done, ( size[cell + 1] + whole - done ) * 0.5 )
+			if ( !( piece < ( whole - done ) * ( 1 - 1e-9 ) ) || whole - done - piece < piece * 0.5 ) piece = whole - done
+			pushCell(
+				graded,
+				point[cell],
+				from[cell] + span * done / whole,
+				piece === whole - done ? to[cell] : from[cell] + span * ( done + piece ) / whole,
+				piece,
+				step[cell],
+				bend[cell],
+				stretch[cell]
+			)
+			done += piece
 		}
-		leaves.push( item )
+		if ( !( whole > 0 ) ) pushCell( graded, point[cell], from[cell], to[cell], 0, step[cell], bend[cell], stretch[cell] )
 	}
+	graded.length = Float64Array.from( graded.length )
+	graded.step = Float64Array.from( graded.step )
+	graded.bend = Float64Array.from( graded.bend )
+	return graded
+}
 
-	// Even out the spacing wherever the bend is too tight for a jump in it.
-	for ( let before = 0; before < leaves.length - 1; ) {
-		const jump = spacingJump( bezierEndRadius( leaves[before].segment ), settings )
-		const gap = leaves[before + 1].depth - leaves[before].depth
-		if ( Math.abs( gap ) <= jump ) {
-			before++
-			continue
+/**
+ * Leave every sample room for the turns next to it.
+ *
+ * The inside edge of a join steps back by half the ribbon width times the
+ * tangent of half its turn, and a sample has to hold the setbacks of both its
+ * joins. One much shorter than its neighbour cannot once that neighbour turns
+ * through a real angle: the surface would have to trim the join, which leaves a
+ * notch in the verge and a sliver standing on edge across the road. So a
+ * sample `s` long where the ribbon bends by `k` lets the samples beside it turn
+ * by at most `s * ( 2 / w - k )`, with the fold radius standing in for the half
+ * width `w`, and whatever that shortens limits its own neighbours in turn.
+ * Where the budgets already ask for the same turn from one sample to the next,
+ * which is most of any road, nothing changes.
+ */
+const easeSteps = ( cells, settings ) => {
+	const { length, step, bend, stretch } = cells
+	const count = step.length
+	const start = new Float64Array( count + 1 )
+	for ( let cell = 0; cell < count; cell++ ) start[cell + 1] = start[cell] + length[cell]
+	// A bend tighter than the fold radius folds the ribbon whatever its samples
+	// are, so it counts as that radius: a sample then never asks the ones beside
+	// it to be shorter than itself, and a fold cannot shrink the road around it.
+	const tightestBend = 1 / settings.foldRadius
+	// Shorten the sample at `cell` to what the shorter ones on one side of it leave room for.
+	const ease = ( cell, direction ) => {
+		// A sample reaching from here to there bends as fast as the tightest cell
+		// between them. It never reaches past a control, which is a sample itself:
+		// beyond one, only this side of it counts, and a stretch is re-sampled for
+		// its neighbour's sake only when its own first sample would be in the way.
+		let tightest = Math.min( bend[cell], tightestBend )
+		for ( let beside = cell + direction; beside >= 0 && beside < count; beside += direction ) {
+			const gap = direction > 0 ? start[beside] - start[cell + 1] : start[cell] - start[beside + 1]
+			// Only a shorter sample can crowd this one, and only from less than its own length away.
+			if ( gap >= step[cell] * 2 ) break
+			if ( bend[beside] > tightest && stretch[beside] === stretch[cell] ) tightest = Math.min( bend[beside], tightestBend )
+			if ( !( tightest > 0 ) ) continue
+			const room = step[beside] * ( 2 * tightestBend - Math.min( bend[beside], tightestBend ) ) / tightest
+			// A sample that long would sit right next to the short one.
+			if ( room < step[cell] && gap - step[beside] < room ) step[cell] = room
 		}
-		const coarse = gap > 0 ? before : before + 1
-		leaves.splice( coarse, 1, ...split( leaves[coarse], splitBezier( leaves[coarse].segment ) ) )
-		// The piece before it may now be the coarse one.
-		before = Math.max( 0, coarse - 1 )
 	}
+	for ( let cell = 1; cell < count; cell++ ) ease( cell, -1 )
+	for ( let cell = count - 2; cell >= 0; cell-- ) ease( cell, 1 )
+}
 
-	for ( let leaf = 0; leaf < leaves.length - 1; leaf++ ) {
-		const end = leaves[leaf].segment.p3
-		appendPoint( points, end[0], end[1], end[2], settings )
+let placed = new Float64Array( 768 )
+const SAMPLE = [0, 0, 0]
+const SEGMENT_START = [0, 0, 0]
+const SEGMENT_END = [0, 0, 0]
+
+/**
+ * Place `rows` samples over cells `first` to `end`, each with the point halfway
+ * to it: sample `n` lands at offset `( n * 2 - 1 ) * 3` of `placed`, the halfway
+ * point before it three values earlier.
+ *
+ * Every sample takes the same share of what the budgets allow where it lies, so
+ * the turn from one to the next changes only as the road does. Rounding the row
+ * count up leaves a little to spare, and the middle of the stretch takes most of
+ * it: the samples either side of a control then stay close in length even when
+ * one of its stretches is only a few rows long.
+ */
+const placeSamples = ( cells, first, end, total, rows ) => {
+	const { point, from, to, length, step } = cells
+	const count = rows * 2 - 1
+	if ( placed.length < count * 3 ) placed = new Float64Array( count * 6 )
+	const spare = total > 0 ? ( rows / total - 1 ) * 0.5 : 0
+	let cell = first
+	let before = 0
+	let samples = length[cell] / step[cell]
+	for ( let half = 1; half <= count; half++ ) {
+		const progress = half / ( rows * 2 )
+		const at = total * ( progress + spare * progress * ( 1 - progress ) * ( 1 - 2 * progress ) )
+		while ( cell < end - 1 && at > before + samples ) {
+			before += samples
+			cell++
+			samples = length[cell] / step[cell]
+		}
+		const share = samples > 0 ? clamp( ( at - before ) / samples, 0, 1 ) : 0
+		point[cell]( from[cell] + ( to[cell] - from[cell] ) * share, SAMPLE )
+		placed.set( SAMPLE, ( half - 1 ) * 3 )
+	}
+}
+
+/** Whether the samples just placed, from the last emitted point to `target`, hold the spacing, chord and turn budgets. */
+const samplesKeepBudgets = ( rows, points, target, settings ) => {
+	const anchor = points.length - 3
+	let previousX = 0
+	let previousY = 0
+	let previousZ = 0
+	let hasPrevious = anchor >= 3
+	if ( hasPrevious ) {
+		previousX = points[anchor] - points[anchor - 3]
+		previousY = points[anchor + 1] - points[anchor - 2]
+		previousZ = points[anchor + 2] - points[anchor - 1]
+	}
+	SEGMENT_START[0] = points[anchor]
+	SEGMENT_START[1] = points[anchor + 1]
+	SEGMENT_START[2] = points[anchor + 2]
+	for ( let row = 1; row <= rows; row++ ) {
+		const offset = ( row * 2 - 1 ) * 3
+		SEGMENT_END[0] = row < rows ? placed[offset] : target[0]
+		SEGMENT_END[1] = row < rows ? placed[offset + 1] : target[1]
+		SEGMENT_END[2] = row < rows ? placed[offset + 2] : target[2]
+		const x = SEGMENT_END[0] - SEGMENT_START[0]
+		const y = SEGMENT_END[1] - SEGMENT_START[1]
+		const z = SEGMENT_END[2] - SEGMENT_START[2]
+		if ( Math.hypot( x, y, z ) > settings.spacing * ( 1 + 1e-9 ) ) return false
+		SAMPLE[0] = placed[offset - 3]
+		SAMPLE[1] = placed[offset - 2]
+		SAMPLE[2] = placed[offset - 1]
+		if ( pointSegmentDistance( SAMPLE, SEGMENT_START, SEGMENT_END ) > settings.maxChordError ) return false
+		if ( hasPrevious && vectorAngle( previousX, previousY, previousZ, x, y, z ) > settings.maxAngle ) return false
+		previousX = x
+		previousY = y
+		previousZ = z
+		hasPrevious = true
+		SEGMENT_START[0] = SEGMENT_END[0]
+		SEGMENT_START[1] = SEGMENT_END[1]
+		SEGMENT_START[2] = SEGMENT_END[2]
+	}
+	return true
+}
+
+/** Emit the samples between the control just emitted and `target`, the next one. */
+const emitStretch = ( cells, first, end, target, settings, points ) => {
+	let total = 0
+	for ( let cell = first; cell < end; cell++ ) total += cells.length[cell] / cells.step[cell]
+	// The cells only estimate what each sample will measure, so the samples are
+	// checked once placed, and rows are added a few times over if they fail.
+	let rows = Math.max( 1, Math.ceil( total - 1e-9 ) )
+	for ( let attempt = 0; ; attempt++ ) {
+		if ( points.length / 3 + rows > settings.maxPoints ) {
+			throw new RangeError( `[roadPath] Adaptive tessellation exceeded maxPoints (${settings.maxPoints})` )
+		}
+		placeSamples( cells, first, end, total, rows )
+		if ( attempt >= MAX_RETRIES || samplesKeepBudgets( rows, points, target, settings ) ) break
+		rows += Math.max( 1, rows >> 5 )
+	}
+	for ( let row = 1; row < rows; row++ ) {
+		const offset = ( row * 2 - 1 ) * 3
+		appendPoint( points, placed[offset], placed[offset + 1], placed[offset + 2], settings )
 	}
 }
 
@@ -854,8 +1201,16 @@ const refineBankSteps = ( rawPoints, rawBanks, rawAnchors, settings ) => {
 	return { points: Float64Array.from( points ), bank: Float32Array.from( banks ), anchors }
 }
 
-/** Lateral radius of the circle through three consecutive samples. */
-const sampleLateralRadius = ( points, previous, current, next, up, bank = 0 ) => {
+const SAMPLE_TANGENT = [0, 0, 0]
+const SAMPLE_CURVATURE = [0, 0, 0]
+const SAMPLE_RADII = { level: Infinity, deck: Infinity }
+
+/**
+ * Radii of the circle through three consecutive samples: `level`, the turn a
+ * level road feels there, and `deck`, the turn within the banked deck.
+ */
+const readSampleRadii = ( points, previous, current, next, up, bank, out ) => {
+	out.level = out.deck = Infinity
 	const pX = points[previous] - points[current]
 	const pY = points[previous + 1] - points[current + 1]
 	const pZ = points[previous + 2] - points[current + 2]
@@ -868,12 +1223,12 @@ const sampleLateralRadius = ( points, previous, current, next, up, bank = 0 ) =>
 	const chordY = qY - pY
 	const chordZ = qZ - pZ
 	const chord = Math.hypot( chordX, chordY, chordZ )
-	if ( p2 < EPSILON * EPSILON || q2 < EPSILON * EPSILON || chord < EPSILON ) return Infinity
+	if ( p2 < EPSILON * EPSILON || q2 < EPSILON * EPSILON || chord < EPSILON ) return
 	const normalX = pY * qZ - pZ * qY
 	const normalY = pZ * qX - pX * qZ
 	const normalZ = pX * qY - pY * qX
 	const normal2 = normalX * normalX + normalY * normalY + normalZ * normalZ
-	if ( Math.sqrt( normal2 ) < EPSILON ) return Infinity
+	if ( Math.sqrt( normal2 ) < EPSILON ) return
 	// Circumcentre offset from the middle sample; its inverse length is the curvature.
 	const mixX = p2 * qX - q2 * pX
 	const mixY = p2 * qY - q2 * pY
@@ -883,19 +1238,22 @@ const sampleLateralRadius = ( points, previous, current, next, up, bank = 0 ) =>
 	const offsetY = ( mixZ * normalX - mixX * normalZ ) * scale
 	const offsetZ = ( mixX * normalY - mixY * normalX ) * scale
 	const offset2 = offsetX * offsetX + offsetY * offsetY + offsetZ * offsetZ
-	return lateralRadius(
-		offsetX / offset2,
-		offsetY / offset2,
-		offsetZ / offset2,
-		( chordX * up[0] + chordY * up[1] + chordZ * up[2] ) / chord,
-		up,
-		bank
-	)
+	SAMPLE_TANGENT[0] = chordX / chord
+	SAMPLE_TANGENT[1] = chordY / chord
+	SAMPLE_TANGENT[2] = chordZ / chord
+	SAMPLE_CURVATURE[0] = offsetX / offset2
+	SAMPLE_CURVATURE[1] = offsetY / offset2
+	SAMPLE_CURVATURE[2] = offsetZ / offset2
+	out.level = lateralRadius( SAMPLE_CURVATURE[0], SAMPLE_CURVATURE[1], SAMPLE_CURVATURE[2], dot( SAMPLE_TANGENT, up ), up, bank )
+	out.deck = deckRadius( SAMPLE_TANGENT, SAMPLE_CURVATURE, up, bank )
 }
 
-const analyzeSamples = ( points, bank, up ) => {
+/** Measure the finished samples. `folds` lists the ones where the deck turns on less than `foldRadius`. */
+const analyzeSamples = ( points, bank, up, foldRadius ) => {
 	const pointCount = points.length / 3
+	const folds = []
 	let minRadius = Infinity
+	let minDeckRadius = Infinity
 	let maxTurn = 0
 	let maxSegmentLength = 0
 	let maxBankStep = 0
@@ -935,10 +1293,13 @@ const analyzeSamples = ( points, bank, up ) => {
 				1
 			) ) )
 		}
-		minRadius = Math.min( minRadius, sampleLateralRadius( points, previous, current, next, up, bank[index] ) )
+		readSampleRadii( points, previous, current, next, up, bank[index], SAMPLE_RADII )
+		minRadius = Math.min( minRadius, SAMPLE_RADII.level )
+		minDeckRadius = Math.min( minDeckRadius, SAMPLE_RADII.deck )
+		if ( SAMPLE_RADII.deck < foldRadius ) folds.push( index )
 	}
 
-	return { pointCount, minRadius, maxTurn, maxSegmentLength, maxBankStep, length, minY, maxY }
+	return { folds, stats: { pointCount, minRadius, minDeckRadius, maxTurn, maxSegmentLength, maxBankStep, length, minY, maxY } }
 }
 
 /**
@@ -1069,7 +1430,7 @@ export function planRoadPath( controls, options = {} ) {
 		let best = null
 		for ( const factor of CORNER_FACTORS ) {
 			for ( let index = region.first; index <= region.last; index++ ) scales[index] = 1
-			setRegionCorners( region, buildRegionCorners( region, knots, legDirections, legs, turns, needsArc, settings, factor ) )
+			setRegionCorners( region, buildRegionCorners( region, knots, legDirections, legs, shape.profiles, needsArc, settings, factor ) )
 			solve( region )
 			const score = worstRadius( region )
 			if ( !best || score > best.score ) {
@@ -1145,22 +1506,26 @@ export function planRoadPath( controls, options = {} ) {
 		if ( !grown ) break
 	}
 
+	// Sample the road one stretch between two controls at a time, so that every
+	// control stays an exact sample and an edit re-samples only what it reshapes.
 	const rawPoints = []
 	const rawAnchors = new Int32Array( count )
-	const sampling = { splits: 0, maxDepth: 0, straightSpans: 0, linearSegments: 0 }
+	const sampling = { splits: 0, maxDepth: 0, straightSpans: 0 }
+	const arcs = shape.corners.map( corner => corner && createArc( corner, settings.up ) )
+	let cells = createCells()
+	for ( let index = 0; index < count - 1; index++ ) addStretchCells( shape, index, arcs, settings, cells, sampling )
+	cells = gradeCells( cells, settings )
+	easeSteps( cells, settings )
+	const stretches = new Int32Array( count ).fill( cells.step.length )
+	for ( let cell = cells.step.length - 1; cell >= 0; cell-- ) stretches[cells.stretch[cell]] = cell
 	for ( let index = 0; index < count; index++ ) {
-		const corner = shape.corners[index]
-		if ( corner ) {
-			rawAnchors[index] = emitCorner( corner, settings, rawPoints )
-		} else {
-			rawAnchors[index] = appendPoint( rawPoints, knots[index][0], knots[index][1], knots[index][2], settings )
-		}
-		if ( index < count - 1 ) emitSpanInterior( shape, index, settings, rawPoints, sampling )
+		rawAnchors[index] = appendPoint( rawPoints, knots[index][0], knots[index][1], knots[index][2], settings )
+		if ( index < count - 1 ) emitStretch( cells, stretches[index], stretches[index + 1], knots[index + 1], settings, rawPoints )
 	}
 
 	const rawBanks = buildSampleBanks( rawPoints, rawAnchors, knots )
 	const refined = refineBankSteps( rawPoints, rawBanks, rawAnchors, settings )
-	const sampleStats = analyzeSamples( refined.points, refined.bank, settings.up )
+	const { folds, stats: sampleStats } = analyzeSamples( refined.points, refined.bank, settings.up, settings.foldRadius * FOLD_MARGIN )
 	const corners = []
 	for ( let index = 1; index < count - 1; index++ ) {
 		const corner = shape.corners[index]
@@ -1174,9 +1539,19 @@ export function planRoadPath( controls, options = {} ) {
 			tight: corner ? corner.tight : knotRadius( reports, index ) < settings.foldRadius,
 		} )
 	}
+	// A banked deck can fold over a crest between two controls, or beside one the
+	// map calls smooth. Point at the control nearest to each such fold: the first
+	// and last have no corner of their own, so theirs go to the next one in.
+	for ( const fold of folds ) {
+		let knot = 1
+		while ( knot < count - 1 && refined.anchors[knot] <= fold ) knot++
+		if ( fold - refined.anchors[knot - 1] < refined.anchors[knot] - fold ) knot--
+		const corner = corners[clamp( knot, 1, count - 2 ) - 1]
+		if ( corner ) corner.tight = true
+	}
 	const tightCount = Math.max(
 		corners.filter( corner => corner.tight ).length,
-		sampleStats.minRadius < settings.foldRadius * 0.98 ? 1 : 0
+		folds.length > 0 || sampleStats.minRadius < settings.foldRadius * FOLD_MARGIN ? 1 : 0
 	)
 
 	return {
@@ -1193,7 +1568,6 @@ export function planRoadPath( controls, options = {} ) {
 			adaptiveSplits: sampling.splits,
 			adaptiveDepth: sampling.maxDepth,
 			straightSpans: sampling.straightSpans,
-			linearSegments: sampling.linearSegments,
 		},
 	}
 }

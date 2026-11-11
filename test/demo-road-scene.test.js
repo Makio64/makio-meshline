@@ -43,10 +43,10 @@ test( 'bridge dressing is rebuilt from the built road on every update and releas
 	] )
 
 	assert.match( updateRoad( source ), /this\.bridge\.update\( this\.road\.geometry, built, this\.ribbonWidth\(\) \* 0\.5 \)/ )
-	assert.match( bridge, /this\.updateDeckFascia\( ribbon \)\s+this\.updatePiers\( plan, half \)/ )
+	assert.match( bridge, /this\.updateDeck\( ribbon, half \)\s+\}\s+this\.updatePiers\( plan, half \)/ )
 	assert.match( bridge, /\|\| isAboveRoad\( points, index, x, y, z, half \) \) return false/, 'piers must not be planted on a road that runs underneath' )
 	// The scene owns the bridge meshes, so clearDemo() disposes them.
-	assert.match( bridge, /stage3d\.add\( this\.deckFascia, this\.piers, this\.pierCaps \)/ )
+	assert.match( bridge, /stage3d\.add\( \.\.\.this\.simpleParts, \.\.\.this\.complexParts \)/ )
 	assert.match( stage3d, /object\.geometry\?\.dispose\(\)/ )
 	assert.match( stage3d, /for \( const material of \[object\.material\]\.flat\(\) \) material\?\.dispose\(\)/ )
 	assert.match( stage3d, /\n\t\t\tobject\.dispose\(\)/ )
@@ -125,18 +125,20 @@ test( 'riding a car hands the camera over and gives it back', async () => {
 	assert.match( update, /if \( this\.view === 'edit' \) control\.place\(\)/ )
 	// slerpQuaternions() copies its first argument into the receiver, so the camera cannot be the second one.
 	assert.match( update, /camera\.quaternion\.slerpQuaternions\( this\.fromQuaternion, _seat\.copy\( camera\.quaternion \), ease \)/ )
+	// The chase boom is laid along the road behind the car: a level one ends up under the deck on a steep descent.
+	assert.match( camera, /this\.traffic\.climb\( phase, this\.trail \* this\.distance \) \/ this\.distance/ )
 	// A road with no room for cars brings the editor back.
 	assert.match( updateRoad( source ), /if \( !this\.traffic\.active \) this\.setView\( 'edit' \)/ )
 } )
 
-test( 'pier caps roll and pitch with the banked, sloping deck they carry', async () => {
+test( 'pier heads roll and pitch with the banked, sloping deck they carry', async () => {
 	const source = await readBridge()
 	const piers = source.slice( source.indexOf( '\n\tplacePier( plan, index, t, half, count ) {' ) )
 	assert.match( source, /_pier\.rotation\.order = 'YXZ'/ )
 	assert.match( piers, /const yaw = Math\.atan2\( tangentX, tangentZ \)/ )
 	assert.match( piers, /const climb = -Math\.atan2\( tangentY, Math\.hypot\( tangentX, tangentZ \) \)/ )
 	assert.match( piers, /_pier\.rotation\.set\( climb, yaw, bank \)/ )
-	assert.match( piers, /_capDown\.set\( 0, -1, 0 \)\.applyQuaternion\( _pier\.quaternion \)/, 'caps must hang along the deck normal' )
+	assert.match( piers, /_capDown\.set\( 0, -1, 0 \)\.applyQuaternion\( _pier\.quaternion \)/, 'heads must hang along the deck normal' )
 
 	// The same Euler recipe must rebuild the surface's own banked, fixed-up normal.
 	const cap = new Object3D()

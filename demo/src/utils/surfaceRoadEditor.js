@@ -10,7 +10,7 @@ import {
 	MAX_CLEARANCE,
 	MAX_CONTROLS,
 	MIN_CLEARANCE,
-	MIN_CONTROLS,
+	MIN_LOOP,
 	roadHeight,
 	signedAngle,
 	terrainHeight,
@@ -22,7 +22,10 @@ const BANK_DRAG_SCALE = 0.012
 // The fill of a handle tells how the road takes its point, the outline who is holding it.
 const STATUS_COLORS = { smooth: 0xFF9F43, corner: 0x53C6FF, tight: 0xFF4D5E }
 const HANDLE_SELECTED_COLOR = 0xFFE27A
-const CLICK_SLOP = 6
+// A dragged height or bank ticks once per notch, like a detented knob.
+const HEIGHT_NOTCH = 0.5
+const BANK_NOTCH = MathUtils.degToRad( 5 )
+const MAX_BANK = MathUtils.degToRad( 45 )
 const DRAG_CURSORS = { height: 'ns-resize', bank: 'ew-resize', position: 'grabbing' }
 const UI_SELECTOR = '.SurfaceRoadHud, .SurfaceRoadSaves, .SurfaceRoadPoint, .SurfaceRoadRide, .BurgerButton, .CodeButton, .MenuFullscreen, .lil-gui, a, button, input, textarea, select, label'
 
@@ -62,8 +65,6 @@ export class RoadEditor {
 	activeIndex = -1
 	selectedIndex = 0
 	hoveredIndex = -1
-	hoveredCar = -1
-	pressedCar = -1
 	heightGizmoHovered = false
 	bankGizmoHovered = false
 	dragMode = 'position'
@@ -94,7 +95,7 @@ export class RoadEditor {
 		return this.activePointerId !== -1
 	}
 
-	/** Away from the editor's own view the handles hide and stop answering, and cars are still picked. */
+	/** Away from the editor's own view the handles hide and stop answering. */
 	setEnabled( enabled ) {
 		if ( !enabled ) this.finishDrag()
 		this.enabled = enabled
@@ -161,8 +162,8 @@ export class RoadEditor {
 		}
 		if ( Math.hypot( _tangent.x, _tangent.z ) >= 1e-5 ) return _tangent
 
-		const previous = controls[Math.max( 0, index - 1 )]
-		const next = controls[Math.min( controls.length - 1, index + 1 )]
+		const previous = controls[( index - 1 + controls.length ) % controls.length]
+		const next = controls[( index + 1 ) % controls.length]
 		return _tangent.set( next.x - previous.x, next.y - previous.y, next.z - previous.z )
 	}
 
@@ -206,31 +207,49 @@ export class RoadEditor {
 
 	setSelectedClearance( clearance ) {
 		const control = this.demo.controls[this.selectedIndex]
-		control.y = roadHeight( control.x, control.z, MathUtils.clamp( clearance, MIN_CLEARANCE, MAX_CLEARANCE ) )
+		const before = clearanceOf( control )
+		clearance = MathUtils.clamp( clearance, MIN_CLEARANCE, MAX_CLEARANCE )
+		control.y = roadHeight( control.x, control.z, clearance )
 		this.handles[this.selectedIndex].position.y = control.y + HANDLE_LIFT
 		this.syncHeightGizmo()
 		this.demo.dirty = true
+		if ( Math.round( before / HEIGHT_NOTCH ) !== Math.round( clearance / HEIGHT_NOTCH ) ) {
+			this.demo.sfx?.play( 'step', ( clearance - MIN_CLEARANCE ) / ( MAX_CLEARANCE - MIN_CLEARANCE ) )
+		}
 	}
 
 	setSelectedBank( bank ) {
-		this.demo.controls[this.selectedIndex].bank = signedAngle( bank )
+		const control = this.demo.controls[this.selectedIndex]
+		const before = control.bank
+		control.bank = signedAngle( bank )
 		this.syncHeightGizmo()
 		this.demo.dirty = true
+		if ( Math.round( before / BANK_NOTCH ) !== Math.round( control.bank / BANK_NOTCH ) ) {
+			this.demo.sfx?.play( 'step', MathUtils.clamp( 0.5 + control.bank / MAX_BANK * 0.5, 0, 1 ) )
+		}
 	}
 
 	insertControl( x, z, hintY ) {
-		const { controls } = this.demo
-		if ( controls.length >= MAX_CONTROLS ) return
-		const best = findInsertion( controls, x, z, hintY )
+		const { controls, sfx } = this.demo
+		if ( controls.length >= MAX_CONTROLS ) {
+			sfx?.play( 'deny' )
+			return
+		}
+		const best = findInsertion( controls, x, z, hintY, true )
 		controls.splice( best.index, 0, createControl( x, z, best.clearance, best.bank ) )
 		this.selectedIndex = best.index
+		sfx?.play( 'add' )
 		this.syncHandles()
 		this.demo.updateRoad()
 	}
 
 	removeControl( index ) {
-		const { controls } = this.demo
-		if ( controls.length <= MIN_CONTROLS ) return
+		const { controls, sfx } = this.demo
+		if ( controls.length <= MIN_LOOP ) {
+			sfx?.play( 'deny' )
+			return
+		}
+		sfx?.play( 'remove' )
 		controls.splice( index, 1 )
 		if ( this.selectedIndex > index ) this.selectedIndex--
 		this.hoveredIndex = -1
@@ -296,8 +315,7 @@ export class RoadEditor {
 		this.heightGizmoHovered = heightGizmoHovered
 		this.bankGizmoHovered = bankGizmoHovered
 		if ( gizmoChanged || this.isDragging ) this.updateHeightGizmoAppearance()
-		const idleCursor = this.hoveredCar !== -1 ? 'pointer' : this.previousCursor
-		const hoverCursor = heightGizmoHovered ? 'ns-resize' : bankGizmoHovered ? 'ew-resize' : index !== -1 ? 'grab' : idleCursor
+		const hoverCursor = heightGizmoHovered ? 'ns-resize' : bankGizmoHovered ? 'ew-resize' : index !== -1 ? 'grab' : this.previousCursor
 		document.documentElement.style.cursor = this.isDragging ? DRAG_CURSORS[this.dragMode] : hoverCursor
 	}
 
@@ -307,7 +325,6 @@ export class RoadEditor {
 		const bankGizmoHovered = onCanvas && !heightGizmoHovered && !!this.pickBankGizmo()
 		const overGizmo = heightGizmoHovered || bankGizmoHovered
 		const index = onCanvas && !overGizmo ? this.pickHandle() : -1
-		this.hoveredCar = onCanvas && !overGizmo && index === -1 ? this.demo.traffic.pick( this.raycaster.ray ) : -1
 		this.setHovered( index, heightGizmoHovered, bankGizmoHovered )
 	}
 
@@ -346,13 +363,8 @@ export class RoadEditor {
 		const bankGizmoHit = heightGizmoHit ? null : this.pickBankGizmo()
 		const index = heightGizmoHit ? this.selectedIndex : this.pickHandle()
 		const controlIndex = bankGizmoHit ? this.selectedIndex : index
-		if ( controlIndex === -1 ) {
-			// Not an edit: the orbit takes the gesture, unless it turns out to be a click on a car.
-			this.pressedCar = this.demo.traffic.pick( this.raycaster.ray )
-			this.pressX = event.clientX
-			this.pressY = event.clientY
-			return
-		}
+		// Not an edit: the orbit takes the gesture. A click on a car leaves the camera where it is too.
+		if ( controlIndex === -1 ) return
 
 		consume( event )
 		this.activePointerId = event.pointerId
@@ -370,6 +382,7 @@ export class RoadEditor {
 		}
 		// The orbit sits out the drag.
 		stage3d.control.disable()
+		this.demo.sfx?.play( 'grab' )
 		this.setHovered( this.dragFromGizmo ? -1 : controlIndex, heightGizmoHit, !!bankGizmoHit )
 		this.updateHandleColors()
 		this.updateHeightGizmoAppearance()
@@ -402,12 +415,10 @@ export class RoadEditor {
 	}
 
 	onPointerUp = event => {
-		const car = this.pressedCar
-		this.pressedCar = -1
-		if ( car !== -1 && Math.hypot( event.clientX - this.pressX, event.clientY - this.pressY ) < CLICK_SLOP ) this.demo.rideCar( car )
 		if ( event.pointerId !== this.activePointerId ) return
 		consume( event )
 		const onCanvas = this.setPointerFromEvent( event )
+		this.demo.sfx?.play( 'drop' )
 		this.finishDrag()
 		this.updateHover( onCanvas )
 	}

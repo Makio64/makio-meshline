@@ -135,6 +135,8 @@ export function serializeRoad( input = {}, limits = ROAD_SAVE_LIMITS ) {
 		roadWidth: roundTo( clamp( width, limits.minWidth, limits.maxWidth ), 3 ),
 		controls,
 	}
+	// A loop is only written down as one: every older save is an open road. It takes three controls to go round.
+	if ( source.closed === true && controls.length > 2 ) record.closed = true
 	if ( id ) record.id = id
 	if ( savedAt ) record.savedAt = savedAt
 	return record

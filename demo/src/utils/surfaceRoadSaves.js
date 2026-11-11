@@ -9,7 +9,7 @@ import {
 	serializeRoad,
 	stripRoadFromHref,
 } from '@/utils/roadSave'
-import { MIN_CONTROLS } from '@/utils/surfaceRoadRoute'
+import { MIN_LOOP } from '@/utils/surfaceRoadRoute'
 
 /** Autosave, named slots, JSON files and share links for the road on screen. */
 export class RoadSaves {
@@ -28,11 +28,12 @@ export class RoadSaves {
 	}
 
 	captureRoad( { id, name = this.ui.saveName } = {} ) {
-		return serializeRoad( { name, roadWidth: this.demo.roadWidth, controls: this.demo.controls, id } )
+		return serializeRoad( { name, roadWidth: this.demo.roadWidth, controls: this.demo.controls, closed: true, id } )
 	}
 
 	applyRoadRecord( record ) {
 		const parsed = parseRoad( record )
+		if ( parsed.controls.length < MIN_LOOP ) throw new RangeError( 'A track needs at least three points.' )
 		this.demo.roadWidth = parsed.roadWidth
 		if ( parsed.id !== AUTOSAVE_ID && parsed.name ) this.ui.saveName = parsed.name
 		this.ui.activeSaveId = parsed.id ?? ''
@@ -114,7 +115,7 @@ export class RoadSaves {
 
 	/** The HUD is live before the first road exists. */
 	isRoadReady() {
-		const ready = this.demo.controls.length >= MIN_CONTROLS
+		const ready = this.demo.controls.length >= MIN_LOOP
 		if ( !ready ) this.ui.saveMessage = 'Road is not ready'
 		return ready
 	}

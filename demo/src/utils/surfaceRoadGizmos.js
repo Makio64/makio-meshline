@@ -1,5 +1,5 @@
 import { color, fwidth, materialColor, mix, normalView, positionViewDirection, uniform } from 'three/tsl'
-import { Color, CylinderGeometry, Group, MathUtils, Mesh, MeshBasicNodeMaterial, Quaternion, Shape, ShapeGeometry, TorusGeometry, Vector3 } from 'three/webgpu'
+import { Color, CylinderGeometry, Group, MathUtils, Mesh, MeshBasicNodeMaterial, Shape, ShapeGeometry, TorusGeometry, Vector3 } from 'three/webgpu'
 
 import stage3d from '@/makio/three/stage3d'
 
@@ -18,13 +18,10 @@ const HEIGHT_GIZMO_DISTANCE_SCALE = 0.015
 const BANK_GIZMO_RADIUS = 2.45
 const BANK_GIZMO_TUBE = 0.12
 const BANK_GIZMO_ARC = Math.PI * 0.36
-const BANK_GIZMO_WING_RADIUS = 0.09
-const BANK_GIZMO_WING_LENGTH = 0.95
-const BANK_GIZMO_WING_CENTER = 1.9
 const BANK_GIZMO_TIP_RADIUS = 0.4
 const BANK_GIZMO_TIP_HEIGHT = 0.78
-const BANK_GIZMO_PICK_LENGTH = 2.2
-const BANK_GIZMO_PICK_CENTER = 2.35
+const BANK_GIZMO_PICK_LENGTH = 3.4
+const BANK_GIZMO_PICK_CENTER = 2.25
 
 const HEIGHT_GIZMO_COLOR = 0x62E88A
 const BANK_GIZMO_COLOR = 0x53C6FF
@@ -48,8 +45,6 @@ const HANDLE_OUTLINE = 0.87
 const _bankPointA = new Vector3()
 const _bankPointB = new Vector3()
 const _toCamera = new Vector3()
-const _spin = new Quaternion()
-const _shaftAxis = new Vector3( 0, 1, 0 )
 
 /** Editing overlays draw over the road they edit, and keep their colours where the haze takes the road. */
 export const overlayMaterial = color => new MeshBasicNodeMaterial( { color, depthTest: false, depthWrite: false, fog: false } )
@@ -134,19 +129,22 @@ export const screenScale = position => MathUtils.clamp(
 )
 
 /**
- * A compact, double-ended world-Y transform and roll ring shown on the selected
- * control. Both are flat colours inside an outline of their own darker shade,
- * so they read on asphalt, grass and sky alike. Their arrow heads are flat and
- * turn about their own axis to face the camera, so they stay arrows seen from
- * above. The height arrows draw over the roll ring, outline included, wherever
- * the two cross on screen.
+ * A double-ended height arrow and a pair of roll arrows shown on the selected
+ * control. The whole gizmo is flat and faces the camera, so from any side the
+ * height arrows point up and down the screen, the way they are dragged, and the
+ * roll arrows sit left and right of the point at their full size. Both are flat
+ * colours inside an outline of their own darker shade, so they read on asphalt,
+ * grass and sky alike.
  */
 export class RoadGizmos {
 	heightGizmo = new Group()
 	bankGizmo = new Group()
 	heightGizmoPickers = []
 	bankGizmoPickers = []
-	arrowHeads = []
+	tangent = new Vector3()
+	bank = 0
+	// 1 where the road runs towards the camera at the point, -1 where it runs away: a roll turns the other way on screen there.
+	rollSign = 1
 	heightGizmoMaterial = overlayMaterial( HEIGHT_GIZMO_COLOR )
 	bankGizmoMaterial = overlayMaterial( BANK_GIZMO_COLOR )
 	heightOutlineMaterial = outlineMaterial( HEIGHT_GIZMO_COLOR )
@@ -166,8 +164,6 @@ export class RoadGizmos {
 		const arrowGeometry = arrowHeadGeometry( HEIGHT_GIZMO_ARROW_RADIUS, HEIGHT_GIZMO_ARROW_HEIGHT )
 		const arrowOutline = arrowHeadGeometry( HEIGHT_GIZMO_ARROW_RADIUS, HEIGHT_GIZMO_ARROW_HEIGHT, GIZMO_OUTLINE )
 		const pickGeometry = new CylinderGeometry( 0.56, 0.56, HEIGHT_GIZMO_PICK_LENGTH, 8 )
-		const wingGeometry = rod( BANK_GIZMO_WING_RADIUS, BANK_GIZMO_WING_LENGTH )
-		const wingOutline = rod( BANK_GIZMO_WING_RADIUS + GIZMO_OUTLINE, BANK_GIZMO_WING_LENGTH + GIZMO_OUTLINE * 2 )
 		const arcGeometry = new TorusGeometry( BANK_GIZMO_RADIUS, BANK_GIZMO_TUBE, 12, 32, BANK_GIZMO_ARC )
 		const arcOutline = new TorusGeometry( BANK_GIZMO_RADIUS, BANK_GIZMO_TUBE + GIZMO_OUTLINE, 12, 32, BANK_GIZMO_ARC )
 		const tipGeometry = arrowHeadGeometry( BANK_GIZMO_TIP_RADIUS, BANK_GIZMO_TIP_HEIGHT )
@@ -175,13 +171,6 @@ export class RoadGizmos {
 		const bankPickGeometry = new CylinderGeometry( 0.58, 0.58, BANK_GIZMO_PICK_LENGTH, 8 )
 		const heightPart = ( geometry, outline ) => outlinedMesh( geometry, this.heightGizmoMaterial, outline, this.heightOutlineMaterial, 40 )
 		const bankPart = ( geometry, outline ) => outlinedMesh( geometry, this.bankGizmoMaterial, outline, this.bankOutlineMaterial, 38 )
-		// An arrow head keeps the way it points in `aim`, and is free to spin about it.
-		const aimHead = head => {
-			head.userData.aim = head.quaternion.clone()
-			this.arrowHeads.push( head )
-		}
-
-		this.bankGizmo.rotation.order = 'YXZ'
 
 		for ( const direction of [-1, 1] ) {
 			const shaft = heightPart( shaftGeometry, shaftOutline )
@@ -190,7 +179,6 @@ export class RoadGizmos {
 			const arrow = heightPart( arrowGeometry, arrowOutline )
 			arrow.position.y = direction * HEIGHT_GIZMO_ARROW_CENTER
 			if ( direction < 0 ) arrow.rotation.z = Math.PI
-			aimHead( arrow )
 
 			// The proxy starts outside the selected sphere, so its centre remains an
 			// unambiguous XZ drag target while the narrow arrows stay easy to grab.
@@ -200,18 +188,15 @@ export class RoadGizmos {
 			this.heightGizmo.add( shaft, arrow, picker )
 			this.heightGizmoPickers.push( picker )
 
-			const wing = bankPart( wingGeometry, wingOutline )
-			wing.position.x = direction * BANK_GIZMO_WING_CENTER
-			wing.rotation.z = Math.PI * 0.5
-
 			const arc = bankPart( arcGeometry, arcOutline )
 			arc.rotation.z = ( direction > 0 ? 0 : Math.PI ) - BANK_GIZMO_ARC * 0.5
 
+			// Tall enough to take both arrow heads of its arc.
 			const bankPicker = new Mesh( bankPickGeometry, this.heightGizmoPickMaterial )
 			bankPicker.position.x = direction * BANK_GIZMO_PICK_CENTER
 			bankPicker.userData.direction = direction
 
-			this.bankGizmo.add( wing, arc, bankPicker )
+			this.bankGizmo.add( arc, bankPicker )
 			this.bankGizmoPickers.push( bankPicker )
 
 			for ( const end of [-1, 1] ) {
@@ -219,7 +204,6 @@ export class RoadGizmos {
 				const tip = bankPart( tipGeometry, tipOutline )
 				tip.position.set( Math.cos( theta ) * BANK_GIZMO_RADIUS, Math.sin( theta ) * BANK_GIZMO_RADIUS, 0 )
 				tip.rotation.z = end > 0 ? theta : theta + Math.PI
-				aimHead( tip )
 				this.bankGizmo.add( tip )
 			}
 		}
@@ -228,24 +212,23 @@ export class RoadGizmos {
 		parent.add( this.heightGizmo )
 	}
 
-	/** Sit on `position`, rolled into the deck's own frame around `tangent`. */
+	/** Sit on `position`, where the road runs along `tangent` and is rolled by `bank`. */
 	place( position, tangent, bank ) {
 		this.heightGizmo.position.copy( position )
-		const yaw = Math.atan2( tangent.x, tangent.z )
-		const climb = -Math.atan2( tangent.y, Math.hypot( tangent.x, tangent.z ) )
-		this.bankGizmo.rotation.set( climb, yaw, bank )
+		this.tangent.copy( tangent ).normalize()
+		this.bank = bank
 		this.faceCamera()
 	}
 
-	/** Keep the gizmo's size on screen, and turn every arrow head about its shaft to face the camera. */
+	/** Keep the gizmo's size on screen and its face to the camera, with the roll arrows tilted as the deck looks tilted from there. */
 	faceCamera() {
+		const { camera } = stage3d
 		this.heightGizmo.scale.setScalar( screenScale( this.heightGizmo.position ) )
-		this.bankGizmo.updateWorldMatrix( true, false )
-		for ( const head of this.arrowHeads ) {
-			const { aim } = head.userData
-			head.parent.worldToLocal( _toCamera.copy( stage3d.camera.position ) ).sub( head.position ).applyQuaternion( _spin.copy( aim ).invert() )
-			head.quaternion.copy( aim ).multiply( _spin.setFromAxisAngle( _shaftAxis, Math.atan2( _toCamera.x, _toCamera.z ) ) )
-		}
+		this.heightGizmo.quaternion.copy( camera.quaternion )
+		// Seen along the road the roll shows in full, seen from the side not at all.
+		const toward = _toCamera.copy( camera.position ).sub( this.heightGizmo.position ).normalize().dot( this.tangent )
+		this.rollSign = toward < 0 ? -1 : 1
+		this.bankGizmo.rotation.z = this.bank * toward
 	}
 
 	/** `dragMode` is the mode of the drag running on the selected control, if any. */
@@ -267,6 +250,6 @@ export class RoadGizmos {
 		const dx = ( _bankPointB.x - _bankPointA.x ) * 0.5 * width
 		const dy = -( _bankPointB.y - _bankPointA.y ) * 0.5 * height
 		const length = Math.hypot( dx, dy )
-		if ( length > 1e-3 ) tangent.set( dx / length, dy / length )
+		if ( length > 1e-3 ) tangent.set( dx / length, dy / length ).multiplyScalar( this.rollSign )
 	}
 }
