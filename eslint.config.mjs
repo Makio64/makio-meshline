@@ -51,7 +51,7 @@ const vueRules = {
 export default [
 	{ ignores },
 	{
-		files: ['src/**/*.js', 'src/**/*.mjs', 'examples/vanilla/**/*.js'],
+		files: ['src/**/*.js', 'src/**/*.mjs', 'examples/vanilla/**/*.js', 'examples/wind-tunnel/**/*.js', 'examples/typegpu/**/*.js'],
 		ignores,
 		plugins,
 		rules: styleRules,
@@ -73,7 +73,7 @@ export default [
 		},
 	},
 	{
-		files: ['examples/vue/**/*.js', 'examples/vue/**/*.vue'],
+		files: ['examples/vue/**/*.js', 'examples/vue/**/*.vue', 'examples/wind-tunnel-tres/**/*.js', 'examples/wind-tunnel-tres/**/*.vue'],
 		ignores,
 		plugins,
 		rules: {
@@ -82,7 +82,7 @@ export default [
 		},
 	},
 	{
-		files: ['examples/react-three-fiber/**/*.{js,jsx}'],
+		files: ['examples/react-three-fiber/**/*.{js,jsx}', 'examples/wind-tunnel-r3f/**/*.{js,jsx}'],
 		ignores,
 		languageOptions: {
 			parserOptions: {

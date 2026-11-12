@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1.0">
+		<meta name="description" content="Local Makio MeshLine V2 preview with TypeGPU shader functions bridged into Three.js TSL. Native WebGPU example.">
+		<meta name="robots" content="noindex, nofollow">
+		<meta name="theme-color" content="#090d16">
+		<title>Shader Ribbons · MeshLine V2 Preview × TypeGPU</title>
+	</head>
+	<body>
+		<canvas id="scene" aria-label="Five animated ribbons shaped and colored by TypeGPU shaders"></canvas>
+		<header>
+			<p class="eyebrow">Makio MeshLine V2 preview × TypeGPU</p>
+			<h1>Shader ribbons</h1>
+			<p>One shared shader. Five flowing lines.</p>
+		</header>
+		<p id="status" role="status">Preparing shaders…</p>
+		<footer>
+			<div class="controls">
+				<button id="pause" type="button" disabled>Pause</button>
+				<label for="amplitude">Wave height</label>
+				<input id="amplitude" type="range" min="0" max="1" step="0.01" value="0.55" disabled>
+			</div>
+			<nav aria-label="Example resources">
+				<a href="https://meshline.makio.io/">MeshLine docs</a>
+				<a href="https://docs.swmansion.com/TypeGPU/ecosystem/typegpu-three/">TypeGPU bridge</a>
+				<a href="https://github.com/Makio64/makio-meshline/tree/main/examples/typegpu">Source</a>
+			</nav>
+		</footer>
+		<script type="module" src="/src/main.js"></script>
+	</body>
+</html>

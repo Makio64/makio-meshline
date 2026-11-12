@@ -1,0 +1,21 @@
+{
+	"name": "makio-meshline-wind-tunnel-tres-example",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"dev": "vite",
+		"build": "vite build",
+		"preview": "vite preview"
+	},
+	"dependencies": {
+		"@tresjs/core": "^5.10.1",
+		"makio-meshline-wind-tunnel-example": "workspace:*",
+		"three": "0.187.0",
+		"vue": "^3.5.41"
+	},
+	"devDependencies": {
+		"@vitejs/plugin-vue": "^6.0.8",
+		"vite": "^8.2.1"
+	},
+	"engines": { "node": ">=22.12.0" }
+}

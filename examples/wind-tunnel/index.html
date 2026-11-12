@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1">
+		<meta name="robots" content="noindex, nofollow">
+		<meta name="description" content="An unreleased Makio MeshLine V2 development preview: WebGPU smoke trails around an authored hover car.">
+		<meta name="theme-color" content="#010204">
+		<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'%3E%3Crect width='48' height='48' rx='10' fill='%23010204'/%3E%3Cpath d='M8 33Q16 8 24 24T40 15' fill='none' stroke='%237dd3fc' stroke-width='4' stroke-linecap='round'/%3E%3C/svg%3E">
+		<title>Wind Tunnel — Makio MeshLine V2 Development Preview</title>
+	</head>
+	<body>
+		<header class="identity">
+			<h1>Wind Tunnel</h1>
+			<p>Makio MeshLine · V2 development preview · unreleased</p>
+		</header>
+		<nav class="links" aria-label="Project links">
+			<a href="https://github.com/Makio64/makio-meshline" target="_blank" rel="noreferrer">Repository ↗</a>
+			<a href="https://meshline.makio.io" target="_blank" rel="noreferrer">Documentation ↗</a>
+		</nav>
+		<section id="status" class="status" role="status" aria-live="polite">
+			<div>
+				<p class="eyebrow">V2 development preview</p>
+				<h2 id="status-title">Preparing the wind tunnel</h2>
+				<p id="status-message">Starting WebGPU…</p>
+			</div>
+		</section>
+		<form id="controls" class="controls" aria-label="Wind tunnel controls" hidden>
+			<fieldset>
+				<legend class="sr-only">Airflow mode</legend>
+				<button type="button" data-mode="tunnel" aria-pressed="true">Full tunnel</button>
+				<button type="button" data-mode="rake" aria-pressed="false">Smoke rake</button>
+				<button type="button" data-mode="ground" aria-pressed="false">Ground effect</button>
+			</fieldset>
+			<button id="crosswind" type="button" aria-pressed="false">Crosswind</button>
+			<label class="speed">Wind <input id="wind" type="range" min="80" max="500" step="10" value="200"><output id="wind-value" for="wind">200 km/h</output></label>
+			<button id="pause" type="button" aria-pressed="false">Pause</button>
+		</form>
+		<p class="interaction">Move to steer airflow · drag to orbit · scroll to zoom</p>
+		<script type="module" src="/src/main.js"></script>
+	</body>
+</html>

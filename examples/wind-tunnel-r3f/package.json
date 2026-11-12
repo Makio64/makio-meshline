@@ -1,0 +1,22 @@
+{
+	"name": "makio-meshline-wind-tunnel-r3f-example",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"dev": "vite",
+		"build": "vite build",
+		"preview": "vite preview"
+	},
+	"dependencies": {
+		"@react-three/fiber": "^9.7.0",
+		"makio-meshline-wind-tunnel-example": "workspace:*",
+		"react": "^19.2.8",
+		"react-dom": "^19.2.8",
+		"three": "0.187.0"
+	},
+	"devDependencies": {
+		"@vitejs/plugin-react": "^6.0.5",
+		"vite": "^8.2.1"
+	},
+	"engines": { "node": ">=22.12.0" }
+}
