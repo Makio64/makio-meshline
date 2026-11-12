@@ -11,7 +11,7 @@ test( 'GPU Culling reports warm-up, active, baseline, and draw-all states withou
 		read( 'demo/src/components/GpuCulling.vue' ),
 		read( 'demo/src/ExampleView.vue' ),
 	] )
-	const update = source.slice( source.indexOf( '\tupdate = dt => {' ), source.indexOf( '\tonResize = () => {' ) )
+	const update = source.slice( source.indexOf( '\tupdate = dt => {' ), source.indexOf( '\tupdateCamera( dt ) {' ) )
 
 	// No instruction text: ExampleView falls back to an empty one.
 	assert.doesNotMatch( source, /^\s*(?:this\.)?text = /m )
@@ -43,20 +43,54 @@ test( 'GPU Culling reads its snapshot for the culled camera before moving it', a
 	assert.match( source, /this\.culling\.remove\( this\.handle \)/, 'the baseline toggle detaches the line instead of rebuilding the scene' )
 } )
 
-test( 'GPU Culling defaults to Split View with a 3D camera rig and topographic terrain lattice', async () => {
-	const [source, ui, pass] = await Promise.all( [
+test( 'GPU Culling draws the tunnel flight and its mini map from one culled line', async () => {
+	const [source, ui, terrain, shading] = await Promise.all( [
 		readDemo( 'gpuCulling' ),
 		read( 'demo/src/components/GpuCulling.vue' ),
-		read( 'demo/src/utils/gpuCullingPass.js' ),
+		read( 'demo/src/utils/gpuCullingTerrain.js' ),
+		read( 'demo/src/utils/gpuCullingShading.js' ),
 	] )
 
-	assert.match( source, /return 'split'/ )
-	assert.match( source, /this\.cameraRig = new Group\(\)/ )
-	assert.match( source, /this\.passCamera\.add\( this\.frustumGroup, this\.cameraRig \)/ )
-	assert.match( source, /renderer\.render\( scene, camera \)/ )
-	assert.match( source, /renderer\.render\( scene, this\.passCamera \)/ )
-	assert.match( ui, /Scene 1 · God View/ )
-	assert.match( ui, /Scene 2 · Camera POV/ )
-	assert.match( pass, /export const ARCH_COUNT = 250/ )
-	assert.match( pass, /const OUTER_CONTOURS = 12/ )
+	// The catalog and the docs quote 400,000 points: the range, the arches, then one lap per rail and lane.
+	const count = name => Number( source.match( new RegExp( `const ${name} = (\\d+)\\n` ) )[1] )
+	const rails = Number( terrain.match( /const RAILS = times\( (\d+), / )[1] )
+	const lanes = terrain.match( /const LANES = \[(.*)\]\n/ )[1].split( ',' ).length
+	const points = count( 'ROWS' ) * count( 'POINTS_PER_ROW' )
+		+ count( 'ARCHES' ) * count( 'POINTS_PER_ARCH' )
+		+ ( rails + lanes ) * count( 'POINTS_PER_LAP' )
+	assert.ok( points >= 400_000 && points < 450_000, `${points} points` )
+	assert.match( source, /\.lines\( \[\.\.\.buildRidgelines\( ROWS, POINTS_PER_ROW \), \.\.\.buildTunnel\( ARCHES, POINTS_PER_ARCH, POINTS_PER_LAP \)\] \)/ )
+	assert.match( terrain, /export const TUNNEL_LAPS = RAILS\.length \+ LANES\.length\n/ )
+	// Trails and glows run down the lap while the flight goes up it, so they come at the camera.
+	assert.match( shading, /const along = fract\( lap\.mul\( TRAILS \)\.add\( pace\.mul\( 7\.3 \) \)\.add\( time\.mul\( /, 'the trail phase grows with time' )
+	assert.match( shading, /const glow = cos\( lap\.mul\( GLOWS \)\.add\( time\.mul\( /, 'the glow phase grows with time' )
+	assert.match( source, /this\.flight = \( this\.flight \+ dt \* 0\.001 \* FLY_SPEED \)/, 'the flight angle grows with time' )
+	// A rail or a lane is only drawn where a trail runs: the light sketches the tunnel.
+	assert.match( shading, /const lapLine = ice\.mul\( 0\.03 \)\.add\( aurora\.mul\( trail \)/ )
+	// The arches fade with depth in the flying camera's view, in color and in width, and never in the overview.
+	assert.match( shading, /const arch = .*\.mul\( archFade\.pow\( 2 \) \)\n/ )
+	assert.match( shading, /glow\.mul\( 0\.9 \)\.add\( 0\.8 \)\.mul\( archFade \)/ )
+	assert.match( source, /archReach\.value = view\.archReach\n/ )
+	assert.match( source, /const OVERVIEW = \{.*archReach: 1e5 \}\n/ )
+	assert.match( source, /const POV = \{.*archReach: 70 \}\n/ )
+
+	// A vertex attribute, four vertices per point, tells the hooks the tunnel from the range.
+	assert.match( source, /addVertexAttribute\( 'tunnel' \)/ )
+	assert.match( source, /const firstTunnelVertex = ROWS \* POINTS_PER_ROW \* 4\n/ )
+	assert.match( shading, /const kind = attribute\( 'tunnel', 'float' \)/ )
+	// A width hook leaves culling without automatic bounds, so the demo supplies them.
+	assert.match( source, /\.widthFn\( tunnelWidth \)/ )
+	assert.match( source, /this\.culling\.add\( this\.line, \{ bounds: this\.chunkBounds, worldPadding: 0\.6 \} \)/ )
+
+	// Both views draw the same scene, culled for the flying camera.
+	assert.match( source, /cullCamera: this\.passCamera/ )
+	assert.match( source, /this\.renderView\( povHero \? passCamera : camera, 0, 0, width, height \)/ )
+	assert.match( source, /this\.renderView\( povHero \? camera : passCamera, inset\.x, inset\.y, inset\.width, inset\.height \)/ )
+	// The inset overlaps the first view: its depth is cleared, and the background node repaints it.
+	assert.match( source, /stage3d\.scene\.backgroundNode = color\( BACKGROUND \)/ )
+	assert.match( source, /renderer\.clearDepth\(\)/ )
+	// The blueprint and the frustum stay out of the cull camera's own view.
+	assert.match( source, /this\.ghost\.visible = this\.frustum\.visible = view === OVERVIEW/ )
+	assert.match( source, /this\.passCamera\.add\( this\.frustum \)/ )
+	assert.match( ui, /class="GpuCullingInset"[\s\S]*?@click="api\.swapViews"/ )
 } )

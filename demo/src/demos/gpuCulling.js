@@ -1,127 +1,90 @@
 /**
- * GPU Frustum Culling — a 400,000-point alpine highway pass, overhead portals, and 3D topographic
- * mountain lattice in one MeshLine, with per-chunk GPU frustum culling and indirect draw compaction.
- * Split View shows the external God View (with the 3D camera rig, frustum pyramid, and dim culled
- * blueprint) side-by-side with the live Camera POV rendered from the same compacted indirect buffer.
+ * GPU Frustum Culling — a tunnel through a 400,000-point alpine range, all one MeshLine, with
+ * per-chunk GPU frustum culling and indirect draw compaction. The camera flies the tunnel, which
+ * trails of light sketch as they come at it, and the mini map keeps the whole scene as a dim
+ * blueprint: only the chunks inside that camera's frustum are drawn, so they light up. Both
+ * views render the same compacted indirect buffer.
  */
-import { circlePositions, MeshLine } from 'makio-meshline'
+import { MeshLine } from 'makio-meshline'
 import MeshLineCullingSystem from 'makio-meshline/gpu-culling'
-import { Fn, mix, positionGeometry, sin, smoothstep, vec3, vec4 } from 'three/tsl'
-import { BoxGeometry, BufferAttribute, BufferGeometry, CylinderGeometry, DoubleSide, Fog, Group, MathUtils, Mesh, MeshBasicNodeMaterial, PerspectiveCamera, Vector3 } from 'three/webgpu'
+import { color } from 'three/tsl'
+import { AdditiveBlending, Box3, BufferAttribute, BufferGeometry, DoubleSide, Fog, Group, MathUtils, Mesh, MeshBasicNodeMaterial, PerspectiveCamera, Vector3 } from 'three/webgpu'
 import { markRaw, reactive } from 'vue'
 
 import GpuCulling from '@/components/GpuCulling.vue'
 import stage from '@/makio/core/stage'
 import stage3d from '@/makio/three/stage3d'
+import { noUI } from '@/makio/utils/detect'
 import mouse from '@/makio/utils/input/mouse'
 import { createDemoControls } from '@/utils/demoControls'
-import { ARCH_COUNT, buildPassLines, LOOP_STRANDS, MAP_BINS, passCentre, samplePassFrame } from '@/utils/gpuCullingPass'
+import { archReach, rangeAndTunnelColor, tunnelWidth } from '@/utils/gpuCullingShading'
+import { buildGround, buildRidgelines, buildTunnel, passPoint, TUNNEL_LAPS } from '@/utils/gpuCullingTerrain'
 
-const POINTS_PER_STRAND = 16_000
-const ARCH_POINTS = 64
-const GHOST_POINTS_PER_STRAND = 480
-const GHOST_ARCH_POINTS = 20
+const ROWS = 320
+const POINTS_PER_ROW = 1120
+const ARCHES = 256
+const POINTS_PER_ARCH = 48
+const POINTS_PER_LAP = 2048
 const CHUNK_SIZE = 128 // triangles
-const CHUNKS_PER_RING = Math.ceil( POINTS_PER_STRAND * 2 / CHUNK_SIZE )
-const CHUNK_COUNT = LOOP_STRANDS * CHUNKS_PER_RING + ARCH_COUNT
-const FLY_SPEED = 0.16
-const LOOK_AHEAD = 0.085
-const PASS_NEAR = 2.0
-const PASS_FAR = 88
-const PASS_FOV = 58
-const BACKGROUND = 0x030711
+const FLY_SPEED = 0.14 // radians per second around the pass
+const LOOK_AHEAD = 0.13
+const ALTITUDE = 2.5
+const BACKGROUND = 0x070a14
+const GROUND = 0x020308
+const BEAM = 0xdbeafe
 const SNAPSHOT_INTERVAL = 140
-const OVERVIEW_RADIUS = 195
-const SPLIT_FIT_ASPECT = 1.05
 
-const VIEWS = {
-	overview: { fov: 46, near: 1, far: 620, fogNear: 240, fogFar: 540 },
-	pov: { fov: PASS_FOV, near: PASS_NEAR, far: PASS_FAR, fogNear: 44, fogFar: PASS_FAR },
-}
+// `archReach` is the depth at which the tunnel's arches have faded out: never, seen from above.
+const OVERVIEW = { fov: 38, fitAspect: 1.25, near: 1, far: 1400, fogNear: 330, fogFar: 1000, archReach: 1e5 }
+const POV = { fov: 62, fitAspect: 0.9, near: 0.5, far: 105, fogNear: 30, fogFar: 105, archReach: 70 }
 
-// The frustum corners: 0-3 on the near plane, 4-7 on the far plane.
-const FRUSTUM_EDGES = [[0, 1], [1, 2], [2, 3], [3, 0], [4, 5], [5, 6], [6, 7], [7, 4], [0, 4], [1, 5], [2, 6], [3, 7]]
-const FRUSTUM_FACES = [0, 1, 5, 0, 5, 4, 1, 2, 6, 1, 6, 5, 2, 3, 7, 2, 7, 6, 3, 0, 4, 3, 4, 7]
+const ahead = new Vector3()
+const beyond = new Vector3()
+const chunkBox = new Box3()
+const chunkPoint = new Vector3()
 
-const lookTarget = new Vector3()
-const right = new Vector3()
-
-const initialViewMode = () => {
-	const mode = new URLSearchParams( window.location.search ).get( 'view' )
-	if ( mode === 'pov' || mode === 'overview' ) return mode
-	return 'split'
-}
-
-// Highway lanes sit on the canyon floor (y < 0.45) and glow icy cyan-white;
-// the 250 freestanding tunnel arches (0.6..6.5) glow electric sky-blue;
-// mountain contours (y > 6.8) step upward through teal, emerald, amber-gold, and coral.
-const alpinePassColor = Fn( ( [baseColor, progress] ) => {
-	const { x, y } = positionGeometry
-	const roadFactor = smoothstep( 0.38, 0.85, y ).oneMinus()
-	const portalFactor = smoothstep( 0.38, 0.85, y ).mul( smoothstep( 6.2, 6.8, y ).oneMinus() )
-	const archCrown = smoothstep( 1.0, 5.4, y )
-	const midSlope = smoothstep( 7.2, 16.0, y )
-	const highSlope = smoothstep( 15.0, 25.5, y )
-	const summit = smoothstep( 23.5, 34.5, y )
-
-	const valleyCol = vec3( 0.08, 0.58, 0.92 )
-	const tealCol = vec3( 0.16, 0.92, 0.78 )
-	const goldCol = vec3( 0.99, 0.78, 0.24 )
-	const coralCol = vec3( 1.0, 0.44, 0.58 )
-	const roadCol = vec3( 0.90, 0.99, 1.0 )
-	const portalCol = mix( vec3( 0.18, 0.76, 1.0 ), vec3( 0.52, 0.95, 1.0 ), archCrown )
-
-	const slopes = mix( valleyCol, tealCol, midSlope )
-	const ridges = mix( slopes, goldCol, highSlope )
-	const terrain = mix( ridges, coralCol, summit )
-
-	const shimmer = sin( progress.mul( Math.PI * 48 ).add( x.mul( 0.04 ) ) ).mul( 0.05 ).add( 0.96 )
-	const withPortals = mix( terrain.mul( shimmer ), portalCol, portalFactor )
-	const finalCol = mix( withPortals, roadCol, roadFactor )
-	return vec4( finalCol.mul( baseColor.rgb ), 1 )
-} )
-
-const boxEdges = ( w, h, d, cx = 0, cy = 0, cz = 0 ) => {
-	const hx = w * 0.5, hy = h * 0.5, hz = d * 0.5
-	const pts = [
-		[cx - hx, cy + hy, cz - hz],
-		[cx + hx, cy + hy, cz - hz],
-		[cx + hx, cy - hy, cz - hz],
-		[cx - hx, cy - hy, cz - hz],
-		[cx - hx, cy + hy, cz + hz],
-		[cx + hx, cy + hy, cz + hz],
-		[cx + hx, cy - hy, cz + hz],
-		[cx - hx, cy - hy, cz + hz],
-	]
-	return FRUSTUM_EDGES.map( ( [a, b] ) => new Float32Array( [...pts[a], ...pts[b]] ) )
-}
-
-const circleInYZ = ( radius, cx, cy, cz, segments = 24 ) => {
-	const flat = circlePositions( segments, radius )
-	const out = new Float32Array( flat.length )
-	for ( let i = 0; i < flat.length; i += 3 ) {
-		out[i] = cx
-		out[i + 1] = cy + flat[i + 1]
-		out[i + 2] = cz + flat[i]
+/**
+ * Chunk bounds for the culling system, which cannot derive them from a line with a width
+ * hook. Ours only widens pixels, so the points a chunk draws still bound it.
+ */
+const chunkBoundsOf = line => {
+	const index = line.geometry.getIndex().array
+	const position = line.geometry.getAttribute( 'position' )
+	return ( { indexStart, indexCount } ) => {
+		chunkBox.makeEmpty()
+		for ( let i = indexStart; i < indexStart + indexCount; i++ ) {
+			chunkBox.expandByPoint( chunkPoint.fromBufferAttribute( position, index[i] ) )
+		}
+		return chunkBox
 	}
-	return out
+}
+
+/** Give `camera` the aspect of its view. Narrower than `fitAspect`, the vertical angle opens so the horizontal one holds. */
+const setAspect = ( camera, aspect, { fov, fitAspect = 0 } ) => {
+	const spread = Math.tan( MathUtils.degToRad( fov * 0.5 ) ) * Math.max( 1, fitAspect / aspect )
+	const fitted = MathUtils.radToDeg( Math.atan( spread ) ) * 2
+	if ( camera.aspect === aspect && camera.fov === fitted ) return
+	camera.aspect = aspect
+	camera.fov = fitted
+	camera.updateProjectionMatrix()
 }
 
 export default class GpuCullingExample {
 	uiComponent = markRaw( GpuCulling )
-	hud = reactive( {} )
-	viewMode = initialViewMode()
-	passCamera = new PerspectiveCamera( PASS_FOV, 1, PASS_NEAR, PASS_FAR )
-	fog = new Fog( BACKGROUND, VIEWS.overview.fogNear, VIEWS.overview.fogFar )
-	flight = 2.35
+	hud = reactive( { inset: { shown: false, x: 0, y: 0, width: 0, height: 0 } } )
+	// The full-screen view: the flying camera by default, the overview with `?view=overview`.
+	povHero = new URLSearchParams( window.location.search ).get( 'view' ) !== 'overview'
+	passCamera = new PerspectiveCamera( POV.fov, 1, POV.near, POV.far )
+	fog = new Fog( BACKGROUND )
+	flight = 0.5
 	paused = false
-	lookOffset = new Vector3()
+	yaw = 0
+	pitch = 0
 	snapshotTimer = 0
-	ringBins = new Float32Array( MAP_BINS )
 	metrics = {
 		requested: new URLSearchParams( window.location.search ).get( 'culling' ) !== '0',
 		backend: 'initializing',
-		pointCount: LOOP_STRANDS * POINTS_PER_STRAND + ARCH_COUNT * ARCH_POINTS,
+		pointCount: 0,
 		indexCount: 0,
 		visibleIndexCount: 0,
 		get status() { return window.__meshLineCullingHandle?.status ?? null },
@@ -129,182 +92,101 @@ export default class GpuCullingExample {
 
 	async init() {
 		this.updateHud( true )
-		await stage3d.initRender( {
-			background: BACKGROUND,
-			fov: VIEWS.overview.fov,
-			near: VIEWS.overview.near,
-			far: VIEWS.overview.far,
-		} )
+		await stage3d.initRender( { background: BACKGROUND, fov: OVERVIEW.fov, near: OVERVIEW.near, far: OVERVIEW.far } )
 		if ( this.disposed ) return // The visitor left while the renderer was starting.
 
 		stage3d.scene.fog = this.fog
+		// A background node is drawn inside the viewport, so it also wipes the inset.
+		stage3d.scene.backgroundNode = color( BACKGROUND )
 		stage3d.renderer._updateCamera?.( this.passCamera )
 
-		stage3d.orbit( OVERVIEW_RADIUS, {
-			target: [-6, 8, 0],
-			theta: 1.42,
-			phi: 0.88,
-			minRadius: 55,
-			maxRadius: 360,
-			minPhi: 0.26,
-			maxPhi: 1.36,
+		stage3d.orbit( 470, {
+			theta: 0.95,
+			phi: 0.9,
+			minRadius: 140,
+			maxRadius: 820,
+			minPhi: 0.2,
+			maxPhi: 1.4,
 			extraThetaMouse: false,
 			extraPhiMouse: false,
-			autoRotate: 0.000035,
+			autoRotate: 0.00004,
 		} )
 
 		this.controls = createDemoControls( [
-			{ id: 'culling', label: '', key: 'C', onClick: () => this.setCulling( !this.metrics.requested ) },
-			{ id: 'motion', label: 'Fly', key: 'P', pressed: true, onClick: this.togglePause },
+			{ id: 'culling', label: 'Culling', key: 'C', pressed: true, onClick: () => this.setCulling( !this.metrics.requested ) },
+			{ id: 'fly', label: 'Fly', key: 'P', pressed: true, onClick: this.togglePause },
 			'divider',
-			{ id: 'split', label: 'Split View', key: '1', pressed: this.viewMode === 'split', onClick: () => this.setViewMode( 'split' ) },
-			{ id: 'overview', label: 'God View', key: '2', pressed: this.viewMode === 'overview', onClick: () => this.setViewMode( 'overview' ) },
-			{ id: 'pov', label: 'Camera POV', key: '3', pressed: this.viewMode === 'pov', onClick: () => this.setViewMode( 'pov' ) },
-		], { accent: '#38bdf8', label: 'GPU culling controls' } )
+			{ id: 'swap', label: 'Swap views', key: 'V', onClick: this.swapViews },
+		], { accent: '#7dd3fc', label: 'GPU culling controls' } )
 
 		this.createLines()
-		this.createFrustumVisualizer()
+		this.createFrustum()
 
 		stage3d.renderPipeline = { render: this.renderScene }
-		this.onResize()
 
 		this.metrics.backend = stage3d.backend
 		this.metrics.indexCount = this.line.geometry.getIndex().count
 		window.__meshLineCullingMetrics = this.metrics
 
 		this.setCulling( this.metrics.requested )
-		this.setViewMode( this.viewMode )
+		this.syncOrbit()
+		this.updateCamera( 0 )
 	}
 
 	createLines() {
-		// Dim blueprint of the full 3D pass in God View so culled chunks are obvious by contrast.
-		const ghostPass = buildPassLines( GHOST_POINTS_PER_STRAND, GHOST_ARCH_POINTS )
-		this.ghostLine = new MeshLine()
-			.lines( ghostPass.lines, ghostPass.closed )
+		// A dim blueprint of the whole scene: against it, what culling keeps is obvious.
+		this.ghost = new MeshLine()
+			.lines( [...buildRidgelines( ROWS / 4, POINTS_PER_ROW / 4 ), ...buildTunnel( ARCHES / 4, 12, POINTS_PER_LAP / 8 )] )
 			.sizeAttenuation( false )
-			.lineWidth( 1.2 )
-			.color( 0x1e3f66 )
-			.opacity( 0.36 )
-			.setFrustumCulled( false )
-		this.ghostLine.renderOrder = -1
+			.lineWidth( 1 )
+			.color( 0x1b2f55 )
 
-		const mainPass = buildPassLines( POINTS_PER_STRAND, ARCH_POINTS )
 		this.line = new MeshLine()
-			.lines( mainPass.lines, mainPass.closed )
+			.lines( [...buildRidgelines( ROWS, POINTS_PER_ROW ), ...buildTunnel( ARCHES, POINTS_PER_ARCH, POINTS_PER_LAP )] )
 			.sizeAttenuation( false )
-			.lineWidth( 2.0 )
-			.colorFn( alpinePassColor )
-			.join( { type: 'miter', limit: 3 } )
+			.lineWidth( 1.5 )
+			.colorFn( rangeAndTunnelColor )
+			.widthFn( tunnelWidth )
 			.build()
+		this.chunkBounds = chunkBoundsOf( this.line )
 
-		stage3d.add( this.ghostLine, this.line )
+		// The tunnel's points come last. Their vertices, four per point, tell the hooks what they
+		// are: 1 on an arch, 2 and up on a rail or a lane, whose fraction sets its own pace.
+		const { count } = this.line.addVertexAttribute( 'tunnel' )
+		const firstTunnelVertex = ROWS * POINTS_PER_ROW * 4
+		const kinds = new Float32Array( count - firstTunnelVertex ).fill( 1 )
+		for ( let lap = 0; lap < TUNNEL_LAPS; lap++ ) {
+			const start = ( ARCHES * POINTS_PER_ARCH + lap * POINTS_PER_LAP ) * 4
+			kinds.fill( 2 + lap * 0.618 % 1, start, start + POINTS_PER_LAP * 4 )
+		}
+		this.line.setVertexValues( 'tunnel', kinds, firstTunnelVertex )
+		this.metrics.pointCount = count / 4
+
+		stage3d.add( buildGround( GROUND, BACKGROUND ), this.ghost, this.line )
 	}
 
-	/**
-	 * Build both the 3D cinema camera object (unscaled so its body and reels keep true
-	 * proportions) and the 3D frustum pyramid (scaled horizontally by passCamera.aspect).
-	 */
-	createFrustumVisualizer() {
-		const tanHalf = Math.tan( PASS_FOV * MathUtils.DEG2RAD * 0.5 )
-		const corners = [PASS_NEAR, PASS_FAR].flatMap( depth => {
-			const half = depth * tanHalf
-			return [[-half, half, -depth], [half, half, -depth], [half, -half, -depth], [-half, -half, -depth]]
-		} )
+	/** The cull camera's frustum, as the beam of light it throws over the range. */
+	createFrustum() {
+		// Built for a 90° square view, then scaled to the camera's own angles every frame.
+		const corners = [[-1, 1], [1, 1], [1, -1], [-1, -1]].map( ( [x, y] ) => [x * POV.far, y * POV.far, -POV.far] )
+		// Each side runs from the camera to a far corner, then along the far plane.
+		const sides = corners.map( ( corner, i ) => new Float32Array( [0, 0, 0, ...corner, ...corners[( i + 1 ) % 4]] ) )
 
-		const fillPositions = new Float32Array( FRUSTUM_FACES.flatMap( corner => corners[corner] ) )
-		this.frustumMesh = new Mesh(
-			new BufferGeometry().setAttribute( 'position', new BufferAttribute( fillPositions, 3 ) ),
-			new MeshBasicNodeMaterial( { color: 0x38bdf8, transparent: true, opacity: 0.065, depthWrite: false, side: DoubleSide } ),
+		const fill = new Float32Array( sides.length * 9 )
+		sides.forEach( ( side, i ) => fill.set( side, i * 9 ) )
+		this.beam = new Mesh(
+			new BufferGeometry().setAttribute( 'position', new BufferAttribute( fill, 3 ) ),
+			new MeshBasicNodeMaterial( { color: BEAM, transparent: true, opacity: 0.02, blending: AdditiveBlending, depthWrite: false, side: DoubleSide, fog: false } ),
 		)
-		this.frustumMesh.frustumCulled = false
-		this.frustumMesh.renderOrder = 1
-
-		// Near-plane lens quad + 4 apex rays from the camera lens [0, 0, 0] to the near plane.
-		const apexEdges = [0, 1, 2, 3].map( i => new Float32Array( [0, 0, 0, ...corners[i]] ) )
-		const mainEdges = FRUSTUM_EDGES.map( ( [a, b] ) => new Float32Array( [...corners[a], ...corners[b]] ) )
-
 		this.frustumLine = new MeshLine()
-			.lines( [...apexEdges, ...mainEdges], false )
+			.lines( sides )
 			.sizeAttenuation( false )
-			.lineWidth( 2.2 )
-			.color( 0x67e8f9 )
-			.opacity( 0.92 )
+			.lineWidth( 1.1 )
+			.color( BEAM )
 			.setFrustumCulled( false )
-		this.frustumLine.renderOrder = 2
 
-		// Depth-slice rings at 35% and 70% of the frustum + center optical axis ray.
-		const sliceLines = [0.35, 0.7].flatMap( frac => {
-			const d = MathUtils.lerp( PASS_NEAR, PASS_FAR, frac )
-			const h = d * tanHalf
-			const c = [[-h, h, -d], [h, h, -d], [h, -h, -d], [-h, -h, -d]]
-			return [[0, 1], [1, 2], [2, 3], [3, 0]].map( ( [a, b] ) => new Float32Array( [...c[a], ...c[b]] ) )
-		} )
-		const farCross = PASS_FAR * tanHalf * 0.16
-		sliceLines.push(
-			new Float32Array( [0, 0, -PASS_NEAR, 0, 0, -PASS_FAR] ),
-			new Float32Array( [-farCross, 0, -PASS_FAR, farCross, 0, -PASS_FAR] ),
-			new Float32Array( [0, -farCross, -PASS_FAR, 0, farCross, -PASS_FAR] ),
-		)
-
-		this.frustumGridLine = new MeshLine()
-			.lines( sliceLines, false )
-			.sizeAttenuation( false )
-			.lineWidth( 1.2 )
-			.color( 0x38bdf8 )
-			.opacity( 0.42 )
-			.setFrustumCulled( false )
-		this.frustumGridLine.renderOrder = 2
-
-		this.frustumGroup = new Group().add( this.frustumMesh, this.frustumGridLine, this.frustumLine )
-
-		// 3D Camera Object at the apex of the frustum: body chassis, dual top film reels, and lens barrel.
-		const bodyMat = new MeshBasicNodeMaterial( { color: 0x0f172a } )
-		const accentMat = new MeshBasicNodeMaterial( { color: 0x38bdf8 } )
-		const beaconMat = new MeshBasicNodeMaterial( { color: 0xfef08a } )
-
-		const chassis = new Mesh( new BoxGeometry( 3.2, 2.4, 4.4 ), bodyMat )
-		chassis.position.set( 0, 0, 2.6 )
-
-		const lensBarrel = new Mesh( new CylinderGeometry( 1.05, 1.25, 1.6, 20 ), bodyMat )
-		lensBarrel.rotation.x = Math.PI * 0.5
-		lensBarrel.position.set( 0, 0, -0.3 )
-
-		const reelGeo = new CylinderGeometry( 1.35, 1.35, 0.85, 24 )
-		reelGeo.rotateZ( Math.PI * 0.5 )
-		const frontReel = new Mesh( reelGeo, bodyMat )
-		frontReel.position.set( 0, 2.25, 1.4 )
-		const rearReel = new Mesh( reelGeo, bodyMat )
-		rearReel.position.set( 0, 2.25, 4.0 )
-
-		const lensRim = new Mesh( new CylinderGeometry( 1.18, 1.18, 0.22, 20 ), accentMat )
-		lensRim.rotation.x = Math.PI * 0.5
-		lensRim.position.set( 0, 0, -1.05 )
-
-		const tallyBeacon = new Mesh( new BoxGeometry( 0.7, 0.45, 0.7 ), beaconMat )
-		tallyBeacon.position.set( 0, 1.45, 0.0 )
-
-		// Crisp wireframe silhouette around the 3D camera body, matte box hood, and dual top reels.
-		const camWires = [
-			...boxEdges( 3.28, 2.48, 4.48, 0, 0, 2.6 ),
-			...boxEdges( 2.6, 2.0, 1.2, 0, 0, -0.9 ),
-			circleInYZ( 1.38, -0.45, 2.25, 1.4 ),
-			circleInYZ( 1.38, 0.45, 2.25, 1.4 ),
-			circleInYZ( 1.38, -0.45, 2.25, 4.0 ),
-			circleInYZ( 1.38, 0.45, 2.25, 4.0 ),
-		]
-		this.cameraWireLine = new MeshLine()
-			.lines( camWires, false )
-			.sizeAttenuation( false )
-			.lineWidth( 1.6 )
-			.color( 0xe0f2fe )
-			.setFrustumCulled( false )
-		this.cameraWireLine.renderOrder = 3
-
-		this.cameraAccentMat = accentMat
-		this.cameraRig = new Group().add( chassis, lensBarrel, frontReel, rearReel, lensRim, tallyBeacon, this.cameraWireLine )
-		for ( const child of this.cameraRig.children ) child.frustumCulled = false
-
-		this.passCamera.add( this.frustumGroup, this.cameraRig )
+		this.frustum = new Group().add( this.beam, this.frustumLine )
+		this.passCamera.add( this.frustum )
 		stage3d.add( this.passCamera )
 	}
 
@@ -316,52 +198,37 @@ export default class GpuCullingExample {
 				chunkSize: CHUNK_SIZE,
 				cullCamera: this.passCamera,
 			} ) )
-			this.handle = this.culling.add( this.line, { worldPadding: 0.6 } )
+			this.handle = this.culling.add( this.line, { bounds: this.chunkBounds, worldPadding: 0.6 } )
 		} else if ( this.handle ) {
 			this.culling.remove( this.handle )
 			this.handle = null
 		}
 		window.__meshLineCullingHandle = this.handle ?? null
 
-		this.frustumLine.color( enabled ? 0x67e8f9 : 0x64748b )
-		this.frustumGridLine.color( enabled ? 0x38bdf8 : 0x475569 )
-		this.cameraWireLine.color( enabled ? 0xe0f2fe : 0x94a3b8 )
-		this.cameraAccentMat.color.setHex( enabled ? 0x38bdf8 : 0x64748b )
-		this.frustumMesh.material.opacity = enabled ? 0.065 : 0.02
-		this.controls.setLabel( 'culling', enabled ? 'Culling: ON' : 'Culling: OFF' )
+		this.frustumLine.color( enabled ? BEAM : 0x64748b )
+		this.beam.visible = enabled
 		this.controls.setPressed( 'culling', enabled )
 
 		this.snapshot = null
-		this.ringBins.fill( enabled ? 0 : 1 )
 		this.metrics.visibleIndexCount = this.metrics.indexCount
 		this.updateHud( true )
 	}
 
 	togglePause = () => {
 		this.paused = !this.paused
-		this.controls.setLabel( 'motion', this.paused ? 'Paused' : 'Fly' )
-		this.controls.setPressed( 'motion', !this.paused )
+		this.controls.setPressed( 'fly', !this.paused )
+	}
+
+	swapViews = () => {
+		this.povHero = !this.povHero
+		this.syncOrbit()
 		this.updateHud( true )
 	}
 
-	setViewMode( mode ) {
-		this.viewMode = mode
-		const isPovOnly = mode === 'pov'
-
-		if ( isPovOnly ) {
-			stage3d.control.disable()
-		} else {
-			stage3d.control.enable()
-			stage3d.control.update()
-		}
-
-		for ( const id of ['split', 'overview', 'pov'] ) {
-			this.controls.setPressed( id, id === mode )
-		}
-
-		this.onResize()
-		this.updateCamera( 0 )
-		this.updateHud( true )
+	/** As the mini map, the overview keeps turning but leaves the pointer to the flying camera. */
+	syncOrbit() {
+		const { control } = stage3d
+		control.blockThetaMouse = control.blockPhiMouse = control.blockZoom = control.blockPan = this.povHero
 	}
 
 	update = dt => {
@@ -380,122 +247,80 @@ export default class GpuCullingExample {
 		this.updateHud()
 	}
 
-	onResize = () => {
-		const w = Math.max( 1, stage.width )
-		const h = Math.max( 1, stage.height )
-		const isSplit = this.viewMode === 'split'
-		const landscape = w >= h
-		const paneW = isSplit && landscape ? Math.max( 1, Math.floor( w * 0.5 ) ) : w
-		const paneH = isSplit && !landscape ? Math.max( 1, Math.floor( h * 0.5 ) ) : h
-		const paneAspect = paneW / paneH
-
-		this.passCamera.aspect = paneAspect
-		this.passCamera.updateProjectionMatrix()
-		this.frustumGroup.scale.x = paneAspect
-
-		stage3d.camera.aspect = paneAspect
-		stage3d.camera.updateProjectionMatrix()
-
-		if ( stage3d.control && this.viewMode !== 'pov' ) {
-			const fitScale = Math.max( 1, SPLIT_FIT_ASPECT / paneAspect )
-			stage3d.control.snapRadius( Math.min( stage3d.control.maxRadius, OVERVIEW_RADIUS * fitScale ) )
-			stage3d.control.place()
-		}
-
-		this.line?.resize( paneW, paneH )
-		this.ghostLine?.resize( paneW, paneH )
-		this.frustumLine?.resize( paneW, paneH )
-		this.frustumGridLine?.resize( paneW, paneH )
-		this.cameraWireLine?.resize( paneW, paneH )
-	}
-
 	updateCamera( dt ) {
-		const { flight, lookOffset, passCamera } = this
-		const isPov = this.viewMode === 'pov'
-		const blend = 1 - Math.pow( 0.04, dt * 0.001 )
-		lookOffset.x = MathUtils.lerp( lookOffset.x, isPov ? mouse.normalizedX * 2.0 : 0, blend )
-		lookOffset.y = MathUtils.lerp( lookOffset.y, isPov ? -mouse.normalizedY * 1.2 : 0, blend )
+		const { flight, passCamera } = this
+		const { position } = passCamera
 
-		const bank = samplePassFrame( flight, passCamera.position, right )
-		passCentre( flight + LOOK_AHEAD, lookTarget )
+		// Full screen, the camera also looks where the pointer is.
+		const seconds = dt * 0.001
+		this.yaw = MathUtils.damp( this.yaw, this.povHero ? -mouse.normalizedX * 0.6 : 0, 3, seconds )
+		this.pitch = MathUtils.damp( this.pitch, this.povHero ? -mouse.normalizedY * 0.25 : 0, 3, seconds )
 
-		passCamera.position.addScaledVector( right, lookOffset.x )
-		passCamera.position.y += 2.25 + lookOffset.y
-		lookTarget.y += 2.35 + lookOffset.y * 0.7
+		passPoint( flight, position )
+		passPoint( flight + LOOK_AHEAD, ahead )
+		passPoint( flight + LOOK_AHEAD * 2, beyond )
+		position.y = ALTITUDE + Math.sin( flight * 7 ) * 0.3
+		ahead.y = position.y + 0.5
+		passCamera.lookAt( ahead )
 
-		const roll = Math.sin( bank * 0.55 )
-		passCamera.up.set( -right.x * roll, Math.cos( bank * 0.55 ), -right.z * roll ).normalize()
-		passCamera.lookAt( lookTarget )
+		// Bank into the bend: how far the pass turns between here and the look-ahead.
+		const turn = Math.atan2( beyond.z - ahead.z, beyond.x - ahead.x ) - Math.atan2( ahead.z - position.z, ahead.x - position.x )
+		passCamera.rotateY( this.yaw )
+		passCamera.rotateX( this.pitch )
+		passCamera.rotateZ( Math.sin( turn ) * -0.5 )
 		passCamera.updateMatrixWorld()
 	}
 
+	/** Both views draw the same scene: one fills the canvas, the other sits in its bottom-left corner. */
 	renderScene = () => {
-		const { renderer, scene, camera } = stage3d
-		const w = Math.max( 1, stage.width )
-		const h = Math.max( 1, stage.height )
+		const { renderer, camera } = stage3d
+		const { hud: { inset }, passCamera, povHero } = this
+		const { width, height } = stage
 
-		if ( this.viewMode !== 'split' ) {
-			const isOverview = this.viewMode === 'overview'
-			const view = VIEWS[isOverview ? 'overview' : 'pov']
-			this.ghostLine.visible = isOverview
-			this.frustumGroup.visible = isOverview
-			this.cameraRig.visible = isOverview
-			this.fog.near = view.fogNear
-			this.fog.far = view.fogFar
+		const compact = width < 720
+		const margin = compact ? 12 : 18
+		inset.width = Math.round( MathUtils.clamp( width * 0.3, 170, 460 ) )
+		inset.height = Math.round( inset.width * 0.62 )
+		inset.x = margin
+		inset.y = height - inset.height - margin - ( compact ? 116 : 0 )
+		// A viewport may not leave the canvas: a window too small for the inset goes without it.
+		inset.shown = !noUI && inset.y >= 0 && inset.x + inset.width <= width
 
-			renderer.setScissorTest( false )
-			renderer.setViewport( 0, 0, w, h )
-			renderer.autoClear = true
-			renderer.render( scene, isOverview ? camera : this.passCamera )
-			return
-		}
+		// Set both projections before the first draw: culling prepares the pass camera's.
+		const insetAspect = inset.width / inset.height
+		setAspect( passCamera, povHero ? width / height : insetAspect, POV )
+		setAspect( camera, povHero ? insetAspect : width / height, OVERVIEW )
+		const spread = Math.tan( MathUtils.degToRad( passCamera.fov * 0.5 ) )
+		this.frustum.scale.set( spread * passCamera.aspect, spread, 1 )
 
-		const landscape = w >= h
-		const w1 = landscape ? Math.floor( w * 0.5 ) : w
-		const h1 = landscape ? h : Math.floor( h * 0.5 )
-		const x2 = landscape ? w1 : 0
-		const y2 = landscape ? 0 : h1
-		const w2 = w - x2
-		const h2 = h - y2
-		const paneAspect = w1 / Math.max( 1, h1 )
-
-		if ( Math.abs( camera.aspect - paneAspect ) > 1e-4 ) {
-			camera.aspect = paneAspect
-			camera.updateProjectionMatrix()
-		}
-
-		renderer.setScissorTest( false )
-		renderer.setViewport( 0, 0, w, h )
-		renderer.clear( true, true, false )
-		renderer.autoClear = false
 		renderer.setScissorTest( true )
-
-		// Scene 1 (Left / Top): External God View showing the 3D camera rig, frustum, and culled blueprint.
-		this.ghostLine.visible = true
-		this.frustumGroup.visible = true
-		this.cameraRig.visible = true
-		this.fog.near = VIEWS.overview.fogNear
-		this.fog.far = VIEWS.overview.fogFar
-		renderer.setViewport( 0, 0, w1, h1 )
-		renderer.setScissor( 0, 0, w1, h1 )
-		renderer.render( scene, camera )
-
-		// Scene 2 (Right / Bottom): Live Camera POV rendered from the exact same GPU-culled indirect buffer.
-		this.ghostLine.visible = false
-		this.frustumGroup.visible = false
-		this.cameraRig.visible = false
-		this.fog.near = VIEWS.pov.fogNear
-		this.fog.far = VIEWS.pov.fogFar
-		renderer.setViewport( x2, y2, w2, h2 )
-		renderer.setScissor( x2, y2, w2, h2 )
-		renderer.render( scene, this.passCamera )
-
-		this.ghostLine.visible = true
-		this.frustumGroup.visible = true
-		this.cameraRig.visible = true
+		this.renderView( povHero ? passCamera : camera, 0, 0, width, height )
+		if ( inset.shown ) {
+			// The background node repaints the inset, so only the depth is left to clear.
+			renderer.autoClear = false
+			renderer.clearDepth()
+			this.renderView( povHero ? camera : passCamera, inset.x, inset.y, inset.width, inset.height )
+			renderer.autoClear = true
+		}
 		renderer.setScissorTest( false )
-		renderer.setViewport( 0, 0, w, h )
-		renderer.autoClear = true
+		renderer.setViewport( 0, 0, width, height )
+	}
+
+	/** Draw the scene from `viewCamera` into one rectangle of the canvas, in CSS pixels. */
+	renderView( viewCamera, x, y, width, height ) {
+		const { renderer, scene } = stage3d
+		const view = viewCamera === this.passCamera ? POV : OVERVIEW
+
+		// The blueprint and the frustum only belong to the overview.
+		this.ghost.visible = this.frustum.visible = view === OVERVIEW
+		this.fog.near = view.fogNear
+		this.fog.far = view.fogFar
+		archReach.value = view.archReach
+		for ( const line of [this.line, this.ghost, this.frustumLine] ) line.resize( width, height )
+
+		renderer.setViewport( x, y, width, height )
+		renderer.setScissor( x, y, width, height )
+		renderer.render( scene, viewCamera )
 	}
 
 	/** An explicit, throttled readback: normal rendering never waits on the GPU result. */
@@ -508,11 +333,6 @@ export default class GpuCullingExample {
 			if ( !snapshot || handle !== this.handle ) return
 			this.snapshot = snapshot
 			this.metrics.visibleIndexCount = snapshot.visibleIndexCount
-			this.ringBins.fill( 0 )
-			for ( const chunk of snapshot.visibleChunks ) {
-				const local = ( chunk.chunkIndex % CHUNKS_PER_RING ) / CHUNKS_PER_RING
-				this.ringBins[Math.floor( local * MAP_BINS )]++
-			}
 			this.updateHud( true )
 		} catch {
 			this.snapshot = null
@@ -540,22 +360,15 @@ export default class GpuCullingExample {
 			state = 'fallback'
 			badge = backend === 'webgl2' ? 'WebGL2 fallback' : 'Draw-all fallback'
 		}
+		if ( !force && badge === hud.badge ) return
 
-		hud.flight = this.flight
-		if ( !force && badge === hud.badge && this.viewMode === hud.viewMode ) return
-
-		if ( state === 'fallback' ) this.ringBins.fill( 1 )
 		const { renderer } = stage3d
 		Object.assign( hud, {
 			state,
 			badge,
-			viewMode: this.viewMode,
-			culling: requested,
-			chunkCount: handle?.chunkCount || CHUNK_COUNT,
-			visibleChunkCount: this.snapshot?.visibleChunkCount ?? ( requested ? 0 : CHUNK_COUNT ),
+			povHero: this.povHero,
 			indexCount,
 			visibleIndexCount,
-			flight: this.flight,
 			measuring: requested && state !== 'fallback' && !this.snapshot,
 			gpuTime: renderer?.backend.trackTimestamp ? renderer.info.render.timestamp + renderer.info.compute.timestamp : null,
 		} )
