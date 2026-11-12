@@ -32,11 +32,13 @@ const COMPUTE_MANAGED_KEYS = new Set( [
 	'mouse',
 	'mouseTarget',
 	'lines',
+	'points',
 	'segments',
 	'closed',
 	'surface',
 	'gpuPositionNode',
 	'instanceCount',
+	'instances',
 	'needsPrevious',
 	'needsNext',
 ] )

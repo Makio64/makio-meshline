@@ -68,7 +68,7 @@ try {
 		try {
 			const [report] = JSON.parse( pack.stdout )
 			const packedFiles = new Set( report.files.map( file => file.path ) )
-			const requiredFiles = ['README.md', 'LICENSE', 'package.json']
+			const requiredFiles = ['README.md', 'LICENSE', 'package.json', 'llms-full.txt']
 
 			for ( const target of exportTargets ) {
 				if ( typeof target === 'string' && target.startsWith( './' ) ) requiredFiles.push( target.slice( 2 ) )

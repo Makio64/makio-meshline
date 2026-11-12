@@ -44,6 +44,7 @@
     "positions.d.ts",
     "positions/*.js",
     "README.md",
+    "llms-full.txt",
     "LICENSE",
     "package.json"
   ],

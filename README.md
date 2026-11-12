@@ -5,18 +5,17 @@
 
 *A modern MeshLine library for Three.js wide screen strokes and world-space road/ribbon surfaces, with gradients, dashes, textures, shadows, GPU positions, and instancing.*
 
+[Documentation](https://meshline.makio.io/) · [Live demos](https://meshline-demo.makio.io/) · [React Three Fiber](https://meshline.makio.io/react-three-fiber.html) · [Vue](https://meshline.makio.io/vue.html)
+
 [
 ![demo](https://github.com/user-attachments/assets/4f1c7cee-0f8f-4c21-a720-531eb26bf485)
 ](https://meshline-demo.makio.io)
 
 Makio MeshLine is built for creative coding, interactive trails, data visualization, and stylized rendering on top of Three.js `WebGPURenderer`. It gives you a small fluent API for wide and thick lines, while keeping TSL hooks available when you need custom GPU behavior.
 
-> [!IMPORTANT]
-> Version 2 is the current API and package line. Existing V1 applications should review [Migrating from v1 to V2](https://meshline.makio.io/v2-migration.html) before upgrading because progress, sharp-bend smoothing, validation, surfaces, and optional WebGPU entry points changed.
-
 ## Features
 
-- **TSL-powered** — Built with Three.js Shading Language for maximum GPU performance
+- **TSL-powered** — Built with Three.js Shading Language for custom GPU styling and animation
 - **WebGPU & WebGL2** — Works with both backends via `WebGPURenderer`
 - **Instancing** — Render thousands of lines with a single draw call
 - **14 GPU hooks** — Customize position, color, width, opacity, dash, UV and more in the shader
@@ -73,6 +72,16 @@ pnpm add makio-meshline # or npm/yarn
 ```
 
 Upgrading an existing v1 application? Review the [V2 migration guide](https://meshline.makio.io/v2-migration.html) before changing the dependency. Progress is now distance-based, sharp-bend smoothing is opt-in, invalid configuration fails earlier, and the optional native-WebGPU imports have a narrower Three.js version requirement.
+
+## Using an AI Coding Agent
+
+The package ships a reference written for coding agents, [`llms-full.txt`](./src/llms-full.txt) (also at [meshline.makio.io/llms-full.txt](https://meshline.makio.io/llms-full.txt)): setup, the rules that prevent the usual mistakes, the full API, TSL hooks, tested recipes and a troubleshooting table. Point your agent at the installed copy with one line in your project's `AGENTS.md` or `CLAUDE.md`:
+
+```md
+Before writing makio-meshline code, read node_modules/makio-meshline/llms-full.txt.
+```
+
+Mistakes also explain themselves: an unknown option, a TSL `Fn` hook that does not destructure its arguments, or a `THREE.WebGLRenderer` logs one warning that names the fix.
 
 ## Quick Start
 

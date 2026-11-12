@@ -109,7 +109,8 @@ export type NormalHookFn =
 
 /**
  * Hook that receives a color (vec4), progress (float), and side (float)
- * and returns a modified color.
+ * and returns a modified color. It runs per vertex and is interpolated: use
+ * `fragmentColorFn` for patterns finer than the point spacing.
  * Note: When wrapped in Three's `Fn()`, destructure the parameter array: `Fn( ( [color, progress, side] ) => ... )`.
  */
 export type ColorHookFn =
@@ -219,9 +220,11 @@ export type DiscardHookFn =
 	| ( ( params: [progress: MeshLineNodeValue, side?: MeshLineNodeValue, uv?: MeshLineNodeValue] ) => MeshLineNodeValue )
 
 /**
- * GPU position node function that receives progress (float) and an extra parameter (float)
- * and returns a vec3 position computed entirely on the GPU.
- * Note: When wrapped in Three's `Fn()`, destructure the parameter array: `Fn( ( [progress, extra] ) => ... )`.
+ * GPU position node function that receives progress (float, 0 to 1 along the
+ * line) and returns the vec3 position there, computed entirely on the GPU. It
+ * is also sampled at neighbouring progress values for the line direction.
+ * `extra` is reserved and currently always 0.
+ * Note: When wrapped in Three's `Fn()`, destructure the parameter array: `Fn( ( [progress] ) => ... )`.
  */
 export type GPUPositionNodeFn =
 	| ( ( progress: MeshLineNodeValue, extra: MeshLineNodeValue ) => MeshLineNodeValue )
@@ -401,11 +404,15 @@ export interface MeshLineConfigureOptions {
 	renderHeight?: number
 	/** `true` for stream-usage buffers; `'storage'` also keeps the points in a GPU storage buffer on WebGPU. */
 	dynamic?: boolean | 'storage'
-	autoResize?: MeshLineResizeTarget
+	/** `true` tracks the window size; or pass the object to track. */
+	autoResize?: boolean | MeshLineResizeTarget
 
 	// gpu / instancing
 	gpuPositionNode?: GPUPositionNodeFn | null
 	usage?: MeshLineUsage
+	/** Number of instances drawn, like `.instances( count )`. */
+	instances?: number
+	/** Alias for `instances`. */
 	instanceCount?: number
 
 	// optional attributes
@@ -494,7 +501,7 @@ export interface MeshLineVertexBufferUsage {
 
 export type MeshLineComputeMode = 'autonomous' | 'follow' | 'field' | number
 
-export interface MeshLineComputeOptions extends Omit<MeshLineConfigureOptions, 'lines' | 'points' | 'segments' | 'closed' | 'surface' | 'gpuPositionNode' | 'instanceCount' | 'needsPrevious' | 'needsNext'> {
+export interface MeshLineComputeOptions extends Omit<MeshLineConfigureOptions, 'lines' | 'points' | 'segments' | 'closed' | 'surface' | 'gpuPositionNode' | 'instances' | 'instanceCount' | 'needsPrevious' | 'needsNext'> {
 	/** Number of autonomous curve instances. Defaults to 128. */
 	curveCount?: number
 	/** Number of simulated storage-buffer points per curve. Defaults to 32. */
@@ -550,38 +557,92 @@ export class MeshLineBillboard extends ThreeMesh {
 	 */
 	readonly positionStorage: BufferAttribute | null
 
+	/**
+	 * Apply several options at once. Keys are the method names, except
+	 * `receiveShadow` (`setReceiveShadow()`), `frustumCulled` (`setFrustumCulled()`)
+	 * and `renderWidth`/`renderHeight` (`renderSize()`). Unknown keys warn.
+	 */
 	configure( options?: MeshLineConfigureOptions ): this
 
+	/**
+	 * Set the points: one polyline (flat xyz `Float32Array`, `number[]`,
+	 * `[x, y, z][]` or `Vector3[]`) or an array of polylines drawn as one batch.
+	 * A built line updates in place; another point count or loop flag rebuilds,
+	 * reusing the buffers when `dynamic( true )` is set.
+	 */
 	lines( points: MultiLinePoints, closed?: boolean | boolean[] ): this
+	/** Alias for `lines()`. */
 	points( points: MultiLinePoints, closed?: boolean | boolean[] ): this
+	/** Number of segments sampled along a `gpuPositionNode` line (it has no CPU points). Default 1. */
 	segments( segments: number ): this
+	/** Join the last point back to the first; one flag per line in a batch. */
 	closed( closed: boolean | boolean[] ): this
+	/**
+	 * Use the world-space lit ribbon/road profile (a `MeshStandardNodeMaterial`
+	 * surface that keeps its width whatever the camera does). `false` returns to
+	 * the screen-space billboard. Surfaces need CPU points: no `gpuPositionNode`
+	 * and no `instances()`.
+	 */
 	surface( options?: boolean | MeshLineSurfaceOptions ): this
 
+	/** Base color: hex number, CSS string or `Color`. Default white; updates live. */
 	color( color: number | string | Color ): this
+	/**
+	 * Full width: world units while `sizeAttenuation` is on (the default), CSS
+	 * pixels when it is off. Default 0.3; updates live.
+	 */
 	lineWidth( width: number ): this
+	/** CPU width multiplier per point, baked into the geometry. Animate widths with `widthFn` instead. */
 	widthCallback( fn: ( ( progress: number, pointIndex?: number, lineIndex?: number ) => number ) | null ): this
+	/** `true` (default): width in world units, thinner with distance. `false`: constant CSS-pixel width. */
 	sizeAttenuation( enabled: boolean ): this
+	/** Analytic edge antialiasing, for renderers without MSAA or sub-pixel lines. Forces blending. */
 	antialias( enabled?: boolean ): this
+	/**
+	 * Cast shadows; pass `receiveShadow` to receive them too: `.shadow( true, true )`.
+	 * The renderer needs `shadowMap.enabled` and a light with `castShadow`.
+	 */
 	shadow( enabled: boolean, receiveShadow?: boolean ): this
+	/** Receive shadows. A method, because `THREE.Mesh` owns the `receiveShadow` field. */
 	setReceiveShadow( enabled: boolean ): this
 
+	/** Opacity in [0, 1]; below 1 the line blends. Updates live. */
 	opacity( opacity: number ): this
+	/** Discard fragments whose alpha is below the threshold. */
 	alphaTest( value: number ): this
+	/** Force alpha blending (opacity below 1, `alphaMap` and `antialias` already turn it on). */
 	transparent( enabled: boolean ): this
+	/** Draw the triangles as lines, for debugging. */
 	wireframe( enabled: boolean ): this
 
+	/** Corner style: `'miter'` (default, limit 4), `'bevel'` or `'round'`. See `MeshLineJoinOptions`. */
 	join( options?: MeshLineJoinType | MeshLineJoinOptions ): this
+	/** Change only the miter limit of the current join. */
 	miterLimit( limit: number ): this
+	/**
+	 * End caps of open `surface()` lines and `MeshLineGPUPath`: `'butt'` (default),
+	 * `'square'` or `'round'`. Screen-space billboard lines always end butt.
+	 */
 	cap( options?: MeshLineCapType | MeshLineCapOptions ): this
+	/** CPU-subdivide corners too sharp for a clean miter (static lines). See `MeshLineConfigureOptions`. */
 	smoothSharpBends( enabled: boolean ): this
 	smoothSharpBendsAlpha( alpha: number ): this
 	smoothSharpBendsThreshold( threshold: number ): this
+	/** End color, blended from `color` along the arc length. `null` removes it. */
 	gradientColor( color: number | string | Color | null ): this
+	/** Color texture. U runs along the line (0 to 1 over its whole length), V across it (0 to 1). */
 	map( tex: Texture | null ): this
+	/** UV offset for `map` and `alphaMap`. */
 	mapOffset( offset: Vector2 | null ): this
+	/** Alpha texture, read from its red channel with the `map` UVs. Turns on blending. */
 	alphaMap( tex: Texture | null ): this
+	/**
+	 * `count` dashes over the line's length, `ratio` the drawn fraction of each
+	 * (default 0.5), `offset` shifts them in dash periods (animate it to march).
+	 * `null` or `false` removes the dashes.
+	 */
 	dash( options?: MeshLineDashOptions | null | false ): this
+	/** Device-pixel-ratio uniform, read only by custom hooks. */
 	dpr( value: number ): this
 	/**
 	 * `true` marks the buffers for frequent updates, and keeps them when a
@@ -592,15 +653,31 @@ export class MeshLineBillboard extends ThreeMesh {
 	 * or custom attributes; any other line, and WebGL2, behave as `true`.
 	 */
 	dynamic( enable: boolean | 'storage' ): this
+	/** Override automatic frustum culling (it turns off for lines moved by GPU hooks). */
 	setFrustumCulled( enabled: boolean ): this
+	/** Log build details. */
 	verbose( enabled: boolean ): this
+	/** Viewport size used by the next build; `resize()` also updates the live uniform. */
 	renderSize( width?: number, height?: number ): this
 
+	/**
+	 * Place the points in the vertex shader instead of from CPU points:
+	 * `( progress ) => vec3`, with progress 0 to 1 along the line. Pair it with
+	 * `segments( n )`, and for many lines with `instances( count )` and TSL
+	 * `instanceIndex`. `storagePositions()` builds one from a storage buffer.
+	 */
 	gpuPositionNode( node: GPUPositionNodeFn | null ): this
+	/** Three buffer usage constant; `dynamic()` sets it for you. */
 	usage( usage: MeshLineUsage ): this
+	/**
+	 * Draw the line `count` times in one draw call. Vary the instances in hooks
+	 * with TSL `instanceIndex` or with `addInstanceAttributes()`. Set it before
+	 * the first build.
+	 */
 	instances( count: number ): this
 
-	// optional attributes toggles
+	// Optional attributes. Each is inferred from the features in use: force one
+	// on for a custom hook that reads it, or off to save a vertex buffer.
 	needsUV( enabled: boolean ): this
 	needsWidth( enabled: boolean ): this
 	needsProgress( enabled: boolean ): this
@@ -617,7 +694,10 @@ export class MeshLineBillboard extends ThreeMesh {
 	 */
 	vertexColors( colors: Float32Array | number[] | null ): this
 
-	// node hooks (TSL)
+	// TSL hooks (billboard profile). Pass a plain function that takes the
+	// arguments in order, or a TSL `Fn( ( [ ...arguments ] ) => … )` with them
+	// destructured from one array (a Fn is needed for `If`, `Loop` or `toVar`).
+	// Each hook type lists its arguments and stage.
 	positionFn( fn: PositionHookFn | null ): this
 	previousFn( fn: NeighbourHookFn | null ): this
 	nextFn( fn: NeighbourHookFn | null ): this
@@ -633,25 +713,60 @@ export class MeshLineBillboard extends ThreeMesh {
 	fragmentAlphaFn( fn: FragmentAlphaHookFn | null ): this
 	discardFn( fn: DiscardHookFn | null ): this
 
+	/** Build geometry and material now. A line in a scene builds on its first render, so this is optional. */
 	build(): this
+	/** Build again from the current options. */
 	rebuild(): this
+	/** Build unless already built. */
 	ensureBuilt(): this
+	/** Compile the line's pipeline before it is first shown, to avoid a first-frame hitch. */
 	warmupAsync( renderer: WebGPURenderer, camera: Camera, scene?: Scene | null ): Promise<this>
+	/** Raycast against the stroke width; hits carry `lineIndex` and `instanceId`. */
 	raycast( raycaster: Raycaster, intersects: Array<Intersection<Object3D> & { lineIndex?: number; instanceId?: number }> ): void
+	/**
+	 * Write new points into the existing buffers (another point count rebuilds).
+	 * Mark lines updated every frame with `dynamic( true )`.
+	 */
 	setPositions( points: MultiLinePoints, updateBounding?: boolean ): void
+	/**
+	 * Overwrite points from `startPoint` on (of line `options.lineIndex` in a
+	 * batch), uploading only that range. CPU billboard lines only.
+	 */
 	setPositionRange( points: ArrayLike<number> | Array<LinePointTuple | LinePointObject>, startPoint: number, options?: MeshLinePositionRangeOptions ): this
+	/**
+	 * Add a custom per-vertex attribute, read in TSL with `attribute( name )`.
+	 * Billboard lines have four vertices per point. Each attribute costs one of
+	 * WebGPU's eight vertex buffers: prefer `addVertexAttributes()`.
+	 */
 	addVertexAttribute( name: string, components?: number ): BufferAttribute
+	/** Add several per-vertex attributes sharing one GPU buffer, e.g. `{ heat: 1, tint: 3 }`. */
 	addVertexAttributes( layout: MeshLinePackedAttributeLayout ): Record<string, InterleavedBufferAttribute>
+	/** Write a block of values into a vertex attribute from `startVertex` on. */
 	setVertexValues( name: string, values: ArrayLike<number>, startVertex?: number ): this
 
+	/** Add a custom per-instance attribute, read in TSL with `attribute( name )`. Prefer `addInstanceAttributes()`. */
 	addInstanceAttribute( name: string, components?: number ): InstancedBufferAttribute
+	/** Add several per-instance attributes sharing one GPU buffer, e.g. `{ offset: 3, phase: 1 }`. */
 	addInstanceAttributes( layout: MeshLinePackedAttributeLayout ): Record<string, InterleavedBufferAttribute>
+	/** Set one instance's value of a per-instance attribute. */
 	setInstanceValue( name: string, index: number, value: number | number[] | { x: number; y: number; z?: number; w?: number } ): void
+	/** Write a block of per-instance values from `startInstance` on, in one upload. */
 	setInstanceValues( name: string, values: ArrayLike<number>, startInstance?: number ): this
+	/** Count the vertex buffers this line uses against WebGPU's portable limit of eight. */
 	getVertexBufferUsage( options?: MeshLineVertexBufferBudgetOptions ): MeshLineVertexBufferUsage
+	/** Like `getVertexBufferUsage()`, but throws when the limit is exceeded. */
 	validateVertexBufferBudget( options?: MeshLineVertexBufferBudgetOptions ): MeshLineVertexBufferUsage
+	/**
+	 * Viewport size in CSS pixels, which the screen-space width needs. Call it
+	 * on resize with the canvas size, or use `autoResize()`.
+	 */
 	resize( width?: number, height?: number ): void
-	autoResize( target?: MeshLineResizeTarget ): this
+	/**
+	 * Follow window resizes: `true` (default) tracks the window, or pass another
+	 * target; `false` stops. A canvas smaller than the window needs `resize()`.
+	 */
+	autoResize( target?: MeshLineResizeTarget | boolean ): this
+	/** Free the GPU buffers and material, stop `autoResize()` and remove the line from its parent. */
 	dispose(): void
 }
 

@@ -1,0 +1,513 @@
+# makio-meshline: reference for coding agents
+
+> Everything needed to write correct makio-meshline code, in one file: setup, the rules that prevent the usual mistakes, the API, TSL hooks, recipes and a troubleshooting table. It ships in the npm package as `node_modules/makio-meshline/llms-full.txt` and is published at https://meshline.makio.io/llms-full.txt. The types, with a line of documentation per method, are in `node_modules/makio-meshline/index.d.ts`.
+
+makio-meshline 2 draws thick lines (screen-space ribbons) and world-space road and ribbon surfaces for Three.js r186+ with `WebGPURenderer`, on WebGPU or its WebGL2 fallback. It depends on nothing but `three`. Every setter returns the line, so calls chain. The recipes below run as written; `test/agent-reference.test.js` builds them on every test run.
+
+## 1. Setup
+
+```js
+import * as THREE from 'three/webgpu'
+import { MeshLine } from 'makio-meshline'
+
+const renderer = new THREE.WebGPURenderer( { antialias: true } )
+renderer.setPixelRatio( Math.min( window.devicePixelRatio, 2 ) )
+renderer.setSize( window.innerWidth, window.innerHeight )
+document.body.appendChild( renderer.domElement )
+await renderer.init()
+
+const scene = new THREE.Scene()
+const camera = new THREE.PerspectiveCamera( 55, window.innerWidth / window.innerHeight, 0.1, 100 )
+camera.position.z = 10
+
+const line = new MeshLine()
+	.lines( new Float32Array( [-3, -1, 0, 0, 2, 0, 3, -1, 0] ) ) // x, y, z per point
+	.lineWidth( 0.2 ) // world units
+	.color( 0xff8800 )
+	.autoResize() // keeps the screen-space width right when the window resizes
+scene.add( line ) // builds on the first render
+
+window.addEventListener( 'resize', () => {
+	camera.aspect = window.innerWidth / window.innerHeight
+	camera.updateProjectionMatrix()
+	renderer.setSize( window.innerWidth, window.innerHeight )
+} )
+renderer.setAnimationLoop( () => renderer.render( scene, camera ) )
+```
+
+Install with `npm install makio-meshline three`. A complete starter with OrbitControls: https://github.com/Makio64/makio-meshline/tree/main/examples/vanilla
+
+## 2. Rules
+
+1. **Renderer.** Use `WebGPURenderer` from `'three/webgpu'` and `await renderer.init()` before the first `render()` (`setAnimationLoop()` initializes it too). It falls back to WebGL2 by itself. `THREE.WebGLRenderer` cannot draw node materials: MeshLine warns and nothing is drawn.
+2. **Building.** `scene.add( line )` is enough: the line builds on its first render. `build()` is optional, also before `addInstanceAttributes()`.
+3. **Option keys are the method names.** `new MeshLine( { lineWidth: 0.2, color: 'red' } )` equals `new MeshLine().lineWidth( 0.2 ).color( 'red' )`. Exceptions: `receiveShadow` sets `setReceiveShadow()`, `frustumCulled` sets `setFrustumCulled()`, `renderWidth`/`renderHeight` set `renderSize()`; `instanceCount` is an alias of `instances`. An unknown key warns `unknown option "…" was ignored` and names the right one.
+4. **Width units.** By default (`sizeAttenuation( true )`) `lineWidth` is in world units, default 0.3: match it to your scene's scale. With `.sizeAttenuation( false )` it is CSS pixels (try 2 to 8).
+5. **Viewport size.** Screen-space widths need the canvas size in CSS pixels: `.autoResize()` for a full-window canvas, otherwise `line.resize( canvas.clientWidth, canvas.clientHeight )` whenever the canvas changes size.
+6. **Hooks.** Pass a plain function that takes the arguments in order, `.colorFn( ( color, progress ) => … )`, or a TSL `Fn` that destructures one array, `Fn( ( [color, progress] ) => … )`. Never `Fn( ( color, progress ) => … )`: TSL hands a `Fn` all arguments as one array, so `color` would be that array (MeshLine warns). Use `Fn` when the hook needs `If`, `Loop` or `.toVar()`.
+7. **Update, don't recreate.** Never create a MeshLine per frame. Same point count: `.dynamic( true )` once, then `line.setPositions( points )` each frame. Another point count, or open/closed changes: `line.lines( points, closed )`. `color()`, `lineWidth()` and `opacity()` update uniforms without a rebuild, and so do `gradientColor()` and `dash()` while the gradient or the dashes stay on.
+8. **Two profiles.** The default billboard profile is a screen-space ribbon facing the camera, unlit, with every TSL hook, dashes, gradients, textures, vertex colors, instancing and `gpuPositionNode`. `.surface( … )` builds a world-space lit mesh for roads, tracks and ribbons, with real bevel and round joins, square and round caps, PBR maps and shadows, but no hooks, dashes, gradients, vertex colors, instancing or `gpuPositionNode`. Surfaces need lights.
+9. **Points.** Prefer one flat `Float32Array` (x, y, z per point) per line. Identical consecutive points are dropped, so fill the array before the first build: an all-zero placeholder builds an empty line.
+10. **Cleanup.** `line.dispose()` frees the GPU buffers and the material, stops `autoResize()` and removes the line from its parent.
+11. **Vertex buffers.** WebGPU guarantees eight per draw. Pack custom attributes: `line.addInstanceAttributes( { offset: 3, phase: 1 } )` takes one buffer for both.
+
+## 3. Pick the tool
+
+| Goal | Use |
+|---|---|
+| A few lines, static or animated | `new MeshLine().lines( points )`; animate with `.dynamic( true )` and `setPositions()` |
+| Constant on-screen width (UI, maps, debug overlays) | `.sizeAttenuation( false ).lineWidth( pixels )` |
+| Many separate lines in one draw call | `.lines( [lineA, lineB, …] )`, colored per point with `vertexColors()` |
+| Thousands of similar lines | `.instances( count )`, varied with per-instance attributes or `instanceIndex` in a hook |
+| Large lines moved by the CPU every frame | `.dynamic( 'storage' )` (WebGPU storage buffer) |
+| Points written by a compute shader, trails | `.gpuPositionNode( storagePositions( buffer, { pointsPerLine, head } ) )` |
+| Morphing between two shapes | `storagePositions( from, { pointsPerLine, toBuffer, morph } )` |
+| Procedural curves (rings, spirals, waves) | `.gpuPositionNode( ( progress ) => vec3( … ) )` with `.segments( n )` |
+| Road, track or ribbon with lighting, shadows, round caps | `.surface( { frame: 'fixed-up' } )` with `.join()` and `.cap()` |
+| One huge static path on WebGPU | `MeshLineGPUPath` from `'makio-meshline/gpu-path'` |
+| Culling chunks of a huge opaque path | `MeshLineCullingSystem` from `'makio-meshline/gpu-culling'` |
+| Self-animating flow curves | `MeshLineCompute` |
+| Clicking or hovering a line | `MeshLinePicker` (GPU, any line) or a `THREE.Raycaster` (CPU points; hits carry `lineIndex` and `instanceId`) |
+| Billboard lines only, smaller bundle | `import { MeshLineBillboard } from 'makio-meshline'` (same API without `surface()`) |
+| React Three Fiber, Vue, TresJS | copy a wrapper from the repository's `examples/` (section 9) |
+
+## 4. Points
+
+`lines( points, closed )` (alias `points()`) takes, for each line:
+- a flat `Float32Array` or `number[]` of x, y, z (preferred: a `Float32Array` is used without conversion);
+- `[x, y, z]` or `[x, y]` tuples, or `Vector3`, `Vector2` and `{ x, y, z }` objects;
+- a `BufferGeometry` (its `position` attribute).
+
+Pass an array of lines to draw them all in one call; `closed` is then one boolean or one per line. A closed line joins its last point back to its first; repeating the first point at the end is also fine. Input other than a `Float32Array` logs a one-time performance hint.
+
+Point helpers, each returning a flat `Float32Array` in the XY plane:
+
+```
+circlePositions( segments = 100, radius = 1 )      // `segments` points, no repeated end: draw with closed = true
+squarePositions( width = 1, segments = 1 )
+rectanglePositions( width = 1, height = 1, segments = 1 )
+sineWavePositions( wavelengths = 2, segments = 100, amplitude = 1, length = 4 )
+straightLine( width = 1, segments = 2, isVertical = false )
+straightLineBetween( start, end, segments = 1 )    // start and end: [x, y, z] or { x, y, z }
+```
+
+They are also importable without the classes from `'makio-meshline/positions'`.
+
+## 5. MeshLine API
+
+`new MeshLine( options? )`, then chain setters; `line.configure( options )` applies several at once later. "Live" means the change updates a uniform, with no rebuild.
+
+| Option / method | Value | Default | Notes |
+|---|---|---|---|
+| `lines` / `.lines( points, closed? )` | points (section 4) | a unit segment | alias `points` |
+| `closed` / `.closed( value )` | boolean, or one per line | `false` | |
+| `color` / `.color( c )` | hex number, CSS string, `Color` | `0xffffff` | live |
+| `lineWidth` / `.lineWidth( w )` | number | `0.3` | live; world units, or CSS pixels without attenuation |
+| `sizeAttenuation` / `.sizeAttenuation( on )` | boolean | `true` | `false`: constant pixel width |
+| `opacity` / `.opacity( a )` | 0 to 1 | `1` | live; below 1 the line blends |
+| `transparent` / `.transparent( on )` | boolean | `false` | turned on by opacity below 1, `alphaMap` and `antialias` |
+| `alphaTest` / `.alphaTest( t )` | 0 to 1 | `0` | |
+| `gradientColor` / `.gradientColor( c )` | color or `null` | `null` | live; blends from `color` along the arc length |
+| `vertexColors` / `.vertexColors( rgb )` | `Float32Array` or `number[]` | `null` | r, g, b (0 to 1) per point, multiplied with `color`; a batch concatenates its lines in order |
+| `widthCallback` / `.widthCallback( fn )` | `( progress, pointIndex, lineIndex ) => number` | `null` | CPU width multiplier, baked into the geometry |
+| `dash` / `.dash( { count, ratio, offset } )` | object, or `null`/`false` | off | `count` dashes over the whole line, `ratio` the drawn fraction (0.5), `offset` in dash periods; live once on |
+| `map` / `.map( texture )` | `Texture` | `null` | U runs along the line (0 to 1 over its length), V across it |
+| `alphaMap` / `.alphaMap( texture )` | `Texture` | `null` | read from the red channel, same UVs |
+| `mapOffset` / `.mapOffset( offset )` | `Vector2` | `null` | UV offset |
+| `join` / `.join( value )` | `'miter'`, `'bevel'`, `'round'` or `{ type, limit, segments, inner, fold }` | miter, limit 4 | see the join notes below |
+| `miterLimit` / `.miterLimit( n )` | number, at least 1 | `4` | |
+| `cap` / `.cap( value )` | `'butt'`, `'square'`, `'round'` or `{ type, segments }` | butt | surfaces and `MeshLineGPUPath` only; billboard ends stay butt |
+| `antialias` / `.antialias( on )` | boolean | `false` | analytic edges without MSAA, or for sub-pixel lines; blends |
+| `shadow` / `.shadow( cast, receive? )` | boolean | `false` | `.shadow( true, true )` casts and receives |
+| `receiveShadow` / `.setReceiveShadow( on )` | boolean | `false` | |
+| `wireframe` / `.wireframe( on )` | boolean | `false` | |
+| `surface` / `.surface( options )` | object, `true` or `false` | `false` | the world-space lit profile (section 5.1) |
+| `dynamic` / `.dynamic( value )` | `true` or `'storage'` | `false` | per-frame `setPositions()`; `'storage'` also keeps the points in a WebGPU storage buffer, for open lines of `Float32Array`s of one length without gradient, dashes, textures, vertex colors, `widthCallback`, hooks or instances (others, and WebGL2, behave as `true`) |
+| `instances` / `.instances( count )` | integer | none | alias `instanceCount`; set it before the first build |
+| `gpuPositionNode` / `.gpuPositionNode( fn )` | hook (section 6) | `null` | points placed on the GPU, no CPU points |
+| `segments` / `.segments( n )` | integer | `1` | samples along a `gpuPositionNode` line |
+| `autoResize` / `.autoResize( target? )` | `true`, a target, or `false` | off | tracks window resizes |
+| `smoothSharpBends` / `.smoothSharpBends( on )` | boolean | `false` | CPU-subdivides corners too sharp for a miter |
+| `frustumCulled` / `.setFrustumCulled( on )` | boolean | automatic | off by itself for lines moved on the GPU |
+| `renderWidth`, `renderHeight` / `.renderSize( w, h )` | CSS pixels | the window size | prefer `resize()` |
+| `needsUV`, `needsProgress`, `needsWidth`, `needsSide`, `needsPrevious`, `needsNext`, `needsVertexColor` | boolean | inferred | force an optional attribute on for a custom hook, or off to save a vertex buffer |
+| `colorFn` and the other hooks | section 6 | `null` | billboard profile only |
+
+Rarely needed: `usage`, `dpr`, `verbose`, `smoothSharpBendsAlpha`, `smoothSharpBendsThreshold` (see `index.d.ts`).
+
+Join notes. Billboard `'miter'` resolves corners that fold in 3D without a discard (`fold: 'geometry'`), which keeps early depth testing; `'bevel'` fills corners flat; `'round'` clips exact round joins in the fragment stage, which adds a discard. Surfaces and `MeshLineGPUPath` emit real bevel and round triangles; on a surface, `inner: 'clip'` pinches the inner edge of a corner tighter than the road's width instead of rejecting the path.
+
+| Method | What it does |
+|---|---|
+| `setPositions( points, updateBounding = false )` | writes new points into the existing buffers; another point count rebuilds |
+| `setPositionRange( points, startPoint, { lineIndex, updateBounding } )` | overwrites part of a line and uploads only that range (CPU billboard lines) |
+| `resize( width, height )` | sets the viewport size in CSS pixels |
+| `build()`, `rebuild()`, `ensureBuilt()` | builds now, again, or if needed |
+| `warmupAsync( renderer, camera, scene? )` | compiles the pipeline before the first visible frame |
+| `addInstanceAttributes( { name: components } )`, `addInstanceAttribute( name, components )` | per-instance data, read in TSL with `attribute( name, 'vec3' )` |
+| `setInstanceValues( name, values, startInstance = 0 )`, `setInstanceValue( name, index, value )` | write per-instance data |
+| `addVertexAttributes( layout )`, `addVertexAttribute( name, components )`, `setVertexValues( name, values, startVertex = 0 )` | per-vertex data; billboard lines have four vertices per point |
+| `getVertexBufferUsage()`, `validateVertexBufferBudget()` | count vertex buffers against WebGPU's eight |
+| `raycast( raycaster, intersects )` | `THREE.Raycaster` support |
+| `dispose()` | frees everything and detaches the line |
+
+Properties: `line.geometry.vertexCount` and `indexCount` are the counts in use (with `dynamic( true )`, `attribute.count` is a capacity). `line.material` is a `MeshLineNodeMaterial` (billboard) or a `MeshLineSurfaceNodeMaterial` (surface); their usual three fields, such as `blending` and `depthWrite`, can be set directly. `line.positionStorage` is the storage buffer while `dynamic( 'storage' )` is active.
+
+### 5.1 Surface options
+
+`.surface( { frame, up, bank, uvMode, uvScale, roughness, metalness, normalMap, roughnessMap, metalnessMap, side } )`, every key optional:
+- `frame`: `'transport'` (default; twist-free, for ribbons in 3D) or `'fixed-up'` (keeps `up` as the surface normal, for roads on terrain).
+- `up`: the preferred normal, `[0, 1, 0]` by default.
+- `bank`: roll in radians: a number, one per point, one array per line, or `( progress, pointIndex, lineIndex ) => radians`.
+- `uvMode`: `'distance'` (default; U repeats every `uvScale` world units, default 1) or `'stretch'` (U runs 0 to 1 per line).
+- `roughness` (0.9), `metalness` (0) and the maps work as on `MeshStandardMaterial`; `side` defaults to `FrontSide`.
+
+`color`, `lineWidth` (world units), `opacity`, `transparent`, `alphaTest`, `map`, `alphaMap`, `wireframe`, `shadow`, `join` and `cap` apply to surfaces too.
+
+## 6. TSL hooks (billboard profile)
+
+A hook receives TSL nodes and returns a node; arguments it does not use can be left off the end.
+
+| Hook | Arguments | Returns | Stage | Typical use |
+|---|---|---|---|---|
+| `gpuPositionNode` | `progress` | `vec3` | vertex | points computed on the GPU (with `.segments( n )`) |
+| `positionFn` | `position, progress` | `vec3` | vertex | displace points (wind, waves, per-instance offsets); applied to each point and its neighbours |
+| `previousFn`, `nextFn` | `position, progress` | `vec3` | vertex | override one neighbour |
+| `widthFn` | `width, progress, side` | `float` | vertex | tapers, pulses |
+| `normalFn` | `normal, dir, dir1, dir2, progress, side` | `vec4` | vertex | change the screen-space offset |
+| `colorFn` | `color, progress, side` | `vec4` | vertex, interpolated | color per point; use `fragmentColorFn` for patterns |
+| `vertexFn` | `clipPosition, normal, progress, side` | `vec4` | vertex | last clip-space adjustment |
+| `gradientFn` | `factor, side` | `float` | fragment | remap the gradient blend |
+| `uvFn` | `uv, progress, side` | `vec2` | fragment | tile or scroll a texture |
+| `fragmentColorFn` | `color, uv, progress, side` | `vec4` | fragment | per-pixel color, after gradient and map |
+| `opacityFn` | `alpha, progress, side` | `float` | fragment | fade along or across the line |
+| `dashFn` | `cyclePosition, progress, side` | `float` | fragment | warp the dash phase (0 to 1 within a period; above `ratio` is cut) |
+| `discardFn` | `progress, side, uv` | `bool` | fragment | cut fragments where it returns true (adds a discard) |
+| `fragmentAlphaFn` | `alpha, uv, progress, side` | `float` | fragment | last alpha adjustment |
+
+- `progress`: 0 to 1 along the line, by arc length for CPU points, by sample for `gpuPositionNode` lines.
+- `side`: -1 or +1 on the two edges in vertex hooks, interpolated from -1 to 1 across the stroke in fragment hooks. The exported `lineCoord.y` is the same coordinate, readable in any fragment hook.
+- `uv`: `vec2`, x is progress, y runs 0 to 1 across the stroke.
+- Inside a hook any TSL works: `time`, `uniform()` (change its `.value` from JavaScript), `instanceIndex`, `attribute( 'name', 'vec3' )`, `lineCoord`, `mix`, `smoothstep`.
+- Fragment order: color, gradient (`gradientFn`), `map`, `fragmentColorFn`; then alpha, `alphaMap`, opacity, `opacityFn`, dashes (`dashFn`), `discardFn`, `fragmentAlphaFn`.
+- Hooks defined once and driven by uniforms let many lines share one shader; a new function per line compiles a new one.
+
+## 7. Recipes
+
+These assume the setup of section 1 (`THREE`, `scene`, `camera`, `renderer`).
+
+### Gradient and dashes
+
+```js
+import { circlePositions, MeshLine } from 'makio-meshline'
+
+const ring = new MeshLine()
+	.lines( circlePositions( 128, 3 ), true )
+	.lineWidth( 0.15 )
+	.color( 0xff3366 )
+	.gradientColor( 0x33ccff )
+	.dash( { count: 24, ratio: 0.6 } )
+scene.add( ring )
+
+function update( time ) {
+	ring.dash( { count: 24, ratio: 0.6, offset: time * -0.0005 } ) // marching dashes: uniforms only
+}
+```
+
+### Animated points
+
+```js
+import { MeshLine } from 'makio-meshline'
+
+const COUNT = 200
+const points = new Float32Array( COUNT * 3 )
+const writeWave = ( time ) => {
+	for ( let i = 0; i < COUNT; i++ ) {
+		const t = i / ( COUNT - 1 )
+		points[i * 3] = ( t - 0.5 ) * 8
+		points[i * 3 + 1] = Math.sin( t * 12 + time * 0.002 )
+		points[i * 3 + 2] = 0
+	}
+}
+writeWave( 0 ) // real points before the first build
+
+const wave = new MeshLine().lines( points ).dynamic( true ).lineWidth( 0.08 ).color( 0x22d3ee )
+scene.add( wave )
+
+function update( time ) {
+	writeWave( time )
+	wave.setPositions( points ) // same buffers, nothing allocated
+}
+```
+
+### Drawing a line on (reveal)
+
+```js
+import { MeshLine, sineWavePositions } from 'makio-meshline'
+import { uniform } from 'three/tsl'
+
+const reveal = uniform( 0 ) // 0 to 1
+const path = new MeshLine()
+	.lines( sineWavePositions( 3, 200, 1, 8 ) )
+	.lineWidth( 0.1 )
+	.discardFn( ( progress ) => progress.greaterThan( reveal ) )
+	.needsUV( false ) // the hook reads progress, not uv
+scene.add( path )
+
+function update( time ) {
+	reveal.value = ( time * 0.0005 ) % 1
+}
+```
+
+### Constant pixel width
+
+```js
+import { MeshLine, rectanglePositions } from 'makio-meshline'
+
+const frame = new MeshLine()
+	.lines( rectanglePositions( 6, 4 ), true )
+	.sizeAttenuation( false )
+	.lineWidth( 3 ) // CSS pixels at any distance
+	.color( 0xffffff )
+	.autoResize()
+scene.add( frame )
+```
+
+### Many lines in one draw call, colored per point
+
+```js
+import { MeshLine, straightLineBetween } from 'makio-meshline'
+
+const lines = []
+const colors = []
+for ( let i = 0; i < 50; i++ ) {
+	const x = i * 0.2 - 5
+	lines.push( straightLineBetween( [x, -2, 0], [x, 2, 0], 1 ) ) // two points
+	colors.push( 1, i / 49, 0, 1, 1, 1 ) // one r, g, b per point
+}
+const bundle = new MeshLine().lines( lines ).vertexColors( colors ).lineWidth( 0.05 )
+scene.add( bundle )
+```
+
+### Instanced lines with per-instance data
+
+```js
+import { MeshLine, straightLineBetween } from 'makio-meshline'
+import { attribute } from 'three/tsl'
+
+const COUNT = 2000
+const offsets = new Float32Array( COUNT * 3 )
+for ( let i = 0; i < COUNT; i++ ) offsets.set( [Math.random() * 20 - 10, 0, Math.random() * 20 - 10], i * 3 )
+
+const grass = new MeshLine()
+	.lines( straightLineBetween( [0, 0, 0], [0, 1, 0], 8 ) ) // one blade, drawn COUNT times
+	.instances( COUNT )
+	.lineWidth( 0.04 )
+	.color( 0x66cc44 )
+	.positionFn( ( position ) => position.add( attribute( 'bladeOffset', 'vec3' ) ) )
+grass.addInstanceAttributes( { bladeOffset: 3 } )
+grass.setInstanceValues( 'bladeOffset', offsets )
+scene.add( grass )
+```
+
+### Procedural rings on the GPU
+
+```js
+import { MeshLine } from 'makio-meshline'
+import { cos, float, Fn, instanceIndex, sin, time, vec3 } from 'three/tsl'
+
+const rings = new MeshLine()
+	.instances( 64 )
+	.segments( 128 )
+	.closed( true )
+	.gpuPositionNode( Fn( ( [progress] ) => {
+		const angle = progress.mul( Math.PI * 2 )
+		const radius = float( instanceIndex ).mul( 0.05 ).add( 1 )
+		return vec3( cos( angle ).mul( radius ), sin( angle ).mul( radius ), sin( time.add( float( instanceIndex ).mul( 0.2 ) ) ) )
+	} ) )
+	.lineWidth( 0.02 )
+	.color( 0x88aaff )
+scene.add( rings )
+```
+
+### Trails from a storage buffer (ring buffer)
+
+```js
+import { MeshLine, storagePositions } from 'makio-meshline'
+import { uniform } from 'three/tsl'
+
+const TRAILS = 64
+const LENGTH = 256 // points per trail
+const buffer = new THREE.StorageBufferAttribute( TRAILS * LENGTH, 4 ) // write it from a compute pass, or buffer.array + needsUpdate
+const head = uniform( 0, 'uint' ) // newest slot; advance it as you write
+
+const trails = new MeshLine()
+	.instances( TRAILS )
+	.segments( LENGTH - 1 )
+	.gpuPositionNode( storagePositions( buffer, { pointsPerLine: LENGTH, head } ) )
+	.lineWidth( 0.05 )
+	.color( 0x38bdf8 )
+scene.add( trails )
+```
+
+### Morphing between two shapes
+
+```js
+import { MeshLine, storagePositions } from 'makio-meshline'
+import { uniform } from 'three/tsl'
+
+const LINES = 48
+const POINTS = 96 // resample both shapes to this count; closed loops repeat point 0 last
+const from = new THREE.StorageBufferAttribute( LINES * POINTS, 3 )
+const to = new THREE.StorageBufferAttribute( LINES * POINTS, 3 )
+const morph = uniform( 0 ) // animate from 0 to 1
+
+const contours = new MeshLine()
+	.instances( LINES )
+	.segments( POINTS - 1 )
+	.gpuPositionNode( storagePositions( from, { pointsPerLine: POINTS, toBuffer: to, morph, closed: true } ) )
+	.lineWidth( 0.04 )
+scene.add( contours )
+```
+
+### Lit road surface
+
+```js
+import { MeshLine } from 'makio-meshline'
+
+const roadPoints = new Float32Array( 80 * 3 )
+for ( let i = 0; i < 80; i++ ) {
+	const t = i / 79
+	roadPoints.set( [( t - 0.5 ) * 60, 0, Math.sin( t * Math.PI * 2 ) * 8], i * 3 )
+}
+
+const road = new MeshLine()
+	.lines( roadPoints )
+	.lineWidth( 3 ) // world units
+	.surface( { frame: 'fixed-up', uvMode: 'distance', uvScale: 3, roughness: 0.85 } )
+	.join( { type: 'round', segments: 8 } )
+	.cap( 'round' )
+	.color( 0x555555 )
+	.shadow( true, true )
+scene.add( road )
+scene.add( new THREE.HemisphereLight( 0xffffff, 0x444444, 2 ) ) // surfaces are lit
+```
+
+### Glowing rim with `lineCoord`
+
+```js
+import { circlePositions, lineCoord, MeshLine } from 'makio-meshline'
+import { mix, smoothstep, vec3, vec4 } from 'three/tsl'
+
+const glow = new MeshLine()
+	.lines( circlePositions( 96, 2 ), true )
+	.lineWidth( 0.4 )
+	.color( 0x38bdf8 )
+	.fragmentColorFn( ( color ) => {
+		const rim = smoothstep( 0.4, 0.95, lineCoord.y.abs() ) // 0 in the middle, 1 at the edges
+		return vec4( mix( color.rgb.mul( 0.3 ), vec3( 1 ), rim ), color.a )
+	} )
+scene.add( glow )
+```
+
+### Repeating texture along a line
+
+```js
+import { MeshLine, sineWavePositions } from 'makio-meshline'
+import { vec2 } from 'three/tsl'
+
+const arrows = new THREE.TextureLoader().load( 'arrow.png' )
+arrows.wrapS = THREE.RepeatWrapping
+const arrowLine = new MeshLine()
+	.lines( sineWavePositions( 2, 120, 1, 8 ) )
+	.lineWidth( 0.3 )
+	.map( arrows )
+	.uvFn( ( uv ) => uv.mul( vec2( 16, 1 ) ) ) // 16 repeats along the line
+scene.add( arrowLine )
+```
+
+### Picking
+
+```js
+import { MeshLinePicker } from 'makio-meshline'
+
+const picker = new MeshLinePicker( renderer, scene, camera, { hitRadius: 12 } ) // hit zone 12x the line width
+picker.add( line )
+renderer.domElement.addEventListener( 'pointermove', async ( event ) => {
+	const rect = renderer.domElement.getBoundingClientRect()
+	const hit = await picker.pick( event.clientX - rect.left, event.clientY - rect.top )
+	if ( hit ) console.log( hit.line, hit.instanceId ) // instanceId is -1 when not instanced
+} )
+```
+
+### Compute-driven curves (WebGPU)
+
+```js
+import { MeshLineCompute } from 'makio-meshline'
+
+const flow = new MeshLineCompute( {
+	curveCount: 96,
+	pointsPerCurve: 64,
+	mode: 'follow', // 'autonomous', 'follow' or 'field'
+	lineWidth: 3,
+	sizeAttenuation: false,
+	color: 0x8fe8ff,
+	gradientColor: 0xffc15a,
+} ).autoResize()
+scene.add( flow )
+
+renderer.setAnimationLoop( () => {
+	flow.step( renderer, 1 / 60 ) // seconds
+	renderer.render( scene, camera )
+} )
+```
+
+## 8. Troubleshooting
+
+| Symptom | Cause and fix |
+|---|---|
+| Nothing drawn, warning about `WebGLRenderer` | Use `WebGPURenderer` from `'three/webgpu'` |
+| `.render() called before the backend is initialized` | `await renderer.init()` first, or render from `setAnimationLoop()` |
+| Nothing drawn, no warning | `lineWidth` tiny for the scene's scale; fewer than two distinct points (an all-zero placeholder); the camera looks away; `opacity( 0 )` |
+| Pixel width wrong, or wrong after a resize | `.autoResize()`, or `line.resize( canvas.clientWidth, canvas.clientHeight )` for a canvas smaller than the window |
+| A surface line is black | Surfaces are lit: add lights or an environment map |
+| `unknown option "…" was ignored` | Rename the key as the warning says (rule 3) |
+| `… is Fn( ( … ) => … ), but a TSL Fn receives …` | Destructure the `Fn` arguments, or pass a plain function (rule 6) |
+| A pattern from `colorFn` looks blurry or stepped | `colorFn` runs per vertex: use `fragmentColorFn` |
+| `cap()` changes nothing | Billboard lines always end butt; use `.surface()` or `MeshLineGPUPath` |
+| A hook, dashes or a gradient do nothing on a surface | They are billboard features (rule 8) |
+| `portable vertex-buffer budget exceeded` | Pack custom attributes with `addInstanceAttributes()` / `addVertexAttributes()` |
+| A hitch the first time a line appears | `await line.warmupAsync( renderer, camera )` before showing it |
+| Stutter or memory growth while animating | Reuse the line and one `Float32Array`; `dynamic( true )` and `setPositions()` (rule 7) |
+| No shadows | `renderer.shadowMap.enabled = true`, a light with `castShadow = true`, and `line.shadow( true, true )` |
+| A texture stretches once along the whole line | `texture.wrapS = THREE.RepeatWrapping` and scale U in `uvFn` |
+
+## 9. Frameworks
+
+There is no `makio-meshline/react` or `makio-meshline/vue` entry point. Copy a declarative wrapper from the repository and keep it in your project:
+- React Three Fiber: `examples/react-three-fiber/src/MeshLine.jsx`. The `Canvas` needs a `WebGPURenderer`: pass `gl={ async ( props ) => { const renderer = new WebGPURenderer( props ); await renderer.init(); return renderer } }`. Docs: https://meshline.makio.io/react-three-fiber.html
+- Vue and TresJS: `examples/vue/src/MeshLine.vue`. Docs: https://meshline.makio.io/vue.html
+
+In any other framework, create the line imperatively when the component mounts, add it to the scene, and call `line.dispose()` when it unmounts.
+
+## 10. Other entry points
+
+- `MeshLineGPUPath` (`'makio-meshline/gpu-path'`, native WebGPU, experimental): one large static open path as stable GPU segment records with an indirect draw, optional simplification, and a CPU `MeshLine` fallback. `const path = new MeshLineGPUPath( { lines, lineWidth, join, cap }, { simplify: false } )`, `scene.add( path )`, `await path.prepare( renderer, camera )`.
+- `MeshLineCullingSystem` (`'makio-meshline/gpu-culling'`, native WebGPU): frustum-culls chunks of large opaque lines into one indirect draw. `const culling = MeshLineCullingSystem.attach( renderer, scene, { mode: 'auto' } )`, then `culling.add( line )`; it updates before each render (with `autoUpdate: false`, call `await culling.update( camera )` yourself).
+- `MeshLineCompute`: curves simulated in WebGPU compute (recipe above); `mouse( target )` steers `'follow'` mode.
+- `MeshLinePicker`, `MeshLinePickerHelper`: GPU picking and an overlay that shows the hit zones (`scene.add( new MeshLinePickerHelper( picker ) )`, `helper.update()` each frame).
+- `MeshLineGeometry`, `MeshLineNodeMaterial`, `MeshLineSurfaceGeometry`, `MeshLineSurfaceNodeMaterial`: the low-level geometry and materials behind the facade, for custom meshes.
+
+## 11. Documentation
+
+- Guide: https://meshline.makio.io/guide.html
+- MeshLine API: https://meshline.makio.io/meshline.html
+- Hooks: https://meshline.makio.io/hooks.html
+- Surfaces: https://meshline.makio.io/surface.html
+- Helpers and storage buffers: https://meshline.makio.io/helpers.html
+- Performance: https://meshline.makio.io/performance.html
+- Picking: https://meshline.makio.io/picking.html
+- GPU culling: https://meshline.makio.io/gpu-culling.html
+- GPU path: https://meshline.makio.io/gpu-path.html
+- Migrating from v1: https://meshline.makio.io/v2-migration.html
+- Live demos: https://meshline-demo.makio.io

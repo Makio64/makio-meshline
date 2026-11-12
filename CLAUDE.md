@@ -95,10 +95,11 @@ When editing code, maintain these style conventions exactly as they appear in ex
   - `MeshLineCompute.js` — WebGPU compute-driven curve simulation engine
   - `MeshLinePicker.js` / `MeshLinePickerHelper.js` — GPU pixel-picker and visual debug helper
   - `positions/` — `circlePositions`, `squarePositions`, `rectanglePositions`, `sineWavePositions`, `straightLine`, `straightLineBetween`, `storagePositions` (supports ring-buffer `head`, two-buffer GPU `toBuffer`/`morph`, and `closed` loop seam wrapping)
-- `src/gpu-culling/index.js` (`makio-meshline/gpu-culling`, native WebGPU):
+- `src/MeshLineCullingSystem.js` (`makio-meshline/gpu-culling`, native WebGPU):
   - `MeshLineCullingSystem` — Native-WebGPU chunk frustum culling + single indirect draw compaction
-- `src/gpu-path/index.js` (`makio-meshline/gpu-path`, native WebGPU):
+- `src/MeshLineGPUPath.js` (`makio-meshline/gpu-path`, native WebGPU):
   - `MeshLineGPUPath` — Point-centric GPU path with optional multi-stride simplification and automatic CPU fallback
+- `src/llms-full.txt` — The agent reference shipped in the npm package (copied to `docs/public/llms-full.txt`), kept true by `test/agent-reference.test.js`
 
 ### Demo Conventions (`demo/src/demos/`)
 Demos teach the MeshLine API, so everything else stays out of them:
@@ -118,9 +119,10 @@ Demos teach the MeshLine API, so everything else stays out of them:
 3. **Packed Attributes**: Use `line.addInstanceAttributes( { a: 3, b: 1 } )` or `line.addVertexAttributes( ... )` to stay within the portable 8-vertex-buffer WebGPU limit.
 4. **Shared Shader Graphs**: anything `MeshLineNodeMaterial.setupShaders()` reads to decide which nodes to build must be part of `_graphKey()`, and value uniforms must be read through `_drawnValues()`. `test/meshline-shared-shader-graph.test.js` fails when a key misses a structural input.
 5. **Random Helper in Demo**: Use `random( min, max )` from `@/makio/utils/random` inside `demo/src/`.
+6. **Agent Reference**: a public API change (option, default, hook arguments, helper signature, method) updates `src/llms-full.txt` in the same change, then `cp src/llms-full.txt docs/public/llms-full.txt`. A new `configure()` key also goes into `CONFIGURE_KEYS` in `src/MeshLineBillboard.js`. `test/agent-reference.test.js` builds the recipes and checks both.
 
 ## Dependencies
 
 - **Three.js >=0.186.0** (peer dependency for every entry point, including `gpu-culling` and `gpu-path`)
 - Demo uses Vue 3, Vite, and Three.js `WebGPURenderer`
-- Documentation uses VitePress (see `AGENTS.md` and `docs/public/llms-full.txt` for full agent recipes)
+- Documentation uses VitePress (see `AGENTS.md` and `src/llms-full.txt` for full agent recipes)

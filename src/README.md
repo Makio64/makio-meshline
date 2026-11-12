@@ -2,6 +2,8 @@
 
 A modern MeshLine library for Three.js wide screen strokes and world-space road/ribbon surfaces, with gradients, dashes, textures, shadows, GPU positions, and instancing.
 
+[Documentation](https://meshline.makio.io/) · [React Three Fiber](https://meshline.makio.io/react-three-fiber.html) · [Vue](https://meshline.makio.io/vue.html)
+
 - Supports: Three.js r186+, `WebGPURenderer` (WebGPU and WebGL2 backends)
 - Features: gradients, dashes, textures, vertex colors, shadows, GPU positions, storage-buffer trails, instancing, TSL hooks, lit road/ribbon surfaces, optional native-WebGPU chunk culling, and an experimental point-centric GPU path
 
@@ -12,6 +14,16 @@ Release compatibility is checked from the packed artifact at the minimum support
 ```bash
 pnpm add makio-meshline
 ```
+
+## Using an AI Coding Agent
+
+This package ships a reference written for coding agents, [`llms-full.txt`](https://meshline.makio.io/llms-full.txt): setup, the rules that prevent the usual mistakes, the full API, TSL hooks, tested recipes and a troubleshooting table. Point your agent at the installed copy with one line in your project's `AGENTS.md` or `CLAUDE.md`:
+
+```md
+Before writing makio-meshline code, read node_modules/makio-meshline/llms-full.txt.
+```
+
+Mistakes also explain themselves: an unknown option, a TSL `Fn` hook that does not destructure its arguments, or a `THREE.WebGLRenderer` logs one warning that names the fix.
 
 ## Quick Start
 

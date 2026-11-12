@@ -206,6 +206,120 @@ function surfaceClasses( facade ) {
 	return profile
 }
 
+// Usage mistakes that would otherwise fail silently, or far from their cause,
+// warn once and name the fix: people and coding agents learn the API from
+// these messages.
+const _warned = new Set()
+function warnOnce( key, message ) {
+	if ( _warned.has( key ) ) return
+	_warned.add( key )
+	console.warn( `MeshLine: ${message}` )
+}
+
+const HOOK_NAMES = ['gpuPositionNode', 'positionFn', 'previousFn', 'nextFn', 'widthFn', 'normalFn', 'colorFn', 'gradientFn', 'opacityFn', 'dashFn', 'uvFn', 'vertexFn', 'fragmentColorFn', 'fragmentAlphaFn', 'discardFn']
+
+// Every key configure() reads; test/agent-reference.test.js keeps the two in step.
+const CONFIGURE_KEYS = new Set( [
+	...'surface segments lines points closed vertexColors color lineWidth widthCallback'.split( ' ' ),
+	...'sizeAttenuation antialias gradientColor map mapOffset alphaMap opacity alphaTest'.split( ' ' ),
+	...'transparent wireframe shadow receiveShadow dpr frustumCulled verbose renderWidth'.split( ' ' ),
+	...'renderHeight dash dashCount dashRatio dashOffset join miterLimit cap smoothSharpBends'.split( ' ' ),
+	...'smoothSharpBendsAlpha smoothSharpBendsThreshold dynamic autoResize usage instanceCount'.split( ' ' ),
+	...'instances needsUV needsWidth needsProgress needsPrevious needsNext needsSide needsVertexColor'.split( ' ' ),
+	...HOOK_NAMES,
+] )
+
+// Names reached for that mean an existing option (or, with a space, a hint).
+const OPTION_ALIASES = {
+	width: 'lineWidth',
+	thickness: 'lineWidth',
+	positions: 'lines',
+	vertices: 'lines',
+	loop: 'closed',
+	castShadow: 'shadow',
+	gradient: 'gradientColor',
+	texture: 'map',
+	alpha: 'opacity',
+	lineJoin: 'join',
+	lineCap: 'cap',
+	count: 'instances',
+	resolution: 'renderWidth and renderHeight, or line.resize( width, height )',
+}
+
+function editDistance( a, b ) {
+	let previous = Array.from( { length: b.length + 1 }, ( _, i ) => i )
+	for ( let i = 1; i <= a.length; i++ ) {
+		const current = [i]
+		for ( let j = 1; j <= b.length; j++ ) {
+			current[j] = Math.min( previous[j] + 1, current[j - 1] + 1, previous[j - 1] + ( a[i - 1] === b[j - 1] ? 0 : 1 ) )
+		}
+		previous = current
+	}
+	return previous[b.length]
+}
+
+function suggestOption( key ) {
+	if ( Object.hasOwn( OPTION_ALIASES, key ) ) return OPTION_ALIASES[key]
+	const lower = key.toLowerCase()
+	const limit = Math.max( 1, Math.floor( key.length / 3 ) )
+	let best = null
+	let bestDistance = Infinity
+	for ( const known of CONFIGURE_KEYS ) {
+		const distance = editDistance( lower, known.toLowerCase() )
+		if ( distance <= limit && distance < bestDistance ) {
+			best = known
+			bestDistance = distance
+		}
+	}
+	return best
+}
+
+// The parameter list of a function as written, or null when unreadable.
+function parameterList( fn ) {
+	const source = Function.prototype.toString.call( fn )
+	const open = source.indexOf( '(' )
+	const arrow = source.indexOf( '=>' )
+	if ( arrow !== -1 && ( open === -1 || arrow < open ) ) return [source.slice( 0, arrow ).replace( /^async\s+/, '' ).trim()]
+	if ( open === -1 ) return null
+	const params = []
+	let depth = 0
+	let start = open + 1
+	for ( let i = open; i < source.length; i++ ) {
+		const char = source[i]
+		if ( char === '(' || char === '[' || char === '{' ) {
+			depth++
+		} else if ( char === ')' || char === ']' || char === '}' ) {
+			if ( --depth > 0 ) continue
+			const last = source.slice( start, i ).trim()
+			if ( last ) params.push( last )
+			return params
+		} else if ( char === ',' && depth === 1 ) {
+			params.push( source.slice( start, i ).trim() )
+			start = i + 1
+		}
+	}
+	return null
+}
+
+// A TSL Fn passes its function one array holding every argument, so
+// `Fn( ( color, progress ) => … )` gets that array as `color`. Plain functions
+// receive the hook arguments one by one and need no Fn.
+const _checkedHooks = new WeakSet()
+const ARGUMENT_ARRAY_NAMES = /^(_ref\d*|inputs?|args|params|parameters|values)$/
+function checkHook( name, hook ) {
+	const jsFunc = hook?.shaderNode?.jsFunc
+	if ( typeof jsFunc !== 'function' || _checkedHooks.has( jsFunc ) ) return
+	_checkedHooks.add( jsFunc )
+	const params = parameterList( jsFunc )
+	const first = params?.[0]
+	if ( !first || first[0] === '[' || first[0] === '{' || ARGUMENT_ARRAY_NAMES.test( first ) ) return
+	const list = params.join( ', ' )
+	console.warn(
+		`MeshLine: ${name} is Fn( ( ${list} ) => … ), but a TSL Fn receives the hook arguments as one array, ` +
+		`so ${first} is that array. Write Fn( ( [${list}] ) => … ), or pass a plain function ( ${list} ) => … without Fn.`
+	)
+}
+
 /**
  * High-level facade for creating GPU-rendered lines in Three.js.
  * Extends `THREE.Mesh` and provides a fluent/chainable API for configuring
@@ -321,6 +435,7 @@ export class MeshLineBillboard extends Mesh {
 	 */
 	configure( options = {} ) {
 		options = options ?? {}
+		this._warnUnknownOptions( options )
 		if ( options.surface !== undefined ) this.surface( options.surface )
 		if ( options.segments !== undefined ) this.segments( options.segments )
 		if ( options.lines !== undefined || options.points !== undefined || options.closed !== undefined ) {
@@ -370,6 +485,7 @@ export class MeshLineBillboard extends Mesh {
 		if ( options.gpuPositionNode !== undefined ) this.gpuPositionNode( options.gpuPositionNode )
 		if ( options.usage !== undefined ) this.usage( options.usage )
 		if ( options.instanceCount !== undefined ) this.instances( options.instanceCount )
+		else if ( options.instances !== undefined ) this.instances( options.instances )
 		if ( 'needsUV' in options ) this.needsUV( options.needsUV )
 		if ( options.needsWidth !== undefined ) this.needsWidth( options.needsWidth )
 		if ( 'needsProgress' in options ) this.needsProgress( options.needsProgress )
@@ -393,6 +509,20 @@ export class MeshLineBillboard extends Mesh {
 		if ( options.discardFn !== undefined ) this.discardFn( options.discardFn )
 		return this
 	}
+
+	_warnUnknownOptions( options ) {
+		for ( const key of Object.keys( options ) ) {
+			if ( CONFIGURE_KEYS.has( key ) || options[key] === undefined ) continue
+			const suggestion = suggestOption( key )
+			const fix = suggestion
+				? `Use ${suggestion.includes( ' ' ) ? suggestion : `"${suggestion}"`}.`
+				: key in this
+					? `It is a THREE.Mesh property: set line.${key} on the line itself.`
+					: 'Option keys match the method names; see MeshLineConfigureOptions.'
+			warnOnce( `option:${key}`, `unknown option "${key}" was ignored. ${fix}` )
+		}
+	}
+
 	/**
 	 * Set line point data. Accepts a single polyline or an array of polylines.
 	 * If the line is already built, positions are updated in-place when possible.
@@ -1345,6 +1475,7 @@ export class MeshLineBillboard extends Mesh {
 		if ( surfaceProfile && options.instanceCount !== -1 ) {
 			throw new Error( 'MeshLine: surface mode does not support facade instancing yet' )
 		}
+		for ( const name of HOOK_NAMES ) checkHook( name, options[name] )
 
 		this._building = true
 		try {
@@ -1593,6 +1724,9 @@ export class MeshLineBillboard extends Mesh {
 	}
 
 	_onBeforeRender( renderer ) {
+		if ( renderer?.isWebGLRenderer ) {
+			warnOnce( 'webgl-renderer', 'THREE.WebGLRenderer cannot draw node materials. Use WebGPURenderer from \'three/webgpu\', which falls back to WebGL2 on its own, and await renderer.init() before rendering.' )
+		}
 		this._syncPositionStorage( renderer )
 		this.ensureBuilt()
 		// Later rebuilds free the GPU buffers they replace through this renderer.
@@ -2027,18 +2161,21 @@ export class MeshLineBillboard extends Mesh {
 	}
 
 	/**
-	 * Automatically update the resolution uniform on window resize.
-	 * @param {import('./index.d.ts').MeshLineResizeTarget} [target=window]
+	 * Automatically update the resolution uniform on window resize. `true` means
+	 * the window, `false` stops tracking.
+	 * @param {import('./index.d.ts').MeshLineResizeTarget | boolean} [target=window]
 	 * @returns {this}
 	 */
-	autoResize( target = isBrowser ? window : null ) {
-		if ( !target ) {
-			console.warn( 'MeshLine: autoResize requires a valid target in SSR/Node environments' )
-			return this
-		}
+	autoResize( target = true ) {
 		if ( this._autoResizeHandler ) {
 			this._autoResizeTarget?.removeEventListener( 'resize', this._autoResizeHandler )
 			this._autoResizeHandler = null
+		}
+		if ( target === false ) return this
+		if ( target === true ) target = isBrowser ? window : null
+		if ( !target ) {
+			console.warn( 'MeshLine: autoResize requires a valid target in SSR/Node environments' )
+			return this
 		}
 		this._autoResizeHandler = () => {
 			this.resize( target.innerWidth, target.innerHeight )
