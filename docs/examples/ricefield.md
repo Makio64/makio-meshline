@@ -8,7 +8,7 @@ pageClass: example-page
 
 This scene stays manageable by repeating one very small blade template many times with instancing.
 
-<iframe title="Makio MeshLine Rice Field demo" src="https://meshline-demo.makio.io/examples/ricefield?noUI" width="100%" height="600" style="border: 1px solid #ddd; border-radius: 8px;"></iframe>
+<iframe loading="lazy" title="Makio MeshLine Rice Field demo" src="https://meshline-demo.makio.io/examples/ricefield?noUI" width="100%" height="600" style="border: 1px solid #ddd; border-radius: 8px;"></iframe>
 
 [Open the full Rice Field demo](https://meshline-demo.makio.io/examples/ricefield)
 

@@ -1,8 +1,9 @@
 ---
+title: "Vue 3 MeshLine with Three.js & WebGPU"
 description: "Use Makio MeshLine with Vue 3 for wide screen lines, camera-independent road surfaces, textures, and GPU-driven effects in Three.js WebGPU."
 ---
 
-# Vue
+# MeshLine for Vue 3
 
 Integrate Makio MeshLine into your Vue 3 project with Three.js WebGPU.
 

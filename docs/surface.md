@@ -159,7 +159,7 @@ The surface builder has a compact fast path and a variable-topology path. Both c
 - Open paths support `butt`, `square`, and tessellated `round` caps. `cap.segments` is the full semicircle budget.
 - A zero-radius reversal has no unique tangent or finite miter. It is split into two independent runs and each half follows the selected cap policy, so no triangle bridges across the cusp.
 
-Square/round cap UVs extend by physical path distance, and closed paths duplicate their texture seam before emitting seam joins. With the default `inner: 'exact'`, the builder validates the combined inner setbacks on every segment and rejects a road whose adjacent joins would cross. Use `inner: 'clip'` only when preserving a dynamic centerline is more important than exact offset edges; it proportionally bounds the inner footprint while retaining the configured outer join.
+Square/round cap UVs extend by physical path distance, and closed paths duplicate their texture seam before emitting seam joins. With the default `inner: 'exact'`, the builder validates the combined inner setbacks on every segment and rejects a road whose adjacent joins would cross. Use `inner: 'clip'` only when preserving a dynamic centerline is more important than exact offset edges; it proportionally bounds the inner footprint while retaining the configured outer join. A clipped corner keeps the UV and `side` of the point it stops at, a share of the way from the centreline to the edge, so a texture or a painted band is cut at the trim rather than squeezed into the narrower row.
 
 ## Low-Level Class API
 

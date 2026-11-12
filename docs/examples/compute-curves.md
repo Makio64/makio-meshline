@@ -8,7 +8,7 @@ pageClass: example-page
 
 This demo uses `MeshLineCompute` as a WebGPU curve engine: compute shaders update autonomous curve points and arc-length data in storage buffers, then MeshLine renders them as glowing ribbons with distance-based pulse modulation.
 
-<iframe title="Makio MeshLine Compute Curves demo" src="https://meshline-demo.makio.io/examples/compute-curves?noUI" width="100%" height="600" style="border: 1px solid #ddd; border-radius: 8px;"></iframe>
+<iframe loading="lazy" title="Makio MeshLine Compute Curves demo" src="https://meshline-demo.makio.io/examples/compute-curves?noUI" width="100%" height="600" style="border: 1px solid #ddd; border-radius: 8px;"></iframe>
 
 [Open the full Compute Curves demo](https://meshline-demo.makio.io/examples/compute-curves)
 

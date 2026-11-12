@@ -8,7 +8,7 @@ pageClass: example-page
 
 This example morphs one instanced line layout between two sampled sculptures. The minimal pattern is just two position sets and one uniform.
 
-<iframe title="Makio MeshLine Venus and David demo" src="https://meshline-demo.makio.io/examples/venus-and-david?noUI" width="100%" height="600" style="border: 1px solid #ddd; border-radius: 8px;"></iframe>
+<iframe loading="lazy" title="Makio MeshLine Venus and David demo" src="https://meshline-demo.makio.io/examples/venus-and-david?noUI" width="100%" height="600" style="border: 1px solid #ddd; border-radius: 8px;"></iframe>
 
 [Open the full Venus and David demo](https://meshline-demo.makio.io/examples/venus-and-david)
 

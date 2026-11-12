@@ -8,7 +8,7 @@ pageClass: example-page
 
 Use the sandbox to tune one line until it looks right, then copy the generated snippet into your own scene.
 
-<iframe title="Makio MeshLine Interactive Sandbox demo" src="https://meshline-demo.makio.io/examples/sandbox?noUI" width="100%" height="600" style="border: 1px solid #ddd; border-radius: 8px;"></iframe>
+<iframe loading="lazy" title="Makio MeshLine Interactive Sandbox demo" src="https://meshline-demo.makio.io/examples/sandbox?noUI" width="100%" height="600" style="border: 1px solid #ddd; border-radius: 8px;"></iframe>
 
 [Open the full Interactive Sandbox demo](https://meshline-demo.makio.io/examples/sandbox)
 

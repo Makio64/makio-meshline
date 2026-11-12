@@ -4,8 +4,8 @@ const SITE_URL = 'https://meshline.makio.io'
 const REPO_URL = 'https://github.com/Makio64/makio-meshline'
 const DEMO_URL = 'https://meshline-demo.makio.io/'
 const SITE_TITLE = 'Makio MeshLine'
-const DEFAULT_DESCRIPTION = 'TSL-powered MeshLine for Three.js with wide lines, gradients, dashes, textures, shadows, GPU positions, and instancing for WebGPU and WebGL2, plus experimental WebGPU compute curves.'
-const SITE_IMAGE = `${SITE_URL}/og-image.svg`
+const DEFAULT_DESCRIPTION = 'Draw thick lines in Three.js with Makio MeshLine: TSL shaders, gradients, dashes, instancing, and road surfaces for WebGPU and WebGL2.'
+const SITE_IMAGE = `${SITE_URL}/og-image.png`
 const X_HANDLE = '@makio64'
 const PAGE_DESCRIPTIONS = {
   'index.md': 'Makio MeshLine is a TSL-powered MeshLine library for Three.js with wide lines, gradients, dashes, textures, shadows, GPU positions, and instancing.',
@@ -97,44 +97,40 @@ function getRobotsValue( pageData ) {
 }
 
 function createHomeSchema( description ) {
-  return JSON.stringify( {
-    '@context': 'https://schema.org',
-    '@type': 'SoftwareSourceCode',
-    name: SITE_TITLE,
-    version: '2.0.0',
-    description,
-    url: SITE_URL,
-    codeRepository: REPO_URL,
-    downloadUrl: 'https://www.npmjs.com/package/makio-meshline',
-    discussionUrl: DEMO_URL,
-    programmingLanguage: ['JavaScript', 'TypeScript'],
-    runtimePlatform: 'Three.js WebGPU, WebGL2',
-    license: `${REPO_URL}/blob/main/LICENSE`,
-    image: SITE_IMAGE,
-    author: {
-      '@type': 'Person',
-      name: 'David Ronai',
-      alternateName: 'Makio64',
-      url: 'https://github.com/Makio64'
-    },
-    keywords: [
-      'three.js',
-      'meshline',
-      'wide lines',
-      'thick lines',
-      'webgpu',
-      'webgl2',
-      'tsl',
-      'instancing',
-      'road surface',
-      'ribbon',
-      'contour isobars',
-      'gpu culling',
-      'storage buffer',
-      'react-three-fiber',
-      'vue'
-    ]
-  } )
+	return JSON.stringify( {
+		'@context': 'https://schema.org',
+		'@graph': [
+			{
+				'@type': 'WebSite',
+				'@id': `${SITE_URL}/#website`,
+				name: SITE_TITLE,
+				alternateName: 'makio-meshline',
+				url: `${SITE_URL}/`,
+				description,
+				inLanguage: 'en',
+				about: { '@id': `${SITE_URL}/#software` }
+			},
+			{
+				'@type': 'SoftwareSourceCode',
+				'@id': `${SITE_URL}/#software`,
+				name: SITE_TITLE,
+				description,
+				url: `${SITE_URL}/`,
+				codeRepository: REPO_URL,
+				downloadUrl: 'https://www.npmjs.com/package/makio-meshline',
+				programmingLanguage: ['JavaScript', 'TypeScript'],
+				runtimePlatform: 'Three.js WebGPU, WebGL2',
+				license: `${REPO_URL}/blob/main/LICENSE`,
+				image: SITE_IMAGE,
+				author: {
+					'@type': 'Person',
+					name: 'David Ronai',
+					alternateName: 'Makio64',
+					url: 'https://github.com/Makio64'
+				}
+			}
+		]
+	} )
 }
 
 function createArticleSchema( title, description, canonicalUrl ) {
@@ -152,23 +148,29 @@ function createArticleSchema( title, description, canonicalUrl ) {
     },
     isPartOf: {
       '@type': 'WebSite',
+      '@id': `${SITE_URL}/#website`,
       name: SITE_TITLE,
-      url: SITE_URL
+      url: `${SITE_URL}/`
     }
   } )
 }
 
 export default defineConfig( {
   title: SITE_TITLE,
+  lang: 'en',
   description: DEFAULT_DESCRIPTION,
   appearance: 'dark',
+  srcExclude: ['drafts/**'],
   sitemap: {
     hostname: SITE_URL,
     transformItems( items ) {
-      return items.filter( item => item.url !== '/404' && item.url !== '/404.html' )
+      return items.filter( item => !/^\/?404(?:\.html)?$/.test( item.url ) )
     }
   },
   head: [
+    ['link', { rel: 'icon', type: 'image/png', sizes: '96x96', href: '/favicon.png' }],
+    ['link', { rel: 'icon', href: '/favicon.ico', sizes: 'any' }],
+    ['link', { rel: 'apple-touch-icon', sizes: '180x180', href: '/apple-touch-icon.png' }],
     ['meta', { name: 'author', content: 'David Ronai (Makio64)' }],
     ['meta', { name: 'keywords', content: 'three.js meshline, wide lines, thick lines, webgpu, webgl2, tsl, instancing, dashed lines, gradient lines, road surface, ribbon, isobars, contour lines, gpu culling, react-three-fiber, vue' }],
     ['meta', { name: 'theme-color', content: '#101216' }],
@@ -197,8 +199,8 @@ export default defineConfig( {
       ['meta', { property: 'og:description', content: description }],
       ['meta', { property: 'og:url', content: canonicalUrl }],
       ['meta', { property: 'og:image', content: SITE_IMAGE }],
-      ['meta', { property: 'og:image:alt', content: `${SITE_TITLE} — TSL-powered wide lines and road surfaces for Three.js WebGPU & WebGL2` }],
-      ['meta', { property: 'og:image:type', content: 'image/svg+xml' }],
+      ['meta', { property: 'og:image:alt', content: `${SITE_TITLE} — a hover car surrounded by glowing airflow lines in the Wind Tunnel WebGPU demo` }],
+      ['meta', { property: 'og:image:type', content: 'image/png' }],
       ['meta', { property: 'og:image:width', content: '1200' }],
       ['meta', { property: 'og:image:height', content: '630' }],
       ['meta', { name: 'twitter:card', content: 'summary_large_image' }],
@@ -206,7 +208,7 @@ export default defineConfig( {
       ['meta', { name: 'twitter:title', content: title }],
       ['meta', { name: 'twitter:description', content: description }],
       ['meta', { name: 'twitter:image', content: SITE_IMAGE }],
-      ['meta', { name: 'twitter:image:alt', content: `${SITE_TITLE} — TSL-powered wide lines and road surfaces for Three.js WebGPU & WebGL2` }]
+      ['meta', { name: 'twitter:image:alt', content: `${SITE_TITLE} — a hover car surrounded by glowing airflow lines in the Wind Tunnel WebGPU demo` }]
     ]
 
     if ( isHomePage ) {
@@ -218,6 +220,7 @@ export default defineConfig( {
     return head
   },
   themeConfig: {
+    logo: { src: '/favicon.png', alt: 'Makio MeshLine' },
     nav: [
       { text: 'Guides', link: '/guide' },
       { text: 'Examples', link: '/examples/basic' },

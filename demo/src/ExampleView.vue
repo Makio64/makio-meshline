@@ -112,7 +112,7 @@ export default {
 		updateDocumentMeta( demo ) {
 			if ( typeof document === 'undefined' || !demo ) return
 			const pageTitle = `${demo.title} — Makio MeshLine (${demo.subtitle})`
-			const description = `${demo.title} (${demo.subtitle}): interactive Three.js WebGPU & TSL example built with Makio MeshLine.`
+			const description = `${demo.blurb} Interactive Three.js WebGPU & TSL example built with Makio MeshLine.`
 			const canonicalUrl = `https://meshline-demo.makio.io/examples/${demo.id}`
 			document.title = pageTitle
 			const setMeta = ( selector, attr, value ) => {
@@ -126,6 +126,13 @@ export default {
 			setMeta( 'meta[name="twitter:title"]', 'content', pageTitle )
 			setMeta( 'meta[name="twitter:description"]', 'content', description )
 			setMeta( 'link[rel="canonical"]', 'href', canonicalUrl )
+			const schemaElement = document.querySelector( '#demo-structured-data' )
+			if ( schemaElement ) {
+				const schema = JSON.parse( schemaElement.textContent )
+				const application = schema['@graph'].find( node => node['@type'] === 'WebApplication' )
+				Object.assign( application, { name: pageTitle, description, url: canonicalUrl } )
+				schemaElement.textContent = JSON.stringify( schema ).replace( /</g, '\\u003c' )
+			}
 		},
 		installGlobalFailureSignals() {
 			window.addEventListener( 'error', this.onWindowError )

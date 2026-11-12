@@ -8,7 +8,7 @@ pageClass: example-page
 
 Instead of keeping a single live cursor trail, this demo records every stroke you paint and spawns replay followers along it. The scene opens with a deterministic infinity-stroke replay so the follower motion is visible before your first drag; every stroke you add gets its own colored brush followers.
 
-<iframe title="Makio MeshLine Draw & Trail demo" src="https://meshline-demo.makio.io/examples/drawlines?noUI" width="100%" height="600" style="border: 1px solid #ddd; border-radius: 8px;"></iframe>
+<iframe loading="lazy" title="Makio MeshLine Draw & Trail demo" src="https://meshline-demo.makio.io/examples/drawlines?noUI" width="100%" height="600" style="border: 1px solid #ddd; border-radius: 8px;"></iframe>
 
 [Open the full Draw & Trail demo](https://meshline-demo.makio.io/examples/drawlines)
 

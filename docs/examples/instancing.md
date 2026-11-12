@@ -8,7 +8,7 @@ pageClass: example-page
 
 Use one MeshLine and per-instance attributes when many lines share the same shape and material.
 
-<iframe title="Makio MeshLine Instancing demo" src="https://meshline-demo.makio.io/examples/gpu-instance?noUI" width="100%" height="600" style="border: 1px solid #ddd; border-radius: 8px;"></iframe>
+<iframe loading="lazy" title="Makio MeshLine Instancing demo" src="https://meshline-demo.makio.io/examples/gpu-instance?noUI" width="100%" height="600" style="border: 1px solid #ddd; border-radius: 8px;"></iframe>
 
 [Open the full Instancing demo](https://meshline-demo.makio.io/examples/gpu-instance)
 

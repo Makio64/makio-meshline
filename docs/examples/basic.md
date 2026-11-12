@@ -8,7 +8,7 @@ pageClass: example-page
 
 Compare width, dashes, gradients, textures, opacity, size attenuation, and live TSL hooks side by side. The checked-in [vanilla starter](https://github.com/Makio64/makio-meshline/tree/main/examples/vanilla) remains the smallest conventional Three.js setup.
 
-<iframe title="Makio MeshLine Style Gallery (Basic) demo" src="https://meshline-demo.makio.io/examples/basic?noUI" width="100%" height="600" style="border: 1px solid #ddd; border-radius: 8px;"></iframe>
+<iframe loading="lazy" title="Makio MeshLine Style Gallery (Basic) demo" src="https://meshline-demo.makio.io/examples/basic?noUI" width="100%" height="600" style="border: 1px solid #ddd; border-radius: 8px;"></iframe>
 
 [Open the Style Gallery (Basic) demo](https://meshline-demo.makio.io/examples/basic)
 

@@ -5,8 +5,9 @@
 		class="BurgerButton"
 		:class="{ cross: isOpen }"
 		:aria-expanded="String( isOpen )"
+		:aria-label="isOpen ? 'Close demos' : undefined"
 		aria-controls="examples-menu"
-		title="Browse all demos (M)"
+		:title="isOpen ? 'Close (Esc)' : 'Browse all demos (M)'"
 		@click="toggle"
 	>
 		<span class="BurgerButton-icon" aria-hidden="true">
@@ -70,7 +71,11 @@ export default {
 	-webkit-backdrop-filter blur( 14px )
 	color rgba( 244, 245, 247, 0.78 )
 	font 500 12px/1 'Inter', system-ui, -apple-system, sans-serif
-	transition background 0.16s ease, border-color 0.16s ease, color 0.16s ease
+	transition background 0.16s ease, border-color 0.16s ease, color 0.16s ease, gap 0.2s ease
+
+	// Open: collapse to the round close icon so it clears the menu's search field.
+	&.cross
+		gap 0
 
 	&:hover,
 	&:focus-visible,
@@ -125,7 +130,15 @@ export default {
 		transform rotate( -45deg )
 
 .BurgerButton-label
+	max-width 4em
+	overflow hidden
+	white-space nowrap
 	letter-spacing -0.01em
+	transition max-width 0.2s ease, opacity 0.16s ease
+
+	.cross &
+		max-width 0
+		opacity 0
 
 @media (max-width: 640px)
 	.BurgerButton
@@ -139,6 +152,7 @@ export default {
 
 @media (prefers-reduced-motion: reduce)
 	.BurgerButton,
-	.BurgerButton-icon span
+	.BurgerButton-icon span,
+	.BurgerButton-label
 		transition none
 </style>

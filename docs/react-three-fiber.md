@@ -1,8 +1,9 @@
 ---
+title: "React Three Fiber MeshLine with WebGPU"
 description: "Use Makio MeshLine with React Three Fiber (R3F) for wide screen lines, camera-independent road surfaces, textures, and GPU-driven effects."
 ---
 
-# React Three Fiber
+# MeshLine for React Three Fiber
 
 Integrate Makio MeshLine into your [React Three Fiber](https://github.com/pmndrs/react-three-fiber) project.
 

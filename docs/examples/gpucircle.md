@@ -8,7 +8,7 @@ pageClass: example-page
 
 Demonstrates GPU-based position calculation using Three.js TSL (Three Shading Language) nodes, enabling complex animations with minimal CPU overhead. The demo below draws a tunnel of 150 rings in one call: every ring point is computed on the GPU from its progress, its instance index and time.
 
-<iframe title="Makio MeshLine GPU positions demo" src="https://meshline-demo.makio.io/examples/gpu-instance?noUI" width="100%" height="600" style="border: 1px solid #ddd; border-radius: 8px;"></iframe>
+<iframe loading="lazy" title="Makio MeshLine GPU positions demo" src="https://meshline-demo.makio.io/examples/gpu-instance?noUI" width="100%" height="600" style="border: 1px solid #ddd; border-radius: 8px;"></iframe>
 
 [Open the full GPU Instancing demo](https://meshline-demo.makio.io/examples/gpu-instance)
 

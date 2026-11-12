@@ -8,7 +8,7 @@ pageClass: example-page
 
 MeshLine supports both **shadow casting** and **shadow receiving**, allowing lines to participate in Three.js shadow rendering with full support for dashed patterns and self-shadowing across overlapping rings.
 
-<iframe title="Makio MeshLine Shadow demo" src="https://meshline-demo.makio.io/examples/shadow?noUI" width="100%" height="600" style="border: 1px solid #ddd; border-radius: 8px;"></iframe>
+<iframe loading="lazy" title="Makio MeshLine Shadow demo" src="https://meshline-demo.makio.io/examples/shadow?noUI" width="100%" height="600" style="border: 1px solid #ddd; border-radius: 8px;"></iframe>
 
 [Open the full Shadow demo](https://meshline-demo.makio.io/examples/shadow)
 

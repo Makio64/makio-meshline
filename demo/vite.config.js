@@ -8,6 +8,8 @@ import { brotliSizePlugin } from 'vite-plugin-brotli-size'
 import mkcert from 'vite-plugin-mkcert'
 import { qrcode } from 'vite-plugin-qrcode'
 
+import demoSeo from './seo.js'
+
 // https://vitejs.dev/config/
 export default defineConfig( {
 	plugins: [
@@ -29,6 +31,7 @@ export default defineConfig( {
 		vue(),
 		qrcode(),
 		brotliSizePlugin(),
+		demoSeo(),
 	],
 	build: {
 		target: 'esnext',

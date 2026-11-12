@@ -8,7 +8,7 @@ pageClass: example-page
 
 A bamboo grove can stay simple if you treat each stalk as one repeated template plus a few per-instance values.
 
-<iframe title="Makio MeshLine Bamboo Grove demo" src="https://meshline-demo.makio.io/examples/bamboooo?noUI" width="100%" height="600" style="border: 1px solid #ddd; border-radius: 8px;"></iframe>
+<iframe loading="lazy" title="Makio MeshLine Bamboo Grove demo" src="https://meshline-demo.makio.io/examples/bamboooo?noUI" width="100%" height="600" style="border: 1px solid #ddd; border-radius: 8px;"></iframe>
 
 [Open the full Bamboo Grove demo](https://meshline-demo.makio.io/examples/bamboooo)
 
