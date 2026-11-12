@@ -15,7 +15,7 @@ const ROOM_HEIGHT = 8
 function initEnvironment() {
 	const environment = new RoomEnvironment()
 	const pmrem = new PMREMGenerator( stage3d.renderer )
-	stage3d.scene.environment = stage3d.own( pmrem.fromScene( environment ).texture )
+	stage3d.scene.environment = stage3d.own( pmrem.fromScene( environment ) ).texture
 	stage3d.scene.environmentIntensity = 0.25
 	environment.dispose()
 	pmrem.dispose()

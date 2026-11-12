@@ -84,6 +84,8 @@ const forEachInteriorPoint = ( pointIndex, end, body ) => Loop(
  * `source`, `neighbours`, `chunks`, `outputRuns`, `output`, `outputGaps`, `state`, `simplifiedDraw`
  * @param {object} uniforms - `pointCount`, `chunkCount`, `inverseWorldTolerance`,
  * `inversePixelTolerance`, `screenEnabled`, `projectionView`, `viewport`
+ * @returns {{ passes: object, scratch: StorageBufferAttribute[] }} The dispatches, and the
+ * buffers only they use, which the caller releases with its own
  */
 export function createSimplificationPasses( attributes, uniforms ) {
 	const { chunkCount, inversePixelTolerance, inverseWorldTolerance, pointCount, projectionView, screenEnabled, viewport } = uniforms
@@ -425,5 +427,8 @@ export function createSimplificationPasses( attributes, uniforms ) {
 		} )
 	} )().compute( OUTPUT_CAPACITY, [WORKGROUP_SIZE] )
 
-	return { blockPrefix, clear, flush, refine, relaxShrink, relaxUnshrink, resolve, scan, scatter, seed }
+	return {
+		passes: { blockPrefix, clear, flush, refine, relaxShrink, relaxUnshrink, resolve, scan, scatter, seed },
+		scratch: [geometry, relaxScratch, keep, settled, localRanks, compacted, blockCounts, blockOffsets].map( node => node.value ),
+	}
 }

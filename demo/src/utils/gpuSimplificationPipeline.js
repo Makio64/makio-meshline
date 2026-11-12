@@ -110,7 +110,8 @@ export class SimplificationPipeline {
 
 		// Only the relaxation count varies, and repeating a node costs a dispatch,
 		// not a pipeline: the shaders are compiled once and never rebuilt.
-		const pass = createSimplificationPasses( this.buffers, this.uniforms )
+		const { passes: pass, scratch } = createSimplificationPasses( this.buffers, this.uniforms )
+		this.scratch = scratch
 		this.passes = [
 			pass.clear,
 			...times( relaxIterations, () => [pass.relaxShrink, pass.relaxUnshrink] ).flat(),
@@ -283,6 +284,8 @@ export class SimplificationPipeline {
 				geometry.dispose()
 				material.dispose()
 			}
+			// Disposing a pass or a geometry never frees its storage and indirect buffers.
+			for ( const buffer of [...Object.values( this.buffers ), ...this.scratch] ) stage3d.release( buffer )
 		} )
 	}
 }

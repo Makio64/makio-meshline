@@ -62,7 +62,7 @@ function createEnvironment() {
 	addSoftbox( 0x73E2FF, 2.5, 8, 1, 0, 0.5, -5.6 )
 
 	const pmrem = new PMREMGenerator( stage3d.renderer )
-	stage3d.scene.environment = stage3d.own( pmrem.fromScene( studio, 0.04 ).texture )
+	stage3d.scene.environment = stage3d.own( pmrem.fromScene( studio, 0.04 ) ).texture
 	stage3d.scene.environmentIntensity = 0.45
 	pmrem.dispose()
 	studio.traverse( object => {

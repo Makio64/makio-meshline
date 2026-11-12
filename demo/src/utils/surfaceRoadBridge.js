@@ -193,6 +193,13 @@ function stripIndices( columns, vertices, strips, flipped = () => false ) {
 
 const dynamicAttribute = ( count, size ) => new BufferAttribute( new Float32Array( count * size ), size ).setUsage( DynamicDrawUsage )
 
+/** Free the buffers of `geometry` before an allocate replaces them: a replaced attribute keeps its GPU buffer until the renderer releases it. */
+function releaseBuffers( geometry ) {
+	for ( const attribute of [geometry.index, ...Object.values( geometry.attributes )] ) {
+		if ( attribute ) stage3d.release( attribute )
+	}
+}
+
 /**
  * Room for `columns` cross-sections of the deck: every strip owns its vertices,
  * so its edges stay crisp. The strips are wound to face out of the concrete,
@@ -200,6 +207,7 @@ const dynamicAttribute = ( count, size ) => new BufferAttribute( new Float32Arra
  * outside of the deck is drawn, and nothing shows inside it through a wireframe road.
  */
 function allocateDeck( geometry, columns, handed ) {
+	releaseBuffers( geometry )
 	geometry.setAttribute( 'position', dynamicAttribute( columns * DECK_VERTICES, 3 ) )
 	geometry.setAttribute( 'normal', dynamicAttribute( columns * DECK_VERTICES, 3 ) )
 	geometry.setAttribute( 'uv', dynamicAttribute( columns * DECK_VERTICES, 2 ) )
@@ -210,6 +218,7 @@ function allocateDeck( geometry, columns, handed ) {
 
 /** Room for `columns` cross-sections of the simple walls: a top and a bottom vertex under each edge. */
 function allocateFascia( geometry, columns ) {
+	releaseBuffers( geometry )
 	geometry.setAttribute( 'position', dynamicAttribute( columns * FASCIA_VERTICES, 3 ) )
 	geometry.setAttribute( 'normal', dynamicAttribute( columns * FASCIA_VERTICES, 3 ) )
 	geometry.setIndex( stripIndices( columns, FASCIA_VERTICES, FASCIA_STRIPS ) )
@@ -217,6 +226,7 @@ function allocateFascia( geometry, columns ) {
 
 /** Room for `columns` cross-sections of the embankment: a slope down each side, and the slope it ends in. */
 function allocateBerm( geometry, columns ) {
+	releaseBuffers( geometry )
 	geometry.setAttribute( 'position', dynamicAttribute( columns * BERM_VERTICES, 3 ) )
 	geometry.setAttribute( 'normal', dynamicAttribute( columns * BERM_VERTICES, 3 ) )
 	geometry.setIndex( stripIndices( columns, BERM_VERTICES, BERM_STRIPS ) )

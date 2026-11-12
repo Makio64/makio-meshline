@@ -109,7 +109,7 @@ export default class WavesExample {
 			const y = SUN_RADIUS - ( stripe + 0.5 ) * spacing
 			if ( SUN_CENTER_Y + y < 0 ) continue
 			const halfChord = Math.sqrt( SUN_RADIUS * SUN_RADIUS - y * y )
-			stripes.push( [-halfChord, y, 0, halfChord, y, 0] )
+			stripes.push( new Float32Array( [-halfChord, y, 0, halfChord, y, 0] ) )
 		}
 
 		const sun = new MeshLine()

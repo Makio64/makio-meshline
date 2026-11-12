@@ -28,8 +28,8 @@ test( 'Heist bounds post-processing cost and avoids idle picking churn', async (
 	assert.match( bloom, /bloomPass\.setResolutionScale\( resolutionScale \)/ )
 	assert.match( heist, /this\._pickDirty && this\._pickElapsed >= PICK_INTERVAL/ )
 	assert.match( heist, /intersectObject\( this\.line, false, this\._raycastHits \)/ )
-	// stage3d owns the floor reflection and the environment map, and clearDemo() disposes them.
+	// stage3d owns the floor reflection and the environment map's render target, and clearDemo() disposes them.
 	assert.match( room, /stage3d\.own\( reflector\( \{/ )
-	assert.match( room, /stage3d\.own\( pmrem\.fromScene\( environment \)\.texture \)/ )
+	assert.match( room, /stage3d\.own\( pmrem\.fromScene\( environment \) \)\.texture/ )
 	assert.match( stage3d, /const dispose = resource\.dispose \?\? resource\.destroy \?\? resource\.remove/ )
 } )
