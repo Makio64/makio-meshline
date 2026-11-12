@@ -2,6 +2,7 @@
  * Ricefield — QuadTree terrain wireframe and about 36,000 interactive instanced rice stalks.
  * Demonstrates: .instances( count ) fed by storage buffers, wind through .positionFn( fn ) and
  * .colorFn( fn ), .widthFn( fn ), and a compute pass that cuts the rice around the cursor.
+ * The generative farmsteads around the paddies are .surface() ribbons and billboard lines.
  */
 import { animate, utils } from 'animejs'
 import { MeshLine, rectanglePositions, straightLine } from 'makio-meshline'
@@ -18,11 +19,14 @@ import { createDemoControls, onShortcut } from '@/utils/demoControls'
 import { createDemoHint } from '@/utils/demoHint'
 import { createWater, SKY_HORIZON, skyBackground, WIND_DIRECTION } from '@/utils/ricefieldScenery'
 import { bundColorFn, FIELD_HEIGHT, FIELD_WIDTH, riceNodes, STALK_HEIGHT, stalkColorFn } from '@/utils/ricefieldShading'
+import { createVillage } from '@/utils/ricefieldVillage'
 
 // A paddy's rice and border both stop this far from the edge of its quadtree cell.
 const PADDY_MARGIN = 0.8
 const STALK_SPACING = 0.3
 const STALK_JITTER = 0.1
+// The opening camera's azimuth: the village leaves this side of the paddies open.
+const OPENING_THETA = 0.5
 const BLOOM = {
 	hd: { strength: 0.18, radius: 0.42, threshold: 0.9 },
 	ultra: { strength: 0.25, radius: 0.48, threshold: 0.88 },
@@ -130,7 +134,7 @@ export default class RicefieldExample {
 		stage3d.orbit( 56, {
 			target: [0, 6.5, 0],
 			phi: 1.2,
-			theta: 0.5,
+			theta: OPENING_THETA,
 			minPhi: 0.1,
 			maxPhi: Math.PI * 0.45,
 			minRadius: 20,
@@ -144,6 +148,7 @@ export default class RicefieldExample {
 
 		this.paddies = new QuadTree( FIELD_WIDTH, FIELD_HEIGHT, { jitter: 0.4, total: 14 } ).compute().map( toPaddy )
 		this.plantRice()
+		this.buildVillage()
 		this.createVisuals()
 		this.createCompute()
 		this.createControls()
@@ -165,6 +170,16 @@ export default class RicefieldExample {
 			this.scaleStorageBuffer.setXY( i, 1, darkness )
 			this.transformStorageBuffer.setXYZW( i, x, 0, z, scale )
 		} )
+	}
+
+	buildVillage() {
+		this.village = createVillage( this.noiseTexture, { clearAzimuth: OPENING_THETA } )
+		stage3d.add( this.village )
+	}
+
+	newVillage = () => {
+		this.village.dispose()
+		this.buildVillage()
 	}
 
 	// Everything the quality mode changes. The rice data and the compute survive a switch.
@@ -240,9 +255,11 @@ export default class RicefieldExample {
 		this.controls = createDemoControls( [
 			{ id: 'hd', label: 'HD', title: 'HD: standard golden-hour paddy scene (U)', onClick: () => this.setQuality( 'hd' ) },
 			{ id: 'ultra', label: 'Ultra HD', title: 'Ultra HD: sun reflection path, crepuscular rays, curved 6-segment stalks & anisotropic leaf sheen (U)', onClick: () => this.setQuality( 'ultra' ) },
+			'divider',
+			{ id: 'village', label: 'New village', key: 'R', title: 'Raise a new village around the paddies (R)', onClick: this.newVillage },
 		], { accent: '#fbbf24', label: 'Visual quality mode' } )
 
-		this.controls.select( this.quality )
+		this.showQuality()
 		onShortcut( 'u', () => this.setQuality( this.quality === 'ultra' ? 'hd' : 'ultra' ) )
 	}
 
@@ -254,7 +271,13 @@ export default class RicefieldExample {
 		this.water.dispose()
 		this.createVisuals()
 		for ( const [name, value] of Object.entries( BLOOM[quality] ) ) this.bloomPass[name].value = value
-		this.controls.select( quality )
+		this.showQuality()
+	}
+
+	// select() would also mark the New village action as a released toggle.
+	showQuality() {
+		this.controls.setPressed( 'hd', this.quality === 'hd' )
+		this.controls.setPressed( 'ultra', this.quality === 'ultra' )
 	}
 
 	onMouseMove = () => {
