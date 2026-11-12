@@ -20,7 +20,6 @@ class Stage3D {
 		if ( !this.renderer ) {
 			this.renderer = new WebGPURenderer( {
 				antialias: true,
-				reverseDepth: true,
 				alpha: false,
 				// `?webgl` exercises every demo's WebGL2 fallback on a WebGPU browser.
 				forceWebGL: new URLSearchParams( window.location.search ).has( 'webgl' ),
