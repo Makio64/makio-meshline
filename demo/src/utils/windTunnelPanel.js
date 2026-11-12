@@ -42,7 +42,7 @@ export function createLinesPanel( look ) {
 		const swatch = { [name]: `#${look[name].value.getHexString()}` }
 		return colors.addColor( swatch, name ).onChange( hex => look[name].value.set( hex ) )
 	} )
-	colors.add( { palette: 'Ice' }, 'palette', Object.keys( PALETTES ) ).onChange( name => {
+	colors.add( { palette: 'Ember' }, 'palette', Object.keys( PALETTES ) ).onChange( name => {
 		swatches.forEach( ( swatch, index ) => swatch.setValue( PALETTES[name][index] ) )
 	} )
 	colors.add( look.glow, 'value', 0, 3, 0.01 ).name( 'glow' )

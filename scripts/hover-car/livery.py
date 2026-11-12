@@ -129,16 +129,20 @@ for side in ( 1, -1 ):
 	place( NAME, flank( 2.27, 0.612, side ), fit = 1.36 * FLANK )
 	place( roundel( 'number', '64', 144 ), flank( 3.72, 0.665, side ) )
 
-	# Sponsors on the front fender, clear of the curve of the nose.
-	for row, ( left, right ) in enumerate( ( ( ( 'three.js', CODE, 30, 'plain' ), ( 'WebGPU', LABEL, 40, 'box' ) ), ( ( 'pnpm', LABEL, 42, 'box' ), ( 'TSL', LABEL, 40, 'outline' ) ), ( ( 'vite', LABEL, 40, 'outline' ), ( 'vue', LABEL, 44, 'plain' ) ) ) ):
+	# Sponsors on the front fender, clear of the curve of the nose and slanted with the slashes.
+	for row, ( left, right ) in enumerate( (
+		( ( 'three.js', CODE, 30, 'plain' ), ( 'WebGPU', LABEL, 40, 'box' ) ),
+		( ( 'pnpm', LABEL, 42, 'box' ), ( 'TSL', LABEL, 40, 'outline' ) ),
+		( ( 'vite', LABEL, 40, 'outline' ), ( 'vue', LABEL, 44, 'plain' ) ),
+	) ):
 		for column, ( text, font, points, style ) in enumerate( ( left, right ) ):
 			sprite = word( f'sponsor-{text}', text, font, points, WHITE, 1 ) if style == 'plain' else badge( f'sponsor-{text}', text, font, points, style )
-			place( sprite, flank( 1.1 + column * 0.29, 0.7 - row * 0.085, side ) )
+			place( sprite, flank( 1.1 + column * 0.31 - row * 0.03, 0.705 - row * 0.09, side ) )
 
-	# House rules on the rear quarter.
-	place( badge( 'release', 'r187', CODE, 28, 'outline' ), flank( 4.26, 0.735, side ) )
-	place( word( 'rule-semicolons', 'NO SEMICOLONS', LABEL, 26, WHITE, 2 ), flank( 4.26, 0.655, side ) )
-	place( word( 'rule-tabs', 'TABS > SPACES', LABEL, 26, CYAN, 2 ), flank( 4.26, 0.605, side ) )
+	# Rear quarter telemetry specs, staggered along the slash angle (front / bottom → rear / top).
+	place( badge( 'release', 'r187', CODE, 28, 'outline' ), flank( 4.30, 0.735, side ) )
+	place( word( 'spec-sdf', '3D SDF FLOW', LABEL, 26, WHITE, 2 ), flank( 4.26, 0.655, side ) )
+	place( word( 'spec-fps', '240 FPS GPU', LABEL, 26, CYAN, 2 ), flank( 4.22, 0.605, side ) )
 	place( word( 'endplate', 'three.js', CODE, 46 ), flank( 4.42, 1.105, side ), fit = 0.36 * FLANK )
 
 # From above, everything sits on the centreline: the name across the nose and the

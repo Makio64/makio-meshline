@@ -1,7 +1,7 @@
 /** Staging of the Wind Tunnel demo: the live reflections of the car, the wet floor, the ducts and the glow pass. */
 import { MeshLine } from 'makio-meshline'
-import { cameraPosition, color, cubeTexture, exp, float, Fn, interleavedGradientNoise, length, mix, modelWorldMatrix, normalView, output, positionGeometry, positionLocal, positionViewDirection, positionWorld, positionWorldDirection, reflector, reflectVector, screenCoordinate, screenUV, smoothstep, uv, vec2, vec3, vec4 } from 'three/tsl'
-import { ACESFilmicToneMapping, AdditiveBlending, BackSide, CircleGeometry, CubeCamera, CubeRenderTarget, Group, HalfFloatType, HemisphereLight, Mesh, MeshBasicNodeMaterial, MeshStandardNodeMaterial, PlaneGeometry, PMREMGenerator, Scene, SphereGeometry } from 'three/webgpu'
+import { cameraPosition, color, cubeTexture, exp, float, Fn, interleavedGradientNoise, length, mix, modelWorldMatrix, normalView, output, positionGeometry, positionLocal, positionViewDirection, positionWorld, positionWorldDirection, reflector, reflectVector, screenCoordinate, screenUV, smoothstep, vec2, vec3, vec4 } from 'three/tsl'
+import { ACESFilmicToneMapping, AdditiveBlending, BackSide, CircleGeometry, CubeCamera, CubeRenderTarget, Group, HalfFloatType, HemisphereLight, LinearMipmapLinearFilter, Mesh, MeshBasicNodeMaterial, MeshStandardNodeMaterial, PMREMGenerator, Scene, SphereGeometry } from 'three/webgpu'
 
 import stage from '@/makio/core/stage'
 import stage3d from '@/makio/three/stage3d'
@@ -14,18 +14,6 @@ export const REFLECTED = 1
 
 const HORIZON = 0x0a111e
 const ZENITH = 0x010204
-
-// Light bars the car reflects: [degrees from the zenith, intensity, tint].
-// They run the length of the tunnel like the tubes of a paint-inspection bay, so
-// each one draws a highlight line down the bodywork that slides as the view orbits.
-const LIGHT_BARS = [
-	[-64, 2.2, 0xd6e6ff],
-	[-39, 3.6, 0xffffff],
-	[-13, 4.6, 0xffffff],
-	[13, 4.6, 0xffffff],
-	[39, 3.6, 0xffffff],
-	[64, 2.2, 0xfff0df],
-]
 
 // The nozzle the smoke leaves and the collector that swallows it stand this far
 // past the two ends of the visible flow.
@@ -59,29 +47,14 @@ export function createTunnelStage( carRoot ) {
 	return { group, rakeBar }
 }
 
-// Bake the light bars and a dark hall into the environment the car reflects.
-// They never move, so they are filtered once for every roughness.
+// Bake a dark hall horizon into the environment so the car has subtle base form,
+// while every line highlight on the bodywork and glass comes live from the smoke.
 function createLightTunnel() {
 	const scene = new Scene()
 
-	// A faint horizon, so the flanks still have something to mirror below the bars.
 	const hall = new MeshBasicNodeMaterial( { side: BackSide } )
-	hall.colorNode = mix( color( 0x04070c ), color( 0x101a2c ), smoothstep( 0.4, 0, positionLocal.normalize().y.abs() ) )
+	hall.colorNode = mix( color( 0x04070c ), color( 0x121e33 ), smoothstep( 0.45, 0, positionLocal.normalize().y.abs() ) )
 	scene.add( new Mesh( new SphereGeometry( 30, 32, 16 ), hall ) )
-
-	const edge = uv().sub( 0.5 ).abs().mul( 2 )
-	const tube = smoothstep( 1, 0.8, edge.x ).mul( smoothstep( 1, 0.96, edge.y ) )
-	for ( const [degrees, intensity, tint] of LIGHT_BARS ) {
-		const material = new MeshBasicNodeMaterial( { blending: AdditiveBlending, depthWrite: false } )
-		material.colorNode = color( tint ).mul( intensity ).mul( tube )
-		const bar = new Mesh( new PlaneGeometry( 0.7, 26 ), material )
-		// Lying along the tunnel and facing down, then swung round its axis onto the vault.
-		bar.rotation.x = Math.PI / 2
-		bar.position.y = 7
-		const arm = new Group().add( bar )
-		arm.rotation.z = -degrees * Math.PI / 180
-		scene.add( arm )
-	}
 
 	const pmrem = new PMREMGenerator( stage3d.renderer )
 	const target = stage3d.own( pmrem.fromScene( scene ) )
@@ -94,19 +67,34 @@ function createLightTunnel() {
 }
 
 // What moves is mirrored live. Every frame a probe at the heart of the car
-// photographs what is on the REFLECTED layer, and the lacquer reflects that
-// picture over the baked light bars, most of all where the view grazes it.
+// photographs what is on the REFLECTED layer with mipmaps, so the clearcoat and
+// canopy mirror crisp filaments (level 0) while the metallic paint and carbon
+// trim catch their soft moving glow (level 2.2) in real time.
 function mirrorTunnel( carRoot, floor ) {
-	// No mipmaps: rebuilding them every frame costs far more than the six views.
-	const target = stage3d.own( new CubeRenderTarget( 512, { type: HalfFloatType } ) )
+	const target = stage3d.own( new CubeRenderTarget( 512, {
+		type: HalfFloatType,
+		generateMipmaps: true,
+		minFilter: LinearMipmapLinearFilter,
+	} ) )
 	const probe = new CubeCamera( 0.05, 60, target )
-	probe.position.set( 0, 0.75, -0.1 )
+	probe.position.set( 0, 0.72, 0.05 )
 	probe.layers.set( REFLECTED )
 
-	const grazing = normalView.dot( positionViewDirection ).saturate().oneMinus().pow( 3 )
-	const mirrored = cubeTexture( target.texture, reflectVector ).rgb.mul( grazing.mul( 0.88 ).add( 0.12 ) ).mul( 1.8 )
+	// Local parallax offset so streamlines right above the hood, canopy and fenders
+	// reflect onto the surface directly beneath them instead of at infinity.
+	const dir = positionWorld.sub( vec3( 0, 0.72, 0.05 ) ).mul( vec3( 0.38, 0.28, 0.24 ) ).add( reflectVector ).normalize()
+	const map = cubeTexture( target.texture, dir )
+	const coat = map.level( 0 ).rgb
+	const sheen = map.level( 2.2 ).rgb
+	const grazing = normalView.dot( positionViewDirection ).saturate().oneMinus().pow( 1.8 )
+	const fresnel = grazing.mul( 0.55 ).add( 0.45 )
+
+	const mirroredPaint = coat.mul( 5.5 ).add( sheen.mul( 11.0 ) ).mul( fresnel )
+	const mirroredGlass = coat.mul( 8.5 ).add( sheen.mul( 4.5 ) ).mul( grazing.mul( 0.4 ).add( 0.6 ) )
 	carRoot.traverse( node => {
-		if ( node.material?.isMeshPhysicalNodeMaterial ) node.material.emissiveNode = mirrored
+		if ( node.material?.isMeshPhysicalNodeMaterial ) {
+			node.material.emissiveNode = node.material.ior === 2 ? mirroredGlass : mirroredPaint
+		}
 	} )
 
 	stage3d.listen( stage.onUpdate, () => {
