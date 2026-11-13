@@ -3,7 +3,7 @@
  * Demonstrates: MeshLineGPUPath, .prepare( renderer, camera ), .setSimplificationTolerance( tolerance ),
  * .wireframe( enabled ), and automatic CPU fallback.
  */
-import { MeshLine } from 'makio-meshline'
+import { MeshLine, straightLineBetween } from 'makio-meshline'
 import MeshLineGPUPath from 'makio-meshline/gpu-path'
 
 import stage from '@/makio/core/stage'
@@ -105,8 +105,8 @@ export default class GpuPathExample {
 
 	createGrid() {
 		const lines = []
-		for ( let z = -15; z <= 15; z += 5 ) lines.push( [-70, -3, z, 70, -3, z] )
-		for ( let x = -70; x <= 70; x += 5 ) lines.push( [x, -3, -15, x, -3, 15] )
+		for ( let z = -15; z <= 15; z += 5 ) lines.push( straightLineBetween( [-70, -3, z], [70, -3, z] ) )
+		for ( let x = -70; x <= 70; x += 5 ) lines.push( straightLineBetween( [x, -3, -15], [x, -3, 15] ) )
 
 		stage3d.add( new MeshLine()
 			.lines( lines )

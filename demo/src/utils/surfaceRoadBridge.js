@@ -5,7 +5,6 @@ import {
 	BufferGeometry,
 	CylinderGeometry,
 	DoubleSide,
-	DynamicDrawUsage,
 	ExtrudeGeometry,
 	FrontSide,
 	InstancedMesh,
@@ -14,6 +13,7 @@ import {
 	MeshStandardNodeMaterial,
 	Object3D,
 	Shape,
+	StreamDrawUsage,
 	Vector3,
 } from 'three/webgpu'
 
@@ -191,7 +191,9 @@ function stripIndices( columns, vertices, strips, flipped = () => false ) {
 	return new BufferAttribute( indices, 1 )
 }
 
-const dynamicAttribute = ( count, size ) => new BufferAttribute( new Float32Array( count * size ), size ).setUsage( DynamicDrawUsage )
+// Rewritten on every edit of the road. Stream usage, as MeshLine's own dynamic lines use: three uploads a
+// DynamicDrawUsage attribute on every render, changed or not, and these only change with the road.
+const dynamicAttribute = ( count, size ) => new BufferAttribute( new Float32Array( count * size ), size ).setUsage( StreamDrawUsage )
 
 /** Free the buffers of `geometry` before an allocate replaces them: a replaced attribute keeps its GPU buffer until the renderer releases it. */
 function releaseBuffers( geometry ) {
@@ -353,6 +355,8 @@ function createHeadGeometry() {
 	const bevel = 0.035
 	return new ExtrudeGeometry( shape, { depth: HEAD_DEPTH - bevel * 2, bevelThickness: bevel, bevelSize: bevel, bevelSegments: 1, curveSegments: 12 } )
 		.translate( 0, -HEAD_HEIGHT, bevel - HEAD_DEPTH * 0.5 )
+		// The concrete is cast by world height, not by UVs: without them the head shares the shaft's shader.
+		.deleteAttribute( 'uv' )
 }
 
 /** The two pads a girder rests on, their top on the origin. */
@@ -390,6 +394,7 @@ function createFootingGeometry() {
 	const bevel = 0.06
 	return new ExtrudeGeometry( shape, { depth: FOOTING_HEIGHT - bevel * 2, bevelThickness: bevel, bevelSize: bevel, bevelSegments: 1 } )
 		.rotateX( Math.PI * 0.5 ).translate( 0, -bevel, 0 )
+		.deleteAttribute( 'uv' )
 }
 
 /**
@@ -430,7 +435,7 @@ export class RoadBridge {
 
 		for ( const mesh of [...this.postParts, ...this.pierParts] ) {
 			mesh.count = 0
-			mesh.instanceMatrix.setUsage( DynamicDrawUsage )
+			mesh.instanceMatrix.setUsage( StreamDrawUsage )
 		}
 		for ( const mesh of [...this.simpleParts, ...this.complexParts] ) {
 			mesh.castShadow = mesh !== this.berm

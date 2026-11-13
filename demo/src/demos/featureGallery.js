@@ -63,6 +63,13 @@ const rimGlow = Fn( ( [baseColor] ) => {
 	return mix( baseColor.mul( 0.28 ), vec3( 0.86, 0.98, 1.0 ), rim )
 } )
 
+// One reveal hook for the whole gallery, reading its two values from the line
+// being drawn: cells that differ only in color, width or dash numbers then share
+// a shader. `drawn` draws a line in from its start, then `kept` erases it from that same end.
+const lineDrawn = uniform( 0 ).onObjectUpdate( ( { object } ) => object.userData.drawn.value )
+const lineKept = uniform( 1 ).onObjectUpdate( ( { object } ) => object.userData.kept.value )
+const revealClip = Fn( ( [progress] ) => progress.greaterThan( lineDrawn ).or( progress.lessThan( lineKept.oneMinus() ) ) )
+
 // `hook` tints the label cyan, `open` leaves the ring unclosed, `background` adds a checker card.
 const CELLS = [
 	{ title: 'Basic', style: line => line.color( 0xCE4257 ).lineWidth( 0.2 ) },
@@ -114,8 +121,9 @@ export default class FeatureGalleryExample {
 	}
 
 	createCell( config, textures, planeGeometry ) {
-		const drawn = uniform( 0 )
-		const kept = uniform( 1 )
+		// How far this cell's line is drawn in and erased: reveal() tweens them and the hook reads them.
+		const drawn = { value: 0 }
+		const kept = { value: 1 }
 		// A running tween would otherwise re-enter reveal() once the demo is gone.
 		stage3d.own( () => utils.remove( [drawn, kept] ) )
 
@@ -123,9 +131,9 @@ export default class FeatureGalleryExample {
 			.lines( circlePositions( 64 ), !config.open )
 			// Keeps UVs to the cells that map a texture: discardFn alone would add them to all.
 			.needsUV( false )
-			// `drawn` draws the line in from its start, then `kept` erases it from that same end.
-			.discardFn( Fn( ( [progress] ) => progress.greaterThan( drawn ).or( progress.lessThan( kept.oneMinus() ) ) ) )
+			.discardFn( revealClip )
 			.autoResize()
+		Object.assign( line.userData, { drawn, kept } )
 		// Build now rather than on first render so the warm-up frame compiles every cell.
 		config.style( line, textures ).build()
 

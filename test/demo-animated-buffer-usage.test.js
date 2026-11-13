@@ -26,6 +26,15 @@ test( 'fully animated line demos keep fixed topology in reusable dynamic buffers
 	assert.match( points, /const points = new Float32Array\( count \* 3 \)/ )
 	assert.match( wavesFrame, /row\[i \+ 1\] = waveHeight\( row\[i\], row\[2\], this\.time \)/ )
 	assert.match( wavesFrame, /this\.sea\.setPositions\( this\.rows \)/ )
+	// No hook reads progress: without it, a frame's setPositions() skips the arc-length pass.
+	const seaFrom = waves.indexOf( 'this.sea = new MeshLine()' )
+	assert.notEqual( seaFrom, -1, 'the sea line should remain statically inspectable' )
+	const sea = waves.slice( seaFrom, waves.indexOf( '.autoResize()', seaFrom ) ).replace( /\/\/.*$/gm, '' )
+	assert.match( sea, /\.dynamic\( true \)/ )
+	assert.match( sea, /^\t+\.needsProgress\( false \)$/m )
+	// That holds only while every hook on the sea leaves progress alone: a hook reading it would get 0.
+	assert.deepEqual( sea.match( /\.\w+Fn\(/g ), ['.colorFn('] )
+	assert.match( sea, /\.colorFn\( Fn\( \( \[\w+\] \) => \{/ )
 	assert.doesNotMatch( wavesFrame, /new Float32Array|linePoints\(/ )
 } )
 

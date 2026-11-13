@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { readFile } from 'node:fs/promises'
+import { readdir, readFile } from 'node:fs/promises'
 import test from 'node:test'
 
 import { SpotLight } from 'three'
@@ -149,10 +149,152 @@ test( 'Rice Field keeps per-instance storage mappable to WebGL2 instanced attrib
 	assert.match( source, /new StorageInstancedBufferAttribute\( stalks\.length, 4 \)/ )
 } )
 
-test( 'GPU Path exposes a continuous 0..99% simplification slider with strictly decreasing segment counts', async () => {
-	const [source, query, controls, hud] = await Promise.all( [
-		read( 'demo/src/demos/gpuPath.js' ),
+test( 'Rice Field grows each new village into the lines of the one before', async () => {
+	const [source, village] = await Promise.all( [
+		read( 'demo/src/demos/ricefield.js' ),
+		read( 'demo/src/utils/ricefieldVillage.js' ),
+	] )
+	const section = ( start, end ) => {
+		const from = village.indexOf( start )
+		assert.notEqual( from, -1, `${start} should remain statically inspectable` )
+		return village.slice( from, village.indexOf( end, from ) )
+	}
+	const grow = section( '\n\tgrow() {', '\n\tdispose() {' )
+	const surfaces = section( '\nclass Surfaces {', '\n}\n' )
+	const strokes = section( '\nclass Strokes {', '\n}\n' )
+
+	// Disposing the village and building its lines again compiled about 30 pipelines per press.
+	assert.match( source, /newVillage = \(\) => this\.village\.grow\(\)/ )
+	assert.match( grow, /batch\.clear\(\)/ )
+	assert.match( grow, /batch\.update\( this, looks\[name\] \)/ )
+	assert.doesNotMatch( grow, /dispose\(|new MeshLine\(|createSmoke\(/ )
+	assert.match( surfaces, /if \( this\.line \) this\.line\.lines\( this\.lines, this\.closed \)/ )
+	assert.match( strokes, /if \( this\.line \) this\.line\.lines\( this\.lines \)\.vertexColors\( new Float32Array\( this\.colors \) \)/ )
+	assert.match( grow, /smoke\.lines\( vents\.map\(/ )
+	// The refill reads only what this village added: clear() empties every list, and strokes stay
+	// Float32Arrays, which the library takes without copying them on every lines() call.
+	assert.match( surfaces, /for \( const list of \[this\.lines, this\.closed, this\.widths, this\.banks, this\.tapers\] \) list\.length = 0/ )
+	assert.match( strokes, /for \( const list of \[this\.lines, this\.widths, this\.colors\] \) list\.length = 0/ )
+	assert.match( strokes, /this\.lines\.push\( new Float32Array\( points\.flat\(\) \) \)/ )
+	// The next village may have no wall of a look, or no chimney: what the one before drew has to go.
+	assert.match( surfaces, /if \( this\.line \) this\.line\.visible = this\.lines\.length > 0/ )
+	assert.match( grow, /smoke\.visible = vents\.length > 0/ )
+	// A dynamic line keeps its buffers when the next village has another point count.
+	for ( const code of [surfaces, strokes, section( '\nfunction createSmoke() {', '\n}\n' )] ) {
+		assert.match( code, /new MeshLine\(\)\n(?:\t+(?:\/\/.*|\.\w+\(.*\))\n)*\t+\.dynamic\( true \)/ )
+	}
+} )
+
+test( 'the Playground updates its line in place and builds a new one only for a shader-graph option', async () => {
+	const sandbox = await read( 'demo/src/demos/sandbox.js' )
+	const method = name => {
+		const start = sandbox.indexOf( `\n\t${name}(` )
+		assert.notEqual( start, -1, `${name} should remain statically inspectable` )
+		return sandbox.slice( start, sandbox.indexOf( '\n\t}\n', start ) )
+	}
+
+	// [^\]]* also reads a list written one key per line.
+	const keys = name => {
+		const list = sandbox.match( new RegExp( `const ${name} = \\[([^\\]]*)\\]` ) )
+		assert.ok( list, `${name} should remain statically inspectable` )
+		return list[1].match( /'\w+'/g ).map( key => key.slice( 1, -1 ) )
+	}
+	const [shape, rebuild, live, smoothing] = ['SHAPE_KEYS', 'REBUILD_KEYS', 'LIVE_KEYS', 'SMOOTHING_KEYS'].map( keys )
+
+	// Each option reaches the line one way, and only a shader-graph option builds a new line,
+	// which costs new buffers, shader modules and a pipeline.
+	assert.equal( new Set( [...shape, ...rebuild, ...live, ...smoothing] ).size, shape.length + rebuild.length + live.length + smoothing.length )
+	for ( const key of ['lineType', 'segments', 'closed'] ) assert.ok( shape.includes( key ), key )
+	for ( const key of ['smoothSharpBends', 'smoothSharpBendsAlpha', 'smoothSharpBendsThreshold'] ) assert.ok( smoothing.includes( key ), key )
+	for ( const key of ['useGradient', 'useDashes', 'sizeAttenuation', 'joinType', 'joinFold', 'antialias'] ) assert.ok( rebuild.includes( key ), key )
+	// Animate is live too: the generated code shows its animate() block only once the toggle refreshes it.
+	for ( const key of ['color', 'lineWidth', 'opacity', 'gradientColor', 'dashCount', 'dashRatio', 'dashOffset', 'animateDashes', 'wireframe', 'miterLimit'] ) assert.ok( live.includes( key ), key )
+	assert.match( sandbox, /onChange\( SHAPE_KEYS, \(\) => this\.updateShape\(\) \)/ )
+	assert.match( sandbox, /onChange\( REBUILD_KEYS, \(\) => this\.createLine\(\) \)/ )
+	assert.match( sandbox, /onChange\( LIVE_KEYS, \(\) => this\.updateMaterial\(\) \)/ )
+	assert.match( sandbox, /onChange\( SMOOTHING_KEYS, \(\) => this\.updateSmoothing\(\) \)/ )
+
+	const create = method( 'createLine' )
+	assert.match( create, /\.dynamic\( true \)/ )
+	assert.match( create, /this\.smoothing = \{ enabled: config\.smoothSharpBends, alpha: config\.smoothSharpBendsAlpha, threshold: config\.smoothSharpBendsThreshold \}/ )
+	assert.match( create, /\.smoothSharpBends\( config\.smoothSharpBends \)\n\t+\.smoothSharpBendsAlpha\( config\.smoothSharpBendsAlpha \)\n\t+\.smoothSharpBendsThreshold\( config\.smoothSharpBendsThreshold \)/ )
+	// Snake and Zigzag ignore segments and Strong Angle rounds it: a step that gives the same points sends nothing,
+	// while the code is still regenerated, since Strong Angle and Helix print segments.
+	assert.match( create, /this\.points = LINE_POSITIONS\[config\.lineType\]\( config\.segments \)\n\t+this\.line = new MeshLine\(\)\n\t+\.lines\( this\.points, config\.closed \)/ )
+	assert.match( method( 'updateShape' ), /const same = config\.closed === this\.closed && points\.length === this\.points\.length && points\.every\( \( value, i \) => value === this\.points\[i\] \)\n\t+if \( !same \) \{\n\t+this\.points = points\n(?:\t+\/\/.*\n)?\t+if \( config\.closed === this\.closed \) line\.setPositions\( points, true \)\n\t+else line\.lines\( points, this\.closed = config\.closed \)\n\t+\}\n\n\t+config\.generatedCode = generateSandboxCode\( config \)/ )
+	// Watchers run in the order their keys change: the rebuild key first builds the new shape once, into the new
+	// line, rather than into the old line about to be disposed; smoothing last, rather than on the old shape.
+	const configure = method( 'configureLineType' )
+	const steps = ['useGradient = true', 'lineType = value', 'closed = ', 'smoothSharpBends = true'].map( step => configure.indexOf( `this.config.${step}` ) )
+	const [gradient, lineType, closed, smoothBends] = steps
+	assert.ok( steps.every( index => index !== -1 ), 'configureLineType() should remain statically inspectable' )
+	assert.ok( gradient < Math.min( lineType, closed ) && smoothBends > Math.max( lineType, closed ), `gradient, shape, then smoothing: ${steps}` )
+	// stage recomputes its capped pixel ratio on resize, and only createLine() gave it to the line.
+	assert.match( sandbox, /onResize = \(\) => \{\n\t+this\.syncUiLayout\(\)\n(?:\t+\/\/.*\n)?\t+this\.line\.dpr\( stage\.devicePixelRatio \)\n\t\}/ )
+
+	// Each smoothing setter splits the points again, even with smoothing off: one call per value that differs
+	// from what the line holds, the two values only while smoothing is on, and none on a colour change.
+	const smooth = method( 'updateSmoothing' )
+	assert.equal( smooth.match( /line\.smoothSharpBends\w*\(/g ).length, 3 )
+	assert.match( smooth, /if \( config\.smoothSharpBends && config\.smoothSharpBendsAlpha !== smoothing\.alpha \) line\.smoothSharpBendsAlpha\( smoothing\.alpha = config\.smoothSharpBendsAlpha \)/ )
+	assert.match( smooth, /if \( config\.smoothSharpBends && config\.smoothSharpBendsThreshold !== smoothing\.threshold \) line\.smoothSharpBendsThreshold\( smoothing\.threshold = config\.smoothSharpBendsThreshold \)/ )
+	assert.match( smooth, /if \( config\.smoothSharpBends !== smoothing\.enabled \) line\.smoothSharpBends\( smoothing\.enabled = config\.smoothSharpBends \)/ )
+	assert.doesNotMatch( method( 'updateMaterial' ), /smoothSharpBends/ )
+	for ( const name of ['updateMaterial', 'updateShape', 'updateSmoothing'] ) assert.match( method( name ), /config\.generatedCode = generateSandboxCode\( config \)/ )
+} )
+
+test( 'a silent URL write never reaches a navigate listener added after its guard', async () => {
+	const [main, query, saves] = await Promise.all( [
+		read( 'demo/src/main.js' ),
 		read( 'demo/src/utils/gpuPathQuery.js' ),
+		read( 'demo/src/utils/surfaceRoadSaves.js' ),
+	] )
+
+	// The router re-mounts the demo for every URL it hears of, and navigate listeners run in
+	// the order they were added: the guard has to be imported first, and every write of a
+	// query or hash has to go through it.
+	const guardImport = main.indexOf( "'@/utils/silentUrl'" )
+	assert.ok( guardImport !== -1 && guardImport < main.indexOf( "'vue-tiny-router'" ) )
+	for ( const source of [query, saves] ) assert.match( source, /replaceUrlSilently\( / )
+	const writers = []
+	for ( const file of await readdir( new URL( '../demo/src/', import.meta.url ), { recursive: true } ) ) {
+		if ( !/\.(js|vue)$/.test( file ) || file.endsWith( 'silentUrl.js' ) ) continue
+		const code = ( await read( `demo/src/${file}` ) ).replace( /\/\*[\s\S]*?\*\/|\/\/.*$/gm, '' )
+		if ( /history\.(replace|push)State\(|location\.(hash|search)\s*=(?!=)/.test( code ) ) writers.push( file )
+	}
+	assert.deepEqual( writers, [], 'only silentUrl.js writes the query or hash of the address' )
+
+	const navigation = new EventTarget()
+	const written = []
+	globalThis.navigation = navigation
+	globalThis.window = {
+		history: {
+			replaceState( state, title, url ) {
+				// As in the browser: a cancelled navigation leaves the address as it was.
+				if ( navigation.dispatchEvent( new Event( 'navigate', { cancelable: true } ) ) ) written.push( String( url ) )
+			},
+		},
+	}
+	try {
+		const { replaceUrlSilently } = await import( '../demo/src/utils/silentUrl.js?guard' )
+		let heard = 0
+		navigation.addEventListener( 'navigate', () => heard++ )
+
+		replaceUrlSilently( '/examples/gpu-path?wireframe=1' )
+		assert.deepEqual( written, ['/examples/gpu-path?wireframe=1'] )
+		assert.equal( heard, 0, 'the router must not hear of a silent write' )
+
+		navigation.dispatchEvent( new Event( 'navigate' ) )
+		assert.equal( heard, 1, 'every other navigation still reaches it' )
+	} finally {
+		delete globalThis.navigation
+		delete globalThis.window
+	}
+} )
+
+test( 'GPU Path exposes a continuous 0..99% simplification slider with strictly decreasing segment counts', async () => {
+	const [source, controls, hud] = await Promise.all( [
+		read( 'demo/src/demos/gpuPath.js' ),
 		read( 'demo/src/utils/demoControls.js' ),
 		read( 'demo/src/utils/demoHud.styl' ),
 	] )
@@ -161,7 +303,6 @@ test( 'GPU Path exposes a continuous 0..99% simplification slider with strictly 
 	assert.match( source, /min: 0,\s+max: MAX_SIMPLIFY,\s+step: 1/ )
 	assert.match( source, /onInput: value => this\.setSimplify\( value \)/ )
 	assert.match( source, /onChange: value => writeSimplify\( clampSimplify\( value \) \)/ )
-	assert.match( query, /stopImmediatePropagation/ )
 	assert.match( controls, /wrap\.className = 'DemoControls__slider'/ )
 	assert.match( controls, /dragstart/ )
 	assert.match( hud, /touch-action pan-x/ )

@@ -8,7 +8,6 @@ import {
 	CircleGeometry,
 	Color,
 	CylinderGeometry,
-	DynamicDrawUsage,
 	Euler,
 	ExtrudeGeometry,
 	InstancedMesh,
@@ -20,6 +19,7 @@ import {
 	Quaternion,
 	Shape,
 	SphereGeometry,
+	StreamDrawUsage,
 	Vector3,
 } from 'three/webgpu'
 
@@ -309,13 +309,15 @@ export class RoadTraffic {
 			mesh.count = 0
 			mesh.castShadow = mesh !== this.lamps
 			mesh.frustumCulled = false
-			mesh.instanceMatrix.setUsage( DynamicDrawUsage )
+			// Stream, not dynamic: three uploads a DynamicDrawUsage attribute on every render,
+			// so once more for each shadow and mirror pass of the frame.
+			mesh.instanceMatrix.setUsage( StreamDrawUsage )
 		}
 		this.cars.forEach( ( car, index ) => {
 			this.body.setColorAt( index, _color.setHex( PAINTS[index % PAINTS.length] ) )
 			this.lamps.setColorAt( index, TAIL )
 		} )
-		this.lamps.instanceColor.setUsage( DynamicDrawUsage )
+		this.lamps.instanceColor.setUsage( StreamDrawUsage )
 		stage3d.add( ...this.meshes )
 	}
 

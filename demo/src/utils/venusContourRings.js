@@ -2,7 +2,7 @@ import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import { FrontSide, MathUtils, Ray, Vector3 } from 'three/webgpu'
-import { MeshBVH, SAH } from 'three-mesh-bvh'
+import { MeshBVH } from 'three-mesh-bvh'
 
 import { centerAndScaleModel } from '@/utils/modelUtils'
 import { times } from '@/utils/points'
@@ -17,7 +17,7 @@ function createModelBVH( model ) {
 	model.traverse( object => {
 		if ( object.isMesh ) parts.push( object.geometry.clone().applyMatrix4( object.matrixWorld ) )
 	} )
-	return new MeshBVH( mergeGeometries( parts ), { targetLeafSize: 1, strategy: SAH, indirect: true } )
+	return new MeshBVH( mergeGeometries( parts ), { indirect: true } )
 }
 
 // One closed contour at height `y`: rays shot inward from a circle keep the first surface they meet.

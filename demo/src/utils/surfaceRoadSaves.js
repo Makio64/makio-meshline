@@ -9,6 +9,7 @@ import {
 	serializeRoad,
 	stripRoadFromHref,
 } from '@/utils/roadSave'
+import { replaceUrlSilently } from '@/utils/silentUrl'
 import { MIN_LOOP } from '@/utils/surfaceRoadRoute'
 
 /** Autosave, named slots, JSON files and share links for the road on screen. */
@@ -99,7 +100,8 @@ export class RoadSaves {
 
 	stripSharedRoadFromUrl() {
 		const next = stripRoadFromHref( window.location.href )
-		if ( next !== window.location.href ) window.history.replaceState( null, '', next )
+		// Silently: a route change would rebuild the editor around the road it has just restored.
+		if ( next !== window.location.href ) replaceUrlSilently( next )
 	}
 
 	refreshSaveUi() {

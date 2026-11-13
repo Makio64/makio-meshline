@@ -89,6 +89,8 @@ export default class WavesExample {
 		this.sea = new MeshLine()
 			.lines( this.rows, false )
 			.dynamic( true )
+			// Hooks keep a progress array by default: this one reads none, which spares an arc-length pass per frame.
+			.needsProgress( false )
 			.vertexColors( colors )
 			.lineWidth( 0.055 )
 			.colorFn( Fn( ( [lineColor] ) => {

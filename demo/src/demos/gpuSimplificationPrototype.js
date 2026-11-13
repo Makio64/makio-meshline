@@ -48,7 +48,6 @@ export default class GpuSimplificationPrototypeExample {
 	} )
 	metrics = createSimplificationMetrics( this.options, this.settings )
 	rebuilds = new SimplificationRebuilds( this )
-	fallbackLines = []
 	lastCameraLodTime = -Infinity
 
 	async init() {
@@ -208,16 +207,23 @@ export default class GpuSimplificationPrototypeExample {
 		console.warn( `[gpuSimplification] ${reason}`, error ?? '' )
 	}
 
+	// Every polyline of the dataset in one batched line: one draw call, and a
+	// dynamic line takes the next dataset into the buffers it already has.
 	rebuildFallbackLines() {
 		if ( !this.dataset ) return
 
-		for ( const line of this.fallbackLines ) line.dispose()
-		this.fallbackLines = this.dataset.ranges.map( range => new MeshLine()
-			.lines( rangePoints( this.dataset.positions, range ) )
+		const lines = this.dataset.ranges.map( range => rangePoints( this.dataset.positions, range ) )
+		if ( this.fallbackLine ) {
+			this.fallbackLine.lines( lines )
+			return
+		}
+		this.fallbackLine = new MeshLine()
+			.lines( lines )
+			.dynamic( true )
 			.lineWidth( this.options.lineWidth )
 			.color( 0x67e8f9 )
-			.autoResize() )
-		stage3d.add( ...this.fallbackLines )
+			.autoResize()
+		stage3d.add( this.fallbackLine )
 	}
 
 	stopGpu() {

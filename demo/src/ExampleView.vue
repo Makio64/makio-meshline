@@ -34,6 +34,10 @@ import stage3d from '@/makio/three/stage3d'
 import { contentLoaded, menuOpen } from '@/store'
 import { describeDemoFailure } from '@/utils/demoFailure'
 
+// Every demo draws into the one stage3d. A demo left while its init() still awaits finishes that
+// init later, so the next demo waits for it to settle and for its late additions to be cleared.
+let previousInit = Promise.resolve()
+
 export default {
 	name: 'ExampleView',
 	data: function() {
@@ -77,17 +81,19 @@ export default {
 		}
 		if ( this.isUnmounting ) return
 
+		const previous = previousInit
+		let settled
+		previousInit = new Promise( resolve => { settled = resolve } )
 		try {
+			await previous
+			if ( this.isUnmounting ) return
 			// Opt out of Vue reactivity: Three.js caches geometries/materials in internal
 			// WeakMaps, and a deep-reactive demo would double-insert raw+proxy versions.
 			const Demo = module.default
 			if ( typeof Demo !== 'function' ) throw new Error( `Demo "${demo.id}" must export a class` )
 			this.example = markRaw( new Demo() )
 			await this.example.init()
-			if ( this.isUnmounting || this.hasDisposed ) {
-				this.disposeExample()
-				return
-			}
+			if ( this.hasDisposed ) return
 			this.isInitialized = true
 			this.bindRendererFailureSignals()
 			const { update, onResize } = this.example
@@ -96,6 +102,10 @@ export default {
 		} catch ( error ) {
 			this.presentFailure( 'init', error )
 			return
+		} finally {
+			// Left or failed while init() awaited: clear what it added since, before the next demo starts.
+			if ( this.hasDisposed ) this.clearStage()
+			settled()
 		}
 
 		this.text = this.example.text || ''
@@ -196,14 +206,22 @@ export default {
 		},
 		disposeExample() {
 			if ( !this.example || this.hasDisposed ) return
-			try {
-				this.example.dispose?.()
-				stage3d.clearDemo()
-			} catch ( error ) {
-				console.error( '[meshline demo] Failed to clean up the demo after an error:', error )
-			}
 			this.hasDisposed = true
 			this.isInitialized = false
+			try {
+				this.example.dispose?.()
+			} catch ( error ) {
+				console.error( '[meshline demo] Failed to dispose the demo:', error )
+			}
+			this.clearStage()
+		},
+		// Runs even when dispose() threw, so nothing the demo built reaches the next one.
+		clearStage() {
+			try {
+				stage3d.clearDemo()
+			} catch ( error ) {
+				console.error( '[meshline demo] Failed to clear the demo:', error )
+			}
 		},
 		reloadDemo() {
 			window.location.reload()

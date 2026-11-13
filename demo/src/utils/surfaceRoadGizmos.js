@@ -49,6 +49,15 @@ const _toCamera = new Vector3()
 /** Editing overlays draw over the road they edit, and keep their colours where the haze takes the road. */
 export const overlayMaterial = color => new MeshBasicNodeMaterial( { color, depthTest: false, depthWrite: false, fog: false } )
 
+// One colour node for every handle, so they all draw with one shader: the fill is the
+// material's own colour and the outline is read from the handle being drawn.
+const handleOutline = uniform( new Color( HANDLE_OUTLINE_COLOR ) ).onObjectUpdate( ( { object } ) => object.material.userData.outline )
+// 0 in the middle of the disc, 1 on its silhouette.
+const handleFacing = normalView.dot( positionViewDirection )
+const handleRadius = handleFacing.mul( handleFacing ).oneMinus().max( 0 ).sqrt()
+const handleBeyond = start => handleRadius.sub( start ).div( fwidth( handleRadius ) ).add( 0.5 ).clamp()
+const handleColor = mix( mix( materialColor, color( 0xFFFFFF ), handleBeyond( HANDLE_RING ) ), handleOutline, handleBeyond( HANDLE_OUTLINE ) )
+
 /**
  * A handle is a sphere drawn as the flat disc it shows from any side: its
  * `color` in the middle, a white ring, then an outline whose colour is kept in
@@ -57,14 +66,8 @@ export const overlayMaterial = color => new MeshBasicNodeMaterial( { color, dept
  */
 export function handleMaterial( fill ) {
 	const material = overlayMaterial( fill )
-	const outline = uniform( new Color( HANDLE_OUTLINE_COLOR ) )
-	// 0 in the middle of the disc, 1 on its silhouette.
-	const facing = normalView.dot( positionViewDirection )
-	const radius = facing.mul( facing ).oneMinus().max( 0 ).sqrt()
-	const edge = fwidth( radius )
-	const beyond = start => radius.sub( start ).div( edge ).add( 0.5 ).clamp()
-	material.colorNode = mix( mix( materialColor, color( 0xFFFFFF ), beyond( HANDLE_RING ) ), outline, beyond( HANDLE_OUTLINE ) )
-	material.userData.outline = outline.value
+	material.colorNode = handleColor
+	material.userData.outline = new Color( HANDLE_OUTLINE_COLOR )
 	return material
 }
 
@@ -184,6 +187,8 @@ export class RoadGizmos {
 			// unambiguous XZ drag target while the narrow arrows stay easy to grab.
 			const picker = new Mesh( pickGeometry, this.heightGizmoPickMaterial )
 			picker.position.y = direction * HEIGHT_GIZMO_PICK_CENTER
+			// Never drawn, only raycast against: a Raycaster does not ask whether its target is visible.
+			picker.visible = false
 
 			this.heightGizmo.add( shaft, arrow, picker )
 			this.heightGizmoPickers.push( picker )
@@ -195,6 +200,7 @@ export class RoadGizmos {
 			const bankPicker = new Mesh( bankPickGeometry, this.heightGizmoPickMaterial )
 			bankPicker.position.x = direction * BANK_GIZMO_PICK_CENTER
 			bankPicker.userData.direction = direction
+			bankPicker.visible = false
 
 			this.bankGizmo.add( arc, bankPicker )
 			this.bankGizmoPickers.push( bankPicker )

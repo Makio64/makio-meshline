@@ -121,9 +121,10 @@ test( 'live update APIs stay exercised by the demos that absorbed Live Updates',
 } )
 
 test( 'every catalog entry points to a fresh disposable demo class', async () => {
-	// Every demo leaves the same way: its optional dispose(), then clearDemo().
+	// Every demo leaves the same way: its optional dispose(), then clearDemo(), even when dispose() throws.
 	const exampleView = await readFile( new URL( '../demo/src/ExampleView.vue', import.meta.url ), 'utf8' )
-	assert.match( exampleView, /this\.example\.dispose\?\.\(\)\s+stage3d\.clearDemo\(\)/ )
+	assert.match( exampleView, /this\.example\.dispose\?\.\(\)\s+\} catch \( error \) \{[^}]*\}\s+this\.clearStage\(\)/ )
+	assert.match( exampleView, /clearStage\(\) \{\s+try \{\s+stage3d\.clearDemo\(\)/ )
 
 	for ( const demo of demoCatalog ) {
 		const sourcePath = new URL( `../demo/src/demos/${demo.sourceFile}`, import.meta.url )

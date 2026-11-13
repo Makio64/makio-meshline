@@ -163,6 +163,8 @@ export default class SurfaceRoadExample {
 
 	applyRibbonWidth() {
 		const width = this.ribbonWidth()
+		// lineWidth() rebuilds a built surface, also for the width it already has.
+		if ( width === this.roadUniforms.width.value ) return
 		this.roadUniforms.width.value = width
 		this.road.lineWidth( width )
 	}

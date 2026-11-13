@@ -5,8 +5,8 @@
  */
 import { MeshLine } from 'makio-meshline'
 import MeshLineGPUPath from 'makio-meshline/gpu-path'
-import { attribute, color, frontFacing, mix, screenUV, smoothstep, varying, vec3, vec4 } from 'three/tsl'
-import { DirectionalLight, DoubleSide, HemisphereLight, MathUtils } from 'three/webgpu'
+import { attribute, color, frontFacing, mix, screenUV, smoothstep, uniform, varying, vec3, vec4 } from 'three/tsl'
+import { Color, DirectionalLight, DoubleSide, HemisphereLight, MathUtils } from 'three/webgpu'
 import { markRaw, reactive } from 'vue'
 
 import VariableTopology from '@/components/VariableTopology.vue'
@@ -149,18 +149,23 @@ const surfaceLine = ( points, config, surface ) => new MeshLine()
 	.cap( config.cap )
 	.dynamic( config.kind === 'join' )
 
+// One color graph for every specimen: a surface supplies its two colors when it
+// is drawn, so the seven share one shader instead of compiling one each.
+const gradientStart = uniform( new Color() ).onObjectUpdate( ( { object } ) => object.userData.gradient[0] )
+const gradientEnd = uniform( new Color() ).onObjectUpdate( ( { object } ) => object.userData.gradient[1] )
+const surfaceColor = mix( gradientStart, gradientEnd, smoothstep( 0.04, 0.96, varying( attribute( 'progress', 'float' ) ) ) )
+// The mirror camera sees the underside. Keep it colorful without changing
+// the lighting of the directly visible, front-facing ribbon.
+const surfaceEmissive = frontFacing.select( vec3( 0 ), surfaceColor.mul( 0.45 ) )
+
 const createSurface = ( points, config ) => {
 	const surface = surfaceLine( points, config, { side: DoubleSide, roughness: 0.68, metalness: 0.08 } )
 		.needsProgress( true )
 		.build()
 	surface.position.y = SURFACE_Y
-
-	const progress = smoothstep( 0.04, 0.96, varying( attribute( 'progress', 'float' ) ) )
-	const surfaceColor = mix( color( config.color ), color( config.gradientColor ), progress )
+	surface.userData.gradient = [new Color( config.color ), new Color( config.gradientColor )]
 	surface.material.colorNode = surfaceColor
-	// The mirror camera sees the underside. Keep it colorful without changing
-	// the lighting of the directly visible, front-facing ribbon.
-	surface.material.emissiveNode = frontFacing.select( vec3( 0 ), surfaceColor.mul( 0.45 ) )
+	surface.material.emissiveNode = surfaceEmissive
 	return surface
 }
 

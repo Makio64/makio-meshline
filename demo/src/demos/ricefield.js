@@ -177,10 +177,7 @@ export default class RicefieldExample {
 		stage3d.add( this.village )
 	}
 
-	newVillage = () => {
-		this.village.dispose()
-		this.buildVillage()
-	}
+	newVillage = () => this.village.grow()
 
 	// Everything the quality mode changes. The rice data and the compute survive a switch.
 	createVisuals() {

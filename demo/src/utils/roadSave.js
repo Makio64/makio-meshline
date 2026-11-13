@@ -221,8 +221,11 @@ export function readRoadFromLocation( href, limits = ROAD_SAVE_LIMITS ) {
 
 export function stripRoadFromHref( href ) {
 	const url = new URL( href )
-	url.searchParams.delete( ROAD_HASH_PARAM )
 	const hashParams = new URLSearchParams( url.hash.startsWith( '#' ) ? url.hash.slice( 1 ) : url.hash )
+	// An address that holds no road comes back as it is: deleting from its query would
+	// write it out again, `?noUI` as `?noUI=`, for the editor to put in the address bar for nothing.
+	if ( !url.searchParams.has( ROAD_HASH_PARAM ) && !hashParams.has( ROAD_HASH_PARAM ) ) return href
+	url.searchParams.delete( ROAD_HASH_PARAM )
 	if ( hashParams.has( ROAD_HASH_PARAM ) ) {
 		hashParams.delete( ROAD_HASH_PARAM )
 		url.hash = hashParams.toString()

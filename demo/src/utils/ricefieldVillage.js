@@ -55,10 +55,25 @@ class Surfaces {
 		this.tapers.push( taper )
 	}
 
+	/** Empty the batch for another village. Its line stays, with its buffers and its shader. */
+	clear() {
+		for ( const list of [this.lines, this.closed, this.widths, this.banks, this.tapers] ) list.length = 0
+	}
+
+	/** Draw what was added since clear(): in the line of the village before, once there is one. */
+	update( parent, look ) {
+		if ( this.line ) this.line.visible = this.lines.length > 0
+		if ( !this.lines.length ) return
+		if ( this.line ) this.line.lines( this.lines, this.closed )
+		else parent.add( this.line = this.build( look ) )
+	}
+
 	build( { color, emissive, roughness = 0.95, metalness = 0 } ) {
 		const { widths, banks, tapers } = this
 		const line = new MeshLine()
 			.lines( this.lines, this.closed )
+			// Every village has another point count: a dynamic line keeps its buffers through it.
+			.dynamic( true )
 			.lineWidth( 1 )
 			// A tapered line narrows linearly from its middle to both ends: a diamond.
 			.widthCallback( ( progress, point, index ) => widths[index] * ( tapers[index] ? Math.max( 0.001, 1 - Math.abs( progress * 2 - 1 ) ) : 1 ) )
@@ -81,15 +96,25 @@ class Strokes {
 
 	add( points, width, hex ) {
 		const { r, g, b } = new Color( hex )
-		this.lines.push( points.flat() )
+		this.lines.push( new Float32Array( points.flat() ) )
 		this.widths.push( width * M )
 		for ( let i = 0; i < points.length; i++ ) this.colors.push( r, g, b )
+	}
+
+	clear() {
+		for ( const list of [this.lines, this.widths, this.colors] ) list.length = 0
+	}
+
+	update( parent ) {
+		if ( this.line ) this.line.lines( this.lines ).vertexColors( new Float32Array( this.colors ) )
+		else parent.add( this.line = this.build() )
 	}
 
 	build() {
 		const { widths } = this
 		return new MeshLine()
 			.lines( this.lines )
+			.dynamic( true )
 			.lineWidth( 1 )
 			.widthCallback( ( progress, point, index ) => widths[index] )
 			.vertexColors( new Float32Array( this.colors ) )
@@ -577,11 +602,11 @@ function materials( noise ) {
 }
 
 /** Hearth smoke: a vertical line per chimney, drifting downwind and fading as it rises. */
-function createSmoke( vents ) {
+function createSmoke() {
 	const downwind = vec2( WIND_DIRECTION )
 	const across = vec2( -WIND_DIRECTION.y, WIND_DIRECTION.x )
 	return new MeshLine()
-		.lines( vents.map( ( [x, y, z] ) => linePoints( 32, t => [x, y + t * SMOKE_RISE, z] ) ) )
+		.dynamic( true )
 		.color( 0xE9DCCB )
 		.lineWidth( 1 )
 		.widthCallback( t => 0.3 + t * 3.4 )
@@ -601,6 +626,36 @@ function createSmoke( vents ) {
 
 // Like MeshLine, dispose() leaves the scene and frees everything it holds.
 class Village extends Group {
+	batches = { strokes: new Strokes() }
+	smoke = createSmoke()
+
+	constructor( noiseTexture, clearAzimuth ) {
+		super()
+		this.clearAzimuth = clearAzimuth
+		this.looks = materials( noiseTexture )
+		for ( const name of Object.keys( this.looks ) ) this.batches[name] = new Surfaces()
+
+		// Only the lit surfaces respond to these: the rice and the water shade themselves.
+		const sun = new DirectionalLight( 0xFFB878, 2.6 )
+		sun.position.copy( SUN_DIRECTION ).multiplyScalar( 100 )
+		this.add( this.smoke, new HemisphereLight( 0xFFCF9E, 0x4A3A28, 1.3 ), sun )
+		this.grow()
+	}
+
+	/**
+	 * Draw another village from the demo's seeded random. The lines of the one before take
+	 * its points in place: nothing is disposed, so no shader is compiled again.
+	 */
+	grow() {
+		const { batches, looks, smoke } = this
+		for ( const batch of Object.values( batches ) ) batch.clear()
+		const vents = placeFarmsteads( batches, this.clearAzimuth )
+		for ( const [name, batch] of Object.entries( batches ) ) batch.update( this, looks[name] )
+
+		smoke.visible = vents.length > 0
+		if ( vents.length ) smoke.lines( vents.map( ( [x, y, z] ) => linePoints( 32, t => [x, y + t * SMOKE_RISE, z] ) ) )
+	}
+
 	dispose() {
 		this.removeFromParent()
 		for ( const child of [...this.children] ) child.dispose?.()
@@ -608,26 +663,7 @@ class Village extends Group {
 }
 
 /**
- * A new village around the paddies. Every call draws a different one from the demo's
- * seeded random, and keeps the wedge around `clearAzimuth` open for the camera.
+ * A village around the paddies, drawn from the demo's seeded random: `village.grow()` draws
+ * another one. It keeps the wedge around `clearAzimuth` open for the camera.
  */
-export function createVillage( noiseTexture, { clearAzimuth = 0 } = {} ) {
-	const looks = materials( noiseTexture )
-	const batches = { strokes: new Strokes() }
-	for ( const name of Object.keys( looks ) ) batches[name] = new Surfaces()
-
-	const vents = placeFarmsteads( batches, clearAzimuth )
-
-	const village = new Village()
-	for ( const [name, look] of Object.entries( looks ) ) {
-		if ( batches[name].lines.length ) village.add( batches[name].build( look ) )
-	}
-	village.add( batches.strokes.build() )
-	if ( vents.length ) village.add( createSmoke( vents ) )
-
-	// Only the lit surfaces respond to these: the rice and the water shade themselves.
-	const sun = new DirectionalLight( 0xFFB878, 2.6 )
-	sun.position.copy( SUN_DIRECTION ).multiplyScalar( 100 )
-	village.add( new HemisphereLight( 0xFFCF9E, 0x4A3A28, 1.3 ), sun )
-	return village
-}
+export const createVillage = ( noiseTexture, { clearAzimuth = 0 } = {} ) => new Village( noiseTexture, clearAzimuth )

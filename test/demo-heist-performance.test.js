@@ -28,6 +28,15 @@ test( 'Heist bounds post-processing cost and avoids idle picking churn', async (
 	assert.match( bloom, /bloomPass\.setResolutionScale\( resolutionScale \)/ )
 	assert.match( heist, /this\._pickDirty && this\._pickElapsed >= PICK_INTERVAL/ )
 	assert.match( heist, /intersectObject\( this\.line, false, this\._raycastHits \)/ )
+	// Fragment hooks keep a uv array by default; neither line's hooks read it.
+	for ( const start of ['this.line = new MeshLine()', 'const scanLine = new MeshLine()'] ) {
+		const from = heist.indexOf( start )
+		assert.notEqual( from, -1, `${start} should remain statically inspectable` )
+		const chain = heist.slice( from, heist.indexOf( '.autoResize()', from ) ).replace( /\/\/.*$/gm, '' )
+		assert.match( chain, /^\t+\.needsUV\( false \)$/m )
+		assert.match( chain, /\.fragmentColorFn\( Fn\( \( \[\w+\] \) =>/ )
+		assert.doesNotMatch( chain, /\buv\(/ )
+	}
 	// stage3d owns the floor reflection and the environment map's render target, and clearDemo() disposes them.
 	assert.match( room, /stage3d\.own\( reflector\( \{/ )
 	assert.match( room, /stage3d\.own\( pmrem\.fromScene\( environment \) \)\.texture/ )

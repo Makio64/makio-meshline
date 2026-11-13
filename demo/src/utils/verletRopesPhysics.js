@@ -169,7 +169,8 @@ function projectCpuLink( positions, basePoint, aPoint, span, targetLength, stiff
 	const deltaX = positions[bOffset] - positions[aOffset]
 	const deltaY = positions[bOffset + 1] - positions[aOffset + 1]
 	const deltaZ = positions[bOffset + 2] - positions[aOffset + 2]
-	const distance = Math.max( Math.hypot( deltaX, deltaY, deltaZ ), 0.0001 )
+	// Not Math.hypot(): it is about twice as slow, and this runs 77,000 times a frame.
+	const distance = Math.max( Math.sqrt( deltaX * deltaX + deltaY * deltaY + deltaZ * deltaZ ), 0.0001 )
 	const error = compressOnly ? Math.min( distance - targetLength, 0 ) : distance - targetLength
 	const correction = error / distance * stiffness
 
@@ -413,7 +414,7 @@ export function stepRopesCpu( { positions, previous, ropeData }, sim ) {
 			let velocityX = ( x - previous[offset] ) * velocityScale
 			let velocityY = ( y - previous[offset + 1] ) * velocityScale
 			let velocityZ = ( z - previous[offset + 2] ) * velocityScale
-			const speed = Math.max( Math.hypot( velocityX, velocityY, velocityZ ), 0.0001 )
+			const speed = Math.max( Math.sqrt( velocityX * velocityX + velocityY * velocityY + velocityZ * velocityZ ), 0.0001 )
 			const clampFactor = Math.min( maxStepDisp / speed, 1 )
 			velocityX *= clampFactor
 			velocityY *= clampFactor

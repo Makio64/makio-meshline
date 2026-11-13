@@ -23,12 +23,12 @@ const CYCLE_DURATION = MORPH_DURATION + 1.6 // Each state holds a moment before 
 const periodicGradient = Fn( ( [factor] ) => float( 0.5 ).sub( factor.mul( Math.PI * 2 ).cos().mul( 0.5 ) ) )
 
 // vec4 slots: three pads a vec3 storage buffer on its first upload, and this one is rewritten later.
-function writePoints( buffer, points, lineIndex ) {
-	const offset = lineIndex * POINTS_PER_LINE * 4
-	for ( let point = 0; point < POINTS_PER_LINE; point++ ) {
-		buffer.array.set( points.subarray( point * 3, point * 3 + 3 ), offset + point * 4 )
+function writePoints( { array }, points, lineIndex ) {
+	for ( let point = 0, slot = lineIndex * POINTS_PER_LINE * 4; point < POINTS_PER_LINE; point++, slot += 4 ) {
+		array[slot] = points[point * 3]
+		array[slot + 1] = points[point * 3 + 1]
+		array[slot + 2] = points[point * 3 + 2]
 	}
-	buffer.needsUpdate = true
 }
 
 // Contours sharing one style, each morphing between two sets of points.
@@ -60,29 +60,42 @@ class IsobarBank {
 				toBuffer: this.to,
 				morph: smoothstep( 0, 1, morph ),
 				closed: true,
+				// One sample per stored point: read it, rather than blend it with its neighbour.
+				snap: true,
 			} ) )
 			.build() // Before setTracks() lowers `count`, which build() resets to the capacity.
 	}
 
 	setTracks( tracks ) {
 		this.tracks = tracks
-		if ( !stage3d.isWebGPU ) return
+		if ( !stage3d.isWebGPU ) {
+			// What blendOnCPU() fills each frame: every point but the last one, a copy of the first that `closed` adds back.
+			this.blended = tracks.map( () => new Float32Array( LINE_SEGMENTS * 3 ) )
+			return
+		}
 
 		tracks.forEach( ( track, index ) => {
 			writePoints( this.from, track.fromPoints, index )
 			writePoints( this.to, track.toPoints, index )
 		} )
+		// Only the slots in use go to the GPU, not the whole capacity.
+		for ( const buffer of [this.from, this.to] ) {
+			buffer.clearUpdateRanges()
+			buffer.addUpdateRange( 0, tracks.length * POINTS_PER_LINE * 4 )
+			buffer.needsUpdate = true
+		}
 		this.line.count = tracks.length
 	}
 
-	// WebGL2 has no storage buffers: blend the points here, all but the last one,
-	// a copy of the first that `closed` adds back.
+	// WebGL2 has no storage buffers: blend the points here, into the same arrays every frame.
 	blendOnCPU( morph ) {
 		const t = MathUtils.smoothstep( morph, 0, 1 )
-		const blend = ( { fromPoints, toPoints } ) => fromPoints
-			.subarray( 0, -3 )
-			.map( ( from, index ) => MathUtils.lerp( from, toPoints[index], t ) )
-		this.line.lines( this.tracks.map( blend ) )
+		for ( let line = 0; line < this.tracks.length; line++ ) {
+			const { fromPoints, toPoints } = this.tracks[line]
+			const points = this.blended[line]
+			for ( let i = 0; i < points.length; i++ ) points[i] = MathUtils.lerp( fromPoints[i], toPoints[i], t )
+		}
+		this.line.lines( this.blended )
 	}
 }
 
@@ -161,7 +174,9 @@ export default class IsobarsExample {
 			this.setPair( this.toIndex, ( this.toIndex + 1 ) % STATE_COUNT )
 			return
 		}
-		this.setMorph( Math.min( 1, this.phaseTime / MORPH_DURATION ) )
+		const morph = Math.min( 1, this.phaseTime / MORPH_DURATION )
+		// A state holds after its morph: nothing moves, so nothing is blended or uploaded again.
+		if ( morph !== this.morph.value ) this.setMorph( morph )
 		this.ui.activeState = this.nearestState
 	}
 }

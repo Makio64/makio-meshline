@@ -23,11 +23,17 @@ const STRONG_ANGLE_POINTS = [
 	[0.8, 0.46, 0],
 ]
 
-// Geometry and shader-graph options: changing one needs a new line.
-const REBUILD_KEYS = ['lineType', 'segments', 'closed', 'useGradient', 'useDashes', 'sizeAttenuation', 'joinType', 'joinFold', 'antialias', 'smoothSharpBends']
+// Shape options: the built line takes the new points in place.
+const SHAPE_KEYS = ['lineType', 'segments', 'closed']
 
-// Options a built line applies in place.
-const LIVE_KEYS = ['color', 'lineWidth', 'opacity', 'gradientColor', 'dashCount', 'dashRatio', 'dashOffset', 'wireframe', 'miterLimit', 'smoothSharpBendsAlpha', 'smoothSharpBendsThreshold']
+// Shader-graph options: each compiles a new shader, so the demo simply builds a new line.
+const REBUILD_KEYS = ['useGradient', 'useDashes', 'sizeAttenuation', 'joinType', 'joinFold', 'antialias']
+
+// Options a built line applies in place, without touching its points.
+const LIVE_KEYS = ['color', 'lineWidth', 'opacity', 'gradientColor', 'dashCount', 'dashRatio', 'dashOffset', 'animateDashes', 'wireframe', 'miterLimit']
+
+// Options that split the points again: the geometry is rebuilt, the shader stays.
+const SMOOTHING_KEYS = ['smoothSharpBends', 'smoothSharpBendsAlpha', 'smoothSharpBendsThreshold']
 
 // Picked with `?preset=`, `?shape=` or `?lineType=`, ignoring case and punctuation.
 const URL_PRESETS = {
@@ -134,8 +140,11 @@ export default class SandboxExample {
 		this.syncUiLayout()
 		this.createLine()
 
-		stage3d.own( watch( () => REBUILD_KEYS.map( key => this.config[key] ), () => this.createLine() ) )
-		stage3d.own( watch( () => LIVE_KEYS.map( key => this.config[key] ), () => this.updateMaterial() ) )
+		const onChange = ( keys, update ) => stage3d.own( watch( () => keys.map( key => this.config[key] ), update ) )
+		onChange( SHAPE_KEYS, () => this.updateShape() )
+		onChange( REBUILD_KEYS, () => this.createLine() )
+		onChange( LIVE_KEYS, () => this.updateMaterial() )
+		onChange( SMOOTHING_KEYS, () => this.updateSmoothing() )
 
 		stage3d.own( () => clearTimeout( this.copyFeedbackTimer ) )
 	}
@@ -143,12 +152,19 @@ export default class SandboxExample {
 	createLine() {
 		const { config } = this
 		this.line?.dispose()
+		this.closed = config.closed
+		this.smoothing = { enabled: config.smoothSharpBends, alpha: config.smoothSharpBendsAlpha, threshold: config.smoothSharpBendsThreshold }
+		this.points = LINE_POSITIONS[config.lineType]( config.segments )
 		this.line = new MeshLine()
-			.lines( LINE_POSITIONS[config.lineType]( config.segments ), config.closed )
+			.lines( this.points, config.closed )
+			// The shape controls give this line new points: it keeps its buffers and its shader.
+			.dynamic( true )
 			.sizeAttenuation( config.sizeAttenuation )
 			.antialias( config.antialias )
 			.join( { type: config.joinType, limit: config.miterLimit, fold: config.joinFold } )
 			.smoothSharpBends( config.smoothSharpBends )
+			.smoothSharpBendsAlpha( config.smoothSharpBendsAlpha )
+			.smoothSharpBendsThreshold( config.smoothSharpBendsThreshold )
 			// The canvas ratio, which stage caps: exact folds and analytic AA measure in device pixels.
 			.dpr( stage.devicePixelRatio )
 			.autoResize()
@@ -165,11 +181,35 @@ export default class SandboxExample {
 			.opacity( config.opacity )
 			.wireframe( config.wireframe )
 			.miterLimit( config.miterLimit )
-			.smoothSharpBendsAlpha( config.smoothSharpBendsAlpha )
-			.smoothSharpBendsThreshold( config.smoothSharpBendsThreshold )
 
 		if ( config.useGradient ) line.gradientColor( config.gradientColor )
 		if ( config.useDashes ) line.dash( { count: config.dashCount, ratio: config.dashRatio, offset: config.dashOffset } )
+
+		config.generatedCode = generateSandboxCode( config )
+	}
+
+	updateShape() {
+		const { config, line } = this
+		const points = LINE_POSITIONS[config.lineType]( config.segments )
+		// Snake and Zigzag ignore segments and Strong Angle rounds it: skip a step that sends the same points.
+		const same = config.closed === this.closed && points.length === this.points.length && points.every( ( value, i ) => value === this.points[i] )
+		if ( !same ) {
+			this.points = points
+			// setPositions() takes any point count and refreshes the culling bounds; opening or closing the loop needs lines().
+			if ( config.closed === this.closed ) line.setPositions( points, true )
+			else line.lines( points, this.closed = config.closed )
+		}
+
+		config.generatedCode = generateSandboxCode( config )
+	}
+
+	updateSmoothing() {
+		const { config, line, smoothing } = this
+		// Each smoothing setter splits the points of the built line again, even with smoothing off: send only
+		// what differs from what the line holds, and the two values only while smoothing is on.
+		if ( config.smoothSharpBends && config.smoothSharpBendsAlpha !== smoothing.alpha ) line.smoothSharpBendsAlpha( smoothing.alpha = config.smoothSharpBendsAlpha )
+		if ( config.smoothSharpBends && config.smoothSharpBendsThreshold !== smoothing.threshold ) line.smoothSharpBendsThreshold( smoothing.threshold = config.smoothSharpBendsThreshold )
+		if ( config.smoothSharpBends !== smoothing.enabled ) line.smoothSharpBends( smoothing.enabled = config.smoothSharpBends )
 
 		config.generatedCode = generateSandboxCode( config )
 	}
@@ -180,9 +220,10 @@ export default class SandboxExample {
 	}
 
 	configureLineType( value ) {
+		// The rebuild key first: its watcher then runs first and builds the new shape once.
+		if ( ['circle', 'square', 'strongAngle', 'helix'].includes( value ) ) this.config.useGradient = true
 		this.config.lineType = value
 		this.config.closed = value === 'circle' || value === 'square'
-		if ( ['circle', 'square', 'strongAngle', 'helix'].includes( value ) ) this.config.useGradient = true
 		if ( value === 'zigzag' || value === 'strongAngle' ) this.config.smoothSharpBends = true
 	}
 
@@ -198,7 +239,11 @@ export default class SandboxExample {
 		this.uiState.controlsHidden = compact && this.uiState.activePanel !== 'controls'
 	}
 
-	onResize = () => this.syncUiLayout()
+	onResize = () => {
+		this.syncUiLayout()
+		// stage recomputes its capped ratio on resize: keep the line's AA and folds on the canvas grid.
+		this.line.dpr( stage.devicePixelRatio )
+	}
 
 	async copyCode() {
 		clearTimeout( this.copyFeedbackTimer )

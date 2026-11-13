@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 
-import { Matrix4, Vector3 } from 'three'
+import { Matrix4, StreamDrawUsage, Vector3 } from 'three'
 
 import { fitRoadControlsToSurface, measureRoadSurfaceClearance } from '../demo/src/utils/roadClearance.js'
 import { pinnedRowDistances, pinRoadPaintToControls, RAISED_FROM, RAISED_TO } from '../demo/src/utils/roadPaint.js'
@@ -349,6 +349,30 @@ test( 'the deck is cut into the same lengths as the paint on the road', () => {
 	assert.equal( uv.getX( 0 ), paint[0] )
 	assert.ok( Math.abs( previous - paint.at( -1 ) ) < 1e-3, 'the last cross-section must end on the last painted distance' )
 	ribbon.dispose()
+} )
+
+test( 'the bridge uploads the buffers it rewrites only when the road changes', () => {
+	// three uploads a DynamicDrawUsage attribute on every render, changed or not.
+	for ( const level of ['simple', 'complex'] ) {
+		const { ribbon, bridge } = build( route.elevatedControls(), level )
+		for ( const mesh of level === 'simple' ? [bridge.fascia] : [bridge.deck, bridge.berm] ) {
+			const attributes = Object.entries( mesh.geometry.attributes )
+			assert.ok( attributes.length > 0, `the ${level} structure should have built its geometry` )
+			for ( const [name, attribute] of attributes ) assert.equal( attribute.usage, StreamDrawUsage, `${name} at the ${level} level` )
+		}
+		for ( const mesh of [...bridge.postParts, ...bridge.pierParts] ) assert.equal( mesh.instanceMatrix.usage, StreamDrawUsage )
+		ribbon.dispose()
+	}
+} )
+
+test( 'pier heads and footings draw with the shaft\'s shader', () => {
+	// three picks a pipeline by material and attribute set: a uv the concrete never reads made each part its own.
+	const bridge = new RoadBridge( null )
+	const layout = mesh => Object.keys( mesh.geometry.attributes ).sort().join()
+	for ( const part of [bridge.pierHeads, bridge.pierFootings] ) {
+		assert.equal( layout( part ), layout( bridge.piers ) )
+		assert.equal( part.material, bridge.piers.material )
+	}
 } )
 
 test( 'piers stand on footings in the meadow and reach the girder they carry', () => {

@@ -21,6 +21,22 @@ const numberConstant = ( source, name ) => {
 	return Number( match[1] )
 }
 
+// Loads the actual gizmo module in Node: three's entry points resolved, the stage replaced by a stub.
+const asModule = source => `data:text/javascript;base64,${Buffer.from( source ).toString( 'base64' )}`
+const loadGizmos = async () => import( asModule( ( await readGizmos() ).replace( /from '(@\/makio\/three\/stage3d|three\/webgpu|three\/tsl)'/g, ( _, specifier ) =>
+	`from '${specifier.startsWith( '@/' ) ? asModule( 'export default { add() {} }' ) : import.meta.resolve( specifier )}'`,
+) ) )
+
+test( 'every road handle draws with one colour node and keeps its own outline', async () => {
+	const { handleMaterial } = await loadGizmos()
+	const [a, b] = [handleMaterial( 0xFF0000 ), handleMaterial( 0x00FF00 )]
+
+	// A node built per handle gave each handle its own shader; the outline is read from the handle being drawn.
+	assert.equal( a.colorNode, b.colorNode )
+	assert.notEqual( a.userData.outline, b.userData.outline )
+	assert.notEqual( a.color.getHex(), b.color.getHex() )
+} )
+
 test( 'the road height gizmo is double-ended and keeps its pick proxies outside the point handle', async () => {
 	const [editor, source] = await Promise.all( [readEditor(), readGizmos()] )
 	const create = section( source, 'constructor( parent ) {', '/** Sit on `position`' )
@@ -35,6 +51,9 @@ test( 'the road height gizmo is double-ended and keeps its pick proxies outside 
 	assert.match( create, /if \( direction < 0 \) arrow\.rotation\.z = Math\.PI/ )
 	assert.match( create, /picker\.position\.y = direction \* HEIGHT_GIZMO_PICK_CENTER/ )
 	assert.match( create, /this\.heightGizmoPickers\.push\( picker \)/ )
+	// The proxies are only raycast against, and a Raycaster ignores `visible`: they are never drawn.
+	assert.match( create, /\n\t+picker\.visible = false\n/ )
+	assert.match( create, /\n\t+bankPicker\.visible = false\n/ )
 	assert.match( editor, /intersectObjects\( this\.gizmos\.heightGizmoPickers, false \)/ )
 	assert.equal( ( pickCenter - pickLength * 0.5 ) > handleRadius, true, 'the enlarged picker must leave the sphere centre free for XZ dragging' )
 } )
@@ -117,7 +136,8 @@ test( 'height gizmo resources stay in the scene, so clearDemo disposes them once
 	assert.match( editor, /stage3d\.add\( this\.handleGroup \)/ )
 	assert.match( stage3d, /object\.geometry\?\.dispose\(\)/ )
 	assert.match( stage3d, /for \( const material of \[object\.material\]\.flat\(\) \) material\?\.dispose\(\)/ )
-	assert.match( exampleView, /this\.example\.dispose\?\.\(\)\s+stage3d\.clearDemo\(\)/ )
+	assert.match( exampleView, /this\.example\.dispose\?\.\(\)\s+\} catch \( error \) \{[^}]*\}\s+this\.clearStage\(\)/ )
+	assert.match( exampleView, /clearStage\(\) \{\s+try \{\s+stage3d\.clearDemo\(\)/ )
 	assert.doesNotMatch( gizmos, /\.dispose\(\)/, 'clearDemo is the one place that frees the gizmos' )
 } )
 

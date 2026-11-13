@@ -143,6 +143,11 @@ test( 'share URLs encode the road in the hash and can be stripped later', () => 
 	assert.equal( loaded.controls.length, 3 )
 	assert.equal( readRoadFromLocation( stripRoadFromHref( shared ) ), null )
 	assert.equal( new URL( stripRoadFromHref( shared ) ).searchParams.get( 'noUI' ), '1' )
+
+	// An address without a road is not rewritten: `?noUI` would come back as `?noUI=` for nothing.
+	for ( const plain of ['https://meshline-demo.makio.io/examples/surface-road?noUI', 'https://meshline-demo.makio.io/examples/surface-road?webgl#top'] ) {
+		assert.equal( stripRoadFromHref( plain ), plain )
+	}
 } )
 
 test( 'query-string payloads are accepted as a fallback', () => {

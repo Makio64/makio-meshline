@@ -116,7 +116,10 @@ export default class DrawLinesExample {
 		const nextMouseSpeed = Math.hypot( mouse.moveX, mouse.moveY ) / ( dt / 16 || 1 ) * 0.01
 		this.mouseSpeed = MathUtils.lerp( this.mouseSpeed, nextMouseSpeed, 0.15 )
 
-		for ( let i = 0; i < LINES_FOLLOWING_MOUSE; i++ ) {
+		// The mouse trails have no width until the first press: skip moving them and uploading their points.
+		const firstLine = this.hasInteracted ? 0 : LINES_FOLLOWING_MOUSE
+
+		for ( let i = firstLine; i < LINES_FOLLOWING_MOUSE; i++ ) {
 			updateLineOnPointer( this.lines[i], this.target, this.mouseSpeed )
 		}
 
@@ -125,7 +128,7 @@ export default class DrawLinesExample {
 			updateLineOnPath( this.lines[i], path, dt )
 		}
 
-		for ( let i = 0; i < this.activeLineCount; i++ ) {
+		for ( let i = firstLine; i < this.activeLineCount; i++ ) {
 			const line = this.lines[i]
 			advanceTrail( line )
 			this.updateWidthArray( i, line )
@@ -138,9 +141,6 @@ export default class DrawLinesExample {
 
 	updateWidthArray( lineIndex, line ) {
 		const isMouseFollower = lineIndex < LINES_FOLLOWING_MOUSE
-		// Mouse trails keep their zeroed widths until the first drag.
-		if ( isMouseFollower && !this.hasInteracted ) return
-
 		const envelope = isMouseFollower ? 1 : smoothstep( 0, 260, line.pathTime ) * line.endFade
 		const brush = Math.min( isMouseFollower ? line.speed * 1.6 : BRUSH_BASE + line.speed * BRUSH_SPEED, BRUSH_MAX )
 

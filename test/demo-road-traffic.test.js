@@ -2,6 +2,8 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 
+import { StreamDrawUsage } from 'three'
+
 // Exercise the actual traffic and Three.js instances, with only the browser's scene host omitted.
 const moduleUrl = source => `data:text/javascript;base64,${Buffer.from( source ).toString( 'base64' )}`
 const resolveImport = specifier => specifier.startsWith( '@/' )
@@ -58,6 +60,13 @@ const assertSeparated = traffic => {
 		}
 	}
 }
+
+test( 'traffic uploads its instance buffers only when they change', t => {
+	const traffic = createTraffic( t )
+	// three uploads a DynamicDrawUsage attribute on every render, so once more for each shadow and mirror pass.
+	for ( const mesh of traffic.meshes ) assert.equal( mesh.instanceMatrix.usage, StreamDrawUsage )
+	assert.equal( traffic.lamps.instanceColor.usage, StreamDrawUsage )
+} )
 
 test( 'traffic grows and shrinks with the circuit while reusing its instanced buffers', t => {
 	const traffic = createTraffic( t )

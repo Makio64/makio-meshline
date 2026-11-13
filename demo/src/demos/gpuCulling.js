@@ -147,6 +147,8 @@ export default class GpuCullingExample {
 			.lineWidth( 1.5 )
 			.colorFn( rangeAndTunnelColor )
 			.widthFn( tunnelWidth )
+			// Hooks keep a progress array by default: these two never read it, and it would be 6 MB.
+			.needsProgress( false )
 			.build()
 		this.chunkBounds = chunkBoundsOf( this.line )
 

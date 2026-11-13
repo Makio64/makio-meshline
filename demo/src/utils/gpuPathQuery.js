@@ -1,3 +1,6 @@
+// A relative path: this module is also imported as is by the Node tests.
+import { replaceUrlSilently } from './silentUrl.js'
+
 export const pick = ( value, allowed ) => allowed.includes( value ) ? value : allowed[0]
 
 export const DEFAULT_SIMPLIFY = 99
@@ -44,28 +47,16 @@ export function readQuery() {
 	}
 }
 
-const replaceUrl = url => {
-	const stopRouterNavigate = event => event.stopImmediatePropagation()
-	window.navigation?.addEventListener( 'navigate', stopRouterNavigate, true )
-	try {
-		window.history.replaceState( null, '', url )
-	} catch {
-		// Ignore browser history rate limits.
-	} finally {
-		window.navigation?.removeEventListener( 'navigate', stopRouterNavigate, true )
-	}
-}
-
 export function writeSimplify( simplify ) {
 	const url = new URL( window.location.href )
 	for ( const key of ['simplify', 'topology', 'cap'] ) url.searchParams.delete( key )
 	if ( simplify !== DEFAULT_SIMPLIFY ) url.searchParams.set( 'simplify', String( simplify ) )
-	replaceUrl( url )
+	replaceUrlSilently( url )
 }
 
 export function writeWireframe( enabled ) {
 	const url = new URL( window.location.href )
 	if ( enabled ) url.searchParams.set( 'wireframe', '1' )
 	else url.searchParams.delete( 'wireframe' )
-	replaceUrl( url )
+	replaceUrlSilently( url )
 }

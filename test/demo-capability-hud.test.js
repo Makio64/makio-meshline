@@ -60,6 +60,16 @@ test( 'GPU Culling draws the tunnel flight and its mini map from one culled line
 		+ ( rails + lanes ) * count( 'POINTS_PER_LAP' )
 	assert.ok( points >= 400_000 && points < 450_000, `${points} points` )
 	assert.match( source, /\.lines\( \[\.\.\.buildRidgelines\( ROWS, POINTS_PER_ROW \), \.\.\.buildTunnel\( ARCHES, POINTS_PER_ARCH, POINTS_PER_LAP \)\] \)/ )
+	// Neither hook reads progress, which would be a 6 MB array for 400,000 points.
+	const tunnelFrom = source.indexOf( 'this.line = new MeshLine()' )
+	assert.notEqual( tunnelFrom, -1, 'the culled line should remain statically inspectable' )
+	const tunnel = source.slice( tunnelFrom, source.indexOf( '.build()', tunnelFrom ) ).replace( /\/\/.*$/gm, '' )
+	assert.deepEqual( tunnel.match( /\.\w+Fn\(/g ), ['.colorFn(', '.widthFn('] )
+	assert.match( tunnel, /\.colorFn\( rangeAndTunnelColor \)/ )
+	assert.match( tunnel, /\.widthFn\( tunnelWidth \)/ )
+	assert.match( tunnel, /^\t+\.needsProgress\( false \)$/m )
+	assert.match( shading, /export const tunnelWidth = Fn\( \( \[\w+\] \) => \{/ )
+	assert.match( shading, /export const rangeAndTunnelColor = Fn\( \( \[\w+\] \) => \{/ )
 	assert.match( terrain, /export const TUNNEL_LAPS = RAILS\.length \+ LANES\.length\n/ )
 	// Trails and glows run down the lap while the flight goes up it, so they come at the camera.
 	assert.match( shading, /const along = fract\( lap\.mul\( TRAILS \)\.add\( pace\.mul\( 7\.3 \) \)\.add\( time\.mul\( /, 'the trail phase grows with time' )

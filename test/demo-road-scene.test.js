@@ -58,6 +58,19 @@ test( 'bridge dressing is rebuilt from the built road on every update and releas
 	assert.match( stage3d, /this\.renderer\.shadowMap\.type = PCFShadowMap/ )
 } )
 
+test( 'a road update calls lineWidth() only when the ribbon width changes', async () => {
+	const source = await readDemo()
+	const from = source.indexOf( '\n\tapplyRibbonWidth() {' )
+	assert.notEqual( from, -1, 'applyRibbonWidth() should remain statically inspectable' )
+	const apply = source.slice( from, source.indexOf( '\n\t}\n', from ) )
+
+	// lineWidth() rebuilds a built surface, also for the width it already has: return before either write.
+	const early = apply.indexOf( 'if ( width === this.roadUniforms.width.value ) return\n' )
+	assert.notEqual( early, -1, 'applyRibbonWidth() should return early for an unchanged width' )
+	assert.ok( early < apply.indexOf( 'this.roadUniforms.width.value = width' ) )
+	assert.ok( early < apply.indexOf( 'this.road.lineWidth( width )' ) )
+} )
+
 test( 'the road opens on the finished scene rather than the construction overlay', async () => {
 	const sources = await Promise.all( [
 		readDemo(),

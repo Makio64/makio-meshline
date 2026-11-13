@@ -119,6 +119,8 @@ export default class HeistExample {
 				return width.mul( mix( pulse, alarmPulse.mul( 2 ), alarm ) )
 			} ) )
 			.fragmentColorFn( Fn( ( [color] ) => color.mul( mix( 1.8, 4, alarm ) ) ) )
+			// Fragment hooks keep a uv array by default; these never read it, so it is never even uploaded.
+			.needsUV( false )
 			.autoResize()
 
 		this.line.addInstanceAttributes( { instanceStart: 3, instanceEnd: 3, instancePhase: 1, instanceAlarm: 1 } )
@@ -162,6 +164,7 @@ export default class HeistExample {
 			.opacityFn( Fn( ( [opacity] ) => opacity.mul( this.alarmLevel.mul( 0.3 ).add( 0.7 ) ) ) )
 			.dashFn( Fn( ( [dashValue] ) => dashValue.add( time.mul( 0.22 ) ).add( scanIndex.mul( 0.17 ) ) ) )
 			.fragmentColorFn( Fn( ( [color] ) => color.mul( this.alarmLevel.mul( 0.75 ).add( 1.25 ) ) ) )
+			.needsUV( false )
 			.autoResize()
 
 		scanLine.material.blending = AdditiveBlending

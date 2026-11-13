@@ -54,6 +54,11 @@ export default class VenusExample {
 		stage3d.renderer.toneMapping = ACESFilmicToneMapping
 		this.createLine( ringsA, ringsB )
 		createBloomPipeline( { strength: 0.5, radius: 0.01, threshold: 0.4, resolutionScale: 1 } )
+
+		// Render one hidden frame and wait for the GPU: the reveal then starts with every
+		// pipeline compiled instead of running while the first image is still on its way.
+		stage3d.render()
+		await stage3d.renderer.backend.device?.queue.onSubmittedWorkDone()
 		animate( this.opacity, { value: 1, duration: 1.8, delay: 0.02, ease: 'outExpo' } )
 	}
 
