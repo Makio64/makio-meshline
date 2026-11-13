@@ -17,7 +17,7 @@ const {
 	ssrContextKey,
 	unref,
 } = require( 'vue' )
-const { Group, Texture } = await import( require.resolve( 'three/webgpu' ) )
+const { Group, StreamDrawUsage, Texture } = await import( require.resolve( 'three/webgpu' ) )
 
 let MeshLine
 let vite
@@ -235,6 +235,37 @@ test( 'Vue wrapper keeps its exposed facade stable across live and structural up
 	assert.equal( scene.children.includes( line ), false )
 	assert.equal( geometryDisposeCount, 1 )
 	assert.equal( materialDisposeCount, 1 )
+} )
+
+test( 'Vue wrapper takes dynamic as a flag or as "storage"', async () => {
+	const mount = async dynamic => {
+		const wrapperRef = ref( null )
+		const warnings = []
+		const app = hostRenderer.createApp( {
+			setup() {
+				provide( ssrContextKey, { modules: new Set() } )
+				provide( 'meshline-parent', shallowRef( new Group() ) )
+				return () => h( MeshLine, { points: new Float32Array( [-1, 0, 0, 1, 0, 0] ), dynamic, ref: wrapperRef } )
+			},
+		} )
+		app.config.warnHandler = message => warnings.push( message )
+		app.mount( createHostNode( 'root' ) )
+		await nextTick()
+		const { _options: options } = unref( wrapperRef.value.line )
+		app.unmount()
+		await nextTick()
+		return { options, warnings }
+	}
+
+	// A bare `dynamic` attribute arrives as '': Boolean comes first in the prop type, so it still means true.
+	const flag = await mount( '' )
+	assert.equal( flag.options.usage, StreamDrawUsage )
+	assert.equal( flag.options.positionStorage, false )
+	assert.deepEqual( flag.warnings, [] )
+
+	const storage = await mount( 'storage' )
+	assert.equal( storage.options.positionStorage, true )
+	assert.deepEqual( storage.warnings, [] )
 } )
 
 test( 'Vue wrapper integrates with TresJS useTres context and TresGroup instance refs', async () => {

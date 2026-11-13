@@ -47,7 +47,7 @@ const props = defineProps( {
 	verbose: { type: Boolean, default: false },
 	renderWidth: { type: Number, default: undefined },
 	renderHeight: { type: Number, default: undefined },
-	dynamic: { type: Boolean, default: undefined },
+	dynamic: { type: [Boolean, String], default: undefined }, // true, or 'storage'
 	gpuPositionNode: { type: Function, default: null },
 	usage: { type: Number, default: undefined },
 	instanceCount: { type: Number, default: undefined },
