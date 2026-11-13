@@ -4,6 +4,8 @@
 
 Before writing makio-meshline code, read [llms-full.txt](https://meshline.makio.io/llms-full.txt): setup, rules, the full API, TSL hooks, tested recipes and a troubleshooting table in one file. The npm package ships the same file as `node_modules/makio-meshline/llms-full.txt`.
 
+In a browser with WebMCP, the docs site also registers tools: `search_docs`, `get_doc_page`, `list_doc_pages`, `get_agent_reference` and `open_doc_page`. The live demos (https://meshline-demo.makio.io) register `list_demos`, `get_current_demo`, `open_demo`, `use_demo_control` and `get_demo_source`.
+
 The rules behind most mistakes:
 - Use `WebGPURenderer` from `'three/webgpu'` and `await renderer.init()`. `THREE.WebGLRenderer` cannot draw MeshLine.
 - Option keys are the method names: `new MeshLine( { lineWidth: 0.2 } )` equals `new MeshLine().lineWidth( 0.2 )`. Unknown keys warn.

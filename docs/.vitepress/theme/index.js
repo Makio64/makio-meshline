@@ -1,14 +1,19 @@
 import DefaultTheme from 'vitepress/theme'
 import { onMounted, watch, nextTick, h } from 'vue'
-import { useRoute } from 'vitepress'
+import { inBrowser, useRoute } from 'vitepress'
 import TrailBackground from './TrailBackground.vue'
 import BenchmarkDiagram from './BenchmarkDiagram.vue'
 import './custom.css'
 
 export default {
   extends: DefaultTheme,
-  enhanceApp({ app }) {
+  enhanceApp({ app, router, siteData }) {
     app.component('BenchmarkDiagram', BenchmarkDiagram)
+
+    // WebMCP: let in-browser AI agents search and read the docs as tools
+    if (inBrowser && (document.modelContext || navigator.modelContext)) {
+      import('./webmcp/index.js').then(({ setupWebMcp }) => setupWebMcp({ router, siteData }))
+    }
   },
   Layout() {
     return h(DefaultTheme.Layout, null, {

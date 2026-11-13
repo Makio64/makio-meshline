@@ -62,6 +62,7 @@ export function createDemoControls( items, { accent = '#7dd3fc', label = 'Demo c
 			const format = item.format ?? String
 			const wrap = document.createElement( 'div' )
 			wrap.className = 'DemoControls__slider'
+			wrap.dataset.controlId = item.id
 
 			const inputId = `demo-slider-${item.id}`
 			const labelEl = document.createElement( 'label' )
@@ -105,6 +106,8 @@ export function createDemoControls( items, { accent = '#7dd3fc', label = 'Demo c
 		}
 		const button = document.createElement( 'button' )
 		button.type = 'button'
+		// Stable id for the WebMCP use_demo_control tool (labels can change)
+		button.dataset.controlId = item.id
 		button.title = item.title ?? ''
 		if ( item.ariaLabel ) button.setAttribute( 'aria-label', item.ariaLabel )
 		button.innerHTML = `<span>${item.label}</span>${item.key ? `<kbd>${item.key}</kbd>` : ''}`

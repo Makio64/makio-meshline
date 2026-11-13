@@ -7,7 +7,7 @@ const SITE_TITLE = 'Makio MeshLine'
 const DEFAULT_DESCRIPTION = 'Draw thick lines in Three.js with Makio MeshLine: TSL shaders, gradients, dashes, instancing, and road surfaces for WebGPU and WebGL2.'
 const SITE_IMAGE = `${SITE_URL}/og-image.png`
 const X_HANDLE = '@makio64'
-const PAGE_DESCRIPTIONS = {
+export const PAGE_DESCRIPTIONS = {
   'index.md': 'Makio MeshLine is a TSL-powered MeshLine library for Three.js with wide lines, gradients, dashes, textures, shadows, GPU positions, and instancing.',
   'guide.md': 'Get started with Makio MeshLine for Three.js, from installation to your first wide, dashed, gradient, or textured line in WebGPU.',
   'api.md': 'Browse the Makio MeshLine API reference for MeshLine, MeshLineCompute, MeshLineGeometry, MeshLineNodeMaterial, hooks, helpers, and rendering options.',

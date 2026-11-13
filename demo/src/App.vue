@@ -69,6 +69,10 @@ export default {
 		},
 	},
 	async mounted() {
+		// WebMCP: in-browser AI agents can list, open, read and drive the demos (not in docs embeds)
+		if ( window.top === window && ( document.modelContext || navigator.modelContext ) ) {
+			import( '@/webmcp/index.js' ).then( ( { setupWebMcp } ) => setupWebMcp() )
+		}
 		await loadTranslations( '/translations/' + detectLang( ['en', 'fr'] ) + '.json' )
 		this.basicLoaded = true
 	},

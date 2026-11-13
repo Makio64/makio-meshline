@@ -70,6 +70,11 @@ If you're building with React or Vue, jump to a ready-to-run example with a decl
 - [React Three Fiber](./react-three-fiber.md) — open the [R3F StackBlitz template](https://stackblitz.com/github/Makio64/makio-meshline/tree/main/examples/react-three-fiber)
 - [Vue](./vue.md) — open the [Vue StackBlitz template](https://stackblitz.com/github/Makio64/makio-meshline/tree/main/examples/vue)
 
+## AI Agents
+
+- [llms.txt](https://meshline.makio.io/llms.txt) and [llms-full.txt](https://meshline.makio.io/llms-full.txt) give coding agents the rules, the full API and tested recipes. The npm package ships the same file as `node_modules/makio-meshline/llms-full.txt`.
+- In a browser with [WebMCP](https://webmachinelearning.github.io/webmcp/), this site registers tools for the agent in the tab: `search_docs`, `get_doc_page` (a page or one section, as Markdown), `list_doc_pages`, `get_agent_reference` (llms-full.txt or one section) and `open_doc_page` (shows the user a page). The [live demos](https://meshline-demo.makio.io) register `list_demos`, `get_current_demo`, `open_demo`, `use_demo_control` (presses buttons and sets sliders of the demo on screen) and `get_demo_source`.
+
 ## Next Steps
 
 - Start with the [Style Gallery (Basic Example)](./examples/basic.md) to compare common options and open the vanilla starter
