@@ -1,0 +1,60 @@
+/* Plan B · Drawn Numerals — Swiss poster at night */
+:root {
+	--bg: #0a0a0a;
+	--ink: #edeae3;
+	--dim: rgba(237, 234, 227, 0.42);
+	--faint: rgba(237, 234, 227, 0.16);
+	--accent: #ff2d1a;
+}
+
+.pager-dot.is-active::after {
+	background: var(--accent);
+	border-color: var(--accent);
+}
+
+.b-nav {
+	letter-spacing: 0.18em;
+	text-transform: uppercase;
+	font-size: 10px;
+}
+
+.b-nav a {
+	color: var(--ink);
+}
+
+/* far jumps (3+ posters) cut through the ink instead of whipping the camera past every poster */
+.b-veil {
+	position: fixed;
+	inset: 0;
+	z-index: 5;
+	background: var(--bg);
+	opacity: 0;
+	pointer-events: none;
+	transition: opacity 0.55s ease;
+}
+
+.b-veil.is-on {
+	opacity: 1;
+	transition-duration: 0.28s;
+}
+
+/*
+ * scroll.js writes --page / --progress on <html> on every scrolled frame and nothing on this page
+ * reads them. Inherited (the default), each write restyles every element, including the ~110
+ * hidden ultra-text source nodes, and the next scrollY read forces that restyle synchronously
+ * (about 0.5 ms a frame warm, several ms during the first seconds). Non-inherited: <html> only.
+ */
+@property --page {
+	syntax: '*';
+	inherits: false;
+}
+
+@property --progress {
+	syntax: '*';
+	inherits: false;
+}
+
+@property --page-i {
+	syntax: '*';
+	inherits: false;
+}

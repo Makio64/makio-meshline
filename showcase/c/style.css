@@ -1,0 +1,136 @@
+/* Musée des Lignes · overlay (the museum voice is mostly in WebGPU, this is the frame) */
+:root {
+	--bg: #0c0b0a;
+	--ink: #ece4d6;
+	--dim: rgba(236, 228, 214, 0.42);
+	--faint: rgba(236, 228, 214, 0.16);
+	--accent: #c8a25a;
+}
+
+.musee-brand {
+	position: fixed;
+	left: var(--gutter);
+	top: var(--gutter);
+	z-index: 10;
+	pointer-events: none;
+	font: 600 10px/1.6 var(--font);
+	letter-spacing: 0.42em;
+	text-transform: uppercase;
+	color: var(--dim);
+}
+
+.musee-brand b {
+	display: block;
+	font: 300 22px/1 var(--serif);
+	letter-spacing: 0.02em;
+	text-transform: none;
+	color: var(--ink);
+	margin-bottom: 6px;
+}
+
+.musee-brand a {
+	pointer-events: auto;
+	color: inherit;
+	text-decoration: none;
+}
+
+.musee-brand a:hover {
+	color: var(--accent);
+}
+
+.musee-room {
+	position: fixed;
+	right: calc(var(--gutter) + 28px);
+	top: var(--gutter);
+	z-index: 10;
+	pointer-events: none;
+	text-align: right;
+	font: 600 10px/1.6 var(--font);
+	letter-spacing: 0.42em;
+	text-transform: uppercase;
+	color: var(--dim);
+	transition: opacity 0.5s ease;
+}
+
+.musee-room b {
+	display: block;
+	font: 300 30px/1 var(--serif);
+	letter-spacing: 0.04em;
+	color: var(--accent);
+	margin-bottom: 4px;
+}
+
+.musee-note {
+	position: fixed;
+	left: var(--gutter);
+	bottom: calc(var(--gutter) + 22px);
+	z-index: 10;
+	max-width: min(520px, 70vw);
+	pointer-events: none;
+	font: 400 10px/1.5 var(--mono);
+	letter-spacing: 0.06em;
+	color: var(--dim);
+	transition: opacity 0.5s ease;
+}
+
+.musee-hint {
+	position: fixed;
+	left: 50%;
+	bottom: calc(var(--gutter) + 18px);
+	transform: translateX(-50%);
+	z-index: 10;
+	pointer-events: none;
+	font: 600 9px/1 var(--font);
+	letter-spacing: 0.42em;
+	text-transform: uppercase;
+	color: var(--accent);
+	opacity: 0;
+	transition: opacity 0.6s ease;
+}
+
+.musee-hint.is-on {
+	opacity: 0.8;
+}
+
+.musee-copy {
+	position: fixed;
+	left: 50%;
+	bottom: 18vh;
+	transform: translateX(-50%);
+	z-index: 11;
+	width: min(560px, 80vw);
+	height: 64px;
+	border: 0;
+	background: transparent;
+	cursor: copy;
+	display: none;
+}
+
+.musee-copy.is-on {
+	display: block;
+}
+
+.pager-dot.is-active::after {
+	background: var(--accent);
+	border-color: var(--accent);
+}
+
+@media (max-width: 640px) {
+	.musee-room b {
+		font-size: 22px;
+	}
+
+	/* the subline collided with the room title on phones */
+	.musee-sub {
+		display: none;
+	}
+
+	/* hover / scroll hints sat on the two-line footnote */
+	.musee-hint {
+		display: none;
+	}
+
+	.musee-brand b {
+		font-size: 18px;
+	}
+}

@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>MeshLine v2 · Prototypes</title>
+	<link rel="stylesheet" href="./shared/base.css">
+	<style>
+		html, body { overflow: auto; touch-action: auto; }
+		.hub { min-height: 100dvh; display: flex; flex-direction: column; justify-content: center; padding: 48px var(--gutter); max-width: 1100px; margin: 0 auto; gap: 8px; }
+		.hub__kicker { font: 400 11px/1 var(--mono); letter-spacing: 0.3em; text-transform: uppercase; color: var(--dim); margin-bottom: 32px; }
+		.hub a { display: grid; grid-template-columns: 4ch 1fr; align-items: baseline; gap: 16px; padding: 22px 0; border-top: 1px solid var(--faint); color: var(--ink); text-decoration: none; }
+		.hub a:last-of-type { border-bottom: 1px solid var(--faint); }
+		.hub__id { font: 400 12px/1 var(--mono); color: var(--dim); letter-spacing: 0.2em; }
+		.hub__name { font: 800 clamp(34px, 7vw, 84px)/0.95 var(--font); letter-spacing: -0.04em; transition: letter-spacing 0.4s ease, color 0.4s ease; }
+		.hub__line { grid-column: 2; font: 300 15px/1.4 var(--font); color: var(--dim); }
+		.hub a:hover .hub__name { letter-spacing: -0.02em; color: #fff; }
+		.hub a:nth-of-type(2) .hub__name { font-family: 'Inter Tight', var(--font); }
+		.hub a:nth-of-type(3) .hub__name { font: 300 clamp(38px, 7.6vw, 92px)/0.95 var(--serif); letter-spacing: 0; }
+		.hub__foot { margin-top: 32px; font: 400 11px/1.6 var(--mono); color: var(--dim); letter-spacing: 0.1em; }
+		.hub__foot a { display: inline; padding: 0; border: 0; color: var(--dim); text-decoration: underline; }
+	</style>
+</head>
+<body>
+	<main class="hub">
+		<div class="hub__kicker">makio-meshline · v1.2.3 → v2 · three prototypes</div>
+		<a href="./a.html"><span class="hub__id">A</span><span class="hub__name">One Line</span><span class="hub__line">One continuous thread you ride through every station.</span></a>
+		<a href="./b.html"><span class="hub__id">B</span><span class="hub__name">Drawn Numerals</span><span class="hub__line">Swiss night poster: every number is drawn from its own count.</span></a>
+		<a href="./c.html"><span class="hub__id">C</span><span class="hub__name">Musée des Lignes</span><span class="hub__line">A night gallery of contour busts, plaques and rooms.</span></a>
+		<p class="hub__foot">WebGPU first · add <a href="./smoke.html?webgl">?webgl</a> to test the fallback · <a href="./smoke.html">smoke test</a></p>
+	</main>
+</body>
+</html>
