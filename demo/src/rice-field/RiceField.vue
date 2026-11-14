@@ -11,10 +11,9 @@ import pipelines from './pipelines.json?url'
 </script>
 
 <style lang="stylus">
-// The sky at the horizon, which the scene opens on, and the loader's warm ink on it.
+// The sky at the horizon, which the scene opens on.
 :root
 	background #ffbb74
-	--loader-ink rgba(84, 42, 14, 0.82)
 
 // The demo hint and controls are added to <body>: the hint leaves the brand its corner,
 // and the controls sit between the corner pills while they fit, then drop below them.

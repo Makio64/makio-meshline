@@ -174,8 +174,10 @@ html
 	inset 0
 	z-index -1
 
-// Until the first complete frame, the canvas only has part of the scene (fastStart.js).
+// Until the first complete frame, the canvas only has part of the scene (fastStart.js),
+// and the page is the loader's black, edges included.
 html:not([data-ready])
+	background #0e0d0b
 	.three, body > .DemoHint, body > .DemoControls
 		visibility hidden
 
@@ -285,30 +287,32 @@ html:not([data-ready])
 		fill currentColor
 
 // The loader (index.html, loader.js), as the ultra-msdf-threejs gallery's: a hairline that fills
-// over a tracked label and a figure. Each app gives it the ink that reads on its sky (--loader-ink).
+// over a tracked label and a figure, in its gold on its near-black, centred over the whole page.
+// It takes the clicks until it fades, so nothing hidden under it can be hit.
 .StandaloneLoader
 	position fixed
-	left 50%
-	bottom calc(44px + var(--saib))
-	z-index 20
+	inset 0
+	z-index 40
 	display grid
+	place-content center
+	grid-template-columns unquote( 'min(280px, calc(100% - 48px))' )
 	gap 11px
-	width unquote( 'min(280px, calc(100% - 48px))' )
-	color var(--loader-ink, rgba(255, 255, 255, 0.86))
-	transform translateX(-50%)
-	pointer-events none
+	background #0e0d0b
+	color #c6a876
+	&.is-done
+		pointer-events none
 
 .StandaloneLoader__line
 	position relative
 	height 1px
 	overflow hidden
-	// The track: the ink, faint.
+	// The track: the gold, faint.
 	&::before
 		content ''
 		position absolute
 		inset 0
 		background currentcolor
-		opacity 0.22
+		opacity 0.26
 	> i
 		position absolute
 		inset 0
@@ -344,7 +348,7 @@ html:not([data-ready])
 	text-transform uppercase
 	white-space nowrap
 	> span
-		opacity 0.72
+		color #9c9589
 	// Three tracked digits reserved: 9, 10 and 100 never shift the label.
 	> b
 		min-width calc(3ch + 0.6em)

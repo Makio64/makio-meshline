@@ -10,7 +10,6 @@ import StandaloneApp from '@/standalone/StandaloneApp.vue'
 <style lang="stylus">
 :root
 	background #b9d6e3
-	--loader-ink rgba(22, 44, 58, 0.8)
 
 // The road toolbar sits between the corner pills while it fits, then drops below them.
 @media (max-width: 1100px)

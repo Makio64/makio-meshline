@@ -18,11 +18,11 @@ export function adoptLoader( element ) {
 			figure.textContent = String( percent )
 			element.setAttribute( 'aria-valuenow', String( percent ) )
 		},
-		/** Full, then gone. */
+		/** Full, then the black fades off the scene. */
 		leave() {
 			this.set( 1 )
 			element.classList.add( 'is-done' )
-			const fade = element.animate( [{ opacity: 1 }, { opacity: 0 }], { duration: 520, delay: 280, easing: 'ease-in', fill: 'forwards' } )
+			const fade = element.animate( [{ opacity: 1 }, { opacity: 0 }], { duration: 700, delay: 250, easing: 'ease-in-out', fill: 'forwards' } )
 			fade.finished.finally( () => element.remove() )
 		},
 	}
