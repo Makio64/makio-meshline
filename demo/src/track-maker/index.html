@@ -13,6 +13,11 @@
 		<title>MeshLine Track Maker</title>
 	</head>
 	<body>
+		<!-- Paints with the page, before any script: StandaloneApp drives it (src/standalone/loader.js). -->
+		<div id="standalone-loader" class="StandaloneLoader" role="progressbar" aria-label="Loading the track maker" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+			<div class="StandaloneLoader__line"><i></i></div>
+			<div class="StandaloneLoader__status"><span>Track Maker — Loading</span><b>0</b></div>
+		</div>
 		<div id="app"></div>
 		<script type="module" src="./main.js"></script>
 	</body>
